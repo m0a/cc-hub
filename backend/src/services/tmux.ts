@@ -1,0 +1,103 @@
+import type { Session, SessionState } from 'shared';
+
+interface TmuxSessionInfo {
+  id: string;
+  name: string;
+  createdAt: string;
+  attached: boolean;
+}
+
+export class TmuxService {
+  private prefix: string;
+
+  constructor(prefix: string = 'cchub-') {
+    this.prefix = prefix;
+  }
+
+  async listSessions(): Promise<TmuxSessionInfo[]> {
+    try {
+      const proc = Bun.spawn(['tmux', 'list-sessions', '-F', '#{session_name}:#{session_created}:#{session_attached}'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const text = await new Response(proc.stdout).text();
+      const exitCode = await proc.exited;
+
+      if (exitCode !== 0) {
+        // No sessions exist
+        return [];
+      }
+
+      return text
+        .trim()
+        .split('\n')
+        .filter((line) => line.length > 0)
+        .map((line) => {
+          const [name, created, attached] = line.split(':');
+          return {
+            id: name,
+            name: name.replace(this.prefix, ''),
+            createdAt: new Date(parseInt(created) * 1000).toISOString(),
+            attached: attached === '1',
+          };
+        })
+        .filter((s) => s.id.startsWith(this.prefix));
+    } catch {
+      return [];
+    }
+  }
+
+  async createSession(name?: string): Promise<string> {
+    const sessionName = name
+      ? `${this.prefix}${name}`
+      : `${this.prefix}${Date.now()}`;
+
+    const proc = Bun.spawn(['tmux', 'new-session', '-d', '-s', sessionName], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      const error = await new Response(proc.stderr).text();
+      throw new Error(`Failed to create session: ${error}`);
+    }
+
+    return sessionName;
+  }
+
+  async killSession(sessionId: string): Promise<void> {
+    const proc = Bun.spawn(['tmux', 'kill-session', '-t', sessionId], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      const error = await new Response(proc.stderr).text();
+      throw new Error(`Failed to kill session: ${error}`);
+    }
+  }
+
+  async sessionExists(sessionId: string): Promise<boolean> {
+    const proc = Bun.spawn(['tmux', 'has-session', '-t', sessionId], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+
+    const exitCode = await proc.exited;
+    return exitCode === 0;
+  }
+
+  toSessionResponse(info: TmuxSessionInfo, ownerId: string, state: SessionState = 'idle'): Session {
+    return {
+      id: info.id,
+      name: info.name,
+      createdAt: info.createdAt,
+      lastAccessedAt: new Date().toISOString(),
+      state,
+      ownerId,
+    };
+  }
+}

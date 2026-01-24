@@ -3,10 +3,11 @@ import type { SessionResponse } from '../../../shared/types';
 import { useSessions } from '../hooks/useSessions';
 
 interface SessionListProps {
-  onSelectSession: (sessionId: string) => void;
+  onSelectSession: (session: SessionResponse) => void;
+  onBack?: () => void;
 }
 
-export function SessionList({ onSelectSession }: SessionListProps) {
+export function SessionList({ onSelectSession, onBack }: SessionListProps) {
   const {
     sessions,
     isLoading,
@@ -26,7 +27,7 @@ export function SessionList({ onSelectSession }: SessionListProps) {
     const session = await createSession(newSessionName || undefined);
     if (session) {
       setNewSessionName('');
-      onSelectSession(session.id);
+      onSelectSession(session);
     }
   };
 
@@ -75,7 +76,17 @@ export function SessionList({ onSelectSession }: SessionListProps) {
     <div className="h-screen flex flex-col bg-gray-900 text-white">
       {/* Header */}
       <div className="p-4 border-b border-gray-700">
-        <h1 className="text-xl font-bold mb-4">CC Hub</h1>
+        <div className="flex items-center gap-4 mb-4">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm text-white transition-colors"
+            >
+              &larr; 戻る
+            </button>
+          )}
+          <h1 className="text-xl font-bold">CC Hub - Sessions</h1>
+        </div>
 
         {/* Create new session */}
         <div className="flex gap-2">
@@ -114,7 +125,7 @@ export function SessionList({ onSelectSession }: SessionListProps) {
             {sessions.map((session) => (
               <div
                 key={session.id}
-                onClick={() => onSelectSession(session.id)}
+                onClick={() => onSelectSession(session)}
                 className="p-3 bg-gray-800 hover:bg-gray-700 rounded cursor-pointer transition-colors group"
               >
                 <div className="flex items-center justify-between">

@@ -186,6 +186,67 @@ export function TerminalComponent({ sessionId, onConnect, onDisconnect, onError,
     inputRef.current?.focus();
   }, []);
 
+  // Touch scroll handling - use native event for preventDefault
+  const touchStartY = useRef<number | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      // Blur any focused element to prevent keyboard
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      touchStartY.current = e.touches[0].clientY;
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (touchStartY.current === null || !terminalRef.current) return;
+
+      const deltaY = touchStartY.current - e.touches[0].clientY;
+      touchStartY.current = e.touches[0].clientY;
+
+      // Scroll the terminal - positive delta = scroll up (show older content)
+      const lines = Math.round(deltaY / 15); // ~15px per line
+      if (lines !== 0 && terminalRef.current.scrollLines) {
+        terminalRef.current.scrollLines(lines);
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      touchStartY.current = null;
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      if (!terminalRef.current) return;
+      e.preventDefault();
+      const lines = Math.round(e.deltaY / 30);
+      if (lines !== 0) {
+        terminalRef.current.scrollLines(lines);
+      }
+    };
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: false });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd);
+    container.addEventListener('wheel', handleWheel, { passive: false });
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+      container.removeEventListener('wheel', handleWheel);
+    };
+  }, [focusInput]);
+
   // Create terminal after WASM is initialized
   useEffect(() => {
     if (!isInitialized || !containerRef.current) return;
@@ -197,6 +258,8 @@ export function TerminalComponent({ sessionId, onConnect, onDisconnect, onError,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       cursorStyle: 'block',
       cursorBlink: true,
+      scrollback: 10000,
+      smoothScrollDuration: 0,
       theme: {
         background: '#1a1a1a',
         foreground: '#efefef',
@@ -238,9 +301,6 @@ export function TerminalComponent({ sessionId, onConnect, onDisconnect, onError,
 
     resizeObserver.observe(container);
 
-    // Focus the hidden input initially
-    setTimeout(focusInput, 100);
-
     return () => {
       if (resizeTimeout) {
         clearTimeout(resizeTimeout);
@@ -250,21 +310,16 @@ export function TerminalComponent({ sessionId, onConnect, onDisconnect, onError,
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [isInitialized, sessionId, connect, resize, focusInput]);
+  }, [isInitialized, sessionId, connect, resize]);
 
   return (
-    <div className="terminal-container h-full w-full bg-[#1a1a1a] relative">
-      {/* Hidden textarea for capturing mobile keyboard input */}
+    <div className="terminal-container h-full w-full bg-[#1a1a1a] flex flex-col relative">
+      {/* Hidden textarea for keyboard input */}
       <textarea
         ref={inputRef}
-        className="absolute opacity-0 w-0 h-0 pointer-events-none"
-        style={{
-          position: 'absolute',
-          left: '-9999px',
-          top: 0,
-          width: '1px',
-          height: '1px',
-        }}
+        className="sr-only"
+        aria-hidden="true"
+        tabIndex={-1}
         autoCapitalize="off"
         autoCorrect="off"
         autoComplete="off"
@@ -275,14 +330,30 @@ export function TerminalComponent({ sessionId, onConnect, onDisconnect, onError,
         onCompositionEnd={handleCompositionEnd}
       />
 
-      {/* Terminal display - click to focus input */}
-      <div
-        ref={containerRef}
-        className="h-full w-full cursor-text"
-        style={{ padding: '4px' }}
+      {/* Input button - tap to show keyboard (TOP for visibility) */}
+      <button
+        type="button"
+        className="h-12 border-b-2 border-blue-500 bg-blue-900 px-4 text-left w-full flex-shrink-0"
         onClick={focusInput}
-        onTouchEnd={focusInput}
-      />
+      >
+        <span className="text-white text-base font-medium">⌨️ タップして入力...</span>
+      </button>
+
+      {/* Terminal display area */}
+      <div className="flex-1 min-h-0 relative overflow-hidden">
+        {/* Actual terminal container */}
+        <div
+          ref={containerRef}
+          className="absolute inset-0"
+          style={{ padding: '4px', pointerEvents: 'none' }}
+        />
+        {/* Touch overlay - captures all touch events */}
+        <div
+          ref={scrollContainerRef}
+          className="absolute inset-0 touch-none"
+          style={{ zIndex: 10 }}
+        />
+      </div>
 
       {(!isInitialized || !isConnected) && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/80">

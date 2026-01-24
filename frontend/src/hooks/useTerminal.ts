@@ -19,14 +19,34 @@ interface UseTerminalReturn {
 const WS_BASE = import.meta.env.VITE_WS_URL || `ws://${window.location.hostname}:3000`;
 
 export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
-  const { sessionId, onData, onConnect, onDisconnect, onError } = options;
+  const { sessionId } = options;
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
 
+  // Use refs for callbacks to avoid re-creating connect function
+  const onDataRef = useRef(options.onData);
+  const onConnectRef = useRef(options.onConnect);
+  const onDisconnectRef = useRef(options.onDisconnect);
+  const onErrorRef = useRef(options.onError);
+
+  // Keep refs updated
+  useEffect(() => {
+    onDataRef.current = options.onData;
+    onConnectRef.current = options.onConnect;
+    onDisconnectRef.current = options.onDisconnect;
+    onErrorRef.current = options.onError;
+  }, [options.onData, options.onConnect, options.onDisconnect, options.onError]);
+
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return;
+    }
+
+    // Clear any pending reconnect
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
     }
 
     const wsUrl = `${WS_BASE}/ws/terminal/${encodeURIComponent(sessionId)}`;
@@ -38,17 +58,17 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
     ws.onopen = () => {
       console.log('Terminal WebSocket connected');
       setIsConnected(true);
-      onConnect?.();
+      onConnectRef.current?.();
     };
 
     ws.onmessage = (event) => {
       if (event.data instanceof ArrayBuffer) {
-        onData?.(new Uint8Array(event.data));
+        onDataRef.current?.(new Uint8Array(event.data));
       } else if (typeof event.data === 'string') {
         try {
           const message = JSON.parse(event.data);
           if (message.type === 'error') {
-            onError?.(message.message);
+            onErrorRef.current?.(message.message);
           }
         } catch {
           // Not JSON, ignore
@@ -60,24 +80,24 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
       console.log('Terminal WebSocket closed:', event.code, event.reason);
       setIsConnected(false);
       wsRef.current = null;
-      onDisconnect?.();
+      onDisconnectRef.current?.();
 
-      // Auto-reconnect after 2 seconds if not intentionally closed
+      // Auto-reconnect after 3 seconds if not intentionally closed
       if (event.code !== 1000) {
         reconnectTimeoutRef.current = window.setTimeout(() => {
           console.log('Attempting to reconnect...');
           connect();
-        }, 2000);
+        }, 3000);
       }
     };
 
     ws.onerror = (error) => {
       console.error('Terminal WebSocket error:', error);
-      onError?.('WebSocket connection error');
+      onErrorRef.current?.('WebSocket connection error');
     };
 
     wsRef.current = ws;
-  }, [sessionId, onData, onConnect, onDisconnect, onError]);
+  }, [sessionId]); // Only depend on sessionId
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {

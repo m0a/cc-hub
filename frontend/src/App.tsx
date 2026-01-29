@@ -6,27 +6,87 @@ import type { SessionResponse, SessionState } from '../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3000`;
 
+// localStorage keys for session persistence
+const STORAGE_KEY_LAST_SESSION = 'cchub-last-session-id';
+const STORAGE_KEY_OPEN_SESSIONS = 'cchub-open-sessions';
+
+function saveLastSession(sessionId: string | null) {
+  if (sessionId) {
+    localStorage.setItem(STORAGE_KEY_LAST_SESSION, sessionId);
+  } else {
+    localStorage.removeItem(STORAGE_KEY_LAST_SESSION);
+  }
+}
+
+function getLastSession(): string | null {
+  return localStorage.getItem(STORAGE_KEY_LAST_SESSION);
+}
+
+function saveOpenSessions(sessions: OpenSession[]) {
+  localStorage.setItem(STORAGE_KEY_OPEN_SESSIONS, JSON.stringify(sessions.map(s => s.id)));
+}
+
+function getSavedOpenSessionIds(): string[] {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_OPEN_SESSIONS);
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
+}
+
 export function App() {
   const [openSessions, setOpenSessions] = useState<OpenSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showSessionList, setShowSessionList] = useState(false);
 
-  // On mount, fetch sessions and open the most recent one
+  // On mount, fetch sessions and restore from localStorage
   useEffect(() => {
     const fetchAndOpenSession = async () => {
       try {
         const response = await fetch(`${API_BASE}/api/sessions`);
         if (response.ok) {
           const data = await response.json();
-          if (data.sessions.length > 0) {
-            const mostRecent = data.sessions[0] as SessionResponse;
-            setOpenSessions([{
-              id: mostRecent.id,
-              name: mostRecent.name,
-              state: mostRecent.state,
-            }]);
-            setActiveSessionId(mostRecent.id);
+          const allSessions = data.sessions as SessionResponse[];
+
+          if (allSessions.length > 0) {
+            // Try to restore previously open sessions
+            const savedSessionIds = getSavedOpenSessionIds();
+            const lastSessionId = getLastSession();
+
+            // Filter to only sessions that still exist
+            const validSavedIds = savedSessionIds.filter(id =>
+              allSessions.some(s => s.id === id)
+            );
+
+            if (validSavedIds.length > 0) {
+              // Restore saved open sessions
+              const sessionsToOpen = validSavedIds
+                .map(id => allSessions.find(s => s.id === id))
+                .filter((s): s is SessionResponse => s !== undefined);
+
+              setOpenSessions(sessionsToOpen.map(s => ({
+                id: s.id,
+                name: s.name,
+                state: s.state,
+              })));
+
+              // Set active session: prefer last active, fallback to first open
+              const activeId = lastSessionId && validSavedIds.includes(lastSessionId)
+                ? lastSessionId
+                : validSavedIds[0];
+              setActiveSessionId(activeId);
+            } else {
+              // No saved sessions, open most recent
+              const mostRecent = allSessions[0];
+              setOpenSessions([{
+                id: mostRecent.id,
+                name: mostRecent.name,
+                state: mostRecent.state,
+              }]);
+              setActiveSessionId(mostRecent.id);
+            }
           } else {
             setShowSessionList(true);
           }
@@ -42,6 +102,18 @@ export function App() {
 
     fetchAndOpenSession();
   }, []);
+
+  // Save to localStorage when sessions change
+  useEffect(() => {
+    if (openSessions.length > 0) {
+      saveOpenSessions(openSessions);
+    }
+  }, [openSessions]);
+
+  // Save active session to localStorage
+  useEffect(() => {
+    saveLastSession(activeSessionId);
+  }, [activeSessionId]);
 
   const handleSelectSession = useCallback((session: SessionResponse) => {
     // Check if already open

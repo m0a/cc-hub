@@ -56,6 +56,9 @@ export const terminalWebSocket = {
     // Check if PTY process already exists for this session
     let proc = sessionProcesses.get(sessionId);
 
+    // Track if this is a reconnection (PTY already exists)
+    const isReconnection = proc && !proc.killed;
+
     if (!proc || proc.killed) {
       // Spawn PTY process attached to tmux session
       try {
@@ -91,6 +94,21 @@ export const terminalWebSocket = {
       }
     } else {
       console.log(`Reusing existing PTY process for session: ${sessionId}`);
+    }
+
+    // For reconnections, send scrollback buffer to restore terminal state
+    if (isReconnection) {
+      try {
+        const scrollback = await tmuxService.captureScrollback(sessionId, 500);
+        if (scrollback) {
+          // Send scrollback content to this client only
+          const scrollbackData = new TextEncoder().encode(scrollback);
+          ws.send(scrollbackData);
+          console.log(`Sent scrollback buffer (${scrollback.length} chars) to reconnecting client`);
+        }
+      } catch (error) {
+        console.error('Failed to send scrollback:', error);
+      }
     }
 
     ws.data.process = proc;

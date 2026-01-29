@@ -12,14 +12,19 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-body {
+html, body {
   margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
+  padding: 0;
+  height: 100%;
+  height: var(--vh, 100dvh);
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 #root {
-  height: 100vh;
+  height: 100%;
+  height: var(--vh, 100dvh);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }

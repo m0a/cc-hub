@@ -1,5 +1,8 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
-import { init, Terminal, FitAddon } from 'ghostty-web';
+import { useEffect, useRef, useState, memo } from 'react';
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { WebglAddon } from '@xterm/addon-webgl';
+import '@xterm/xterm/css/xterm.css';
 import { useTerminal } from '../hooks/useTerminal';
 
 interface TerminalProps {
@@ -10,260 +13,104 @@ interface TerminalProps {
   onReady?: (send: (data: string) => void) => void;
 }
 
-export function TerminalComponent({ sessionId, onConnect, onDisconnect, onError, onReady }: TerminalProps) {
+export const TerminalComponent = memo(function TerminalComponent({
+  sessionId,
+  onConnect,
+  onDisconnect,
+  onError,
+  onReady,
+}: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const sendRef = useRef<(data: string) => void>(() => {});
+  const resizeRef = useRef<(cols: number, rows: number) => void>(() => {});
   const [isInitialized, setIsInitialized] = useState(false);
-  const composingRef = useRef(false);
-  const sendRef = useRef<(data: string | Uint8Array) => void>(() => {});
+  const [showInputArea, setShowInputArea] = useState(false);
+  const [inputValue, setInputValue] = useState('');
 
-  const handleData = useCallback((data: Uint8Array) => {
-    if (terminalRef.current) {
-      terminalRef.current.write(data);
+  // Use refs to avoid recreating callbacks
+  const onConnectRef = useRef(onConnect);
+  const onDisconnectRef = useRef(onDisconnect);
+  const onErrorRef = useRef(onError);
+  const onReadyRef = useRef(onReady);
 
-      // Check for terminal responses (e.g., cursor position reports, device attributes)
-      // These need to be sent back to the PTY
-      if (terminalRef.current.wasmTerm?.hasResponse()) {
-        const response = terminalRef.current.wasmTerm.readResponse();
-        if (response) {
-          const hex = Array.from(new TextEncoder().encode(response)).map(b => b.toString(16).padStart(2, '0')).join(' ');
-          console.log(`[Ghostty] Terminal response: (${hex})`);
-          sendRef.current(response);
-        }
-      }
-    }
-  }, []);
+  useEffect(() => {
+    onConnectRef.current = onConnect;
+    onDisconnectRef.current = onDisconnect;
+    onErrorRef.current = onError;
+    onReadyRef.current = onReady;
+  });
 
   const { isConnected, connect, send, resize } = useTerminal({
     sessionId,
-    onData: handleData,
-    onConnect,
-    onDisconnect,
-    onError,
+    onData: (data) => {
+      terminalRef.current?.write(data);
+    },
+    onConnect: () => onConnectRef.current?.(),
+    onDisconnect: () => onDisconnectRef.current?.(),
+    onError: (err) => onErrorRef.current?.(err),
   });
 
-  // Keep sendRef updated and notify parent when ready
+  // Keep refs updated
   useEffect(() => {
     sendRef.current = send;
-    if (isConnected && onReady) {
-      onReady(send);
-    }
-  }, [send, isConnected, onReady]);
+    resizeRef.current = resize;
+  }, [send, resize]);
 
-  // Initialize ghostty-web WASM module
+  // Fit and resize terminal
+  const fitTerminal = () => {
+    const fit = fitAddonRef.current;
+    const term = terminalRef.current;
+    if (fit && term) {
+      fit.fit();
+      resizeRef.current(term.cols, term.rows);
+    }
+  };
+
+  // Notify parent when ready and trigger resize on connect
   useEffect(() => {
-    let cancelled = false;
-
-    init().then(() => {
-      if (!cancelled) {
-        setIsInitialized(true);
-        console.log('[Ghostty] WASM initialized');
-      }
-    }).catch((err) => {
-      console.error('[Ghostty] Failed to initialize WASM:', err);
-      onError?.('Failed to initialize terminal');
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [onError]);
-
-  // Handle input from hidden textarea (mobile keyboard)
-  const handleInput = useCallback((e: React.FormEvent<HTMLTextAreaElement>) => {
-    if (composingRef.current) return;
-
-    const textarea = e.currentTarget;
-    const value = textarea.value;
-
-    if (value) {
-      const hex = Array.from(new TextEncoder().encode(value)).map(b => b.toString(16).padStart(2, '0')).join(' ');
-      console.log(`[Input] Sending: "${value}" (${hex})`);
-      send(value);
-      textarea.value = '';
+    if (isConnected) {
+      onReadyRef.current?.(send);
+      // Send initial resize after connection with small delay for layout
+      setTimeout(fitTerminal, 100);
     }
-  }, [send]);
+  }, [isConnected, send]);
 
-  // Handle keydown for special keys (Enter, Backspace, etc.)
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    console.log(`[Input] KeyDown: key="${e.key}" code="${e.code}" composing=${composingRef.current}`);
-
-    if (composingRef.current) return;
-
-    const textarea = e.currentTarget;
-
-    switch (e.key) {
-      case 'Enter':
-        e.preventDefault();
-        console.log('[Input] Sending Enter (0x0d)');
-        send('\r');
-        textarea.value = '';
-        break;
-      case 'Backspace':
-        e.preventDefault();
-        console.log('[Input] Sending Backspace (0x7f)');
-        send('\x7f');
-        textarea.value = '';
-        break;
-      case 'Tab':
-        e.preventDefault();
-        console.log('[Input] Sending Tab (0x09)');
-        send('\t');
-        break;
-      case 'Escape':
-        e.preventDefault();
-        console.log('[Input] Sending Escape (0x1b)');
-        send('\x1b');
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        console.log('[Input] Sending Arrow Up');
-        send('\x1b[A');
-        break;
-      case 'ArrowDown':
-        e.preventDefault();
-        console.log('[Input] Sending Arrow Down');
-        send('\x1b[B');
-        break;
-      case 'ArrowRight':
-        e.preventDefault();
-        console.log('[Input] Sending Arrow Right');
-        send('\x1b[C');
-        break;
-      case 'ArrowLeft':
-        e.preventDefault();
-        console.log('[Input] Sending Arrow Left');
-        send('\x1b[D');
-        break;
-      default:
-        // For regular characters, let the input event handle it
-        // But send immediately if it's a single character without modifiers
-        if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-          e.preventDefault();
-          const hex = e.key.charCodeAt(0).toString(16).padStart(2, '0');
-          console.log(`[Input] Sending char: "${e.key}" (${hex})`);
-          send(e.key);
-          textarea.value = '';
-        } else if (e.ctrlKey && e.key.length === 1) {
-          // Handle Ctrl+key combinations
-          e.preventDefault();
-          const charCode = e.key.toUpperCase().charCodeAt(0) - 64;
-          if (charCode >= 0 && charCode <= 31) {
-            console.log(`[Input] Sending Ctrl+${e.key} (0x${charCode.toString(16).padStart(2, '0')})`);
-            send(String.fromCharCode(charCode));
-          }
-        }
-        break;
-    }
-  }, [send]);
-
-  // Handle composition (for IME input like Japanese)
-  const handleCompositionStart = useCallback(() => {
-    console.log('[Input] Composition start');
-    composingRef.current = true;
-  }, []);
-
-  const handleCompositionEnd = useCallback((e: React.CompositionEvent<HTMLTextAreaElement>) => {
-    console.log(`[Input] Composition end: "${e.data}"`);
-    composingRef.current = false;
-
-    // Send the composed text
-    if (e.data) {
-      const hex = Array.from(new TextEncoder().encode(e.data)).map(b => b.toString(16).padStart(2, '0')).join(' ');
-      console.log(`[Input] Sending composed: "${e.data}" (${hex})`);
-      send(e.data);
-    }
-
-    // Clear the textarea
-    const textarea = e.currentTarget;
-    textarea.value = '';
-  }, [send]);
-
-  // Focus the hidden input
-  const focusInput = useCallback(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  // Touch scroll handling - use native event for preventDefault
-  const touchStartY = useRef<number | null>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-
+  // Create terminal - run only once per sessionId
   useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    const handleTouchStart = (e: TouchEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      // Blur any focused element to prevent keyboard
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
-      touchStartY.current = e.touches[0].clientY;
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (touchStartY.current === null || !terminalRef.current) return;
-
-      const deltaY = touchStartY.current - e.touches[0].clientY;
-      touchStartY.current = e.touches[0].clientY;
-
-      // Scroll the terminal - positive delta = scroll up (show older content)
-      const lines = Math.round(deltaY / 15); // ~15px per line
-      if (lines !== 0 && terminalRef.current.scrollLines) {
-        terminalRef.current.scrollLines(lines);
-      }
-    };
-
-    const handleTouchEnd = (e: TouchEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      touchStartY.current = null;
-    };
-
-    const handleWheel = (e: WheelEvent) => {
-      if (!terminalRef.current) return;
-      e.preventDefault();
-      const lines = Math.round(e.deltaY / 30);
-      if (lines !== 0) {
-        terminalRef.current.scrollLines(lines);
-      }
-    };
-
-    container.addEventListener('touchstart', handleTouchStart, { passive: false });
-    container.addEventListener('touchmove', handleTouchMove, { passive: false });
-    container.addEventListener('touchend', handleTouchEnd);
-    container.addEventListener('wheel', handleWheel, { passive: false });
-
-    return () => {
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchmove', handleTouchMove);
-      container.removeEventListener('touchend', handleTouchEnd);
-      container.removeEventListener('wheel', handleWheel);
-    };
-  }, [focusInput]);
-
-  // Create terminal after WASM is initialized
-  useEffect(() => {
-    if (!isInitialized || !containerRef.current) return;
+    if (!containerRef.current) return;
 
     const container = containerRef.current;
 
+    // High-performance terminal configuration
     const term = new Terminal({
-      fontSize: 10,
+      fontSize: 14,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+      fontWeight: 'normal',
+      fontWeightBold: 'bold',
+      letterSpacing: 0,
+      lineHeight: 1,
       cursorStyle: 'block',
-      cursorBlink: true,
-      scrollback: 10000,
-      smoothScrollDuration: 0,
+      cursorBlink: false, // Disable cursor blink for performance
+      cursorInactiveStyle: 'outline',
+      scrollback: 1000, // Reduced scrollback for performance
+      smoothScrollDuration: 0, // Disable smooth scroll
+      scrollSensitivity: 3,
+      allowProposedApi: true,
+      minimumContrastRatio: 1, // Disable contrast calculation
+      rescaleOverlappingGlyphs: false, // Disable glyph rescaling
+      drawBoldTextInBrightColors: false, // Disable bold color transformation
+      convertEol: false,
+      ignoreBracketedPasteMode: false,
       theme: {
         background: '#1a1a1a',
         foreground: '#efefef',
         cursor: '#efefef',
+        cursorAccent: '#1a1a1a',
+        selectionBackground: 'rgba(255, 255, 255, 0.3)',
       },
     });
 
@@ -271,97 +118,253 @@ export function TerminalComponent({ sessionId, onConnect, onDisconnect, onError,
     term.loadAddon(fitAddon);
 
     term.open(container);
+
+    // Load WebGL addon for GPU-accelerated rendering
+    try {
+      const webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => {
+        webglAddon.dispose();
+      });
+      term.loadAddon(webglAddon);
+    } catch {
+      // WebGL not available, use default canvas renderer
+    }
+
     fitAddon.fit();
 
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
+    setIsInitialized(true);
 
-    // Note: We don't use term.onData for input anymore
-    // Input is handled by the hidden textarea for better mobile support
+    // Handle keyboard input - register once, use ref for send
+    const onDataDisposable = term.onData((data) => {
+      sendRef.current(data);
+    });
 
     // Connect to WebSocket
     connect();
 
-    // Handle resize - debounce
+    // Handle resize with debounce
     let resizeTimeout: number | null = null;
-    const resizeObserver = new ResizeObserver(() => {
+    const doResize = () => {
       if (resizeTimeout) {
         clearTimeout(resizeTimeout);
       }
       resizeTimeout = window.setTimeout(() => {
         if (fitAddonRef.current && terminalRef.current) {
           fitAddonRef.current.fit();
-          const cols = terminalRef.current.cols;
-          const rows = terminalRef.current.rows;
-          console.log(`[Ghostty] Resize: ${cols}x${rows}`);
-          resize(cols, rows);
+          resizeRef.current(terminalRef.current.cols, terminalRef.current.rows);
         }
-      }, 100);
-    });
+      }, 50);
+    };
 
+    // ResizeObserver for container size changes
+    const resizeObserver = new ResizeObserver(doResize);
     resizeObserver.observe(container);
 
+    // Window resize event
+    window.addEventListener('resize', doResize);
+
+    // Visual viewport resize (mobile keyboard)
+    const viewport = window.visualViewport;
+    viewport?.addEventListener('resize', doResize);
+
+    // Focus terminal (only on non-touch devices)
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    if (!isTouchDevice) {
+      term.focus();
+    }
+
+    // Touch scroll handling on overlay - optimized for performance
+    const overlay = overlayRef.current;
+    let touchStartY: number | null = null;
+    let touchMoved = false;
+    let accumulatedDelta = 0;
+    let scrollRafId: number | null = null;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      touchStartY = e.touches[0].clientY;
+      touchMoved = false;
+      accumulatedDelta = 0;
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (touchStartY === null) return;
+
+      const currentY = e.touches[0].clientY;
+      const deltaY = touchStartY - currentY;
+
+      // Only start scrolling after moving more than 5px
+      if (Math.abs(deltaY) > 5) {
+        touchMoved = true;
+        e.preventDefault();
+        touchStartY = currentY;
+        accumulatedDelta += deltaY;
+
+        // Throttle with requestAnimationFrame
+        if (scrollRafId === null) {
+          scrollRafId = requestAnimationFrame(() => {
+            scrollRafId = null;
+            const lines = Math.round(accumulatedDelta / 30);
+            if (lines !== 0) {
+              accumulatedDelta = accumulatedDelta % 30; // Keep remainder
+
+              // Scroll xterm
+              term.scrollLines(lines);
+
+              // Send single SGR mouse wheel event for tmux
+              const button = lines > 0 ? 65 : 64;
+              sendRef.current(`\x1b[<${button};1;1M`);
+            }
+          });
+        }
+      }
+    };
+
+    const handleTouchEnd = () => {
+      // Cancel pending scroll
+      if (scrollRafId !== null) {
+        cancelAnimationFrame(scrollRafId);
+        scrollRafId = null;
+      }
+      // Only focus if it was a tap (no movement)
+      if (!touchMoved) {
+        // Focus hidden input to trigger soft keyboard on mobile
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      }
+      touchStartY = null;
+      touchMoved = false;
+      accumulatedDelta = 0;
+    };
+
+    if (overlay) {
+      overlay.addEventListener('touchstart', handleTouchStart, { passive: true });
+      overlay.addEventListener('touchmove', handleTouchMove, { passive: false });
+      overlay.addEventListener('touchend', handleTouchEnd);
+    }
+
     return () => {
+      if (overlay) {
+        overlay.removeEventListener('touchstart', handleTouchStart);
+        overlay.removeEventListener('touchmove', handleTouchMove);
+        overlay.removeEventListener('touchend', handleTouchEnd);
+      }
       if (resizeTimeout) {
         clearTimeout(resizeTimeout);
       }
       resizeObserver.disconnect();
+      window.removeEventListener('resize', doResize);
+      viewport?.removeEventListener('resize', doResize);
+      onDataDisposable.dispose();
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [isInitialized, sessionId, connect, resize]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  // Show input area and focus
+  const handleKeyboardButtonClick = () => {
+    setShowInputArea(true);
+    setInputValue('');
+    // Focus after state update
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    }, 50);
+  };
+
+  // Send input to terminal
+  const handleSendInput = () => {
+    if (inputValue) {
+      sendRef.current(inputValue);
+      setInputValue('');
+    }
+    // Keep input area open for continuous input
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  };
+
+  // Handle Enter key in input
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      handleSendInput();
+      // Also send Enter key to terminal
+      sendRef.current('\r');
+    }
+  };
+
+  // Close input area
+  const handleCloseInputArea = () => {
+    setShowInputArea(false);
+    setInputValue('');
+  };
 
   return (
-    <div className="terminal-container h-full w-full bg-[#1a1a1a] flex flex-col relative">
-      {/* Hidden textarea for keyboard input */}
-      <textarea
-        ref={inputRef}
-        className="sr-only"
-        aria-hidden="true"
-        tabIndex={-1}
-        autoCapitalize="off"
-        autoCorrect="off"
-        autoComplete="off"
-        spellCheck={false}
-        onInput={handleInput}
-        onKeyDown={handleKeyDown}
-        onCompositionStart={handleCompositionStart}
-        onCompositionEnd={handleCompositionEnd}
-      />
-
-      {/* Input button - tap to show keyboard (TOP for visibility) */}
-      <button
-        type="button"
-        className="h-12 border-b-2 border-blue-500 bg-blue-900 px-4 text-left w-full flex-shrink-0"
-        onClick={focusInput}
-      >
-        <span className="text-white text-base font-medium">⌨️ タップして入力...</span>
-      </button>
-
-      {/* Terminal display area */}
-      <div className="flex-1 min-h-0 relative overflow-hidden">
-        {/* Actual terminal container */}
+    <div className="h-full w-full bg-[#1a1a1a] flex flex-col overflow-hidden">
+      {/* Terminal area - shrinks when input area is shown */}
+      <div className="flex-1 relative min-h-0">
+        {/* Terminal container */}
         <div
           ref={containerRef}
-          className="absolute inset-0"
-          style={{ padding: '4px', pointerEvents: 'none' }}
+          className="absolute inset-0 p-1"
         />
-        {/* Touch overlay - captures all touch events */}
+        {/* Touch overlay for scrolling */}
         <div
-          ref={scrollContainerRef}
-          className="absolute inset-0 touch-none"
-          style={{ zIndex: 10 }}
+          ref={overlayRef}
+          className="absolute inset-0 z-10"
+          style={{ touchAction: 'none' }}
         />
-      </div>
-
-      {(!isInitialized || !isConnected) && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/80">
-          <div className="text-white text-lg">
-            {!isInitialized ? 'Loading terminal...' : 'Connecting to terminal...'}
+        {/* Keyboard button for mobile - hidden when input area is shown */}
+        {!showInputArea && (
+          <button
+            onClick={handleKeyboardButtonClick}
+            className="absolute bottom-4 right-4 z-20 w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 flex items-center justify-center text-white text-2xl transition-colors"
+            style={{ touchAction: 'manipulation' }}
+            aria-label="Show keyboard"
+          >
+            ⌨
+          </button>
+        )}
+        {(!isInitialized || !isConnected) && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-30">
+            <div className="text-white text-lg">
+              {!isInitialized ? 'Loading...' : 'Connecting...'}
+            </div>
           </div>
+        )}
+      </div>
+      {/* Input area for mobile - pushes terminal up */}
+      {showInputArea && (
+        <div className="shrink-0 bg-gray-800 border-t border-gray-600 p-2 flex gap-2">
+          <input
+            ref={inputRef}
+            type="text"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleInputKeyDown}
+            autoCapitalize="off"
+            autoCorrect="off"
+            autoComplete="off"
+            spellCheck={false}
+            enterKeyHint="send"
+            placeholder="入力してEnter..."
+            className="flex-1 px-3 py-2 bg-gray-900 border border-gray-600 rounded text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+            style={{ fontSize: '16px' }} // Prevent iOS zoom
+          />
+          <button
+            onClick={handleCloseInputArea}
+            className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white transition-colors"
+          >
+            ✕
+          </button>
         </div>
       )}
     </div>
   );
-}
+});

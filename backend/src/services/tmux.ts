@@ -90,6 +90,34 @@ export class TmuxService {
     return exitCode === 0;
   }
 
+  /**
+   * Capture the scrollback buffer from a tmux session.
+   * Returns the visible pane content + scrollback history.
+   * @param sessionId tmux session name
+   * @param lines number of history lines to capture (default 1000)
+   */
+  async captureScrollback(sessionId: string, lines: number = 1000): Promise<string | null> {
+    try {
+      // -p: output to stdout
+      // -S: start line (negative = history)
+      // -E: end line (empty = current)
+      const proc = Bun.spawn(['tmux', 'capture-pane', '-t', sessionId, '-p', '-S', `-${lines}`], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) {
+        return null;
+      }
+
+      const text = await new Response(proc.stdout).text();
+      return text;
+    } catch {
+      return null;
+    }
+  }
+
   toSessionResponse(info: TmuxSessionInfo, ownerId: string, state: SessionState = 'idle'): Session {
     return {
       id: info.id,

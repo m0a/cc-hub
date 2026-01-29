@@ -30,16 +30,16 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
   const onDisconnectRef = useRef(options.onDisconnect);
   const onErrorRef = useRef(options.onError);
 
-  // Keep refs updated
-  useEffect(() => {
-    onDataRef.current = options.onData;
-    onConnectRef.current = options.onConnect;
-    onDisconnectRef.current = options.onDisconnect;
-    onErrorRef.current = options.onError;
-  }, [options.onData, options.onConnect, options.onDisconnect, options.onError]);
+  // Keep refs updated without triggering re-renders
+  onDataRef.current = options.onData;
+  onConnectRef.current = options.onConnect;
+  onDisconnectRef.current = options.onDisconnect;
+  onErrorRef.current = options.onError;
 
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+    // Don't connect if already connected or connecting
+    const existing = wsRef.current;
+    if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) {
       return;
     }
 
@@ -50,13 +50,11 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
     }
 
     const wsUrl = `${WS_BASE}/ws/terminal/${encodeURIComponent(sessionId)}`;
-    console.log('Connecting to terminal WebSocket:', wsUrl);
-
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
+    wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log('Terminal WebSocket connected');
       setIsConnected(true);
       onConnectRef.current?.();
     };
@@ -77,27 +75,22 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
     };
 
     ws.onclose = (event) => {
-      console.log('Terminal WebSocket closed:', event.code, event.reason);
       setIsConnected(false);
       wsRef.current = null;
       onDisconnectRef.current?.();
 
-      // Auto-reconnect after 3 seconds if not intentionally closed
+      // Auto-reconnect after 2 seconds if not intentionally closed
       if (event.code !== 1000) {
         reconnectTimeoutRef.current = window.setTimeout(() => {
-          console.log('Attempting to reconnect...');
           connect();
-        }, 3000);
+        }, 2000);
       }
     };
 
-    ws.onerror = (error) => {
-      console.error('Terminal WebSocket error:', error);
+    ws.onerror = () => {
       onErrorRef.current?.('WebSocket connection error');
     };
-
-    wsRef.current = ws;
-  }, [sessionId]); // Only depend on sessionId
+  }, [sessionId]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
@@ -113,23 +106,31 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
   }, []);
 
   const send = useCallback((data: string | Uint8Array) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(data);
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(data);
     }
   }, []);
 
   const resize = useCallback((cols: number, rows: number) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }));
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'resize', cols, rows }));
     }
   }, []);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      disconnect();
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (wsRef.current) {
+        wsRef.current.close(1000, 'Component unmounted');
+        wsRef.current = null;
+      }
     };
-  }, [disconnect]);
+  }, []);
 
   return {
     isConnected,

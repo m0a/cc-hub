@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { TerminalPage } from './pages/TerminalPage';
 import { SessionList } from './components/SessionList';
 import { TabletLayout } from './components/TabletLayout';
+import { FileViewer } from './components/files/FileViewer';
 import type { SessionResponse, SessionState } from '../../shared/types';
 
 // Session info type (simplified from SessionTabs)
@@ -89,6 +90,7 @@ export function App() {
   const [showSessionList, setShowSessionList] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<OpenSession | null>(null);
   const [showOverlay, setShowOverlay] = useState(true);
+  const [showFileViewer, setShowFileViewer] = useState(false);
   const overlayTimeoutRef = useRef<number | null>(null);
 
   // Tablet detection (640px or wider)
@@ -395,8 +397,20 @@ export function App() {
           {activeSession?.name || '-'}
         </span>
 
-        {/* Right: Reload + Fullscreen buttons */}
+        {/* Right: File browser + Reload + Fullscreen buttons */}
         <div className="flex items-center gap-1">
+          <button
+            onClick={() => {
+              setShowFileViewer(true);
+              setShowOverlay(false);
+            }}
+            className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+            title="ファイルブラウザ"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+          </button>
           <button
             onClick={handleReload}
             className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
@@ -435,6 +449,14 @@ export function App() {
           sessionName={sessionToDelete.name}
           onConfirm={handleConfirmDelete}
           onCancel={handleCancelDelete}
+        />
+      )}
+
+      {/* File Viewer Modal */}
+      {showFileViewer && activeSession?.currentPath && (
+        <FileViewer
+          sessionWorkingDir={activeSession.currentPath}
+          onClose={() => setShowFileViewer(false)}
         />
       )}
     </div>

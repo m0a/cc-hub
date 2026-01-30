@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, memo } from 'react';
+import { useEffect, useRef, useState, memo, useCallback } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
@@ -143,6 +143,7 @@ export const TerminalComponent = memo(function TerminalComponent({
   const fitAddonRef = useRef<FitAddon | null>(null);
   const sendRef = useRef<(data: string) => void>(() => {});
   const resizeRef = useRef<(cols: number, rows: number) => void>(() => {});
+  const closeInputBarRef = useRef<() => void>(() => {});
   const [isInitialized, setIsInitialized] = useState(false);
   const [inputMode, setInputMode] = useState<'hidden' | 'shortcuts' | 'input'>('hidden');
   const [inputValue, setInputValue] = useState('');
@@ -381,6 +382,10 @@ export const TerminalComponent = memo(function TerminalComponent({
 
       // Only start scrolling after moving more than 5px
       if (Math.abs(deltaY) > 5) {
+        // Close keyboard when scrolling starts
+        if (!touchMoved) {
+          closeInputBarRef.current();
+        }
         touchMoved = true;
         e.preventDefault();
         touchStartY = currentY;
@@ -696,7 +701,7 @@ export const TerminalComponent = memo(function TerminalComponent({
   };
 
   // Close input bar
-  const handleCloseInputBar = () => {
+  const handleCloseInputBar = useCallback(() => {
     setInputMode('hidden');
     setInputValue('');
     setCtrlPressed(false);
@@ -709,7 +714,10 @@ export const TerminalComponent = memo(function TerminalComponent({
         resizeRef.current(terminalRef.current.cols, terminalRef.current.rows);
       }
     }, 50);
-  };
+  }, []);
+
+  // Update ref for use in touch handlers
+  closeInputBarRef.current = handleCloseInputBar;
 
   // Swipe handling for input bar
   const inputBarSwipeRef = useRef<{ startX: number; startY: number } | null>(null);
@@ -977,17 +985,11 @@ export const TerminalComponent = memo(function TerminalComponent({
             ref={fileInputRef}
             onChange={handleFileSelect}
           />
-          {/* Header bar with hint and close button */}
-          <div className="flex items-center justify-between bg-gray-900 px-2 py-1">
+          {/* Header bar with hint */}
+          <div className="bg-gray-900 px-2 py-1">
             <span className="text-xs text-gray-500">
-              {showHint && (inputMode === 'shortcuts' ? '「あ」で日本語入力' : '「ABC」で英語キーボード')}
+              {showHint && (inputMode === 'shortcuts' ? '「あ」で日本語入力 | スクロールで閉じる' : '「ABC」で英語キーボード | スクロールで閉じる')}
             </span>
-            <button
-              onClick={handleCloseInputBar}
-              className="px-2 text-gray-400 hover:text-white text-lg"
-            >
-              ×
-            </button>
           </div>
 
           {/* Sliding container for keyboard modes */}

@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "outDir": "dist",
+    "types": ["bun-types"],
+    "paths": {
+      "shared": ["../shared/types.ts"]
+    }
+  },
+  "include": ["src/**/*", "tests/**/*", "../shared/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

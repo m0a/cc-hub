@@ -7,6 +7,7 @@ interface TmuxSessionInfo {
   currentPath?: string;
   paneTitle?: string;
   preview?: string;
+  waitingForInput?: boolean;
 }
 
 export class TmuxService {
@@ -72,14 +73,17 @@ export class TmuxService {
           });
       }
 
-      // Get preview for each session (last few lines of output)
+      // Get preview and waiting status for each session
       const previews = new Map<string, string>();
+      const waitingStatus = new Map<string, boolean>();
       await Promise.all(
         sessions.map(async (session) => {
           const preview = await this.capturePreview(session.id);
           if (preview) {
             previews.set(session.id, preview);
           }
+          const waiting = await this.isWaitingForInput(session.id);
+          waitingStatus.set(session.id, waiting);
         })
       );
 
@@ -92,6 +96,7 @@ export class TmuxService {
           currentPath: info?.path,
           paneTitle: info?.title,
           preview: previews.get(session.id),
+          waitingForInput: waitingStatus.get(session.id),
         };
       });
     } catch {
@@ -127,6 +132,41 @@ export class TmuxService {
       return cleanedLines || null;
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Check if a session is waiting for user input
+   */
+  async isWaitingForInput(sessionId: string): Promise<boolean> {
+    try {
+      const proc = Bun.spawn(['tmux', 'capture-pane', '-t', sessionId, '-p', '-S', '-10'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) {
+        return false;
+      }
+
+      const text = await new Response(proc.stdout).text();
+      const lastLines = text.toLowerCase();
+
+      // Check for common waiting patterns in Claude Code
+      const waitingPatterns = [
+        'esc to cancel',
+        'tab to amend',
+        'accept edits',
+        'shift+tab to cycle',
+        'waiting for',
+        '? ',  // Selection prompt
+        '> ',  // Input prompt
+      ];
+
+      return waitingPatterns.some(pattern => lastLines.includes(pattern));
+    } catch {
+      return false;
     }
   }
 

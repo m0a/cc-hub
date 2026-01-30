@@ -31,6 +31,7 @@ sessions.get('/', async (c) => {
       currentCommand: s.currentCommand,
       currentPath: s.currentPath,
       paneTitle: s.paneTitle,
+      waitingForInput: s.waitingForInput,
       // Use Claude Code summary instead of terminal preview
       ccSummary: ccSession?.summary,
       ccFirstPrompt: ccSession?.firstPrompt,

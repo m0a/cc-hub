@@ -73,9 +73,9 @@ const KEYBOARD_ROWS: KeyDef[][] = [
     { label: "'", key: "'", shiftKey: '"', longKey: '"', longLabel: '"' },
     { label: '↵', key: '\r', width: 2.25, type: 'special' },
   ],
-  // Row 4: SHIFT, ZXCV row, punctuation, arrow up, SHIFT
+  // Row 4: SHIFT, ZXCV row, punctuation, arrow up
   [
-    { label: 'SHFT', key: 'SHIFT', width: 2.25, type: 'modifier' },
+    { label: 'SHFT', key: 'SHIFT', width: 2, type: 'modifier' },
     { label: 'z', key: 'z', shiftKey: 'Z' },
     { label: 'x', key: 'x', shiftKey: 'X' },
     { label: 'c', key: 'c', shiftKey: 'C' },
@@ -86,14 +86,14 @@ const KEYBOARD_ROWS: KeyDef[][] = [
     { label: ',', key: ',', shiftKey: '<', longKey: '<', longLabel: '<' },
     { label: '.', key: '.', shiftKey: '>', longKey: '>', longLabel: '>' },
     { label: '/', key: '/', shiftKey: '?', longKey: '?', longLabel: '?' },
-    { label: '↑', key: '\x1b[A', type: 'special' },
-    { label: 'SHFT', key: 'SHIFT', width: 1.75, type: 'modifier' },
+    { label: '↑', key: '\x1b[A', width: 2, type: 'special' },
   ],
-  // Row 5: ALT, space, arrows
+  // Row 5: ALT, space, mode switch, arrows
   [
     { label: 'ALT', key: 'ALT', width: 1.5, type: 'modifier' },
     { label: '`', key: '`', shiftKey: '~', longKey: '~', longLabel: '~' },
-    { label: 'SPACE', key: ' ', width: 7, type: 'special' },
+    { label: 'SPACE', key: ' ', width: 5.5, type: 'special' },
+    { label: 'あ', key: 'MODE_SWITCH', width: 1.5, type: 'special' },
     { label: '←', key: '\x1b[D', type: 'special' },
     { label: '↓', key: '\x1b[B', type: 'special' },
     { label: '→', key: '\x1b[C', type: 'special' },
@@ -719,7 +719,7 @@ export const TerminalComponent = memo(function TerminalComponent({
           {/* Header bar with hint and close button */}
           <div className="flex items-center justify-between bg-gray-900 px-2 py-1">
             <span className="text-xs text-gray-500">
-              {showHint && (inputMode === 'shortcuts' ? '→ スワイプで日本語' : '← スワイプで英語')}
+              {showHint && (inputMode === 'shortcuts' ? '「あ」で日本語入力' : '「ABC」で英語キーボード')}
             </span>
             <button
               onClick={handleCloseInputBar}
@@ -767,8 +767,9 @@ export const TerminalComponent = memo(function TerminalComponent({
               </div>
             </div>
           ) : inputMode === 'shortcuts' ? (
-            // Keyboard mode only
+            // Keyboard mode
             <div className="bg-black px-0.5 pb-1">
+              {/* Hidden input for English keyboard */}
               <input
                 type="text"
                 inputMode="none"
@@ -779,14 +780,35 @@ export const TerminalComponent = memo(function TerminalComponent({
               {KEYBOARD_ROWS.map((row, rowIndex) => (
                 <div key={rowIndex} className="flex">
                   {row.map((keyDef, keyIndex) => (
-                    <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />
+                    keyDef.key === 'MODE_SWITCH' ? (
+                      // Special "あ" key: just switch to input mode
+                      // User will tap input field to show keyboard
+                      <button
+                        key={`${rowIndex}-${keyIndex}`}
+                        onClick={() => {
+                          setIsAnimating(true);
+                          setInputMode('input');
+                          setTimeout(() => {
+                            setIsAnimating(false);
+                            fitTerminal();
+                            setTimeout(fitTerminal, 300);
+                          }, 350);
+                        }}
+                        className="py-3 text-white text-base font-medium bg-gray-800 active:bg-gray-600 select-none border border-gray-700 rounded m-0.5 text-center"
+                        style={{ flex: keyDef.width || 1, minWidth: 0 }}
+                      >
+                        あ
+                      </button>
+                    ) : (
+                      <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />
+                    )
                   ))}
                 </div>
               ))}
             </div>
           ) : (
-            // Input mode only
-            <div className="p-2 bg-black">
+            // Input mode
+            <div className="p-2 bg-black flex gap-2">
               <input
                 ref={inputRef}
                 type="text"
@@ -800,10 +822,25 @@ export const TerminalComponent = memo(function TerminalComponent({
                 autoComplete="off"
                 spellCheck={false}
                 enterKeyHint="send"
-                placeholder="日本語入力可 - Enterで送信"
-                className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
+                autoFocus
+                placeholder="入力欄をタップしてキーボード表示"
+                className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
                 style={{ fontSize: '16px' }}
               />
+              <button
+                onClick={() => {
+                  setIsAnimating(true);
+                  setInputMode('shortcuts');
+                  setInputValue('');
+                  setTimeout(() => {
+                    setIsAnimating(false);
+                    fitTerminal();
+                  }, 350);
+                }}
+                className="px-3 py-2 bg-gray-700 hover:bg-gray-600 active:bg-gray-500 rounded text-white font-medium"
+              >
+                ABC
+              </button>
             </div>
           )}
         </div>

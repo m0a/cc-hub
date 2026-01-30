@@ -7,6 +7,7 @@ interface TerminalData {
   sessionId: string;
   visitorId: string;
   process: Subprocess | null;
+  isExternal?: boolean;
 }
 
 const tmuxService = new TmuxService('cchub-');
@@ -19,8 +20,8 @@ const sessionProcesses = new Map<string, Subprocess>();
 
 export const terminalWebSocket = {
   async open(ws: ServerWebSocket<TerminalData>) {
-    const { sessionId } = ws.data;
-    console.log(`Terminal WebSocket opened for session: ${sessionId}`);
+    const { sessionId, isExternal } = ws.data;
+    console.log(`Terminal WebSocket opened for session: ${sessionId} (external: ${isExternal})`);
 
     // Add to active connections
     if (!activeConnections.has(sessionId)) {
@@ -28,28 +29,40 @@ export const terminalWebSocket = {
     }
     activeConnections.get(sessionId)!.add(ws);
 
-    // Extract session ID without prefix for API session management
-    const apiSessionId = sessionId.replace('cchub-', '');
-
-    // Update session access time (or create session if it doesn't exist in API)
-    const session = await getSession(apiSessionId);
-    if (session) {
-      await updateSessionAccess(apiSessionId);
-    } else {
-      // Create session in API if it doesn't exist (for backward compatibility)
-      await createSession(apiSessionId);
-    }
-
-    // Check if tmux session exists, create if not
+    // Check if tmux session exists
     const exists = await tmuxService.sessionExists(sessionId);
-    if (!exists) {
-      try {
-        await tmuxService.createSession(apiSessionId);
-      } catch (error) {
-        console.error('Failed to create tmux session:', error);
-        ws.send(JSON.stringify({ type: 'error', message: 'Failed to create session' }));
+
+    if (isExternal) {
+      // External session: must exist, don't create
+      if (!exists) {
+        console.error(`External tmux session not found: ${sessionId}`);
+        ws.send(JSON.stringify({ type: 'error', message: 'External session not found' }));
         ws.close();
         return;
+      }
+    } else {
+      // CC Hub session: update/create API session
+      const apiSessionId = sessionId.replace('cchub-', '');
+
+      // Update session access time (or create session if it doesn't exist in API)
+      const session = await getSession(apiSessionId);
+      if (session) {
+        await updateSessionAccess(apiSessionId);
+      } else {
+        // Create session in API if it doesn't exist (for backward compatibility)
+        await createSession(apiSessionId);
+      }
+
+      // Create tmux session if not exists
+      if (!exists) {
+        try {
+          await tmuxService.createSession(apiSessionId);
+        } catch (error) {
+          console.error('Failed to create tmux session:', error);
+          ws.send(JSON.stringify({ type: 'error', message: 'Failed to create session' }));
+          ws.close();
+          return;
+        }
       }
     }
 
@@ -186,13 +199,21 @@ export async function handleTerminalUpgrade(
   }
 
   const sessionId = decodeURIComponent(pathMatch[1]);
-  const fullSessionId = sessionId.startsWith('cchub-') ? sessionId : `cchub-${sessionId}`;
+
+  // Check if this is an external session request (prefixed with 'ext:')
+  const isExternal = sessionId.startsWith('ext:');
+  const fullSessionId = isExternal
+    ? sessionId.slice(4) // Remove 'ext:' prefix, use raw tmux session name
+    : sessionId.startsWith('cchub-')
+      ? sessionId
+      : `cchub-${sessionId}`;
 
   const upgraded = server.upgrade(req, {
     data: {
       sessionId: fullSessionId,
       visitorId: crypto.randomUUID(),
       process: null,
+      isExternal,
     },
   });
 

@@ -48,6 +48,49 @@ export class TmuxService {
     }
   }
 
+  /**
+   * List all tmux sessions (including non-cchub sessions)
+   */
+  async listAllSessions(): Promise<TmuxSessionInfo[]> {
+    try {
+      const proc = Bun.spawn(['tmux', 'list-sessions', '-F', '#{session_name}:#{session_created}:#{session_attached}'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const text = await new Response(proc.stdout).text();
+      const exitCode = await proc.exited;
+
+      if (exitCode !== 0) {
+        return [];
+      }
+
+      return text
+        .trim()
+        .split('\n')
+        .filter((line) => line.length > 0)
+        .map((line) => {
+          const [name, created, attached] = line.split(':');
+          return {
+            id: name,
+            name: name,
+            createdAt: new Date(parseInt(created) * 1000).toISOString(),
+            attached: attached === '1',
+          };
+        });
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * List external tmux sessions (non-cchub sessions)
+   */
+  async listExternalSessions(): Promise<TmuxSessionInfo[]> {
+    const all = await this.listAllSessions();
+    return all.filter((s) => !s.id.startsWith(this.prefix));
+  }
+
   async createSession(name?: string): Promise<string> {
     const sessionName = name
       ? `${this.prefix}${name}`

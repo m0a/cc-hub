@@ -6,6 +6,45 @@ import type { SessionResponse, SessionState } from '../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3000`;
 
+// Confirm dialog for delete
+function ConfirmDeleteDialog({
+  sessionName,
+  onConfirm,
+  onCancel,
+}: {
+  sessionName: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+      <div className="bg-gray-800 rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
+        <h3 className="text-lg font-bold text-white mb-2">セッションを削除</h3>
+        <p className="text-gray-300 mb-4">
+          <span className="font-medium text-white">{sessionName}</span> を削除しますか？
+        </p>
+        <p className="text-sm text-red-400 mb-6">
+          この操作は取り消せません。
+        </p>
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded font-medium transition-colors text-white"
+          >
+            キャンセル
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded font-medium transition-colors text-white"
+          >
+            削除する
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // localStorage keys for session persistence
 const STORAGE_KEY_LAST_SESSION = 'cchub-last-session-id';
 const STORAGE_KEY_OPEN_SESSIONS = 'cchub-open-sessions';
@@ -40,56 +79,89 @@ export function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showSessionList, setShowSessionList] = useState(false);
+  const [sessionToDelete, setSessionToDelete] = useState<OpenSession | null>(null);
 
   // On mount, fetch sessions and restore from localStorage
   useEffect(() => {
     const fetchAndOpenSession = async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/sessions`);
-        if (response.ok) {
-          const data = await response.json();
-          const allSessions = data.sessions as SessionResponse[];
+        // Fetch both regular and external sessions
+        const [sessionsRes, externalRes] = await Promise.all([
+          fetch(`${API_BASE}/api/sessions`),
+          fetch(`${API_BASE}/api/sessions/external`),
+        ]);
 
-          if (allSessions.length > 0) {
-            // Try to restore previously open sessions
-            const savedSessionIds = getSavedOpenSessionIds();
-            const lastSessionId = getLastSession();
+        const allSessions: SessionResponse[] = sessionsRes.ok
+          ? (await sessionsRes.json()).sessions
+          : [];
 
-            // Filter to only sessions that still exist
-            const validSavedIds = savedSessionIds.filter(id =>
-              allSessions.some(s => s.id === id)
-            );
+        const externalSessions: SessionResponse[] = externalRes.ok
+          ? (await externalRes.json()).sessions
+          : [];
 
-            if (validSavedIds.length > 0) {
-              // Restore saved open sessions
-              const sessionsToOpen = validSavedIds
-                .map(id => allSessions.find(s => s.id === id))
-                .filter((s): s is SessionResponse => s !== undefined);
+        // Try to restore previously open sessions
+        const savedSessionIds = getSavedOpenSessionIds();
+        const lastSessionId = getLastSession();
 
-              setOpenSessions(sessionsToOpen.map(s => ({
-                id: s.id,
-                name: s.name,
-                state: s.state,
-              })));
+        if (savedSessionIds.length > 0) {
+          // Restore saved sessions (both regular and external)
+          const sessionsToOpen: OpenSession[] = [];
 
-              // Set active session: prefer last active, fallback to first open
-              const activeId = lastSessionId && validSavedIds.includes(lastSessionId)
-                ? lastSessionId
-                : validSavedIds[0];
-              setActiveSessionId(activeId);
+          for (const id of savedSessionIds) {
+            if (id.startsWith('ext:')) {
+              // External session
+              const extId = id.slice(4);
+              const extSession = externalSessions.find(s => s.id === extId);
+              if (extSession) {
+                sessionsToOpen.push({
+                  id: id,
+                  name: extSession.name,
+                  state: extSession.state,
+                });
+              }
             } else {
-              // No saved sessions, open most recent
-              const mostRecent = allSessions[0];
-              setOpenSessions([{
-                id: mostRecent.id,
-                name: mostRecent.name,
-                state: mostRecent.state,
-              }]);
-              setActiveSessionId(mostRecent.id);
+              // Regular session
+              const session = allSessions.find(s => s.id === id);
+              if (session) {
+                sessionsToOpen.push({
+                  id: session.id,
+                  name: session.name,
+                  state: session.state,
+                });
+              }
             }
+          }
+
+          if (sessionsToOpen.length > 0) {
+            setOpenSessions(sessionsToOpen);
+
+            // Set active session: prefer last active, fallback to first open
+            const validIds = sessionsToOpen.map(s => s.id);
+            const activeId = lastSessionId && validIds.includes(lastSessionId)
+              ? lastSessionId
+              : validIds[0];
+            setActiveSessionId(activeId);
+          } else if (allSessions.length > 0) {
+            // No valid saved sessions, open most recent
+            const mostRecent = allSessions[0];
+            setOpenSessions([{
+              id: mostRecent.id,
+              name: mostRecent.name,
+              state: mostRecent.state,
+            }]);
+            setActiveSessionId(mostRecent.id);
           } else {
             setShowSessionList(true);
           }
+        } else if (allSessions.length > 0) {
+          // No saved sessions, open most recent
+          const mostRecent = allSessions[0];
+          setOpenSessions([{
+            id: mostRecent.id,
+            name: mostRecent.name,
+            state: mostRecent.state,
+          }]);
+          setActiveSessionId(mostRecent.id);
         } else {
           setShowSessionList(true);
         }
@@ -149,6 +221,38 @@ export function App() {
       return filtered;
     });
   }, [activeSessionId]);
+
+  // Show delete confirmation dialog
+  const handleDeleteSessionRequest = useCallback((id: string) => {
+    const session = openSessions.find(s => s.id === id);
+    if (session) {
+      setSessionToDelete(session);
+    }
+  }, [openSessions]);
+
+  // Actually delete the session
+  const handleConfirmDelete = useCallback(async () => {
+    if (!sessionToDelete) return;
+
+    try {
+      const response = await fetch(`${API_BASE}/api/sessions/${sessionToDelete.id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        // Close the tab first
+        handleCloseSession(sessionToDelete.id);
+      }
+    } catch (err) {
+      console.error('Failed to delete session:', err);
+    } finally {
+      setSessionToDelete(null);
+    }
+  }, [sessionToDelete, handleCloseSession]);
+
+  const handleCancelDelete = useCallback(() => {
+    setSessionToDelete(null);
+  }, []);
 
   const handleNewSession = useCallback(async () => {
     try {
@@ -222,6 +326,7 @@ export function App() {
         activeSessionId={activeSessionId}
         onSelectSession={handleSwitchTab}
         onCloseSession={handleCloseSession}
+        onDeleteSession={handleDeleteSessionRequest}
         onNewSession={handleNewSession}
         onShowSessionList={handleShowSessionList}
       />
@@ -238,6 +343,15 @@ export function App() {
           />
         </div>
       ))}
+
+      {/* Delete confirmation dialog */}
+      {sessionToDelete && (
+        <ConfirmDeleteDialog
+          sessionName={sessionToDelete.name}
+          onConfirm={handleConfirmDelete}
+          onCancel={handleCancelDelete}
+        />
+      )}
     </div>
   );
 }

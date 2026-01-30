@@ -6,6 +6,9 @@ import {
   createSession,
   deleteSession,
 } from '../services/sessions';
+import { TmuxService } from '../services/tmux';
+
+const tmuxService = new TmuxService('cchub-');
 
 export const sessions = new Hono();
 
@@ -24,6 +27,22 @@ sessions.post('/', async (c) => {
   const session = await createSession(name);
 
   return c.json(session, 201);
+});
+
+// GET /sessions/external - List external tmux sessions (non-cchub)
+// NOTE: Must be before /:id route
+sessions.get('/external', async (c) => {
+  const externalSessions = await tmuxService.listExternalSessions();
+  return c.json({
+    sessions: externalSessions.map((s) => ({
+      id: s.id,
+      name: s.name,
+      createdAt: s.createdAt,
+      lastAccessedAt: s.createdAt,
+      state: s.attached ? 'working' : 'idle',
+      isExternal: true,
+    })),
+  });
 });
 
 // GET /sessions/:id - Get a specific session

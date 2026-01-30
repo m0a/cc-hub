@@ -12,6 +12,7 @@ interface SessionTabsProps {
   activeSessionId: string | null;
   onSelectSession: (id: string) => void;
   onCloseSession: (id: string) => void;
+  onDeleteSession: (id: string) => void;
   onNewSession: () => void;
   onShowSessionList: () => void;
 }
@@ -21,6 +22,7 @@ export function SessionTabs({
   activeSessionId,
   onSelectSession,
   onCloseSession,
+  onDeleteSession,
   onNewSession,
   onShowSessionList,
 }: SessionTabsProps) {
@@ -48,6 +50,7 @@ export function SessionTabs({
             isActive={session.id === activeSessionId}
             onSelect={onSelectSession}
             onClose={onCloseSession}
+            onDelete={onDeleteSession}
           />
         ))}
       </div>

@@ -60,6 +60,7 @@ export interface SessionResponse {
   createdAt: string;
   lastAccessedAt: string;
   state: SessionState;
+  isExternal?: boolean;
 }
 
 export interface SessionListResponse {

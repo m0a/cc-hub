@@ -2,6 +2,7 @@ import { useRef, useCallback, useState, useEffect } from 'react';
 import { TerminalComponent, type TerminalRef } from './Terminal';
 import { Keyboard } from './Keyboard';
 import { SessionListMini } from './SessionListMini';
+import { FileViewer } from './files/FileViewer';
 import type { SessionResponse, SessionState } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -12,6 +13,7 @@ interface OpenSession {
   id: string;
   name: string;
   state: SessionState;
+  currentPath?: string;
 }
 
 interface TabletLayoutProps {
@@ -37,6 +39,7 @@ export function TabletLayout({
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [showFileViewer, setShowFileViewer] = useState(false);
 
   // Resizable split ratio (percentage for left panel)
   const [splitRatio, setSplitRatio] = useState(() => {
@@ -202,6 +205,15 @@ export function TabletLayout({
             {activeSession?.name || '-'}
           </span>
           <button
+            onClick={() => setShowFileViewer(true)}
+            className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+            title="ファイルブラウザ"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+          </button>
+          <button
             onClick={onReload}
             className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
             title="リロード"
@@ -302,6 +314,14 @@ export function TabletLayout({
           )}
         </div>
       </div>
+
+      {/* File Viewer Modal */}
+      {showFileViewer && activeSession?.currentPath && (
+        <FileViewer
+          sessionWorkingDir={activeSession.currentPath}
+          onClose={() => setShowFileViewer(false)}
+        />
+      )}
     </div>
   );
 }

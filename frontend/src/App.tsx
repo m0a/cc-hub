@@ -9,6 +9,7 @@ interface OpenSession {
   id: string;
   name: string;
   state: SessionState;
+  currentPath?: string;
 }
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -123,10 +124,12 @@ export function App() {
             const normalizedId = id.startsWith('ext:') ? id.slice(4) : id;
             const session = allSessions.find(s => s.id === normalizedId);
             if (session) {
+              const extSession = session as SessionResponse & { currentPath?: string };
               sessionsToOpen.push({
                 id: session.id,
                 name: session.name,
                 state: session.state,
+                currentPath: extSession.currentPath,
               });
             }
           }
@@ -147,11 +150,12 @@ export function App() {
             setActiveSessionId(activeId);
           } else if (allSessions.length > 0) {
             // No valid saved sessions, open most recent
-            const mostRecent = allSessions[0];
+            const mostRecent = allSessions[0] as SessionResponse & { currentPath?: string };
             setOpenSessions([{
               id: mostRecent.id,
               name: mostRecent.name,
               state: mostRecent.state,
+              currentPath: mostRecent.currentPath,
             }]);
             setActiveSessionId(mostRecent.id);
           } else {
@@ -159,11 +163,12 @@ export function App() {
           }
         } else if (allSessions.length > 0) {
           // No saved sessions, open most recent
-          const mostRecent = allSessions[0];
+          const mostRecent = allSessions[0] as SessionResponse & { currentPath?: string };
           setOpenSessions([{
             id: mostRecent.id,
             name: mostRecent.name,
             state: mostRecent.state,
+            currentPath: mostRecent.currentPath,
           }]);
           setActiveSessionId(mostRecent.id);
         } else {
@@ -201,10 +206,12 @@ export function App() {
       setActiveSessionId(session.id);
     } else {
       // Add to open sessions
+      const extSession = session as SessionResponse & { currentPath?: string };
       setOpenSessions(prev => [...prev, {
-        id: session.id,
-        name: session.name,
-        state: session.state,
+        id: extSession.id,
+        name: extSession.name,
+        state: extSession.state,
+        currentPath: extSession.currentPath,
       }]);
       setActiveSessionId(session.id);
     }

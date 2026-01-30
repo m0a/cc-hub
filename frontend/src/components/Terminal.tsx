@@ -5,6 +5,116 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { useTerminal } from '../hooks/useTerminal';
 
+const FONT_SIZE_KEY = 'cchub-terminal-font-size';
+const DEFAULT_FONT_SIZE = 14;
+const MIN_FONT_SIZE = 8;
+const MAX_FONT_SIZE = 32;
+
+// Keyboard key definition
+interface KeyDef {
+  label: string;
+  key: string;          // 送信する文字
+  shiftKey?: string;    // Shift時の文字
+  longKey?: string;     // 長押し時の文字
+  longLabel?: string;   // 長押しラベル
+  width?: number;       // 相対幅（デフォルト1）
+  type?: 'normal' | 'modifier' | 'special';
+}
+
+// Full QWERTY keyboard layout (5 rows)
+const KEYBOARD_ROWS: KeyDef[][] = [
+  // Row 1: ESC, numbers, backspace
+  [
+    { label: 'ESC', key: '\x1b', width: 1.5, type: 'special' },
+    { label: '1', key: '1', shiftKey: '!', longKey: '!', longLabel: '!' },
+    { label: '2', key: '2', shiftKey: '@', longKey: '@', longLabel: '@' },
+    { label: '3', key: '3', shiftKey: '#', longKey: '#', longLabel: '#' },
+    { label: '4', key: '4', shiftKey: '$', longKey: '$', longLabel: '$' },
+    { label: '5', key: '5', shiftKey: '%', longKey: '%', longLabel: '%' },
+    { label: '6', key: '6', shiftKey: '^', longKey: '^', longLabel: '^' },
+    { label: '7', key: '7', shiftKey: '&', longKey: '&', longLabel: '&' },
+    { label: '8', key: '8', shiftKey: '*', longKey: '*', longLabel: '*' },
+    { label: '9', key: '9', shiftKey: '(', longKey: '(', longLabel: '(' },
+    { label: '0', key: '0', shiftKey: ')', longKey: ')', longLabel: ')' },
+    { label: '-', key: '-', shiftKey: '_', longKey: '_', longLabel: '_' },
+    { label: '=', key: '=', shiftKey: '+', longKey: '+', longLabel: '+' },
+    { label: '⌫', key: '\x7f', width: 1.5, type: 'special' },
+  ],
+  // Row 2: TAB, QWERTY row, brackets, backslash
+  [
+    { label: 'TAB', key: '\t', width: 1.5, type: 'special' },
+    { label: 'q', key: 'q', shiftKey: 'Q' },
+    { label: 'w', key: 'w', shiftKey: 'W' },
+    { label: 'e', key: 'e', shiftKey: 'E' },
+    { label: 'r', key: 'r', shiftKey: 'R' },
+    { label: 't', key: 't', shiftKey: 'T' },
+    { label: 'y', key: 'y', shiftKey: 'Y' },
+    { label: 'u', key: 'u', shiftKey: 'U' },
+    { label: 'i', key: 'i', shiftKey: 'I' },
+    { label: 'o', key: 'o', shiftKey: 'O' },
+    { label: 'p', key: 'p', shiftKey: 'P' },
+    { label: '[', key: '[', shiftKey: '{', longKey: '{', longLabel: '{' },
+    { label: ']', key: ']', shiftKey: '}', longKey: '}', longLabel: '}' },
+    { label: '\\', key: '\\', shiftKey: '|', longKey: '|', longLabel: '|', width: 1.5 },
+  ],
+  // Row 3: CTRL, ASDF row, semicolon, quote, enter
+  [
+    { label: 'CTRL', key: 'CTRL', width: 1.75, type: 'modifier' },
+    { label: 'a', key: 'a', shiftKey: 'A' },
+    { label: 's', key: 's', shiftKey: 'S' },
+    { label: 'd', key: 'd', shiftKey: 'D' },
+    { label: 'f', key: 'f', shiftKey: 'F' },
+    { label: 'g', key: 'g', shiftKey: 'G' },
+    { label: 'h', key: 'h', shiftKey: 'H' },
+    { label: 'j', key: 'j', shiftKey: 'J' },
+    { label: 'k', key: 'k', shiftKey: 'K' },
+    { label: 'l', key: 'l', shiftKey: 'L' },
+    { label: ';', key: ';', shiftKey: ':', longKey: ':', longLabel: ':' },
+    { label: "'", key: "'", shiftKey: '"', longKey: '"', longLabel: '"' },
+    { label: '↵', key: '\r', width: 2.25, type: 'special' },
+  ],
+  // Row 4: SHIFT, ZXCV row, punctuation, arrow up, SHIFT
+  [
+    { label: 'SHFT', key: 'SHIFT', width: 2.25, type: 'modifier' },
+    { label: 'z', key: 'z', shiftKey: 'Z' },
+    { label: 'x', key: 'x', shiftKey: 'X' },
+    { label: 'c', key: 'c', shiftKey: 'C' },
+    { label: 'v', key: 'v', shiftKey: 'V' },
+    { label: 'b', key: 'b', shiftKey: 'B' },
+    { label: 'n', key: 'n', shiftKey: 'N' },
+    { label: 'm', key: 'm', shiftKey: 'M' },
+    { label: ',', key: ',', shiftKey: '<', longKey: '<', longLabel: '<' },
+    { label: '.', key: '.', shiftKey: '>', longKey: '>', longLabel: '>' },
+    { label: '/', key: '/', shiftKey: '?', longKey: '?', longLabel: '?' },
+    { label: '↑', key: '\x1b[A', type: 'special' },
+    { label: 'SHFT', key: 'SHIFT', width: 1.75, type: 'modifier' },
+  ],
+  // Row 5: ALT, space, arrows
+  [
+    { label: 'ALT', key: 'ALT', width: 1.5, type: 'modifier' },
+    { label: '`', key: '`', shiftKey: '~', longKey: '~', longLabel: '~' },
+    { label: 'SPACE', key: ' ', width: 7, type: 'special' },
+    { label: '←', key: '\x1b[D', type: 'special' },
+    { label: '↓', key: '\x1b[B', type: 'special' },
+    { label: '→', key: '\x1b[C', type: 'special' },
+  ],
+];
+
+function loadFontSize(): number {
+  const saved = localStorage.getItem(FONT_SIZE_KEY);
+  if (saved) {
+    const size = parseInt(saved, 10);
+    if (!isNaN(size) && size >= MIN_FONT_SIZE && size <= MAX_FONT_SIZE) {
+      return size;
+    }
+  }
+  return DEFAULT_FONT_SIZE;
+}
+
+function saveFontSize(size: number): void {
+  localStorage.setItem(FONT_SIZE_KEY, String(size));
+}
+
 interface TerminalProps {
   sessionId: string;
   onConnect?: () => void;
@@ -28,8 +138,16 @@ export const TerminalComponent = memo(function TerminalComponent({
   const sendRef = useRef<(data: string) => void>(() => {});
   const resizeRef = useRef<(cols: number, rows: number) => void>(() => {});
   const [isInitialized, setIsInitialized] = useState(false);
-  const [showInputArea, setShowInputArea] = useState(false);
+  const [inputMode, setInputMode] = useState<'hidden' | 'shortcuts' | 'input'>('hidden');
   const [inputValue, setInputValue] = useState('');
+  const [fontSize, setFontSize] = useState(loadFontSize);
+  const [ctrlPressed, setCtrlPressed] = useState(false);
+  const [altPressed, setAltPressed] = useState(false);
+  const [shiftPressed, setShiftPressed] = useState(false);
+  const [showHint, setShowHint] = useState(true);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const inputBarRef = useRef<HTMLDivElement>(null);
+  const hintTimeoutRef = useRef<number | null>(null);
 
   // Use refs to avoid recreating callbacks
   const onConnectRef = useRef(onConnect);
@@ -86,8 +204,9 @@ export const TerminalComponent = memo(function TerminalComponent({
     const container = containerRef.current;
 
     // High-performance terminal configuration
+    const initialFontSize = loadFontSize();
     const term = new Terminal({
-      fontSize: 14,
+      fontSize: initialFontSize,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       fontWeight: 'normal',
       fontWeightBold: 'bold',
@@ -175,21 +294,57 @@ export const TerminalComponent = memo(function TerminalComponent({
       term.focus();
     }
 
-    // Touch scroll handling on overlay - optimized for performance
+    // Touch handling on overlay - scroll (1 finger) and pinch zoom (2 fingers)
     const overlay = overlayRef.current;
     let touchStartY: number | null = null;
     let touchMoved = false;
     let accumulatedDelta = 0;
     let scrollRafId: number | null = null;
 
+    // Pinch zoom state
+    let initialPinchDistance: number | null = null;
+    let initialFontSizeOnPinch: number = initialFontSize;
+
+    const getPinchDistance = (touches: TouchList): number => {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+
     const handleTouchStart = (e: TouchEvent) => {
-      touchStartY = e.touches[0].clientY;
-      touchMoved = false;
-      accumulatedDelta = 0;
+      if (e.touches.length === 2) {
+        // Pinch start
+        initialPinchDistance = getPinchDistance(e.touches);
+        initialFontSizeOnPinch = term.options.fontSize || initialFontSize;
+        touchMoved = true; // Prevent keyboard popup
+      } else if (e.touches.length === 1) {
+        // Scroll start
+        touchStartY = e.touches[0].clientY;
+        touchMoved = false;
+        accumulatedDelta = 0;
+      }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (touchStartY === null) return;
+      // Pinch zoom (2 fingers)
+      if (e.touches.length === 2 && initialPinchDistance !== null) {
+        e.preventDefault();
+        touchMoved = true;
+        const currentDistance = getPinchDistance(e.touches);
+        const scale = currentDistance / initialPinchDistance;
+        const newSize = Math.round(initialFontSizeOnPinch * scale);
+
+        if (newSize !== term.options.fontSize) {
+          const clampedSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, newSize));
+          term.options.fontSize = clampedSize;
+          fitAddonRef.current?.fit();
+          resizeRef.current(term.cols, term.rows);
+        }
+        return;
+      }
+
+      // Scroll (1 finger)
+      if (touchStartY === null || e.touches.length !== 1) return;
 
       const currentY = e.touches[0].clientY;
       const deltaY = touchStartY - currentY;
@@ -227,6 +382,15 @@ export const TerminalComponent = memo(function TerminalComponent({
         cancelAnimationFrame(scrollRafId);
         scrollRafId = null;
       }
+
+      // Save font size after pinch zoom
+      if (initialPinchDistance !== null) {
+        const currentSize = term.options.fontSize || initialFontSize;
+        saveFontSize(currentSize);
+        setFontSize(currentSize);
+        initialPinchDistance = null;
+      }
+
       // Only focus if it was a tap (no movement)
       if (!touchMoved) {
         // Focus hidden input to trigger soft keyboard on mobile
@@ -265,27 +429,79 @@ export const TerminalComponent = memo(function TerminalComponent({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
-  // Show input area and focus
+  // Show shortcuts bar
   const handleKeyboardButtonClick = () => {
-    setShowInputArea(true);
-    setInputValue('');
-    // Focus after state update
+    setInputMode('shortcuts');
+    setCtrlPressed(false);
+    setAltPressed(false);
+    setShiftPressed(false);
+    setShowHint(true);
+    // Hide hint after 3 seconds
+    if (hintTimeoutRef.current) {
+      clearTimeout(hintTimeoutRef.current);
+    }
+    hintTimeoutRef.current = window.setTimeout(() => {
+      setShowHint(false);
+    }, 3000);
+    // Refit terminal and focus input to show keyboard
     setTimeout(() => {
-      if (inputRef.current) {
-        inputRef.current.focus();
+      fitAddonRef.current?.fit();
+      if (terminalRef.current) {
+        resizeRef.current(terminalRef.current.cols, terminalRef.current.rows);
       }
+      // Focus hidden input to show soft keyboard
+      inputRef.current?.focus();
     }, 50);
   };
 
-  // Send input to terminal
-  const handleSendInput = () => {
-    if (inputValue) {
-      sendRef.current(inputValue);
-      setInputValue('');
+  // Send keyboard key with modifiers
+  const sendKeyPress = (keyDef: KeyDef) => {
+    // Handle modifier keys
+    if (keyDef.type === 'modifier') {
+      if (keyDef.key === 'CTRL') {
+        setCtrlPressed(!ctrlPressed);
+      } else if (keyDef.key === 'ALT') {
+        setAltPressed(!altPressed);
+      } else if (keyDef.key === 'SHIFT') {
+        setShiftPressed(!shiftPressed);
+      }
+      return;
     }
-    // Keep input area open for continuous input
-    if (inputRef.current) {
-      inputRef.current.focus();
+
+    // Determine the character to send
+    let char = shiftPressed ? (keyDef.shiftKey || keyDef.key.toUpperCase()) : keyDef.key;
+
+    // Apply Ctrl modifier
+    if (ctrlPressed && char.length === 1) {
+      const code = char.toLowerCase().charCodeAt(0) - 96;
+      if (code > 0 && code < 27) {
+        char = String.fromCharCode(code);
+      }
+      setCtrlPressed(false);
+    }
+
+    // Apply Alt modifier (ESC prefix)
+    if (altPressed) {
+      char = '\x1b' + char;
+      setAltPressed(false);
+    }
+
+    // Reset shift after use (one-shot)
+    if (shiftPressed) {
+      setShiftPressed(false);
+    }
+
+    sendRef.current(char);
+  };
+
+  // Handle long press for alternative characters
+  const sendLongPress = (keyDef: KeyDef) => {
+    if (keyDef.longKey) {
+      sendRef.current(keyDef.longKey);
+      // Reset modifiers
+      setCtrlPressed(false);
+      setAltPressed(false);
+      setShiftPressed(false);
     }
   };
 
@@ -293,21 +509,173 @@ export const TerminalComponent = memo(function TerminalComponent({
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      handleSendInput();
-      // Also send Enter key to terminal
+      if (inputValue) {
+        sendRef.current(inputValue);
+        setInputValue('');
+      }
       sendRef.current('\r');
+    } else if (e.key === 'Backspace' && !inputValue && !e.nativeEvent.isComposing) {
+      // Send backspace to terminal when input is empty
+      e.preventDefault();
+      sendRef.current('\x7f');
     }
   };
 
-  // Close input area
-  const handleCloseInputArea = () => {
-    setShowInputArea(false);
+  // Close input bar
+  const handleCloseInputBar = () => {
+    setInputMode('hidden');
     setInputValue('');
+    setCtrlPressed(false);
+    setAltPressed(false);
+    setShiftPressed(false);
+    // Refit terminal after bar is hidden
+    setTimeout(() => {
+      fitAddonRef.current?.fit();
+      if (terminalRef.current) {
+        resizeRef.current(terminalRef.current.cols, terminalRef.current.rows);
+      }
+    }, 50);
+  };
+
+  // Swipe handling for input bar
+  const inputBarSwipeRef = useRef<{ startX: number; startY: number } | null>(null);
+
+  const handleInputBarTouchStart = (e: React.TouchEvent) => {
+    inputBarSwipeRef.current = {
+      startX: e.touches[0].clientX,
+      startY: e.touches[0].clientY,
+    };
+  };
+
+  const handleInputBarTouchEnd = (e: React.TouchEvent) => {
+    if (!inputBarSwipeRef.current) return;
+    const deltaX = e.changedTouches[0].clientX - inputBarSwipeRef.current.startX;
+    const deltaY = e.changedTouches[0].clientY - inputBarSwipeRef.current.startY;
+
+    // Horizontal swipe (more horizontal than vertical)
+    if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY)) {
+      // Show hint and reset timer on mode switch
+      setShowHint(true);
+      if (hintTimeoutRef.current) {
+        clearTimeout(hintTimeoutRef.current);
+      }
+      hintTimeoutRef.current = window.setTimeout(() => {
+        setShowHint(false);
+      }, 3000);
+
+      if (deltaX > 0) {
+        // Swipe right: shortcuts -> input
+        if (inputMode === 'shortcuts') {
+          setIsAnimating(true);
+          setInputMode('input');
+          // Focus after animation, then refit terminal when soft keyboard appears
+          setTimeout(() => {
+            setIsAnimating(false);
+            inputRef.current?.focus();
+            // Refit after animation completes
+            fitTerminal();
+            // Refit again after soft keyboard appears
+            setTimeout(fitTerminal, 300);
+          }, 350);
+        }
+      } else {
+        // Swipe left: input -> shortcuts
+        if (inputMode === 'input') {
+          setIsAnimating(true);
+          setInputMode('shortcuts');
+          setInputValue('');
+          // Refit after animation and keyboard dismissal
+          setTimeout(() => {
+            setIsAnimating(false);
+            fitTerminal();
+          }, 350);
+        }
+      }
+    }
+    inputBarSwipeRef.current = null;
+  };
+
+  // Long press support for keyboard keys
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressFiredRef = useRef(false);
+
+  // Keyboard key component for full QWERTY keyboard
+  const KeyboardKey = ({ keyDef }: { keyDef: KeyDef }) => {
+    const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
+      e.preventDefault();
+      longPressFiredRef.current = false;
+
+      if (keyDef.longKey) {
+        longPressTimerRef.current = window.setTimeout(() => {
+          longPressFiredRef.current = true;
+          sendLongPress(keyDef);
+        }, 400);
+      }
+    };
+
+    const handleEnd = (e: React.MouseEvent | React.TouchEvent) => {
+      e.preventDefault();
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+      if (!longPressFiredRef.current) {
+        sendKeyPress(keyDef);
+      }
+      longPressFiredRef.current = false;
+    };
+
+    const handleCancel = () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+      longPressFiredRef.current = false;
+    };
+
+    // Determine display label based on shift state
+    const displayLabel = keyDef.type === 'modifier' || keyDef.type === 'special'
+      ? keyDef.label
+      : shiftPressed && keyDef.shiftKey
+        ? keyDef.shiftKey
+        : keyDef.label;
+
+    // Check if this modifier is active
+    const isActive = keyDef.type === 'modifier' && (
+      (keyDef.key === 'CTRL' && ctrlPressed) ||
+      (keyDef.key === 'ALT' && altPressed) ||
+      (keyDef.key === 'SHIFT' && shiftPressed)
+    );
+
+    const width = keyDef.width || 1;
+
+    return (
+      <button
+        onMouseDown={handleStart}
+        onMouseUp={handleEnd}
+        onMouseLeave={handleCancel}
+        onTouchStart={handleStart}
+        onTouchEnd={handleEnd}
+        onTouchCancel={handleCancel}
+        className={`
+          py-3 text-white text-base font-medium active:bg-gray-600 select-none relative
+          border border-gray-700 rounded m-0.5
+          ${isActive ? 'bg-blue-600' : 'bg-gray-800'}
+          ${keyDef.type === 'modifier' ? 'text-sm' : ''}
+        `}
+        style={{ flex: width, minWidth: 0 }}
+      >
+        {displayLabel}
+        {keyDef.longLabel && !shiftPressed && (
+          <span className="absolute top-0.5 right-1 text-[9px] text-gray-500">{keyDef.longLabel}</span>
+        )}
+      </button>
+    );
   };
 
   return (
     <div className="h-full w-full bg-[#1a1a1a] flex flex-col overflow-hidden">
-      {/* Terminal area - shrinks when input area is shown */}
+      {/* Terminal area - shrinks when input bar is shown */}
       <div className="flex-1 relative min-h-0">
         {/* Terminal container */}
         <div
@@ -320,8 +688,8 @@ export const TerminalComponent = memo(function TerminalComponent({
           className="absolute inset-0 z-10"
           style={{ touchAction: 'none' }}
         />
-        {/* Keyboard button for mobile - hidden when input area is shown */}
-        {!showInputArea && (
+        {/* Keyboard button for mobile - hidden when input bar is shown */}
+        {inputMode === 'hidden' && (
           <button
             onClick={handleKeyboardButtonClick}
             className="absolute bottom-4 right-4 z-20 w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 flex items-center justify-center text-white text-2xl transition-colors"
@@ -339,30 +707,105 @@ export const TerminalComponent = memo(function TerminalComponent({
           </div>
         )}
       </div>
-      {/* Input area for mobile - pushes terminal up */}
-      {showInputArea && (
-        <div className="shrink-0 bg-gray-800 border-t border-gray-600 p-2 flex gap-2">
-          <input
-            ref={inputRef}
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleInputKeyDown}
-            autoCapitalize="off"
-            autoCorrect="off"
-            autoComplete="off"
-            spellCheck={false}
-            enterKeyHint="send"
-            placeholder="入力してEnter..."
-            className="flex-1 px-3 py-2 bg-gray-900 border border-gray-600 rounded text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
-            style={{ fontSize: '16px' }} // Prevent iOS zoom
-          />
-          <button
-            onClick={handleCloseInputArea}
-            className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white transition-colors"
-          >
-            ✕
-          </button>
+
+      {/* Input bar - pushes terminal up */}
+      {inputMode !== 'hidden' && (
+        <div
+          ref={inputBarRef}
+          className="shrink-0 bg-black border-t border-green-500 relative"
+          onTouchStart={handleInputBarTouchStart}
+          onTouchEnd={handleInputBarTouchEnd}
+        >
+          {/* Header bar with hint and close button */}
+          <div className="flex items-center justify-between bg-gray-900 px-2 py-1">
+            <span className="text-xs text-gray-500">
+              {showHint && (inputMode === 'shortcuts' ? '→ スワイプで日本語' : '← スワイプで英語')}
+            </span>
+            <button
+              onClick={handleCloseInputBar}
+              className="px-2 text-gray-400 hover:text-white text-lg"
+            >
+              ×
+            </button>
+          </div>
+
+          {/* Sliding container for keyboard modes */}
+          {isAnimating ? (
+            // During animation: render both for slide effect
+            <div className="overflow-hidden">
+              <div
+                className="flex transition-transform duration-300 ease-out"
+                style={{ transform: inputMode === 'input' ? 'translateX(-100%)' : 'translateX(0)' }}
+              >
+                {/* Full QWERTY keyboard mode */}
+                <div className="w-full flex-shrink-0 bg-black px-0.5 pb-1">
+                  {KEYBOARD_ROWS.map((row, rowIndex) => (
+                    <div key={rowIndex} className="flex">
+                      {row.map((keyDef, keyIndex) => (
+                        <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+                {/* Text input mode */}
+                <div className="w-full flex-shrink-0 p-2 bg-black">
+                  <input
+                    type="text"
+                    inputMode="text"
+                    lang="ja"
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="日本語入力可 - Enterで送信"
+                    className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
+                    style={{ fontSize: '16px' }}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : inputMode === 'shortcuts' ? (
+            // Keyboard mode only
+            <div className="bg-black px-0.5 pb-1">
+              <input
+                type="text"
+                inputMode="none"
+                className="absolute opacity-0 w-0 h-0 pointer-events-none"
+                tabIndex={-1}
+                ref={inputRef}
+              />
+              {KEYBOARD_ROWS.map((row, rowIndex) => (
+                <div key={rowIndex} className="flex">
+                  {row.map((keyDef, keyIndex) => (
+                    <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />
+                  ))}
+                </div>
+              ))}
+            </div>
+          ) : (
+            // Input mode only
+            <div className="p-2 bg-black">
+              <input
+                ref={inputRef}
+                type="text"
+                inputMode="text"
+                lang="ja"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleInputKeyDown}
+                autoCapitalize="off"
+                autoCorrect="off"
+                autoComplete="off"
+                spellCheck={false}
+                enterKeyHint="send"
+                placeholder="日本語入力可 - Enterで送信"
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
+                style={{ fontSize: '16px' }}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>

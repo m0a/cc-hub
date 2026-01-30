@@ -518,6 +518,18 @@ export const TerminalComponent = memo(function TerminalComponent({
       // Send backspace to terminal when input is empty
       e.preventDefault();
       sendRef.current('\x7f');
+    } else if (!inputValue && !e.nativeEvent.isComposing) {
+      // Send arrow keys to terminal when input is empty
+      const arrowKeys: Record<string, string> = {
+        'ArrowUp': '\x1b[A',
+        'ArrowDown': '\x1b[B',
+        'ArrowLeft': '\x1b[D',
+        'ArrowRight': '\x1b[C',
+      };
+      if (arrowKeys[e.key]) {
+        e.preventDefault();
+        sendRef.current(arrowKeys[e.key]);
+      }
     }
   };
 

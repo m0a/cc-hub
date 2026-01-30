@@ -22,6 +22,13 @@ sessions.get('/', async (c) => {
   const sessions = tmuxSessions.map((s) => {
     const ccSession = s.currentPath ? ccSessions.get(s.currentPath) : undefined;
 
+    // Combine jsonl-based and terminal-based waiting detection
+    // Either source detecting waiting = waiting for input
+    const isClaudeRunning = s.currentCommand === 'claude';
+    const waitingForInput = isClaudeRunning
+      ? (ccSession?.waitingForInput || s.waitingForInput)
+      : s.waitingForInput;
+
     return {
       id: s.id,
       name: s.name,
@@ -31,7 +38,8 @@ sessions.get('/', async (c) => {
       currentCommand: s.currentCommand,
       currentPath: s.currentPath,
       paneTitle: s.paneTitle,
-      waitingForInput: s.waitingForInput,
+      waitingForInput,
+      waitingToolName: ccSession?.waitingToolName,
       // Use Claude Code summary instead of terminal preview
       ccSummary: ccSession?.summary,
       ccFirstPrompt: ccSession?.firstPrompt,

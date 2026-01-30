@@ -12,6 +12,8 @@ interface ClaudeCodeSession {
   modified?: string;
   gitBranch?: string;
   projectPath?: string;
+  waitingForInput?: boolean;
+  waitingToolName?: string;
 }
 
 interface SessionsIndex {
@@ -82,6 +84,84 @@ export class ClaudeCodeService {
           // Skip invalid JSON lines
         }
       }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Check if the session is waiting for user input by reading the jsonl file
+   * Returns the tool name if waiting, null otherwise
+   */
+  private async checkWaitingState(filePath: string): Promise<string | null> {
+    try {
+      // Use tail to get last 20 lines
+      const proc = Bun.spawn(['tail', '-n', '20', filePath], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const text = await new Response(proc.stdout).text();
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) return null;
+
+      const lines = text.trim().split('\n');
+      const entries: Array<{ type: string; message?: { content?: Array<{ type: string; name?: string; id?: string }> }; toolUseResult?: unknown }> = [];
+
+      for (const line of lines) {
+        try {
+          entries.push(JSON.parse(line));
+        } catch {
+          // Skip invalid JSON
+        }
+      }
+
+      // Find the last assistant message with tool_use
+      let lastToolUse: { name: string; id: string } | null = null;
+
+      for (let i = entries.length - 1; i >= 0; i--) {
+        const entry = entries[i];
+
+        // If we find a tool_result, the tool has been executed
+        if (entry.type === 'user' && entry.toolUseResult !== undefined) {
+          return null; // Not waiting, tool result received
+        }
+
+        // Look for assistant messages with tool_use
+        if (entry.type === 'assistant' && entry.message?.content) {
+          for (const block of entry.message.content) {
+            if (block.type === 'tool_use' && block.name && block.id) {
+              lastToolUse = { name: block.name, id: block.id };
+              break;
+            }
+          }
+          if (lastToolUse) break;
+        }
+      }
+
+      // Check if the last tool_use is still pending
+      if (lastToolUse) {
+        // These tools always wait for user input
+        const waitingTools = ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode'];
+        if (waitingTools.includes(lastToolUse.name)) {
+          return lastToolUse.name;
+        }
+
+        // For other tools, check if there's a tool_result with matching tool_use_id
+        const hasResult = entries.some(entry =>
+          entry.type === 'user' &&
+          entry.message?.content?.some(
+            (block: { type: string; tool_use_id?: string }) =>
+              block.type === 'tool_result' && block.tool_use_id === lastToolUse!.id
+          )
+        );
+
+        if (!hasResult) {
+          // Tool use is pending - might be waiting for permission
+          return lastToolUse.name;
+        }
+      }
+
       return null;
     } catch {
       return null;
@@ -208,10 +288,14 @@ export class ClaudeCodeService {
             }
 
             // For active sessions (not in index or much newer), read directly
-            const firstPrompt = await this.readFirstPromptFromFile(join(projectDir, latestFile.name));
+            const filePath = join(projectDir, latestFile.name);
+            const firstPrompt = await this.readFirstPromptFromFile(filePath);
 
             // Read the last user message as the current conversation summary
-            const lastUserMessage = await this.readLastUserMessage(join(projectDir, latestFile.name));
+            const lastUserMessage = await this.readLastUserMessage(filePath);
+
+            // Check if waiting for user input
+            const waitingToolName = await this.checkWaitingState(filePath);
 
             return {
               sessionId,
@@ -221,6 +305,8 @@ export class ClaudeCodeService {
               modified: new Date(latestFile.mtime).toISOString(),
               gitBranch: indexEntry?.gitBranch,
               projectPath: indexEntry?.projectPath,
+              waitingForInput: waitingToolName !== null,
+              waitingToolName: waitingToolName || undefined,
             };
           }
 

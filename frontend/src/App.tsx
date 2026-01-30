@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { TerminalPage } from './pages/TerminalPage';
 import { SessionList } from './components/SessionList';
+import { TabletLayout } from './components/TabletLayout';
 import type { SessionResponse, SessionState } from '../../shared/types';
 
 // Session info type (simplified from SessionTabs)
@@ -88,6 +89,16 @@ export function App() {
   const [sessionToDelete, setSessionToDelete] = useState<OpenSession | null>(null);
   const [showOverlay, setShowOverlay] = useState(true);
   const overlayTimeoutRef = useRef<number | null>(null);
+
+  // Tablet detection (640px or wider)
+  const [isTablet, setIsTablet] = useState(() => window.innerWidth >= 640);
+
+  // Update tablet detection on resize
+  useEffect(() => {
+    const handleResize = () => setIsTablet(window.innerWidth >= 640);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // On mount, fetch sessions and restore from localStorage
   useEffect(() => {
@@ -324,10 +335,24 @@ export function App() {
     );
   }
 
+  // Tablet layout: split view with terminal, session list, and keyboard
+  if (isTablet) {
+    return (
+      <TabletLayout
+        sessions={openSessions}
+        activeSessionId={activeSessionId}
+        onSelectSession={handleSelectSession}
+        onSessionStateChange={updateSessionState}
+        onShowSessionList={handleShowSessionList}
+        onReload={handleReload}
+      />
+    );
+  }
+
   // Get current active session
   const activeSession = openSessions.find(s => s.id === activeSessionId);
 
-  // Show terminal with overlay
+  // Mobile: Show terminal with overlay
   return (
     <div className="h-screen flex flex-col bg-gray-900 relative">
       {/* Tap area to show overlay when hidden */}

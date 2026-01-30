@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, memo, useCallback } from 'react';
+import { useEffect, useRef, useState, memo, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
@@ -126,15 +126,23 @@ interface TerminalProps {
   onDisconnect?: () => void;
   onError?: (error: string) => void;
   onReady?: (send: (data: string) => void) => void;
+  hideKeyboard?: boolean;  // Hide built-in keyboard (for tablet split layout)
 }
 
-export const TerminalComponent = memo(function TerminalComponent({
+// Ref interface for external keyboard input
+export interface TerminalRef {
+  sendInput: (char: string) => void;
+  focus: () => void;
+}
+
+export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(function TerminalComponent({
   sessionId,
   onConnect,
   onDisconnect,
   onError,
   onReady,
-}: TerminalProps) {
+  hideKeyboard,
+}, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -231,6 +239,12 @@ export const TerminalComponent = memo(function TerminalComponent({
     sendRef.current = send;
     resizeRef.current = resize;
   }, [send, resize]);
+
+  // Expose sendInput and focus for external keyboard
+  useImperativeHandle(ref, () => ({
+    sendInput: (char: string) => sendRef.current(char),
+    focus: () => terminalRef.current?.focus(),
+  }), []);
 
   // Fit and resize terminal
   const fitTerminal = () => {
@@ -917,8 +931,8 @@ export const TerminalComponent = memo(function TerminalComponent({
           className="absolute inset-0 z-10"
           style={{ touchAction: 'none' }}
         />
-        {/* Keyboard button for mobile - hidden when input bar is shown */}
-        {inputMode === 'hidden' && (
+        {/* Keyboard button for mobile - hidden when input bar is shown or hideKeyboard prop */}
+        {!hideKeyboard && inputMode === 'hidden' && (
           <button
             onClick={handleKeyboardButtonClick}
             className="absolute bottom-4 right-4 z-20 w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 flex items-center justify-center text-white text-2xl transition-colors"
@@ -1008,8 +1022,8 @@ export const TerminalComponent = memo(function TerminalComponent({
         })()}
       </div>
 
-      {/* Input bar - pushes terminal up */}
-      {inputMode !== 'hidden' && (
+      {/* Input bar - pushes terminal up (hidden when hideKeyboard prop is set) */}
+      {!hideKeyboard && inputMode !== 'hidden' && (
         <div
           ref={inputBarRef}
           className="shrink-0 bg-black border-t border-green-500 relative"
@@ -1217,4 +1231,4 @@ export const TerminalComponent = memo(function TerminalComponent({
       )}
     </div>
   );
-});
+}));

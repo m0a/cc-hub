@@ -160,6 +160,10 @@ export const TerminalComponent = memo(function TerminalComponent({
   const [showUrlMenu, setShowUrlMenu] = useState(false);
   const [urlPage, setUrlPage] = useState(0);
   const URL_PAGE_SIZE = 5;
+  // Detect tablet (larger touch screen)
+  const [isTablet, setIsTablet] = useState(() => window.innerWidth >= 640);
+  // Keyboard position for tablet: 'center' | 'left' | 'right'
+  const [keyboardPosition, setKeyboardPosition] = useState<'center' | 'left' | 'right'>('right');
   const inputBarRef = useRef<HTMLDivElement>(null);
   const hintTimeoutRef = useRef<number | null>(null);
   const fontSizeTimeoutRef = useRef<number | null>(null);
@@ -176,6 +180,15 @@ export const TerminalComponent = memo(function TerminalComponent({
     onErrorRef.current = onError;
     onReadyRef.current = onReady;
   });
+
+  // Update tablet detection on resize
+  useEffect(() => {
+    const handleResize = () => {
+      setIsTablet(window.innerWidth >= 640);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const { isConnected, connect, send, resize } = useTerminal({
     sessionId,
@@ -840,7 +853,7 @@ export const TerminalComponent = memo(function TerminalComponent({
         onTouchEnd={handleEnd}
         onTouchCancel={handleCancel}
         className={`
-          py-3 text-white text-base font-medium active:bg-gray-600 select-none relative
+          ${isTablet ? 'py-2 text-sm' : 'py-3 text-base'} text-white font-medium active:bg-gray-600 select-none relative
           border border-gray-700 rounded m-0.5
           ${isActive ? 'bg-blue-600' : 'bg-gray-800'}
           ${keyDef.type === 'modifier' ? 'text-sm' : ''}
@@ -849,7 +862,7 @@ export const TerminalComponent = memo(function TerminalComponent({
       >
         {displayLabel}
         {keyDef.longLabel && !shiftPressed && (
-          <span className="absolute top-0.5 right-1 text-[9px] text-gray-500">{keyDef.longLabel}</span>
+          <span className={`absolute top-0.5 right-1 ${isTablet ? 'text-[7px]' : 'text-[9px]'} text-gray-500`}>{keyDef.longLabel}</span>
         )}
       </button>
     );
@@ -1001,14 +1014,16 @@ export const TerminalComponent = memo(function TerminalComponent({
                 style={{ transform: inputMode === 'input' ? 'translateX(-100%)' : 'translateX(0)' }}
               >
                 {/* Full QWERTY keyboard mode */}
-                <div className="w-full flex-shrink-0 bg-black px-0.5 pb-1">
-                  {KEYBOARD_ROWS.map((row, rowIndex) => (
-                    <div key={rowIndex} className="flex">
-                      {row.map((keyDef, keyIndex) => (
-                        <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />
-                      ))}
-                    </div>
-                  ))}
+                <div className={`w-full flex-shrink-0 bg-black px-0.5 pb-1 ${isTablet ? 'flex' : ''} ${isTablet && keyboardPosition === 'left' ? 'justify-start' : ''} ${isTablet && keyboardPosition === 'right' ? 'justify-end' : ''} ${isTablet && keyboardPosition === 'center' ? 'justify-center' : ''}`}>
+                  <div className={isTablet ? 'w-1/3 max-w-sm' : 'w-full'}>
+                    {KEYBOARD_ROWS.map((row, rowIndex) => (
+                      <div key={rowIndex} className="flex">
+                        {row.map((keyDef, keyIndex) => (
+                          <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 {/* Text input mode */}
                 <div className="w-full flex-shrink-0 p-2 bg-black">
@@ -1031,7 +1046,7 @@ export const TerminalComponent = memo(function TerminalComponent({
             </div>
           ) : inputMode === 'shortcuts' ? (
             // Keyboard mode
-            <div className="bg-black px-0.5 pb-1">
+            <div className={`bg-black px-0.5 pb-1 ${isTablet ? 'flex' : ''} ${isTablet && keyboardPosition === 'left' ? 'justify-start' : ''} ${isTablet && keyboardPosition === 'right' ? 'justify-end' : ''} ${isTablet && keyboardPosition === 'center' ? 'justify-center' : ''}`}>
               {/* Hidden input for English keyboard */}
               <input
                 type="text"
@@ -1040,57 +1055,68 @@ export const TerminalComponent = memo(function TerminalComponent({
                 tabIndex={-1}
                 ref={inputRef}
               />
-              {KEYBOARD_ROWS.map((row, rowIndex) => (
-                <div key={rowIndex} className="flex">
-                  {row.map((keyDef, keyIndex) => (
-                    keyDef.key === 'MODE_SWITCH' ? (
-                      // Special "あ" key: just switch to input mode
-                      // User will tap input field to show keyboard
-                      <button
-                        key={`${rowIndex}-${keyIndex}`}
-                        onClick={() => {
-                          setIsAnimating(true);
-                          setInputMode('input');
-                          setTimeout(() => {
-                            setIsAnimating(false);
-                            fitTerminal();
-                            setTimeout(fitTerminal, 300);
-                          }, 350);
-                        }}
-                        className="py-3 text-white text-base font-medium bg-gray-800 active:bg-gray-600 select-none border border-gray-700 rounded m-0.5 text-center"
-                        style={{ flex: keyDef.width || 1, minWidth: 0 }}
-                      >
-                        あ
-                      </button>
-                    ) : keyDef.key === 'FILE_PICKER' ? (
-                      // File picker button
-                      <button
-                        key={`${rowIndex}-${keyIndex}`}
-                        onClick={handleOpenFilePicker}
-                        disabled={isUploading}
-                        className={`py-3 text-base font-medium select-none border border-gray-700 rounded m-0.5 text-center ${
-                          isUploading ? 'bg-gray-600 text-gray-400' : 'bg-gray-800 text-white active:bg-gray-600'
-                        }`}
-                        style={{ flex: keyDef.width || 1, minWidth: 0 }}
-                      >
-                        {isUploading ? '⏳' : '📁'}
-                      </button>
-                    ) : keyDef.key === 'URL_EXTRACT' ? (
-                      // URL extract button
-                      <button
-                        key={`${rowIndex}-${keyIndex}`}
-                        onClick={handleExtractUrls}
-                        className="py-3 text-base font-medium select-none border border-gray-700 rounded m-0.5 text-center bg-gray-800 text-white active:bg-gray-600"
-                        style={{ flex: keyDef.width || 1, minWidth: 0 }}
-                      >
-                        🔗
-                      </button>
-                    ) : (
-                      <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />
-                    )
-                  ))}
-                </div>
-              ))}
+              {/* Tablet position toggle */}
+              {isTablet && (
+                <button
+                  onClick={() => setKeyboardPosition(p => p === 'right' ? 'left' : p === 'left' ? 'center' : 'right')}
+                  className="absolute left-2 bottom-2 z-10 px-2 py-1 bg-gray-700 text-gray-300 text-xs rounded"
+                >
+                  {keyboardPosition === 'right' ? '→' : keyboardPosition === 'left' ? '←' : '↔'}
+                </button>
+              )}
+              <div className={isTablet ? 'w-1/3 max-w-sm' : 'w-full'}>
+                {KEYBOARD_ROWS.map((row, rowIndex) => (
+                  <div key={rowIndex} className="flex">
+                    {row.map((keyDef, keyIndex) => (
+                      keyDef.key === 'MODE_SWITCH' ? (
+                        // Special "あ" key: just switch to input mode
+                        // User will tap input field to show keyboard
+                        <button
+                          key={`${rowIndex}-${keyIndex}`}
+                          onClick={() => {
+                            setIsAnimating(true);
+                            setInputMode('input');
+                            setTimeout(() => {
+                              setIsAnimating(false);
+                              fitTerminal();
+                              setTimeout(fitTerminal, 300);
+                            }, 350);
+                          }}
+                          className={`${isTablet ? 'py-2 text-sm' : 'py-3 text-base'} text-white font-medium bg-gray-800 active:bg-gray-600 select-none border border-gray-700 rounded m-0.5 text-center`}
+                          style={{ flex: keyDef.width || 1, minWidth: 0 }}
+                        >
+                          あ
+                        </button>
+                      ) : keyDef.key === 'FILE_PICKER' ? (
+                        // File picker button
+                        <button
+                          key={`${rowIndex}-${keyIndex}`}
+                          onClick={handleOpenFilePicker}
+                          disabled={isUploading}
+                          className={`${isTablet ? 'py-2 text-sm' : 'py-3 text-base'} font-medium select-none border border-gray-700 rounded m-0.5 text-center ${
+                            isUploading ? 'bg-gray-600 text-gray-400' : 'bg-gray-800 text-white active:bg-gray-600'
+                          }`}
+                          style={{ flex: keyDef.width || 1, minWidth: 0 }}
+                        >
+                          {isUploading ? '⏳' : '📁'}
+                        </button>
+                      ) : keyDef.key === 'URL_EXTRACT' ? (
+                        // URL extract button
+                        <button
+                          key={`${rowIndex}-${keyIndex}`}
+                          onClick={handleExtractUrls}
+                          className={`${isTablet ? 'py-2 text-sm' : 'py-3 text-base'} font-medium select-none border border-gray-700 rounded m-0.5 text-center bg-gray-800 text-white active:bg-gray-600`}
+                          style={{ flex: keyDef.width || 1, minWidth: 0 }}
+                        >
+                          🔗
+                        </button>
+                      ) : (
+                        <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />
+                      )
+                    ))}
+                  </div>
+                ))}
+              </div>
             </div>
           ) : (
             // Input mode

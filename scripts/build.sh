@@ -11,22 +11,24 @@ cd frontend
 bun run build
 cd ..
 
-# Build backend binary
-echo "🔧 Building backend binary..."
+# Generate embedded static assets
+echo "📄 Generating embedded assets..."
+bun run scripts/generate-static-assets.ts
+
+# Build backend binary with embedded assets
+echo "🔧 Building backend binary (with embedded assets)..."
 cd backend
 bun build src/index.ts --compile --outfile ../dist/cchub
 cd ..
 
-# Copy frontend dist to output
-echo "📁 Copying static files..."
-mkdir -p dist/static
-cp -r frontend/dist/* dist/static/
+# Clean up generated file
+rm -f backend/src/static-assets.ts
 
 echo ""
 echo "✅ Build complete!"
 echo ""
 echo "To run:"
-echo "  cd dist && STATIC_ROOT=./static ./cchub"
+echo "  ./dist/cchub"
 echo ""
 echo "Files:"
 ls -lh dist/

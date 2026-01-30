@@ -42,6 +42,7 @@ interface TerminalProps {
 export interface TerminalRef {
   sendInput: (char: string) => void;
   focus: () => void;
+  extractUrls: () => string[];
 }
 
 export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(function TerminalComponent({
@@ -146,10 +147,31 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     resizeRef.current = resize;
   }, [send, resize]);
 
-  // Expose sendInput and focus for external keyboard
+  // Expose sendInput, focus, and extractUrls for external keyboard
   useImperativeHandle(ref, () => ({
     sendInput: (char: string) => sendRef.current(char),
     focus: () => terminalRef.current?.focus(),
+    extractUrls: () => {
+      const term = terminalRef.current;
+      if (!term) return [];
+
+      const urls: string[] = [];
+      const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g;
+
+      const buffer = term.buffer.active;
+      for (let i = 0; i < buffer.length; i++) {
+        const line = buffer.getLine(i);
+        if (line) {
+          const text = line.translateToString();
+          const matches = text.match(urlRegex);
+          if (matches) {
+            urls.push(...matches);
+          }
+        }
+      }
+
+      return [...new Set(urls)].reverse();
+    },
   }), []);
 
   // Fit and resize terminal

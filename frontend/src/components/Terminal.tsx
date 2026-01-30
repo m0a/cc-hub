@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, memo, useCallback } from 'react';
+import { useEffect, useRef, useState, memo, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
@@ -126,15 +126,23 @@ interface TerminalProps {
   onDisconnect?: () => void;
   onError?: (error: string) => void;
   onReady?: (send: (data: string) => void) => void;
+  hideKeyboard?: boolean;  // Hide built-in keyboard (for tablet split layout)
 }
 
-export const TerminalComponent = memo(function TerminalComponent({
+// Ref interface for external keyboard input
+export interface TerminalRef {
+  sendInput: (char: string) => void;
+  focus: () => void;
+}
+
+export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(function TerminalComponent({
   sessionId,
   onConnect,
   onDisconnect,
   onError,
   onReady,
-}: TerminalProps) {
+  hideKeyboard,
+}, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -160,6 +168,13 @@ export const TerminalComponent = memo(function TerminalComponent({
   const [showUrlMenu, setShowUrlMenu] = useState(false);
   const [urlPage, setUrlPage] = useState(0);
   const URL_PAGE_SIZE = 5;
+  // Detect tablet (larger touch screen)
+  const [isTablet, setIsTablet] = useState(() => window.innerWidth >= 640);
+  // Keyboard position for tablet
+  const [keyboardPosition, setKeyboardPosition] = useState<'left' | 'right'>('right');
+  // Show position toggle button (auto-hide after 3 seconds)
+  const [showPositionToggle, setShowPositionToggle] = useState(true);
+  const positionToggleTimeoutRef = useRef<number | null>(null);
   const inputBarRef = useRef<HTMLDivElement>(null);
   const hintTimeoutRef = useRef<number | null>(null);
   const fontSizeTimeoutRef = useRef<number | null>(null);
@@ -177,6 +192,38 @@ export const TerminalComponent = memo(function TerminalComponent({
     onReadyRef.current = onReady;
   });
 
+  // Update tablet detection on resize
+  useEffect(() => {
+    const handleResize = () => {
+      setIsTablet(window.innerWidth >= 640);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Auto-hide position toggle after 3 seconds
+  useEffect(() => {
+    if (showPositionToggle && isTablet) {
+      if (positionToggleTimeoutRef.current) {
+        clearTimeout(positionToggleTimeoutRef.current);
+      }
+      positionToggleTimeoutRef.current = window.setTimeout(() => {
+        setShowPositionToggle(false);
+      }, 3000);
+    }
+    return () => {
+      if (positionToggleTimeoutRef.current) {
+        clearTimeout(positionToggleTimeoutRef.current);
+      }
+    };
+  }, [showPositionToggle, isTablet, keyboardPosition]);
+
+  // Show position toggle when keyboard position changes
+  const handlePositionToggle = () => {
+    setKeyboardPosition(p => p === 'right' ? 'left' : 'right');
+    setShowPositionToggle(true);
+  };
+
   const { isConnected, connect, send, resize } = useTerminal({
     sessionId,
     onData: (data) => {
@@ -192,6 +239,12 @@ export const TerminalComponent = memo(function TerminalComponent({
     sendRef.current = send;
     resizeRef.current = resize;
   }, [send, resize]);
+
+  // Expose sendInput and focus for external keyboard
+  useImperativeHandle(ref, () => ({
+    sendInput: (char: string) => sendRef.current(char),
+    focus: () => terminalRef.current?.focus(),
+  }), []);
 
   // Fit and resize terminal
   const fitTerminal = () => {
@@ -840,7 +893,7 @@ export const TerminalComponent = memo(function TerminalComponent({
         onTouchEnd={handleEnd}
         onTouchCancel={handleCancel}
         className={`
-          py-3 text-white text-base font-medium active:bg-gray-600 select-none relative
+          ${isTablet ? 'py-2 text-sm' : 'py-3 text-base'} text-white font-medium active:bg-gray-600 select-none relative
           border border-gray-700 rounded m-0.5
           ${isActive ? 'bg-blue-600' : 'bg-gray-800'}
           ${keyDef.type === 'modifier' ? 'text-sm' : ''}
@@ -849,7 +902,7 @@ export const TerminalComponent = memo(function TerminalComponent({
       >
         {displayLabel}
         {keyDef.longLabel && !shiftPressed && (
-          <span className="absolute top-0.5 right-1 text-[9px] text-gray-500">{keyDef.longLabel}</span>
+          <span className={`absolute top-0.5 right-1 ${isTablet ? 'text-[7px]' : 'text-[9px]'} text-gray-500`}>{keyDef.longLabel}</span>
         )}
       </button>
     );
@@ -878,8 +931,8 @@ export const TerminalComponent = memo(function TerminalComponent({
           className="absolute inset-0 z-10"
           style={{ touchAction: 'none' }}
         />
-        {/* Keyboard button for mobile - hidden when input bar is shown */}
-        {inputMode === 'hidden' && (
+        {/* Keyboard button for mobile - hidden when input bar is shown or hideKeyboard prop */}
+        {!hideKeyboard && inputMode === 'hidden' && (
           <button
             onClick={handleKeyboardButtonClick}
             className="absolute bottom-4 right-4 z-20 w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 flex items-center justify-center text-white text-2xl transition-colors"
@@ -969,8 +1022,8 @@ export const TerminalComponent = memo(function TerminalComponent({
         })()}
       </div>
 
-      {/* Input bar - pushes terminal up */}
-      {inputMode !== 'hidden' && (
+      {/* Input bar - pushes terminal up (hidden when hideKeyboard prop is set) */}
+      {!hideKeyboard && inputMode !== 'hidden' && (
         <div
           ref={inputBarRef}
           className="shrink-0 bg-black border-t border-green-500 relative"
@@ -985,12 +1038,41 @@ export const TerminalComponent = memo(function TerminalComponent({
             ref={fileInputRef}
             onChange={handleFileSelect}
           />
-          {/* Header bar with hint */}
-          <div className="bg-gray-900 px-2 py-1">
-            <span className="text-xs text-gray-500">
-              {showHint && (inputMode === 'shortcuts' ? '「あ」で日本語入力 | スクロールで閉じる' : '「ABC」で英語キーボード | スクロールで閉じる')}
-            </span>
+          {/* Header bar with hint and position toggle */}
+          {/* On tablet: hide entire bar after 3 seconds to maximize terminal area */}
+          <div
+            className={`bg-gray-900 flex justify-between items-center overflow-hidden transition-all duration-300 ${
+              isTablet
+                ? (showPositionToggle ? 'px-2 py-1' : 'h-0 py-0')
+                : 'px-2 py-1'
+            }`}
+            onClick={() => isTablet && !showPositionToggle && setShowPositionToggle(true)}
+          >
+            {/* Hint text - only show on mobile or when position toggle is visible */}
+            {(!isTablet || showPositionToggle) && (
+              <span className="text-xs text-gray-500">
+                {showHint && (inputMode === 'shortcuts' ? '「あ」で日本語入力 | スクロールで閉じる' : '「ABC」で英語キーボード | スクロールで閉じる')}
+              </span>
+            )}
+            {isTablet && inputMode === 'shortcuts' && showPositionToggle && (
+              <button
+                onClick={handlePositionToggle}
+                className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded"
+              >
+                {keyboardPosition === 'right' ? '← 左へ' : '右へ →'}
+              </button>
+            )}
           </div>
+
+          {/* Tap area to show position toggle when header is hidden */}
+          {isTablet && !showPositionToggle && inputMode === 'shortcuts' && (
+            <div
+              className="h-2 bg-gray-800 flex items-center justify-center"
+              onClick={() => setShowPositionToggle(true)}
+            >
+              <div className="w-8 h-0.5 bg-gray-600 rounded-full" />
+            </div>
+          )}
 
           {/* Sliding container for keyboard modes */}
           {isAnimating ? (
@@ -1001,14 +1083,16 @@ export const TerminalComponent = memo(function TerminalComponent({
                 style={{ transform: inputMode === 'input' ? 'translateX(-100%)' : 'translateX(0)' }}
               >
                 {/* Full QWERTY keyboard mode */}
-                <div className="w-full flex-shrink-0 bg-black px-0.5 pb-1">
-                  {KEYBOARD_ROWS.map((row, rowIndex) => (
-                    <div key={rowIndex} className="flex">
-                      {row.map((keyDef, keyIndex) => (
-                        <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />
-                      ))}
-                    </div>
-                  ))}
+                <div className={`w-full flex-shrink-0 bg-black px-0.5 pb-1 ${isTablet ? 'flex' : ''} ${isTablet ? (keyboardPosition === 'left' ? 'justify-start' : 'justify-end') : ''}`}>
+                  <div className={isTablet ? 'w-1/3 max-w-sm' : 'w-full'}>
+                    {KEYBOARD_ROWS.map((row, rowIndex) => (
+                      <div key={rowIndex} className="flex">
+                        {row.map((keyDef, keyIndex) => (
+                          <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 {/* Text input mode */}
                 <div className="w-full flex-shrink-0 p-2 bg-black">
@@ -1031,7 +1115,7 @@ export const TerminalComponent = memo(function TerminalComponent({
             </div>
           ) : inputMode === 'shortcuts' ? (
             // Keyboard mode
-            <div className="bg-black px-0.5 pb-1">
+            <div className={`bg-black px-0.5 pb-1 ${isTablet ? 'flex' : ''} ${isTablet ? (keyboardPosition === 'left' ? 'justify-start' : 'justify-end') : ''}`}>
               {/* Hidden input for English keyboard */}
               <input
                 type="text"
@@ -1040,57 +1124,59 @@ export const TerminalComponent = memo(function TerminalComponent({
                 tabIndex={-1}
                 ref={inputRef}
               />
-              {KEYBOARD_ROWS.map((row, rowIndex) => (
-                <div key={rowIndex} className="flex">
-                  {row.map((keyDef, keyIndex) => (
-                    keyDef.key === 'MODE_SWITCH' ? (
-                      // Special "あ" key: just switch to input mode
-                      // User will tap input field to show keyboard
-                      <button
-                        key={`${rowIndex}-${keyIndex}`}
-                        onClick={() => {
-                          setIsAnimating(true);
-                          setInputMode('input');
-                          setTimeout(() => {
-                            setIsAnimating(false);
-                            fitTerminal();
-                            setTimeout(fitTerminal, 300);
-                          }, 350);
-                        }}
-                        className="py-3 text-white text-base font-medium bg-gray-800 active:bg-gray-600 select-none border border-gray-700 rounded m-0.5 text-center"
-                        style={{ flex: keyDef.width || 1, minWidth: 0 }}
-                      >
-                        あ
-                      </button>
-                    ) : keyDef.key === 'FILE_PICKER' ? (
-                      // File picker button
-                      <button
-                        key={`${rowIndex}-${keyIndex}`}
-                        onClick={handleOpenFilePicker}
-                        disabled={isUploading}
-                        className={`py-3 text-base font-medium select-none border border-gray-700 rounded m-0.5 text-center ${
-                          isUploading ? 'bg-gray-600 text-gray-400' : 'bg-gray-800 text-white active:bg-gray-600'
-                        }`}
-                        style={{ flex: keyDef.width || 1, minWidth: 0 }}
-                      >
-                        {isUploading ? '⏳' : '📁'}
-                      </button>
-                    ) : keyDef.key === 'URL_EXTRACT' ? (
-                      // URL extract button
-                      <button
-                        key={`${rowIndex}-${keyIndex}`}
-                        onClick={handleExtractUrls}
-                        className="py-3 text-base font-medium select-none border border-gray-700 rounded m-0.5 text-center bg-gray-800 text-white active:bg-gray-600"
-                        style={{ flex: keyDef.width || 1, minWidth: 0 }}
-                      >
-                        🔗
-                      </button>
-                    ) : (
-                      <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />
-                    )
-                  ))}
-                </div>
-              ))}
+              <div className={isTablet ? 'w-1/3 max-w-sm' : 'w-full'}>
+                {KEYBOARD_ROWS.map((row, rowIndex) => (
+                  <div key={rowIndex} className="flex">
+                    {row.map((keyDef, keyIndex) => (
+                      keyDef.key === 'MODE_SWITCH' ? (
+                        // Special "あ" key: just switch to input mode
+                        // User will tap input field to show keyboard
+                        <button
+                          key={`${rowIndex}-${keyIndex}`}
+                          onClick={() => {
+                            setIsAnimating(true);
+                            setInputMode('input');
+                            setTimeout(() => {
+                              setIsAnimating(false);
+                              fitTerminal();
+                              setTimeout(fitTerminal, 300);
+                            }, 350);
+                          }}
+                          className={`${isTablet ? 'py-2 text-sm' : 'py-3 text-base'} text-white font-medium bg-gray-800 active:bg-gray-600 select-none border border-gray-700 rounded m-0.5 text-center`}
+                          style={{ flex: keyDef.width || 1, minWidth: 0 }}
+                        >
+                          あ
+                        </button>
+                      ) : keyDef.key === 'FILE_PICKER' ? (
+                        // File picker button
+                        <button
+                          key={`${rowIndex}-${keyIndex}`}
+                          onClick={handleOpenFilePicker}
+                          disabled={isUploading}
+                          className={`${isTablet ? 'py-2 text-sm' : 'py-3 text-base'} font-medium select-none border border-gray-700 rounded m-0.5 text-center ${
+                            isUploading ? 'bg-gray-600 text-gray-400' : 'bg-gray-800 text-white active:bg-gray-600'
+                          }`}
+                          style={{ flex: keyDef.width || 1, minWidth: 0 }}
+                        >
+                          {isUploading ? '⏳' : '📁'}
+                        </button>
+                      ) : keyDef.key === 'URL_EXTRACT' ? (
+                        // URL extract button
+                        <button
+                          key={`${rowIndex}-${keyIndex}`}
+                          onClick={handleExtractUrls}
+                          className={`${isTablet ? 'py-2 text-sm' : 'py-3 text-base'} font-medium select-none border border-gray-700 rounded m-0.5 text-center bg-gray-800 text-white active:bg-gray-600`}
+                          style={{ flex: keyDef.width || 1, minWidth: 0 }}
+                        >
+                          🔗
+                        </button>
+                      ) : (
+                        <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />
+                      )
+                    ))}
+                  </div>
+                ))}
+              </div>
             </div>
           ) : (
             // Input mode
@@ -1145,4 +1231,4 @@ export const TerminalComponent = memo(function TerminalComponent({
       )}
     </div>
   );
-});
+}));

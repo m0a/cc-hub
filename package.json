@@ -4,10 +4,12 @@
   "private": true,
   "workspaces": ["backend", "frontend", "shared"],
   "scripts": {
-    "dev": "bun run --filter '*' dev",
+    "dev": "bun run stop; bun run --filter '*' dev",
     "dev:backend": "bun run --filter backend dev",
     "dev:frontend": "bun run --filter frontend dev",
+    "stop": "pkill -f 'cchub.*(bun|vite|esbuild)' 2>/dev/null || true",
     "build": "bun run --filter '*' build",
+    "build:binary": "bash scripts/build.sh",
     "test": "bun run --filter '*' test",
     "test:e2e": "bun run --filter frontend test:e2e",
     "lint": "bun run --filter '*' lint",

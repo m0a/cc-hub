@@ -71,6 +71,10 @@ export class ClaudeCodeService {
             if (typeof content !== 'string' || content.length === 0) continue;
             if (content.startsWith('[Request interrupted')) continue;
             if (content.startsWith('Implement the following plan:')) continue;
+            // Skip system-generated messages
+            if (content.startsWith('<task-notification>')) continue;
+            if (content.startsWith('<system-reminder>')) continue;
+            if (content.trim().startsWith('<')) continue; // Skip any XML-like content
             // Return truncated message
             return content.slice(0, 100) + (content.length > 100 ? '...' : '');
           }

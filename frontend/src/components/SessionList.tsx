@@ -100,8 +100,10 @@ function SessionItem({
     paneTitle?: string;
     ccSummary?: string;
     ccFirstPrompt?: string;
+    waitingForInput?: boolean;
   };
   const isClaudeRunning = extSession.currentCommand === 'claude';
+  const isWaiting = extSession.waitingForInput;
   const shortPath = extSession.currentPath?.replace(/^\/home\/[^/]+\//, '~/') || '';
 
   // Use pane title if cc is running and title exists, otherwise use session name
@@ -118,9 +120,12 @@ function SessionItem({
       className="p-3 bg-gray-800 hover:bg-gray-700 active:bg-gray-600 rounded cursor-pointer transition-colors"
     >
       <div className="flex items-center gap-2">
-        <div className={`w-2 h-2 rounded-full ${getStateColor(session.state)}`} />
+        <div className={`w-2 h-2 rounded-full ${isWaiting ? 'bg-red-500 animate-pulse' : getStateColor(session.state)}`} />
         <span className="font-medium truncate flex-1">{displayTitle}</span>
-        {isClaudeRunning && (
+        {isWaiting && (
+          <span className="text-xs text-red-400 bg-red-900/50 px-1.5 py-0.5 rounded shrink-0">入力待ち</span>
+        )}
+        {isClaudeRunning && !isWaiting && (
           <span className="text-xs text-purple-400 bg-purple-900/50 px-1.5 py-0.5 rounded shrink-0">cc</span>
         )}
       </div>

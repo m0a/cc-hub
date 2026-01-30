@@ -79,13 +79,100 @@ const port = parseInt(process.env.PORT || '3000', 10);
 const host = process.env.HOST || '0.0.0.0';
 
 // TLS configuration
-const tlsAuto = process.env.TLS === '1' || process.env.TLS === 'auto';
+const tlsMode = process.env.TLS;
+const tlsSelfSigned = tlsMode === '1' || tlsMode === 'auto';
+const tlsTailscale = tlsMode === 'tailscale';
 let tlsCert = process.env.TLS_CERT;
 let tlsKey = process.env.TLS_KEY;
 const tlsCA = process.env.TLS_CA;
 
+// Tailscale certificate generation
+if (tlsTailscale && (!tlsCert || !tlsKey)) {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+
+  // Check if tailscale command exists
+  const whichResult = Bun.spawnSync(['which', 'tailscale']);
+  if (whichResult.exitCode !== 0) {
+    console.error('❌ Error: tailscale command not found');
+    console.error('   Please install Tailscale: https://tailscale.com/download');
+    process.exit(1);
+  }
+
+  // Get Tailscale hostname
+  const statusResult = Bun.spawnSync(['tailscale', 'status', '--json']);
+  if (statusResult.exitCode !== 0) {
+    console.error('❌ Error: Failed to get Tailscale status');
+    console.error('   Is Tailscale running?');
+    process.exit(1);
+  }
+
+  let tailscaleHostname: string;
+  try {
+    const status = JSON.parse(statusResult.stdout.toString());
+    const dnsName = status.Self?.DNSName;
+    if (!dnsName) {
+      throw new Error('DNSName not found in Tailscale status');
+    }
+    // Remove trailing dot if present
+    tailscaleHostname = dnsName.replace(/\.$/, '');
+  } catch (e) {
+    console.error('❌ Error: Failed to parse Tailscale status');
+    process.exit(1);
+  }
+
+  console.log(`🔗 Tailscale hostname: ${tailscaleHostname}`);
+
+  const certDir = path.join(process.env.HOME || '/tmp', '.tailscale-certs');
+  const certPath = path.join(certDir, `${tailscaleHostname}.crt`);
+  const keyPath = path.join(certDir, `${tailscaleHostname}.key`);
+
+  // Check if cert needs to be generated or renewed
+  let needsCert = !fs.existsSync(certPath) || !fs.existsSync(keyPath);
+
+  if (!needsCert) {
+    // Check if cert is expiring soon (within 7 days)
+    try {
+      const checkResult = Bun.spawnSync([
+        'openssl', 'x509', '-in', certPath, '-checkend', String(7 * 24 * 60 * 60)
+      ]);
+      needsCert = checkResult.exitCode !== 0;
+    } catch {
+      needsCert = true;
+    }
+  }
+
+  if (needsCert) {
+    console.log('🔐 Generating Tailscale certificate...');
+    fs.mkdirSync(certDir, { recursive: true, mode: 0o700 });
+
+    const certResult = Bun.spawnSync([
+      'tailscale', 'cert',
+      '--cert-file', certPath,
+      '--key-file', keyPath,
+      tailscaleHostname
+    ]);
+
+    if (certResult.exitCode !== 0) {
+      const stderr = certResult.stderr.toString();
+      console.error('❌ Error: Failed to generate Tailscale certificate');
+      console.error(stderr);
+      if (stderr.includes('Access denied') || stderr.includes('cert access denied')) {
+        console.error('');
+        console.error('💡 Hint: Run this once to allow certificate generation without sudo:');
+        console.error('   sudo tailscale set --operator=$USER');
+      }
+      process.exit(1);
+    }
+    console.log(`📜 Certificate generated at: ${certDir}`);
+  }
+
+  tlsCert = certPath;
+  tlsKey = keyPath;
+}
+
 // Auto-generate self-signed certificate if TLS=1 and no cert provided
-if (tlsAuto && (!tlsCert || !tlsKey)) {
+if (tlsSelfSigned && (!tlsCert || !tlsKey)) {
   const os = await import('node:os');
   const fs = await import('node:fs');
   const path = await import('node:path');

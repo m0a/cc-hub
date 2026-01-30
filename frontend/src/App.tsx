@@ -350,9 +350,9 @@ export function App() {
         />
       )}
 
-      {/* Compact semi-transparent overlay bar */}
+      {/* Semi-transparent overlay bar */}
       <div
-        className={`absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-1 bg-black/40 transition-opacity duration-300 ${
+        className={`absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-2 py-1 bg-black/50 transition-opacity duration-300 ${
           showOverlay ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >
@@ -362,36 +362,36 @@ export function App() {
             handleShowSessionList();
             setShowOverlay(false);
           }}
-          className="p-1 text-white/60 hover:text-white hover:bg-white/10 rounded transition-colors"
+          className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
           title="セッション一覧"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </button>
 
         {/* Center: Session name */}
-        <span className="text-white/60 text-xs truncate max-w-[120px]">
+        <span className="text-white/70 text-sm truncate max-w-[150px]">
           {activeSession?.name || '-'}
         </span>
 
         {/* Right: Reload + Fullscreen buttons */}
-        <div className="flex items-center">
+        <div className="flex items-center gap-1">
           <button
             onClick={handleReload}
-            className="p-1 text-white/60 hover:text-white hover:bg-white/10 rounded transition-colors"
+            className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
             title="リロード"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
           <button
             onClick={handleFullscreen}
-            className="p-1 text-white/60 hover:text-white hover:bg-white/10 rounded transition-colors"
+            className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
             title="フルスクリーン"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
             </svg>
           </button>

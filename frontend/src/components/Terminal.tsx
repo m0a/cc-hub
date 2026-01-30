@@ -147,8 +147,10 @@ export const TerminalComponent = memo(function TerminalComponent({
   const [showHint, setShowHint] = useState(true);
   const [isAnimating, setIsAnimating] = useState(false);
   const [keyboardOffset, setKeyboardOffset] = useState(0);
+  const [showFontSizeIndicator, setShowFontSizeIndicator] = useState(false);
   const inputBarRef = useRef<HTMLDivElement>(null);
   const hintTimeoutRef = useRef<number | null>(null);
+  const fontSizeTimeoutRef = useRef<number | null>(null);
 
   // Use refs to avoid recreating callbacks
   const onConnectRef = useRef(onConnect);
@@ -338,6 +340,7 @@ export const TerminalComponent = memo(function TerminalComponent({
         if (newSize !== term.options.fontSize) {
           const clampedSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, newSize));
           term.options.fontSize = clampedSize;
+          setFontSize(clampedSize);
           fitAddonRef.current?.fit();
           resizeRef.current(term.cols, term.rows);
         }
@@ -462,6 +465,24 @@ export const TerminalComponent = memo(function TerminalComponent({
       viewport.removeEventListener('scroll', updateKeyboardOffset);
     };
   }, []);
+
+  // Show font size indicator when font size changes
+  useEffect(() => {
+    if (isInitialized) {
+      setShowFontSizeIndicator(true);
+      if (fontSizeTimeoutRef.current) {
+        clearTimeout(fontSizeTimeoutRef.current);
+      }
+      fontSizeTimeoutRef.current = window.setTimeout(() => {
+        setShowFontSizeIndicator(false);
+      }, 1500);
+    }
+    return () => {
+      if (fontSizeTimeoutRef.current) {
+        clearTimeout(fontSizeTimeoutRef.current);
+      }
+    };
+  }, [fontSize, isInitialized]);
 
   // Show shortcuts bar
   const handleKeyboardButtonClick = () => {
@@ -758,6 +779,12 @@ export const TerminalComponent = memo(function TerminalComponent({
             <div className="text-white text-lg">
               {!isInitialized ? 'Loading...' : 'Connecting...'}
             </div>
+          </div>
+        )}
+        {/* Font size indicator */}
+        {showFontSizeIndicator && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 bg-black/70 px-4 py-2 rounded-lg pointer-events-none">
+            <span className="text-white text-lg font-medium">{fontSize}px</span>
           </div>
         )}
       </div>

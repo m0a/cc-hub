@@ -161,6 +161,13 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
 
   useEffect(() => {
     fetchSessions();
+
+    // Poll every 5 seconds for updates
+    const interval = setInterval(() => {
+      fetchSessions();
+    }, 5000);
+
+    return () => clearInterval(interval);
   }, [fetchSessions]);
 
   const handleCreateSession = async () => {

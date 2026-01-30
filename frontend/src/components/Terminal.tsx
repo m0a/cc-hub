@@ -162,8 +162,11 @@ export const TerminalComponent = memo(function TerminalComponent({
   const URL_PAGE_SIZE = 5;
   // Detect tablet (larger touch screen)
   const [isTablet, setIsTablet] = useState(() => window.innerWidth >= 640);
-  // Keyboard position for tablet: 'center' | 'left' | 'right'
+  // Keyboard position for tablet
   const [keyboardPosition, setKeyboardPosition] = useState<'left' | 'right'>('right');
+  // Show position toggle button (auto-hide after 3 seconds)
+  const [showPositionToggle, setShowPositionToggle] = useState(true);
+  const positionToggleTimeoutRef = useRef<number | null>(null);
   const inputBarRef = useRef<HTMLDivElement>(null);
   const hintTimeoutRef = useRef<number | null>(null);
   const fontSizeTimeoutRef = useRef<number | null>(null);
@@ -189,6 +192,29 @@ export const TerminalComponent = memo(function TerminalComponent({
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Auto-hide position toggle after 3 seconds
+  useEffect(() => {
+    if (showPositionToggle && isTablet) {
+      if (positionToggleTimeoutRef.current) {
+        clearTimeout(positionToggleTimeoutRef.current);
+      }
+      positionToggleTimeoutRef.current = window.setTimeout(() => {
+        setShowPositionToggle(false);
+      }, 3000);
+    }
+    return () => {
+      if (positionToggleTimeoutRef.current) {
+        clearTimeout(positionToggleTimeoutRef.current);
+      }
+    };
+  }, [showPositionToggle, isTablet, keyboardPosition]);
+
+  // Show position toggle when keyboard position changes
+  const handlePositionToggle = () => {
+    setKeyboardPosition(p => p === 'right' ? 'left' : 'right');
+    setShowPositionToggle(true);
+  };
 
   const { isConnected, connect, send, resize } = useTerminal({
     sessionId,
@@ -999,14 +1025,17 @@ export const TerminalComponent = memo(function TerminalComponent({
             onChange={handleFileSelect}
           />
           {/* Header bar with hint and position toggle */}
-          <div className="bg-gray-900 px-2 py-1 flex justify-between items-center">
+          <div
+            className="bg-gray-900 px-2 py-1 flex justify-between items-center"
+            onClick={() => isTablet && !showPositionToggle && setShowPositionToggle(true)}
+          >
             <span className="text-xs text-gray-500">
               {showHint && (inputMode === 'shortcuts' ? '「あ」で日本語入力 | スクロールで閉じる' : '「ABC」で英語キーボード | スクロールで閉じる')}
             </span>
             {isTablet && inputMode === 'shortcuts' && (
               <button
-                onClick={() => setKeyboardPosition(p => p === 'right' ? 'left' : 'right')}
-                className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded"
+                onClick={handlePositionToggle}
+                className={`px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded transition-opacity duration-300 ${showPositionToggle ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
               >
                 {keyboardPosition === 'right' ? '← 左へ' : '右へ →'}
               </button>

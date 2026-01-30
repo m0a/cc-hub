@@ -169,9 +169,16 @@ export class ClaudeCodeService {
             // For active sessions (not in index or much newer), read directly
             const firstPrompt = await this.readFirstPromptFromFile(join(projectDir, latestFile.name));
 
+            // If no index entry for this session, try to get summary from most recent index entry
+            let fallbackSummary: string | undefined;
+            if (!indexEntry?.summary && index?.entries && index.entries.length > 0) {
+              const sortedEntries = [...index.entries].sort((a, b) => (b.fileMtime || 0) - (a.fileMtime || 0));
+              fallbackSummary = sortedEntries[0]?.summary;
+            }
+
             return {
               sessionId,
-              summary: indexEntry?.summary,
+              summary: indexEntry?.summary || fallbackSummary,
               firstPrompt: firstPrompt || indexEntry?.firstPrompt,
               messageCount: indexEntry?.messageCount,
               modified: new Date(latestFile.mtime).toISOString(),

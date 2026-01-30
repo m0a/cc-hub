@@ -163,7 +163,7 @@ export const TerminalComponent = memo(function TerminalComponent({
   // Detect tablet (larger touch screen)
   const [isTablet, setIsTablet] = useState(() => window.innerWidth >= 640);
   // Keyboard position for tablet: 'center' | 'left' | 'right'
-  const [keyboardPosition, setKeyboardPosition] = useState<'center' | 'left' | 'right'>('right');
+  const [keyboardPosition, setKeyboardPosition] = useState<'left' | 'right'>('right');
   const inputBarRef = useRef<HTMLDivElement>(null);
   const hintTimeoutRef = useRef<number | null>(null);
   const fontSizeTimeoutRef = useRef<number | null>(null);
@@ -998,11 +998,19 @@ export const TerminalComponent = memo(function TerminalComponent({
             ref={fileInputRef}
             onChange={handleFileSelect}
           />
-          {/* Header bar with hint */}
-          <div className="bg-gray-900 px-2 py-1">
+          {/* Header bar with hint and position toggle */}
+          <div className="bg-gray-900 px-2 py-1 flex justify-between items-center">
             <span className="text-xs text-gray-500">
               {showHint && (inputMode === 'shortcuts' ? '「あ」で日本語入力 | スクロールで閉じる' : '「ABC」で英語キーボード | スクロールで閉じる')}
             </span>
+            {isTablet && inputMode === 'shortcuts' && (
+              <button
+                onClick={() => setKeyboardPosition(p => p === 'right' ? 'left' : 'right')}
+                className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded"
+              >
+                {keyboardPosition === 'right' ? '← 左へ' : '右へ →'}
+              </button>
+            )}
           </div>
 
           {/* Sliding container for keyboard modes */}
@@ -1014,7 +1022,7 @@ export const TerminalComponent = memo(function TerminalComponent({
                 style={{ transform: inputMode === 'input' ? 'translateX(-100%)' : 'translateX(0)' }}
               >
                 {/* Full QWERTY keyboard mode */}
-                <div className={`w-full flex-shrink-0 bg-black px-0.5 pb-1 ${isTablet ? 'flex' : ''} ${isTablet && keyboardPosition === 'left' ? 'justify-start' : ''} ${isTablet && keyboardPosition === 'right' ? 'justify-end' : ''} ${isTablet && keyboardPosition === 'center' ? 'justify-center' : ''}`}>
+                <div className={`w-full flex-shrink-0 bg-black px-0.5 pb-1 ${isTablet ? 'flex' : ''} ${isTablet ? (keyboardPosition === 'left' ? 'justify-start' : 'justify-end') : ''}`}>
                   <div className={isTablet ? 'w-1/3 max-w-sm' : 'w-full'}>
                     {KEYBOARD_ROWS.map((row, rowIndex) => (
                       <div key={rowIndex} className="flex">
@@ -1046,7 +1054,7 @@ export const TerminalComponent = memo(function TerminalComponent({
             </div>
           ) : inputMode === 'shortcuts' ? (
             // Keyboard mode
-            <div className={`bg-black px-0.5 pb-1 ${isTablet ? 'flex' : ''} ${isTablet && keyboardPosition === 'left' ? 'justify-start' : ''} ${isTablet && keyboardPosition === 'right' ? 'justify-end' : ''} ${isTablet && keyboardPosition === 'center' ? 'justify-center' : ''}`}>
+            <div className={`bg-black px-0.5 pb-1 ${isTablet ? 'flex' : ''} ${isTablet ? (keyboardPosition === 'left' ? 'justify-start' : 'justify-end') : ''}`}>
               {/* Hidden input for English keyboard */}
               <input
                 type="text"
@@ -1055,15 +1063,6 @@ export const TerminalComponent = memo(function TerminalComponent({
                 tabIndex={-1}
                 ref={inputRef}
               />
-              {/* Tablet position toggle */}
-              {isTablet && (
-                <button
-                  onClick={() => setKeyboardPosition(p => p === 'right' ? 'left' : p === 'left' ? 'center' : 'right')}
-                  className="absolute left-2 bottom-2 z-10 px-2 py-1 bg-gray-700 text-gray-300 text-xs rounded"
-                >
-                  {keyboardPosition === 'right' ? '→' : keyboardPosition === 'left' ? '←' : '↔'}
-                </button>
-              )}
               <div className={isTablet ? 'w-1/3 max-w-sm' : 'w-full'}>
                 {KEYBOARD_ROWS.map((row, rowIndex) => (
                   <div key={rowIndex} className="flex">

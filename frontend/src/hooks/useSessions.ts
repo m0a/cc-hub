@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { SessionResponse } from '../../../shared/types';
 
-const API_BASE = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3000`;
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 interface UseSessionsReturn {
   sessions: SessionResponse[];

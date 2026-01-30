@@ -16,7 +16,11 @@ interface UseTerminalReturn {
   resize: (cols: number, rows: number) => void;
 }
 
-const WS_BASE = import.meta.env.VITE_WS_URL || `ws://${window.location.hostname}:3000`;
+// Use same origin WebSocket (works with Vite proxy)
+const getWsBase = () => {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return import.meta.env.VITE_WS_URL || `${protocol}//${window.location.host}`;
+};
 
 export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
   const { sessionId } = options;
@@ -49,7 +53,7 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
       reconnectTimeoutRef.current = null;
     }
 
-    const wsUrl = `${WS_BASE}/ws/terminal/${encodeURIComponent(sessionId)}`;
+    const wsUrl = `${getWsBase()}/ws/terminal/${encodeURIComponent(sessionId)}`;
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
     wsRef.current = ws;

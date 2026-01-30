@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, memo } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { useTerminal } from '../hooks/useTerminal';
 
@@ -10,7 +11,7 @@ const DEFAULT_FONT_SIZE = 14;
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 32;
 
-const API_BASE = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3000`;
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 // Keyboard key definition
 interface KeyDef {
@@ -90,13 +91,14 @@ const KEYBOARD_ROWS: KeyDef[][] = [
     { label: '/', key: '/', shiftKey: '?', longKey: '?', longLabel: '?' },
     { label: '↑', key: '\x1b[A', width: 2, type: 'special' },
   ],
-  // Row 5: ALT, space, file picker, mode switch, arrows
+  // Row 5: ALT, space, file picker, URL extract, mode switch, arrows
   [
     { label: 'ALT', key: 'ALT', width: 1.5, type: 'modifier' },
     { label: '`', key: '`', shiftKey: '~', longKey: '~', longLabel: '~' },
-    { label: 'SPACE', key: ' ', width: 4.5, type: 'special' },
+    { label: 'SPACE', key: ' ', width: 4, type: 'special' },
     { label: '📁', key: 'FILE_PICKER', width: 1, type: 'special' },
-    { label: 'あ', key: 'MODE_SWITCH', width: 1.5, type: 'special' },
+    { label: '🔗', key: 'URL_EXTRACT', width: 1, type: 'special' },
+    { label: 'あ', key: 'MODE_SWITCH', width: 1, type: 'special' },
     { label: '←', key: '\x1b[D', type: 'special' },
     { label: '↓', key: '\x1b[B', type: 'special' },
     { label: '→', key: '\x1b[C', type: 'special' },
@@ -153,6 +155,10 @@ export const TerminalComponent = memo(function TerminalComponent({
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [showFontSizeIndicator, setShowFontSizeIndicator] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [detectedUrls, setDetectedUrls] = useState<string[]>([]);
+  const [showUrlMenu, setShowUrlMenu] = useState(false);
+  const [urlPage, setUrlPage] = useState(0);
+  const URL_PAGE_SIZE = 5;
   const inputBarRef = useRef<HTMLDivElement>(null);
   const hintTimeoutRef = useRef<number | null>(null);
   const fontSizeTimeoutRef = useRef<number | null>(null);
@@ -256,6 +262,21 @@ export const TerminalComponent = memo(function TerminalComponent({
     } catch {
       // WebGL not available, use default canvas renderer
     }
+
+    // Load web links addon for URL detection
+    const webLinksAddon = new WebLinksAddon((event, uri) => {
+      event.preventDefault();
+      // Show action menu for URL
+      const action = confirm(`URL: ${uri}\n\nコピーしますか？\n(キャンセルでブラウザで開く)`);
+      if (action) {
+        navigator.clipboard.writeText(uri).then(() => {
+          console.log('URL copied:', uri);
+        }).catch(console.error);
+      } else {
+        window.open(uri, '_blank');
+      }
+    });
+    term.loadAddon(webLinksAddon);
 
     fitAddon.fit();
 
@@ -444,13 +465,12 @@ export const TerminalComponent = memo(function TerminalComponent({
     if (!viewport) return;
 
     const updateKeyboardOffset = () => {
-      // Only apply offset in fullscreen/standalone mode (PWA or fullscreen browser)
-      const isFullscreen = window.matchMedia('(display-mode: fullscreen)').matches
-        || window.matchMedia('(display-mode: standalone)').matches
-        || document.fullscreenElement !== null
-        || window.innerHeight === screen.height;
+      // Only apply offset in browser fullscreen mode (not PWA standalone)
+      // PWA standalone mode handles viewport automatically
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+      const isBrowserFullscreen = document.fullscreenElement !== null;
 
-      if (!isFullscreen) {
+      if (isStandalone || !isBrowserFullscreen) {
         setKeyboardOffset(0);
         return;
       }
@@ -604,6 +624,47 @@ export const TerminalComponent = memo(function TerminalComponent({
   // Open file picker
   const handleOpenFilePicker = () => {
     fileInputRef.current?.click();
+  };
+
+  // Extract URLs from terminal buffer
+  const handleExtractUrls = () => {
+    const term = terminalRef.current;
+    if (!term) return;
+
+    const urls: string[] = [];
+    const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g;
+
+    // Get visible buffer content
+    const buffer = term.buffer.active;
+    for (let i = 0; i < buffer.length; i++) {
+      const line = buffer.getLine(i);
+      if (line) {
+        const text = line.translateToString();
+        const matches = text.match(urlRegex);
+        if (matches) {
+          urls.push(...matches);
+        }
+      }
+    }
+
+    // Remove duplicates and reverse (newest first)
+    const uniqueUrls = [...new Set(urls)].reverse();
+    setDetectedUrls(uniqueUrls);
+    setUrlPage(0);
+    setShowUrlMenu(true);
+  };
+
+  // Copy URL to clipboard
+  const handleCopyUrl = (url: string) => {
+    navigator.clipboard.writeText(url).then(() => {
+      setShowUrlMenu(false);
+    }).catch(console.error);
+  };
+
+  // Open URL in browser
+  const handleOpenUrl = (url: string) => {
+    window.open(url, '_blank');
+    setShowUrlMenu(false);
   };
 
   // Handle Enter key in input
@@ -833,6 +894,71 @@ export const TerminalComponent = memo(function TerminalComponent({
             <span className="text-white text-lg font-medium">{fontSize}px</span>
           </div>
         )}
+        {/* URL menu */}
+        {showUrlMenu && (() => {
+          const totalPages = Math.ceil(detectedUrls.length / URL_PAGE_SIZE);
+          const startIdx = urlPage * URL_PAGE_SIZE;
+          const pageUrls = detectedUrls.slice(startIdx, startIdx + URL_PAGE_SIZE);
+          return (
+            <div className="absolute inset-0 z-40 bg-black/80 flex items-center justify-center p-4">
+              <div className="bg-gray-800 rounded-lg w-full max-w-md flex flex-col">
+                <div className="flex items-center justify-between p-3 border-b border-gray-700">
+                  <span className="text-white font-medium">
+                    URL一覧 {detectedUrls.length > 0 && `(${startIdx + 1}-${Math.min(startIdx + URL_PAGE_SIZE, detectedUrls.length)}/${detectedUrls.length})`}
+                  </span>
+                  <button
+                    onClick={() => setShowUrlMenu(false)}
+                    className="text-gray-400 hover:text-white text-xl px-2"
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="p-2">
+                  {detectedUrls.length === 0 ? (
+                    <p className="text-gray-500 text-center py-4">URLが見つかりません</p>
+                  ) : (
+                    pageUrls.map((url, index) => (
+                      <div key={startIdx + index} className="flex items-center gap-2 p-2 hover:bg-gray-700 rounded">
+                        <span className="flex-1 text-white text-sm truncate">{url}</span>
+                        <button
+                          onClick={() => handleCopyUrl(url)}
+                          className="px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded text-white text-xs"
+                        >
+                          コピー
+                        </button>
+                        <button
+                          onClick={() => handleOpenUrl(url)}
+                          className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-white text-xs"
+                        >
+                          開く
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-center gap-4 p-3 border-t border-gray-700">
+                    <button
+                      onClick={() => setUrlPage(p => Math.max(0, p - 1))}
+                      disabled={urlPage === 0}
+                      className={`px-3 py-1 rounded ${urlPage === 0 ? 'bg-gray-700 text-gray-500' : 'bg-gray-600 text-white hover:bg-gray-500'}`}
+                    >
+                      ← 前
+                    </button>
+                    <span className="text-gray-400 text-sm">{urlPage + 1} / {totalPages}</span>
+                    <button
+                      onClick={() => setUrlPage(p => Math.min(totalPages - 1, p + 1))}
+                      disabled={urlPage >= totalPages - 1}
+                      className={`px-3 py-1 rounded ${urlPage >= totalPages - 1 ? 'bg-gray-700 text-gray-500' : 'bg-gray-600 text-white hover:bg-gray-500'}`}
+                    >
+                      次 →
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Input bar - pushes terminal up */}
@@ -946,6 +1072,16 @@ export const TerminalComponent = memo(function TerminalComponent({
                         style={{ flex: keyDef.width || 1, minWidth: 0 }}
                       >
                         {isUploading ? '⏳' : '📁'}
+                      </button>
+                    ) : keyDef.key === 'URL_EXTRACT' ? (
+                      // URL extract button
+                      <button
+                        key={`${rowIndex}-${keyIndex}`}
+                        onClick={handleExtractUrls}
+                        className="py-3 text-base font-medium select-none border border-gray-700 rounded m-0.5 text-center bg-gray-800 text-white active:bg-gray-600"
+                        style={{ flex: keyDef.width || 1, minWidth: 0 }}
+                      >
+                        🔗
                       </button>
                     ) : (
                       <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />

@@ -2,6 +2,17 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import fs from 'fs';
+import path from 'path';
+
+// Load TLS certs if available
+const certsDir = path.resolve(__dirname, '../certs');
+const httpsConfig = fs.existsSync(path.join(certsDir, 'cert.pem'))
+  ? {
+      key: fs.readFileSync(path.join(certsDir, 'key.pem')),
+      cert: fs.readFileSync(path.join(certsDir, 'cert.pem')),
+    }
+  : undefined;
 
 export default defineConfig({
   plugins: [
@@ -57,6 +68,7 @@ export default defineConfig({
     port: 5173,
     host: '0.0.0.0',
     allowedHosts: true,
+    https: httpsConfig,
     proxy: {
       '/api': {
         target: 'http://localhost:3000',

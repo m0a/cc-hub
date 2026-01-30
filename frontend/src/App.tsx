@@ -10,7 +10,7 @@ interface OpenSession {
   state: SessionState;
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3000`;
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 // Confirm dialog for delete
 function ConfirmDeleteDialog({

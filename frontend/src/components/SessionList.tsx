@@ -93,6 +93,11 @@ function SessionItem({
     longPressFiredRef.current = false;
   };
 
+  // Get extra session info
+  const extSession = session as SessionResponse & { currentCommand?: string; currentPath?: string };
+  const isClaudeRunning = extSession.currentCommand === 'claude';
+  const shortPath = extSession.currentPath?.replace(/^\/home\/[^/]+\//, '~/') || '';
+
   return (
     <div
       onClick={handleClick}
@@ -104,10 +109,18 @@ function SessionItem({
       <div className="flex items-center gap-2">
         <div className={`w-2 h-2 rounded-full ${getStateColor(session.state)}`} />
         <span className="font-medium">{session.name}</span>
+        {isClaudeRunning && (
+          <span className="text-xs text-purple-400 bg-purple-900/50 px-1.5 py-0.5 rounded">cc</span>
+        )}
       </div>
+      {shortPath && (
+        <div className="text-xs text-gray-400 mt-1 truncate">
+          {shortPath}
+        </div>
+      )}
       <div className="flex items-center justify-between mt-1">
         <div className="text-xs text-gray-500">
-          最終アクセス: {formatDate(session.lastAccessedAt)}
+          {formatDate(session.lastAccessedAt)}
         </div>
         <div className="text-xs text-gray-600">
           長押しで削除

@@ -3,27 +3,30 @@ interface TmuxSessionInfo {
   name: string;
   createdAt: string;
   attached: boolean;
+  currentCommand?: string;
+  currentPath?: string;
 }
 
 export class TmuxService {
   /**
-   * List all tmux sessions
+   * List all tmux sessions with pane info
    */
   async listSessions(): Promise<TmuxSessionInfo[]> {
     try {
-      const proc = Bun.spawn(['tmux', 'list-sessions', '-F', '#{session_name}:#{session_created}:#{session_attached}'], {
+      // Get session info
+      const sessionsProc = Bun.spawn(['tmux', 'list-sessions', '-F', '#{session_name}:#{session_created}:#{session_attached}'], {
         stdout: 'pipe',
         stderr: 'pipe',
       });
 
-      const text = await new Response(proc.stdout).text();
-      const exitCode = await proc.exited;
+      const sessionsText = await new Response(sessionsProc.stdout).text();
+      const sessionsExitCode = await sessionsProc.exited;
 
-      if (exitCode !== 0) {
+      if (sessionsExitCode !== 0) {
         return [];
       }
 
-      return text
+      const sessions = sessionsText
         .trim()
         .split('\n')
         .filter((line) => line.length > 0)
@@ -36,6 +39,44 @@ export class TmuxService {
             attached: attached === '1',
           };
         });
+
+      // Get pane info for each session
+      const panesProc = Bun.spawn(['tmux', 'list-panes', '-a', '-F', '#{session_name}:#{pane_current_command}:#{pane_current_path}'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const panesText = await new Response(panesProc.stdout).text();
+      const panesExitCode = await panesProc.exited;
+
+      if (panesExitCode === 0) {
+        const paneInfo = new Map<string, { command: string; path: string }>();
+        panesText
+          .trim()
+          .split('\n')
+          .filter((line) => line.length > 0)
+          .forEach((line) => {
+            const [sessionName, command, ...pathParts] = line.split(':');
+            // Path might contain colons, so join the rest
+            const path = pathParts.join(':');
+            // Only store first pane info per session
+            if (!paneInfo.has(sessionName)) {
+              paneInfo.set(sessionName, { command, path });
+            }
+          });
+
+        // Merge pane info into sessions
+        return sessions.map((session) => {
+          const info = paneInfo.get(session.id);
+          return {
+            ...session,
+            currentCommand: info?.command,
+            currentPath: info?.path,
+          };
+        });
+      }
+
+      return sessions;
     } catch {
       return [];
     }

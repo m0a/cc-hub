@@ -16,6 +16,8 @@ sessions.get('/', async (c) => {
     createdAt: s.createdAt,
     lastAccessedAt: s.createdAt,
     state: s.attached ? 'working' as const : 'idle' as const,
+    currentCommand: s.currentCommand,
+    currentPath: s.currentPath,
   }));
 
   return c.json({ sessions });
@@ -69,6 +71,8 @@ sessions.get('/:id', async (c) => {
     createdAt: session.createdAt,
     lastAccessedAt: session.createdAt,
     state: session.attached ? 'working' : 'idle',
+    currentCommand: session.currentCommand,
+    currentPath: session.currentPath,
   });
 });
 

@@ -5,6 +5,8 @@ interface TmuxSessionInfo {
   attached: boolean;
   currentCommand?: string;
   currentPath?: string;
+  paneTitle?: string;
+  preview?: string;
 }
 
 export class TmuxService {
@@ -40,8 +42,9 @@ export class TmuxService {
           };
         });
 
-      // Get pane info for each session
-      const panesProc = Bun.spawn(['tmux', 'list-panes', '-a', '-F', '#{session_name}:#{pane_current_command}:#{pane_current_path}'], {
+      // Get pane info for each session (command, path, title)
+      // Use | as separator since path can contain :
+      const panesProc = Bun.spawn(['tmux', 'list-panes', '-a', '-F', '#{session_name}|#{pane_current_command}|#{pane_title}|#{pane_current_path}'], {
         stdout: 'pipe',
         stderr: 'pipe',
       });
@@ -49,36 +52,81 @@ export class TmuxService {
       const panesText = await new Response(panesProc.stdout).text();
       const panesExitCode = await panesProc.exited;
 
+      const paneInfo = new Map<string, { command: string; path: string; title: string }>();
       if (panesExitCode === 0) {
-        const paneInfo = new Map<string, { command: string; path: string }>();
         panesText
           .trim()
           .split('\n')
           .filter((line) => line.length > 0)
           .forEach((line) => {
-            const [sessionName, command, ...pathParts] = line.split(':');
-            // Path might contain colons, so join the rest
-            const path = pathParts.join(':');
-            // Only store first pane info per session
-            if (!paneInfo.has(sessionName)) {
-              paneInfo.set(sessionName, { command, path });
+            const parts = line.split('|');
+            if (parts.length >= 4) {
+              const [sessionName, command, title, ...pathParts] = parts;
+              // Path might contain |, so join the rest
+              const path = pathParts.join('|');
+              // Only store first pane info per session
+              if (!paneInfo.has(sessionName)) {
+                paneInfo.set(sessionName, { command, path, title });
+              }
             }
           });
-
-        // Merge pane info into sessions
-        return sessions.map((session) => {
-          const info = paneInfo.get(session.id);
-          return {
-            ...session,
-            currentCommand: info?.command,
-            currentPath: info?.path,
-          };
-        });
       }
 
-      return sessions;
+      // Get preview for each session (last few lines of output)
+      const previews = new Map<string, string>();
+      await Promise.all(
+        sessions.map(async (session) => {
+          const preview = await this.capturePreview(session.id);
+          if (preview) {
+            previews.set(session.id, preview);
+          }
+        })
+      );
+
+      // Merge all info into sessions
+      return sessions.map((session) => {
+        const info = paneInfo.get(session.id);
+        return {
+          ...session,
+          currentCommand: info?.command,
+          currentPath: info?.path,
+          paneTitle: info?.title,
+          preview: previews.get(session.id),
+        };
+      });
     } catch {
       return [];
+    }
+  }
+
+  /**
+   * Capture a short preview of recent pane output
+   */
+  async capturePreview(sessionId: string, lines: number = 5): Promise<string | null> {
+    try {
+      const proc = Bun.spawn(['tmux', 'capture-pane', '-t', sessionId, '-p', '-S', `-${lines}`], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) {
+        return null;
+      }
+
+      const text = await new Response(proc.stdout).text();
+      // Clean up: trim, remove empty lines, take last meaningful lines
+      const cleanedLines = text
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0)
+        .slice(-3)  // Take last 3 non-empty lines
+        .join(' ')
+        .slice(0, 100);  // Limit to 100 chars
+
+      return cleanedLines || null;
+    } catch {
+      return null;
     }
   }
 

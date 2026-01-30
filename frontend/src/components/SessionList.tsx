@@ -94,9 +94,20 @@ function SessionItem({
   };
 
   // Get extra session info
-  const extSession = session as SessionResponse & { currentCommand?: string; currentPath?: string };
+  const extSession = session as SessionResponse & {
+    currentCommand?: string;
+    currentPath?: string;
+    paneTitle?: string;
+    ccSummary?: string;
+    ccFirstPrompt?: string;
+  };
   const isClaudeRunning = extSession.currentCommand === 'claude';
   const shortPath = extSession.currentPath?.replace(/^\/home\/[^/]+\//, '~/') || '';
+
+  // Use pane title if cc is running and title exists, otherwise use session name
+  const displayTitle = isClaudeRunning && extSession.paneTitle
+    ? extSession.paneTitle.replace(/^[✳★●◆]\s*/, '')  // Remove status icons
+    : session.name;
 
   return (
     <div
@@ -108,9 +119,9 @@ function SessionItem({
     >
       <div className="flex items-center gap-2">
         <div className={`w-2 h-2 rounded-full ${getStateColor(session.state)}`} />
-        <span className="font-medium">{session.name}</span>
+        <span className="font-medium truncate flex-1">{displayTitle}</span>
         {isClaudeRunning && (
-          <span className="text-xs text-purple-400 bg-purple-900/50 px-1.5 py-0.5 rounded">cc</span>
+          <span className="text-xs text-purple-400 bg-purple-900/50 px-1.5 py-0.5 rounded shrink-0">cc</span>
         )}
       </div>
       {shortPath && (
@@ -118,9 +129,14 @@ function SessionItem({
           {shortPath}
         </div>
       )}
+      {extSession.ccSummary && (
+        <div className="text-xs text-blue-400 mt-1 truncate">
+          {extSession.ccSummary}
+        </div>
+      )}
       <div className="flex items-center justify-between mt-1">
-        <div className="text-xs text-gray-500">
-          {formatDate(session.lastAccessedAt)}
+        <div className="text-xs text-gray-600">
+          {session.name}
         </div>
         <div className="text-xs text-gray-600">
           長押しで削除

@@ -1,8 +1,10 @@
 import { Hono } from 'hono';
 import { CreateSessionSchema } from '../../../shared/types';
 import { TmuxService } from '../services/tmux';
+import { ClaudeCodeService } from '../services/claude-code';
 
 const tmuxService = new TmuxService();
+const claudeCodeService = new ClaudeCodeService();
 
 export const sessions = new Hono();
 
@@ -10,15 +12,30 @@ export const sessions = new Hono();
 sessions.get('/', async (c) => {
   const tmuxSessions = await tmuxService.listSessions();
 
-  const sessions = tmuxSessions.map((s) => ({
-    id: s.id,
-    name: s.name,
-    createdAt: s.createdAt,
-    lastAccessedAt: s.createdAt,
-    state: s.attached ? 'working' as const : 'idle' as const,
-    currentCommand: s.currentCommand,
-    currentPath: s.currentPath,
-  }));
+  // Get Claude Code session info for sessions running claude
+  const claudePaths = tmuxSessions
+    .filter(s => s.currentCommand === 'claude' && s.currentPath)
+    .map(s => s.currentPath!);
+
+  const ccSessions = await claudeCodeService.getSessionsForPaths(claudePaths);
+
+  const sessions = tmuxSessions.map((s) => {
+    const ccSession = s.currentPath ? ccSessions.get(s.currentPath) : undefined;
+
+    return {
+      id: s.id,
+      name: s.name,
+      createdAt: s.createdAt,
+      lastAccessedAt: s.createdAt,
+      state: s.attached ? 'working' as const : 'idle' as const,
+      currentCommand: s.currentCommand,
+      currentPath: s.currentPath,
+      paneTitle: s.paneTitle,
+      // Use Claude Code summary instead of terminal preview
+      ccSummary: ccSession?.summary,
+      ccFirstPrompt: ccSession?.firstPrompt,
+    };
+  });
 
   return c.json({ sessions });
 });

@@ -10,6 +10,8 @@ const DEFAULT_FONT_SIZE = 14;
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 32;
 
+const API_BASE = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3000`;
+
 // Keyboard key definition
 interface KeyDef {
   label: string;
@@ -88,11 +90,12 @@ const KEYBOARD_ROWS: KeyDef[][] = [
     { label: '/', key: '/', shiftKey: '?', longKey: '?', longLabel: '?' },
     { label: '↑', key: '\x1b[A', width: 2, type: 'special' },
   ],
-  // Row 5: ALT, space, mode switch, arrows
+  // Row 5: ALT, space, file picker, mode switch, arrows
   [
     { label: 'ALT', key: 'ALT', width: 1.5, type: 'modifier' },
     { label: '`', key: '`', shiftKey: '~', longKey: '~', longLabel: '~' },
-    { label: 'SPACE', key: ' ', width: 5.5, type: 'special' },
+    { label: 'SPACE', key: ' ', width: 4.5, type: 'special' },
+    { label: '📁', key: 'FILE_PICKER', width: 1, type: 'special' },
     { label: 'あ', key: 'MODE_SWITCH', width: 1.5, type: 'special' },
     { label: '←', key: '\x1b[D', type: 'special' },
     { label: '↓', key: '\x1b[B', type: 'special' },
@@ -133,6 +136,7 @@ export const TerminalComponent = memo(function TerminalComponent({
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const sendRef = useRef<(data: string) => void>(() => {});
@@ -148,6 +152,7 @@ export const TerminalComponent = memo(function TerminalComponent({
   const [isAnimating, setIsAnimating] = useState(false);
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [showFontSizeIndicator, setShowFontSizeIndicator] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const inputBarRef = useRef<HTMLDivElement>(null);
   const hintTimeoutRef = useRef<number | null>(null);
   const fontSizeTimeoutRef = useRef<number | null>(null);
@@ -560,6 +565,47 @@ export const TerminalComponent = memo(function TerminalComponent({
     }
   };
 
+  // Handle file selection for image upload
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Reset input so same file can be selected again
+    e.target.value = '';
+
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const response = await fetch(`${API_BASE}/api/upload/image`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.path) {
+        // Insert the image path at cursor position in terminal
+        sendRef.current(result.path);
+      } else {
+        console.error('Upload failed:', result.error);
+        // Show error message in terminal
+        sendRef.current(`\r\n[Upload error: ${result.error || 'Unknown error'}]\r\n`);
+      }
+    } catch (err) {
+      console.error('Upload error:', err);
+      sendRef.current('\r\n[Upload error: Network error]\r\n');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  // Open file picker
+  const handleOpenFilePicker = () => {
+    fileInputRef.current?.click();
+  };
+
   // Handle Enter key in input
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
@@ -797,6 +843,14 @@ export const TerminalComponent = memo(function TerminalComponent({
           onTouchStart={handleInputBarTouchStart}
           onTouchEnd={handleInputBarTouchEnd}
         >
+          {/* Hidden file input for image upload (shared across modes) */}
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp"
+            className="hidden"
+            ref={fileInputRef}
+            onChange={handleFileSelect}
+          />
           {/* Header bar with hint and close button */}
           <div className="flex items-center justify-between bg-gray-900 px-2 py-1">
             <span className="text-xs text-gray-500">
@@ -880,6 +934,19 @@ export const TerminalComponent = memo(function TerminalComponent({
                       >
                         あ
                       </button>
+                    ) : keyDef.key === 'FILE_PICKER' ? (
+                      // File picker button
+                      <button
+                        key={`${rowIndex}-${keyIndex}`}
+                        onClick={handleOpenFilePicker}
+                        disabled={isUploading}
+                        className={`py-3 text-base font-medium select-none border border-gray-700 rounded m-0.5 text-center ${
+                          isUploading ? 'bg-gray-600 text-gray-400' : 'bg-gray-800 text-white active:bg-gray-600'
+                        }`}
+                        style={{ flex: keyDef.width || 1, minWidth: 0 }}
+                      >
+                        {isUploading ? '⏳' : '📁'}
+                      </button>
                     ) : (
                       <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />
                     )
@@ -908,6 +975,18 @@ export const TerminalComponent = memo(function TerminalComponent({
                 className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
                 style={{ fontSize: '16px' }}
               />
+              {/* File picker button */}
+              <button
+                onClick={handleOpenFilePicker}
+                disabled={isUploading}
+                className={`px-3 py-2 rounded font-medium ${
+                  isUploading
+                    ? 'bg-gray-600 text-gray-400'
+                    : 'bg-gray-700 hover:bg-gray-600 active:bg-gray-500 text-white'
+                }`}
+              >
+                {isUploading ? '⏳' : '📁'}
+              </button>
               <button
                 onClick={() => {
                   setIsAnimating(true);

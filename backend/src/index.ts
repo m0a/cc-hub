@@ -4,6 +4,7 @@ import { logger } from 'hono/logger';
 import { auth } from './routes/auth';
 import { logs } from './routes/logs';
 import { sessions } from './routes/sessions';
+import { upload } from './routes/upload';
 import { terminalWebSocket, handleTerminalUpgrade } from './routes/terminal';
 
 const app = new Hono();
@@ -21,6 +22,7 @@ app.get('/health', (c) => c.json({ status: 'ok' }));
 app.route('/api/auth', auth);
 app.route('/api/logs', logs);
 app.route('/api/sessions', sessions);
+app.route('/api/upload', upload);
 
 // Export app type for Hono RPC
 export type AppType = typeof app;

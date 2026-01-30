@@ -218,6 +218,28 @@ export class TmuxService {
   }
 
   /**
+   * Check if session is in copy mode (scroll mode)
+   */
+  async isInCopyMode(sessionId: string): Promise<boolean> {
+    try {
+      const proc = Bun.spawn(['tmux', 'display-message', '-t', sessionId, '-p', '#{pane_in_mode}'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) {
+        return false;
+      }
+
+      const text = await new Response(proc.stdout).text();
+      return text.trim() === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Capture the scrollback buffer from a tmux session
    */
   async captureScrollback(sessionId: string, lines: number = 1000): Promise<string | null> {

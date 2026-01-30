@@ -428,11 +428,32 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     const viewport = window.visualViewport;
     if (!viewport) return;
 
-    const updateKeyboardOffset = () => {
+    let prevViewportHeight = viewport.height;
+
+    const updateKeyboardOffset = async () => {
       // Only apply offset in browser fullscreen mode (not PWA standalone)
       // PWA standalone mode handles viewport automatically
       const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
       const isBrowserFullscreen = document.fullscreenElement !== null;
+
+      // Detect keyboard appearance (viewport shrinks significantly)
+      const heightDiff = prevViewportHeight - viewport.height;
+      if (heightDiff > 100) {
+        // Keyboard likely appeared - check if in copy mode and exit
+        try {
+          const res = await fetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/copy-mode`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.inCopyMode) {
+              // Send 'q' to exit copy mode
+              sendRef.current('q');
+            }
+          }
+        } catch {
+          // Ignore errors
+        }
+      }
+      prevViewportHeight = viewport.height;
 
       if (isStandalone || !isBrowserFullscreen) {
         setKeyboardOffset(0);
@@ -453,7 +474,30 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       viewport.removeEventListener('resize', updateKeyboardOffset);
       viewport.removeEventListener('scroll', updateKeyboardOffset);
     };
-  }, []);
+  }, [sessionId]);
+
+  // Exit copy mode when custom keyboard appears
+  useEffect(() => {
+    if (inputMode === 'hidden') return;
+
+    // Keyboard just appeared - check if in copy mode and exit
+    const checkAndExitCopyMode = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/copy-mode`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.inCopyMode) {
+            // Send 'q' to exit copy mode
+            sendRef.current('q');
+          }
+        }
+      } catch {
+        // Ignore errors
+      }
+    };
+
+    checkAndExitCopyMode();
+  }, [inputMode, sessionId]);
 
   // Show font size indicator when font size changes
   useEffect(() => {

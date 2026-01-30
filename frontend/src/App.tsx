@@ -120,13 +120,12 @@ export function App() {
               // External session
               const extId = id.slice(4);
               const extSession = externalSessions.find(s => s.id === extId);
-              if (extSession) {
-                sessionsToOpen.push({
-                  id: id,
-                  name: extSession.name,
-                  state: extSession.state,
-                });
-              }
+              // Always restore external session (even if not in API response)
+              sessionsToOpen.push({
+                id: id,
+                name: extSession?.name || extId,
+                state: extSession?.state || 'idle',
+              });
             } else {
               // Regular session
               const session = allSessions.find(s => s.id === id);
@@ -190,10 +189,13 @@ export function App() {
     }
   }, [openSessions]);
 
-  // Save active session to localStorage
+  // Save active session to localStorage (only when not loading)
   useEffect(() => {
-    saveLastSession(activeSessionId);
-  }, [activeSessionId]);
+    // Don't save null during initial load - it would overwrite the saved session
+    if (!isLoading && activeSessionId !== null) {
+      saveLastSession(activeSessionId);
+    }
+  }, [activeSessionId, isLoading]);
 
   const handleSelectSession = useCallback((session: SessionResponse) => {
     // Check if already open

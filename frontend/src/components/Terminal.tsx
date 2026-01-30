@@ -146,6 +146,7 @@ export const TerminalComponent = memo(function TerminalComponent({
   const [shiftPressed, setShiftPressed] = useState(false);
   const [showHint, setShowHint] = useState(true);
   const [isAnimating, setIsAnimating] = useState(false);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
   const inputBarRef = useRef<HTMLDivElement>(null);
   const hintTimeoutRef = useRef<number | null>(null);
 
@@ -429,6 +430,39 @@ export const TerminalComponent = memo(function TerminalComponent({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
+  // Track visual viewport for soft keyboard offset (mobile fullscreen only)
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+
+    const updateKeyboardOffset = () => {
+      // Only apply offset in fullscreen/standalone mode (PWA or fullscreen browser)
+      const isFullscreen = window.matchMedia('(display-mode: fullscreen)').matches
+        || window.matchMedia('(display-mode: standalone)').matches
+        || document.fullscreenElement !== null
+        || window.innerHeight === screen.height;
+
+      if (!isFullscreen) {
+        setKeyboardOffset(0);
+        return;
+      }
+
+      // Calculate how much the viewport has shrunk (keyboard height)
+      const offset = window.innerHeight - viewport.height;
+      setKeyboardOffset(offset > 0 ? offset : 0);
+    };
+
+    viewport.addEventListener('resize', updateKeyboardOffset);
+    viewport.addEventListener('scroll', updateKeyboardOffset);
+    // Initial check
+    updateKeyboardOffset();
+
+    return () => {
+      viewport.removeEventListener('resize', updateKeyboardOffset);
+      viewport.removeEventListener('scroll', updateKeyboardOffset);
+    };
+  }, []);
+
   // Show shortcuts bar
   const handleKeyboardButtonClick = () => {
     setInputMode('shortcuts');
@@ -685,8 +719,16 @@ export const TerminalComponent = memo(function TerminalComponent({
     );
   };
 
+  // Calculate container height based on visual viewport (for mobile keyboard)
+  const containerStyle = keyboardOffset > 0
+    ? { height: `calc(100% - ${keyboardOffset}px)` }
+    : undefined;
+
   return (
-    <div className="h-full w-full bg-[#1a1a1a] flex flex-col overflow-hidden">
+    <div
+      className="h-full w-full bg-[#1a1a1a] flex flex-col overflow-hidden"
+      style={containerStyle}
+    >
       {/* Terminal area - shrinks when input bar is shown */}
       <div className="flex-1 relative min-h-0">
         {/* Terminal container */}

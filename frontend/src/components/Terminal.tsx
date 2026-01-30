@@ -5,6 +5,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { useTerminal } from '../hooks/useTerminal';
+import { Keyboard } from './Keyboard';
 
 const FONT_SIZE_KEY_PREFIX = 'cchub-terminal-font-size-';
 const DEFAULT_FONT_SIZE = 14;
@@ -12,98 +13,6 @@ const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 32;
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
-
-// Keyboard key definition
-interface KeyDef {
-  label: string;
-  key: string;          // 送信する文字
-  shiftKey?: string;    // Shift時の文字
-  longKey?: string;     // 長押し時の文字
-  longLabel?: string;   // 長押しラベル
-  width?: number;       // 相対幅（デフォルト1）
-  type?: 'normal' | 'modifier' | 'special';
-}
-
-// Full QWERTY keyboard layout (5 rows)
-const KEYBOARD_ROWS: KeyDef[][] = [
-  // Row 1: ESC, numbers, backspace
-  [
-    { label: 'ESC', key: '\x1b', width: 1.5, type: 'special' },
-    { label: '1', key: '1', shiftKey: '!', longKey: '!', longLabel: '!' },
-    { label: '2', key: '2', shiftKey: '@', longKey: '@', longLabel: '@' },
-    { label: '3', key: '3', shiftKey: '#', longKey: '#', longLabel: '#' },
-    { label: '4', key: '4', shiftKey: '$', longKey: '$', longLabel: '$' },
-    { label: '5', key: '5', shiftKey: '%', longKey: '%', longLabel: '%' },
-    { label: '6', key: '6', shiftKey: '^', longKey: '^', longLabel: '^' },
-    { label: '7', key: '7', shiftKey: '&', longKey: '&', longLabel: '&' },
-    { label: '8', key: '8', shiftKey: '*', longKey: '*', longLabel: '*' },
-    { label: '9', key: '9', shiftKey: '(', longKey: '(', longLabel: '(' },
-    { label: '0', key: '0', shiftKey: ')', longKey: ')', longLabel: ')' },
-    { label: '-', key: '-', shiftKey: '_', longKey: '_', longLabel: '_' },
-    { label: '=', key: '=', shiftKey: '+', longKey: '+', longLabel: '+' },
-    { label: '⌫', key: '\x7f', width: 1.5, type: 'special' },
-  ],
-  // Row 2: TAB, QWERTY row, brackets, backslash
-  [
-    { label: 'TAB', key: '\t', width: 1.5, type: 'special' },
-    { label: 'q', key: 'q', shiftKey: 'Q' },
-    { label: 'w', key: 'w', shiftKey: 'W' },
-    { label: 'e', key: 'e', shiftKey: 'E' },
-    { label: 'r', key: 'r', shiftKey: 'R' },
-    { label: 't', key: 't', shiftKey: 'T' },
-    { label: 'y', key: 'y', shiftKey: 'Y' },
-    { label: 'u', key: 'u', shiftKey: 'U' },
-    { label: 'i', key: 'i', shiftKey: 'I' },
-    { label: 'o', key: 'o', shiftKey: 'O' },
-    { label: 'p', key: 'p', shiftKey: 'P' },
-    { label: '[', key: '[', shiftKey: '{', longKey: '{', longLabel: '{' },
-    { label: ']', key: ']', shiftKey: '}', longKey: '}', longLabel: '}' },
-    { label: '\\', key: '\\', shiftKey: '|', longKey: '|', longLabel: '|', width: 1.5 },
-  ],
-  // Row 3: CTRL, ASDF row, semicolon, quote, enter
-  [
-    { label: 'CTRL', key: 'CTRL', width: 1.75, type: 'modifier' },
-    { label: 'a', key: 'a', shiftKey: 'A' },
-    { label: 's', key: 's', shiftKey: 'S' },
-    { label: 'd', key: 'd', shiftKey: 'D' },
-    { label: 'f', key: 'f', shiftKey: 'F' },
-    { label: 'g', key: 'g', shiftKey: 'G' },
-    { label: 'h', key: 'h', shiftKey: 'H' },
-    { label: 'j', key: 'j', shiftKey: 'J' },
-    { label: 'k', key: 'k', shiftKey: 'K' },
-    { label: 'l', key: 'l', shiftKey: 'L' },
-    { label: ';', key: ';', shiftKey: ':', longKey: ':', longLabel: ':' },
-    { label: "'", key: "'", shiftKey: '"', longKey: '"', longLabel: '"' },
-    { label: '↵', key: '\r', width: 2.25, type: 'special' },
-  ],
-  // Row 4: SHIFT, ZXCV row, punctuation, arrow up
-  [
-    { label: 'SHFT', key: 'SHIFT', width: 2, type: 'modifier' },
-    { label: 'z', key: 'z', shiftKey: 'Z' },
-    { label: 'x', key: 'x', shiftKey: 'X' },
-    { label: 'c', key: 'c', shiftKey: 'C' },
-    { label: 'v', key: 'v', shiftKey: 'V' },
-    { label: 'b', key: 'b', shiftKey: 'B' },
-    { label: 'n', key: 'n', shiftKey: 'N' },
-    { label: 'm', key: 'm', shiftKey: 'M' },
-    { label: ',', key: ',', shiftKey: '<', longKey: '<', longLabel: '<' },
-    { label: '.', key: '.', shiftKey: '>', longKey: '>', longLabel: '>' },
-    { label: '/', key: '/', shiftKey: '?', longKey: '?', longLabel: '?' },
-    { label: '↑', key: '\x1b[A', width: 2, type: 'special' },
-  ],
-  // Row 5: ALT, space, file picker, URL extract, mode switch, arrows
-  [
-    { label: 'ALT', key: 'ALT', width: 1.5, type: 'modifier' },
-    { label: '`', key: '`', shiftKey: '~', longKey: '~', longLabel: '~' },
-    { label: 'SPACE', key: ' ', width: 4, type: 'special' },
-    { label: '📁', key: 'FILE_PICKER', width: 1, type: 'special' },
-    { label: '🔗', key: 'URL_EXTRACT', width: 1, type: 'special' },
-    { label: 'あ', key: 'MODE_SWITCH', width: 1, type: 'special' },
-    { label: '←', key: '\x1b[D', type: 'special' },
-    { label: '↓', key: '\x1b[B', type: 'special' },
-    { label: '→', key: '\x1b[C', type: 'special' },
-  ],
-];
 
 function loadFontSize(sessionId: string): number {
   const saved = localStorage.getItem(FONT_SIZE_KEY_PREFIX + sessionId);
@@ -156,9 +65,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const [inputMode, setInputMode] = useState<'hidden' | 'shortcuts' | 'input'>('hidden');
   const [inputValue, setInputValue] = useState('');
   const [fontSize, setFontSize] = useState(() => loadFontSize(sessionId));
-  const [ctrlPressed, setCtrlPressed] = useState(false);
-  const [altPressed, setAltPressed] = useState(false);
-  const [shiftPressed, setShiftPressed] = useState(false);
   const [showHint, setShowHint] = useState(true);
   const [isAnimating, setIsAnimating] = useState(false);
   const [keyboardOffset, setKeyboardOffset] = useState(0);
@@ -570,9 +476,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   // Show shortcuts bar
   const handleKeyboardButtonClick = () => {
     setInputMode('shortcuts');
-    setCtrlPressed(false);
-    setAltPressed(false);
-    setShiftPressed(false);
     setShowHint(true);
     // Hide hint after 3 seconds
     if (hintTimeoutRef.current) {
@@ -590,57 +493,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       // Focus hidden input to show soft keyboard
       inputRef.current?.focus();
     }, 50);
-  };
-
-  // Send keyboard key with modifiers
-  const sendKeyPress = (keyDef: KeyDef) => {
-    // Handle modifier keys
-    if (keyDef.type === 'modifier') {
-      if (keyDef.key === 'CTRL') {
-        setCtrlPressed(!ctrlPressed);
-      } else if (keyDef.key === 'ALT') {
-        setAltPressed(!altPressed);
-      } else if (keyDef.key === 'SHIFT') {
-        setShiftPressed(!shiftPressed);
-      }
-      return;
-    }
-
-    // Determine the character to send
-    let char = shiftPressed ? (keyDef.shiftKey || keyDef.key.toUpperCase()) : keyDef.key;
-
-    // Apply Ctrl modifier
-    if (ctrlPressed && char.length === 1) {
-      const code = char.toLowerCase().charCodeAt(0) - 96;
-      if (code > 0 && code < 27) {
-        char = String.fromCharCode(code);
-      }
-      setCtrlPressed(false);
-    }
-
-    // Apply Alt modifier (ESC prefix)
-    if (altPressed) {
-      char = '\x1b' + char;
-      setAltPressed(false);
-    }
-
-    // Reset shift after use (one-shot)
-    if (shiftPressed) {
-      setShiftPressed(false);
-    }
-
-    sendRef.current(char);
-  };
-
-  // Handle long press for alternative characters
-  const sendLongPress = (keyDef: KeyDef) => {
-    if (keyDef.longKey) {
-      sendRef.current(keyDef.longKey);
-      // Reset modifiers
-      setCtrlPressed(false);
-      setAltPressed(false);
-      setShiftPressed(false);
-    }
   };
 
   // Handle file selection for image upload
@@ -757,9 +609,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const handleCloseInputBar = useCallback(() => {
     setInputMode('hidden');
     setInputValue('');
-    setCtrlPressed(false);
-    setAltPressed(false);
-    setShiftPressed(false);
     // Refit terminal after bar is hidden
     setTimeout(() => {
       fitAddonRef.current?.fit();
@@ -828,84 +677,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       }
     }
     inputBarSwipeRef.current = null;
-  };
-
-  // Long press support for keyboard keys
-  const longPressTimerRef = useRef<number | null>(null);
-  const longPressFiredRef = useRef(false);
-
-  // Keyboard key component for full QWERTY keyboard
-  const KeyboardKey = ({ keyDef }: { keyDef: KeyDef }) => {
-    const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
-      e.preventDefault();
-      longPressFiredRef.current = false;
-
-      if (keyDef.longKey) {
-        longPressTimerRef.current = window.setTimeout(() => {
-          longPressFiredRef.current = true;
-          sendLongPress(keyDef);
-        }, 400);
-      }
-    };
-
-    const handleEnd = (e: React.MouseEvent | React.TouchEvent) => {
-      e.preventDefault();
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current);
-        longPressTimerRef.current = null;
-      }
-      if (!longPressFiredRef.current) {
-        sendKeyPress(keyDef);
-      }
-      longPressFiredRef.current = false;
-    };
-
-    const handleCancel = () => {
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current);
-        longPressTimerRef.current = null;
-      }
-      longPressFiredRef.current = false;
-    };
-
-    // Determine display label based on shift state
-    const displayLabel = keyDef.type === 'modifier' || keyDef.type === 'special'
-      ? keyDef.label
-      : shiftPressed && keyDef.shiftKey
-        ? keyDef.shiftKey
-        : keyDef.label;
-
-    // Check if this modifier is active
-    const isActive = keyDef.type === 'modifier' && (
-      (keyDef.key === 'CTRL' && ctrlPressed) ||
-      (keyDef.key === 'ALT' && altPressed) ||
-      (keyDef.key === 'SHIFT' && shiftPressed)
-    );
-
-    const width = keyDef.width || 1;
-
-    return (
-      <button
-        onMouseDown={handleStart}
-        onMouseUp={handleEnd}
-        onMouseLeave={handleCancel}
-        onTouchStart={handleStart}
-        onTouchEnd={handleEnd}
-        onTouchCancel={handleCancel}
-        className={`
-          ${isTablet ? 'py-2 text-sm' : 'py-3 text-base'} text-white font-medium active:bg-gray-600 select-none relative
-          border border-gray-700 rounded m-0.5
-          ${isActive ? 'bg-blue-600' : 'bg-gray-800'}
-          ${keyDef.type === 'modifier' ? 'text-sm' : ''}
-        `}
-        style={{ flex: width, minWidth: 0 }}
-      >
-        {displayLabel}
-        {keyDef.longLabel && !shiftPressed && (
-          <span className={`absolute top-0.5 right-1 ${isTablet ? 'text-[7px]' : 'text-[9px]'} text-gray-500`}>{keyDef.longLabel}</span>
-        )}
-      </button>
-    );
   };
 
   // Calculate container height based on visual viewport (for mobile keyboard)
@@ -1083,15 +854,24 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                 style={{ transform: inputMode === 'input' ? 'translateX(-100%)' : 'translateX(0)' }}
               >
                 {/* Full QWERTY keyboard mode */}
-                <div className={`w-full flex-shrink-0 bg-black px-0.5 pb-1 ${isTablet ? 'flex' : ''} ${isTablet ? (keyboardPosition === 'left' ? 'justify-start' : 'justify-end') : ''}`}>
+                <div className={`w-full flex-shrink-0 ${isTablet ? 'flex' : ''} ${isTablet ? (keyboardPosition === 'left' ? 'justify-start' : 'justify-end') : ''}`}>
                   <div className={isTablet ? 'w-1/3 max-w-sm' : 'w-full'}>
-                    {KEYBOARD_ROWS.map((row, rowIndex) => (
-                      <div key={rowIndex} className="flex">
-                        {row.map((keyDef, keyIndex) => (
-                          <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />
-                        ))}
-                      </div>
-                    ))}
+                    <Keyboard
+                      onSend={(char) => sendRef.current(char)}
+                      onFilePicker={handleOpenFilePicker}
+                      onUrlExtract={handleExtractUrls}
+                      onModeSwitch={() => {
+                        setIsAnimating(true);
+                        setInputMode('input');
+                        setTimeout(() => {
+                          setIsAnimating(false);
+                          fitTerminal();
+                          setTimeout(fitTerminal, 300);
+                        }, 350);
+                      }}
+                      isUploading={isUploading}
+                      compact={isTablet}
+                    />
                   </div>
                 </div>
                 {/* Text input mode */}
@@ -1115,7 +895,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             </div>
           ) : inputMode === 'shortcuts' ? (
             // Keyboard mode
-            <div className={`bg-black px-0.5 pb-1 ${isTablet ? 'flex' : ''} ${isTablet ? (keyboardPosition === 'left' ? 'justify-start' : 'justify-end') : ''}`}>
+            <div className={`${isTablet ? 'flex' : ''} ${isTablet ? (keyboardPosition === 'left' ? 'justify-start' : 'justify-end') : ''}`}>
               {/* Hidden input for English keyboard */}
               <input
                 type="text"
@@ -1125,57 +905,22 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                 ref={inputRef}
               />
               <div className={isTablet ? 'w-1/3 max-w-sm' : 'w-full'}>
-                {KEYBOARD_ROWS.map((row, rowIndex) => (
-                  <div key={rowIndex} className="flex">
-                    {row.map((keyDef, keyIndex) => (
-                      keyDef.key === 'MODE_SWITCH' ? (
-                        // Special "あ" key: just switch to input mode
-                        // User will tap input field to show keyboard
-                        <button
-                          key={`${rowIndex}-${keyIndex}`}
-                          onClick={() => {
-                            setIsAnimating(true);
-                            setInputMode('input');
-                            setTimeout(() => {
-                              setIsAnimating(false);
-                              fitTerminal();
-                              setTimeout(fitTerminal, 300);
-                            }, 350);
-                          }}
-                          className={`${isTablet ? 'py-2 text-sm' : 'py-3 text-base'} text-white font-medium bg-gray-800 active:bg-gray-600 select-none border border-gray-700 rounded m-0.5 text-center`}
-                          style={{ flex: keyDef.width || 1, minWidth: 0 }}
-                        >
-                          あ
-                        </button>
-                      ) : keyDef.key === 'FILE_PICKER' ? (
-                        // File picker button
-                        <button
-                          key={`${rowIndex}-${keyIndex}`}
-                          onClick={handleOpenFilePicker}
-                          disabled={isUploading}
-                          className={`${isTablet ? 'py-2 text-sm' : 'py-3 text-base'} font-medium select-none border border-gray-700 rounded m-0.5 text-center ${
-                            isUploading ? 'bg-gray-600 text-gray-400' : 'bg-gray-800 text-white active:bg-gray-600'
-                          }`}
-                          style={{ flex: keyDef.width || 1, minWidth: 0 }}
-                        >
-                          {isUploading ? '⏳' : '📁'}
-                        </button>
-                      ) : keyDef.key === 'URL_EXTRACT' ? (
-                        // URL extract button
-                        <button
-                          key={`${rowIndex}-${keyIndex}`}
-                          onClick={handleExtractUrls}
-                          className={`${isTablet ? 'py-2 text-sm' : 'py-3 text-base'} font-medium select-none border border-gray-700 rounded m-0.5 text-center bg-gray-800 text-white active:bg-gray-600`}
-                          style={{ flex: keyDef.width || 1, minWidth: 0 }}
-                        >
-                          🔗
-                        </button>
-                      ) : (
-                        <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />
-                      )
-                    ))}
-                  </div>
-                ))}
+                <Keyboard
+                  onSend={(char) => sendRef.current(char)}
+                  onFilePicker={handleOpenFilePicker}
+                  onUrlExtract={handleExtractUrls}
+                  onModeSwitch={() => {
+                    setIsAnimating(true);
+                    setInputMode('input');
+                    setTimeout(() => {
+                      setIsAnimating(false);
+                      fitTerminal();
+                      setTimeout(fitTerminal, 300);
+                    }, 350);
+                  }}
+                  isUploading={isUploading}
+                  compact={isTablet}
+                />
               </div>
             </div>
           ) : (

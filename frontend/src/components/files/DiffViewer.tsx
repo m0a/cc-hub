@@ -1,4 +1,30 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useRef, useCallback } from 'react';
+
+const WORDWRAP_STORAGE_KEY = 'cchub-wordwrap';
+
+function getWordWrapSetting(fileName: string): boolean {
+  try {
+    const stored = localStorage.getItem(WORDWRAP_STORAGE_KEY);
+    if (stored) {
+      const settings = JSON.parse(stored);
+      return settings[fileName] ?? true; // デフォルトはtrue
+    }
+  } catch {
+    // ignore
+  }
+  return true; // デフォルトはtrue
+}
+
+function setWordWrapSetting(fileName: string, value: boolean) {
+  try {
+    const stored = localStorage.getItem(WORDWRAP_STORAGE_KEY);
+    const settings = stored ? JSON.parse(stored) : {};
+    settings[fileName] = value;
+    localStorage.setItem(WORDWRAP_STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    // ignore
+  }
+}
 
 interface DiffViewerProps {
   oldContent?: string;
@@ -133,6 +159,29 @@ export function DiffViewer({
   fileName,
   toolName,
 }: DiffViewerProps) {
+  const [wordWrap, setWordWrap] = useState(() => getWordWrapSetting(fileName || ''));
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const toggleWordWrap = useCallback(() => {
+    const newValue = !wordWrap;
+    setWordWrap(newValue);
+    if (fileName) {
+      setWordWrapSetting(fileName, newValue);
+    }
+  }, [wordWrap, fileName]);
+
+  const scrollRight = useCallback(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollLeft += 200;
+    }
+  }, []);
+
+  const scrollLeft = useCallback(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollLeft -= 200;
+    }
+  }, []);
+
   const diffLines = useMemo(() => {
     if (toolName === 'Write') {
       // For Write, show all lines as added
@@ -175,10 +224,45 @@ export function DiffViewer({
       <div className="flex items-center gap-4 px-3 py-1.5 border-b border-gray-700 bg-gray-800/50 text-xs">
         <span className="text-green-400">+{stats.added} 追加</span>
         <span className="text-red-400">-{stats.removed} 削除</span>
+        <div className="flex items-center gap-1 ml-auto">
+          {/* Scroll buttons */}
+          {!wordWrap && (
+            <>
+              <button
+                onClick={scrollLeft}
+                className="p-1 rounded text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
+                title="左へスクロール"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <button
+                onClick={scrollRight}
+                className="p-1 rounded text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
+                title="右へスクロール"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </>
+          )}
+          {/* Word wrap toggle */}
+          <button
+            onClick={toggleWordWrap}
+            className={`p-1 rounded transition-colors ${wordWrap ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+            title={wordWrap ? '折り返しOFF' : '折り返しON'}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h10m-10 6h16M17 9l3 3-3 3" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Diff content */}
-      <div className="flex-1 overflow-auto">
+      <div ref={scrollContainerRef} className="flex-1 overflow-auto">
         <div className="min-h-full">
           {diffLines.map((line, i) => (
             <div
@@ -190,26 +274,21 @@ export function DiffViewer({
               }`}
             >
               {/* Line numbers */}
-              <div className="flex shrink-0 text-gray-500 text-right select-none border-r border-gray-700 bg-gray-800/50">
-                <span className="w-10 px-2 leading-6">
-                  {line.oldLineNum || ''}
-                </span>
-                <span className="w-10 px-2 leading-6">
-                  {line.newLineNum || ''}
-                </span>
+              <div className="shrink-0 text-gray-500 text-right select-none border-r border-gray-700 bg-gray-800/50 text-xs leading-6 px-1 min-w-[2rem]">
+                {toolName === 'Write' ? line.newLineNum : (line.newLineNum || line.oldLineNum || '')}
               </div>
 
               {/* Indicator */}
-              <div className={`w-6 shrink-0 text-center leading-6 ${
+              <div className={`w-4 shrink-0 text-center leading-6 text-xs ${
                 line.type === 'add' ? 'text-green-400 bg-green-900/50' :
                 line.type === 'remove' ? 'text-red-400 bg-red-900/50' :
                 'text-gray-600'
               }`}>
-                {line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ' '}
+                {line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ''}
               </div>
 
               {/* Content */}
-              <pre className="flex-1 px-2 leading-6 overflow-x-auto whitespace-pre">
+              <pre className={`flex-1 px-2 leading-6 ${wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'}`}>
                 {line.content || ' '}
               </pre>
             </div>

@@ -1,43 +1,32 @@
-import { useEffect, useRef } from 'react';
-import hljs from 'highlight.js/lib/core';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import hljs from 'highlight.js'; // 全言語サポート
 import 'highlight.js/styles/github-dark.css';
 
-// Import only commonly used languages
-import typescript from 'highlight.js/lib/languages/typescript';
-import javascript from 'highlight.js/lib/languages/javascript';
-import json from 'highlight.js/lib/languages/json';
-import xml from 'highlight.js/lib/languages/xml';
-import css from 'highlight.js/lib/languages/css';
-import scss from 'highlight.js/lib/languages/scss';
-import markdown from 'highlight.js/lib/languages/markdown';
-import yaml from 'highlight.js/lib/languages/yaml';
-import bash from 'highlight.js/lib/languages/bash';
-import python from 'highlight.js/lib/languages/python';
-import go from 'highlight.js/lib/languages/go';
-import rust from 'highlight.js/lib/languages/rust';
-import sql from 'highlight.js/lib/languages/sql';
+const WORDWRAP_STORAGE_KEY = 'cchub-wordwrap';
 
-// Register languages
-hljs.registerLanguage('typescript', typescript);
-hljs.registerLanguage('javascript', javascript);
-hljs.registerLanguage('json', json);
-hljs.registerLanguage('xml', xml);
-hljs.registerLanguage('html', xml);
-hljs.registerLanguage('css', css);
-hljs.registerLanguage('scss', scss);
-hljs.registerLanguage('markdown', markdown);
-hljs.registerLanguage('yaml', yaml);
-hljs.registerLanguage('bash', bash);
-hljs.registerLanguage('python', python);
-hljs.registerLanguage('go', go);
-hljs.registerLanguage('rust', rust);
-hljs.registerLanguage('sql', sql);
+function getWordWrapSetting(fileName: string): boolean {
+  try {
+    const stored = localStorage.getItem(WORDWRAP_STORAGE_KEY);
+    if (stored) {
+      const settings = JSON.parse(stored);
+      return settings[fileName] ?? true; // デフォルトはtrue
+    }
+  } catch {
+    // ignore
+  }
+  return true; // デフォルトはtrue
+}
 
-// Aliases
-hljs.registerLanguage('tsx', typescript);
-hljs.registerLanguage('jsx', javascript);
-hljs.registerLanguage('sh', bash);
-hljs.registerLanguage('yml', yaml);
+function setWordWrapSetting(fileName: string, value: boolean) {
+  try {
+    const stored = localStorage.getItem(WORDWRAP_STORAGE_KEY);
+    const settings = stored ? JSON.parse(stored) : {};
+    settings[fileName] = value;
+    localStorage.setItem(WORDWRAP_STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    // ignore
+  }
+}
 
 interface CodeViewerProps {
   content: string;
@@ -55,6 +44,15 @@ export function CodeViewer({
   truncated = false,
 }: CodeViewerProps) {
   const codeRef = useRef<HTMLElement>(null);
+  const [wordWrap, setWordWrap] = useState(() => getWordWrapSetting(fileName || ''));
+
+  const toggleWordWrap = useCallback(() => {
+    const newValue = !wordWrap;
+    setWordWrap(newValue);
+    if (fileName) {
+      setWordWrapSetting(fileName, newValue);
+    }
+  }, [wordWrap, fileName]);
 
   useEffect(() => {
     if (codeRef.current) {
@@ -80,11 +78,20 @@ export function CodeViewer({
       {/* File name header */}
       {fileName && (
         <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-700 bg-gray-800">
-          <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
           </svg>
-          <span className="text-sm text-gray-300 truncate">{fileName}</span>
-          <span className="text-xs text-gray-500 ml-auto">{language}</span>
+          <span className="text-sm text-gray-300 truncate flex-1">{fileName}</span>
+          <span className="text-xs text-gray-500">{language}</span>
+          <button
+            onClick={toggleWordWrap}
+            className={`p-1 rounded transition-colors ${wordWrap ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+            title={wordWrap ? '折り返しOFF' : '折り返しON'}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h10m-10 6h16M17 9l3 3-3 3" />
+            </svg>
+          </button>
         </div>
       )}
 
@@ -100,9 +107,9 @@ export function CodeViewer({
         <div className="flex min-h-full">
           {/* Line numbers */}
           {showLineNumbers && (
-            <div className="flex-shrink-0 select-none text-right pr-4 py-3 bg-gray-800/50 border-r border-gray-700 text-gray-500 sticky left-0">
+            <div className="flex-shrink-0 select-none text-right py-3 bg-gray-800/50 border-r border-gray-700 text-gray-500 sticky left-0">
               {lines.map((_, i) => (
-                <div key={i} className="px-2 leading-6">
+                <div key={i} className="px-1.5 leading-6 text-xs">
                   {i + 1}
                 </div>
               ))}
@@ -110,7 +117,7 @@ export function CodeViewer({
           )}
 
           {/* Code */}
-          <pre className="flex-1 p-3 overflow-x-auto m-0">
+          <pre className={`flex-1 p-3 m-0 ${wordWrap ? 'whitespace-pre-wrap break-all' : 'overflow-x-auto'}`}>
             <code ref={codeRef} className={`language-${language}`} style={{ lineHeight: '1.5rem' }}>
               {content}
             </code>

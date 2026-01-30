@@ -93,12 +93,14 @@ export function App() {
   const [showFileViewer, setShowFileViewer] = useState(false);
   const overlayTimeoutRef = useRef<number | null>(null);
 
-  // Tablet detection (640px or wider)
-  const [isTablet, setIsTablet] = useState(() => window.innerWidth >= 640);
+  // Tablet detection (width >= 640px AND height >= 500px)
+  // This prevents landscape phones from triggering tablet mode
+  const checkIsTablet = () => window.innerWidth >= 640 && window.innerHeight >= 500;
+  const [isTablet, setIsTablet] = useState(checkIsTablet);
 
   // Update tablet detection on resize
   useEffect(() => {
-    const handleResize = () => setIsTablet(window.innerWidth >= 640);
+    const handleResize = () => setIsTablet(checkIsTablet());
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);

@@ -102,6 +102,19 @@ sessions.get('/:id', async (c) => {
   });
 });
 
+// GET /sessions/:id/copy-mode - Check if session is in copy mode
+sessions.get('/:id/copy-mode', async (c) => {
+  const id = c.req.param('id');
+
+  const exists = await tmuxService.sessionExists(id);
+  if (!exists) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+
+  const inCopyMode = await tmuxService.isInCopyMode(id);
+  return c.json({ inCopyMode });
+});
+
 // DELETE /sessions/:id - Delete (kill) a tmux session
 sessions.delete('/:id', async (c) => {
   const id = c.req.param('id');

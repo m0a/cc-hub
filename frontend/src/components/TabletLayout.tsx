@@ -2,6 +2,7 @@ import { useRef, useCallback, useState, useEffect } from 'react';
 import { TerminalComponent, type TerminalRef } from './Terminal';
 import { Keyboard } from './Keyboard';
 import { SessionListMini } from './SessionListMini';
+import { FileViewer } from './files/FileViewer';
 import type { SessionResponse, SessionState } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -12,6 +13,7 @@ interface OpenSession {
   id: string;
   name: string;
   state: SessionState;
+  currentPath?: string;
 }
 
 interface TabletLayoutProps {
@@ -37,6 +39,11 @@ export function TabletLayout({
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [showFileViewer, setShowFileViewer] = useState(false);
+  const [detectedUrls, setDetectedUrls] = useState<string[]>([]);
+  const [showUrlMenu, setShowUrlMenu] = useState(false);
+  const [urlPage, setUrlPage] = useState(0);
+  const URL_PAGE_SIZE = 5;
 
   // Resizable split ratio (percentage for left panel)
   const [splitRatio, setSplitRatio] = useState(() => {
@@ -99,14 +106,38 @@ export function TabletLayout({
     }
   }, [activeSessionId, onSessionStateChange]);
 
-  const handleKeyboardSend = useCallback((char: string) => {
+  // Helper to exit copy mode
+  const exitCopyMode = useCallback(async () => {
+    if (activeSessionId) {
+      try {
+        const res = await fetch(`${API_BASE}/api/sessions/${encodeURIComponent(activeSessionId)}/copy-mode`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.inCopyMode) {
+            terminalRef.current?.sendInput('q');
+            await new Promise(resolve => setTimeout(resolve, 50));
+          }
+        }
+      } catch {
+        // Ignore errors
+      }
+    }
+  }, [activeSessionId]);
+
+  const handleKeyboardSend = useCallback(async (char: string) => {
+    await exitCopyMode();
     terminalRef.current?.sendInput(char);
-  }, []);
+  }, [exitCopyMode]);
 
   const handleModeSwitch = useCallback(() => {
     setInputMode('input');
     setTimeout(() => inputRef.current?.focus(), 50);
   }, []);
+
+  // Exit copy mode when input is focused
+  const handleInputFocus = useCallback(async () => {
+    await exitCopyMode();
+  }, [exitCopyMode]);
 
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
@@ -174,11 +205,25 @@ export function TabletLayout({
     }
   }, []);
 
-  // URL extract - not implemented for tablet layout yet
+  // URL extract from terminal buffer
   const handleUrlExtract = useCallback(() => {
-    // TODO: Implement URL extraction from terminal buffer
-    // This requires access to the terminal buffer which is not exposed via ref
-    console.log('URL extract not yet implemented for tablet layout');
+    const urls = terminalRef.current?.extractUrls() || [];
+    setDetectedUrls(urls);
+    setUrlPage(0);
+    setShowUrlMenu(true);
+  }, []);
+
+  // Copy URL to clipboard
+  const handleCopyUrl = useCallback((url: string) => {
+    navigator.clipboard.writeText(url).then(() => {
+      setShowUrlMenu(false);
+    }).catch(console.error);
+  }, []);
+
+  // Open URL in browser
+  const handleOpenUrl = useCallback((url: string) => {
+    window.open(url, '_blank');
+    setShowUrlMenu(false);
   }, []);
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
@@ -201,6 +246,15 @@ export function TabletLayout({
           <span className="text-white/70 text-xs truncate max-w-[120px]">
             {activeSession?.name || '-'}
           </span>
+          <button
+            onClick={() => setShowFileViewer(true)}
+            className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+            title="ファイルブラウザ"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+          </button>
           <button
             onClick={onReload}
             className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
@@ -280,6 +334,7 @@ export function TabletLayout({
                   lang="ja"
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
+                  onFocus={handleInputFocus}
                   onKeyDown={handleInputKeyDown}
                   autoCapitalize="off"
                   autoCorrect="off"
@@ -302,6 +357,81 @@ export function TabletLayout({
           )}
         </div>
       </div>
+
+      {/* File Viewer Modal */}
+      {showFileViewer && activeSession?.currentPath && (
+        <FileViewer
+          sessionWorkingDir={activeSession.currentPath}
+          onClose={() => setShowFileViewer(false)}
+        />
+      )}
+
+      {/* URL menu */}
+      {showUrlMenu && (() => {
+        const totalPages = Math.ceil(detectedUrls.length / URL_PAGE_SIZE);
+        const startIdx = urlPage * URL_PAGE_SIZE;
+        const pageUrls = detectedUrls.slice(startIdx, startIdx + URL_PAGE_SIZE);
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+            <div className="bg-gray-800 rounded-lg w-full max-w-md max-h-[80vh] flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+                <span className="text-white font-medium">
+                  URL一覧 {detectedUrls.length > 0 && `(${startIdx + 1}-${Math.min(startIdx + URL_PAGE_SIZE, detectedUrls.length)}/${detectedUrls.length})`}
+                </span>
+                <button
+                  onClick={() => setShowUrlMenu(false)}
+                  className="p-1 text-gray-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-2">
+                {detectedUrls.length === 0 ? (
+                  <p className="text-gray-500 text-center py-4">URLが見つかりません</p>
+                ) : (
+                  pageUrls.map((url, index) => (
+                    <div key={startIdx + index} className="flex items-center gap-2 p-2 hover:bg-gray-700 rounded">
+                      <span className="flex-1 text-white text-sm truncate">{url}</span>
+                      <button
+                        onClick={() => handleCopyUrl(url)}
+                        className="px-2 py-1 text-xs bg-gray-600 hover:bg-gray-500 text-white rounded"
+                      >
+                        コピー
+                      </button>
+                      <button
+                        onClick={() => handleOpenUrl(url)}
+                        className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded"
+                      >
+                        開く
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-4 px-4 py-3 border-t border-gray-700">
+                  <button
+                    onClick={() => setUrlPage(p => Math.max(0, p - 1))}
+                    disabled={urlPage === 0}
+                    className={`px-3 py-1 rounded ${urlPage === 0 ? 'bg-gray-700 text-gray-500' : 'bg-gray-600 text-white hover:bg-gray-500'}`}
+                  >
+                    前へ
+                  </button>
+                  <span className="text-gray-400 text-sm">{urlPage + 1} / {totalPages}</span>
+                  <button
+                    onClick={() => setUrlPage(p => Math.min(totalPages - 1, p + 1))}
+                    disabled={urlPage >= totalPages - 1}
+                    className={`px-3 py-1 rounded ${urlPage >= totalPages - 1 ? 'bg-gray-700 text-gray-500' : 'bg-gray-600 text-white hover:bg-gray-500'}`}
+                  >
+                    次へ
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

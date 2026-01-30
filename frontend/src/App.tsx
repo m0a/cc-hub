@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { TerminalPage } from './pages/TerminalPage';
 import { SessionList } from './components/SessionList';
 import { TabletLayout } from './components/TabletLayout';
+import { FileViewer } from './components/files/FileViewer';
 import type { SessionResponse, SessionState } from '../../shared/types';
 
 // Session info type (simplified from SessionTabs)
@@ -9,6 +10,7 @@ interface OpenSession {
   id: string;
   name: string;
   state: SessionState;
+  currentPath?: string;
 }
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -88,14 +90,17 @@ export function App() {
   const [showSessionList, setShowSessionList] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<OpenSession | null>(null);
   const [showOverlay, setShowOverlay] = useState(true);
+  const [showFileViewer, setShowFileViewer] = useState(false);
   const overlayTimeoutRef = useRef<number | null>(null);
 
-  // Tablet detection (640px or wider)
-  const [isTablet, setIsTablet] = useState(() => window.innerWidth >= 640);
+  // Tablet detection (width >= 640px AND height >= 500px)
+  // This prevents landscape phones from triggering tablet mode
+  const checkIsTablet = () => window.innerWidth >= 640 && window.innerHeight >= 500;
+  const [isTablet, setIsTablet] = useState(checkIsTablet);
 
   // Update tablet detection on resize
   useEffect(() => {
-    const handleResize = () => setIsTablet(window.innerWidth >= 640);
+    const handleResize = () => setIsTablet(checkIsTablet());
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -123,10 +128,12 @@ export function App() {
             const normalizedId = id.startsWith('ext:') ? id.slice(4) : id;
             const session = allSessions.find(s => s.id === normalizedId);
             if (session) {
+              const extSession = session as SessionResponse & { currentPath?: string };
               sessionsToOpen.push({
                 id: session.id,
                 name: session.name,
                 state: session.state,
+                currentPath: extSession.currentPath,
               });
             }
           }
@@ -147,11 +154,12 @@ export function App() {
             setActiveSessionId(activeId);
           } else if (allSessions.length > 0) {
             // No valid saved sessions, open most recent
-            const mostRecent = allSessions[0];
+            const mostRecent = allSessions[0] as SessionResponse & { currentPath?: string };
             setOpenSessions([{
               id: mostRecent.id,
               name: mostRecent.name,
               state: mostRecent.state,
+              currentPath: mostRecent.currentPath,
             }]);
             setActiveSessionId(mostRecent.id);
           } else {
@@ -159,11 +167,12 @@ export function App() {
           }
         } else if (allSessions.length > 0) {
           // No saved sessions, open most recent
-          const mostRecent = allSessions[0];
+          const mostRecent = allSessions[0] as SessionResponse & { currentPath?: string };
           setOpenSessions([{
             id: mostRecent.id,
             name: mostRecent.name,
             state: mostRecent.state,
+            currentPath: mostRecent.currentPath,
           }]);
           setActiveSessionId(mostRecent.id);
         } else {
@@ -201,10 +210,12 @@ export function App() {
       setActiveSessionId(session.id);
     } else {
       // Add to open sessions
+      const extSession = session as SessionResponse & { currentPath?: string };
       setOpenSessions(prev => [...prev, {
-        id: session.id,
-        name: session.name,
-        state: session.state,
+        id: extSession.id,
+        name: extSession.name,
+        state: extSession.state,
+        currentPath: extSession.currentPath,
       }]);
       setActiveSessionId(session.id);
     }
@@ -388,8 +399,20 @@ export function App() {
           {activeSession?.name || '-'}
         </span>
 
-        {/* Right: Reload + Fullscreen buttons */}
+        {/* Right: File browser + Reload + Fullscreen buttons */}
         <div className="flex items-center gap-1">
+          <button
+            onClick={() => {
+              setShowFileViewer(true);
+              setShowOverlay(false);
+            }}
+            className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+            title="ファイルブラウザ"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+          </button>
           <button
             onClick={handleReload}
             className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
@@ -428,6 +451,14 @@ export function App() {
           sessionName={sessionToDelete.name}
           onConfirm={handleConfirmDelete}
           onCancel={handleCancelDelete}
+        />
+      )}
+
+      {/* File Viewer Modal */}
+      {showFileViewer && activeSession?.currentPath && (
+        <FileViewer
+          sessionWorkingDir={activeSession.currentPath}
+          onClose={() => setShowFileViewer(false)}
         />
       )}
     </div>

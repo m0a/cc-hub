@@ -109,3 +109,51 @@ export type RegisterInput = z.infer<typeof RegisterSchema>;
 export type CreateSessionInput = z.infer<typeof CreateSessionSchema>;
 export type ResizeTerminalInput = z.infer<typeof ResizeTerminalSchema>;
 export type PushSubscriptionInput = z.infer<typeof PushSubscriptionSchema>;
+
+// =============================================================================
+// File Viewer Types
+// =============================================================================
+
+export type FileType = 'file' | 'directory' | 'symlink';
+
+export interface FileInfo {
+  name: string;
+  path: string;
+  type: FileType;
+  size: number;
+  modifiedAt: string;
+  isHidden: boolean;
+  extension?: string;
+}
+
+export interface FileContent {
+  path: string;
+  content: string;
+  encoding: 'utf-8' | 'base64';
+  mimeType: string;
+  size: number;
+  truncated: boolean;
+}
+
+export interface FileChange {
+  path: string;
+  toolName: 'Write' | 'Edit';
+  timestamp: string;
+  oldContent?: string;
+  newContent?: string;
+}
+
+export interface FileListResponse {
+  path: string;
+  files: FileInfo[];
+  parentPath: string | null;
+}
+
+export interface FileReadResponse {
+  file: FileContent;
+}
+
+export interface FileChangesResponse {
+  sessionId: string;
+  changes: FileChange[];
+}

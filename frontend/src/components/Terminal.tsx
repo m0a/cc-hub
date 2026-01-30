@@ -42,6 +42,7 @@ interface TerminalProps {
 export interface TerminalRef {
   sendInput: (char: string) => void;
   focus: () => void;
+  extractUrls: () => string[];
 }
 
 export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(function TerminalComponent({
@@ -146,10 +147,31 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     resizeRef.current = resize;
   }, [send, resize]);
 
-  // Expose sendInput and focus for external keyboard
+  // Expose sendInput, focus, and extractUrls for external keyboard
   useImperativeHandle(ref, () => ({
     sendInput: (char: string) => sendRef.current(char),
     focus: () => terminalRef.current?.focus(),
+    extractUrls: () => {
+      const term = terminalRef.current;
+      if (!term) return [];
+
+      const urls: string[] = [];
+      const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g;
+
+      const buffer = term.buffer.active;
+      for (let i = 0; i < buffer.length; i++) {
+        const line = buffer.getLine(i);
+        if (line) {
+          const text = line.translateToString();
+          const matches = text.match(urlRegex);
+          if (matches) {
+            urls.push(...matches);
+          }
+        }
+      }
+
+      return [...new Set(urls)].reverse();
+    },
   }), []);
 
   // Fit and resize terminal
@@ -428,11 +450,32 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     const viewport = window.visualViewport;
     if (!viewport) return;
 
-    const updateKeyboardOffset = () => {
+    let prevViewportHeight = viewport.height;
+
+    const updateKeyboardOffset = async () => {
       // Only apply offset in browser fullscreen mode (not PWA standalone)
       // PWA standalone mode handles viewport automatically
       const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
       const isBrowserFullscreen = document.fullscreenElement !== null;
+
+      // Detect keyboard appearance (viewport shrinks significantly)
+      const heightDiff = prevViewportHeight - viewport.height;
+      if (heightDiff > 100) {
+        // Keyboard likely appeared - check if in copy mode and exit
+        try {
+          const res = await fetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/copy-mode`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.inCopyMode) {
+              // Send 'q' to exit copy mode
+              sendRef.current('q');
+            }
+          }
+        } catch {
+          // Ignore errors
+        }
+      }
+      prevViewportHeight = viewport.height;
 
       if (isStandalone || !isBrowserFullscreen) {
         setKeyboardOffset(0);
@@ -453,7 +496,30 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       viewport.removeEventListener('resize', updateKeyboardOffset);
       viewport.removeEventListener('scroll', updateKeyboardOffset);
     };
-  }, []);
+  }, [sessionId]);
+
+  // Exit copy mode when custom keyboard appears
+  useEffect(() => {
+    if (inputMode === 'hidden') return;
+
+    // Keyboard just appeared - check if in copy mode and exit
+    const checkAndExitCopyMode = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/copy-mode`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.inCopyMode) {
+            // Send 'q' to exit copy mode
+            sendRef.current('q');
+          }
+        }
+      } catch {
+        // Ignore errors
+      }
+    };
+
+    checkAndExitCopyMode();
+  }, [inputMode, sessionId]);
 
   // Show font size indicator when font size changes
   useEffect(() => {

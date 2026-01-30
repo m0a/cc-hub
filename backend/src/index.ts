@@ -6,6 +6,7 @@ import { auth } from './routes/auth';
 import { logs } from './routes/logs';
 import { sessions } from './routes/sessions';
 import { upload } from './routes/upload';
+import { files } from './routes/files';
 import { terminalWebSocket, handleTerminalUpgrade } from './routes/terminal';
 
 // Try to load embedded assets (available in compiled binary)
@@ -35,6 +36,7 @@ app.route('/api/auth', auth);
 app.route('/api/logs', logs);
 app.route('/api/sessions', sessions);
 app.route('/api/upload', upload);
+app.route('/api/files', files);
 
 // Static files handling
 const staticRoot = process.env.STATIC_ROOT || '../frontend/dist';

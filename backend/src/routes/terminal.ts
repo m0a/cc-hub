@@ -200,13 +200,23 @@ export async function handleTerminalUpgrade(
 
   const sessionId = decodeURIComponent(pathMatch[1]);
 
-  // Check if this is an external session request (prefixed with 'ext:')
-  const isExternal = sessionId.startsWith('ext:');
-  const fullSessionId = isExternal
-    ? sessionId.slice(4) // Remove 'ext:' prefix, use raw tmux session name
-    : sessionId.startsWith('cchub-')
-      ? sessionId
-      : `cchub-${sessionId}`;
+  // Auto-detect if session is external (raw tmux session) or cchub-managed
+  // Check if a tmux session with the exact name exists first
+  const rawSessionExists = await tmuxService.sessionExists(sessionId);
+  const cchubSessionId = sessionId.startsWith('cchub-') ? sessionId : `cchub-${sessionId}`;
+
+  let fullSessionId: string;
+  let isExternal: boolean;
+
+  if (rawSessionExists && !sessionId.startsWith('cchub-')) {
+    // External session: tmux session exists with exact name (e.g., "main", "life")
+    fullSessionId = sessionId;
+    isExternal = true;
+  } else {
+    // CC Hub managed session: use cchub- prefix
+    fullSessionId = cchubSessionId;
+    isExternal = false;
+  }
 
   const upgraded = server.upgrade(req, {
     data: {

@@ -1,8 +1,14 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { TerminalPage } from './pages/TerminalPage';
 import { SessionList } from './components/SessionList';
-import { SessionTabs, type OpenSession } from './components/SessionTabs';
 import type { SessionResponse, SessionState } from '../../shared/types';
+
+// Session info type (simplified from SessionTabs)
+interface OpenSession {
+  id: string;
+  name: string;
+  state: SessionState;
+}
 
 const API_BASE = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3000`;
 
@@ -80,6 +86,8 @@ export function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [showSessionList, setShowSessionList] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<OpenSession | null>(null);
+  const [showOverlay, setShowOverlay] = useState(true);
+  const overlayTimeoutRef = useRef<number | null>(null);
 
   // On mount, fetch sessions and restore from localStorage
   useEffect(() => {
@@ -222,14 +230,6 @@ export function App() {
     });
   }, [activeSessionId]);
 
-  // Show delete confirmation dialog
-  const handleDeleteSessionRequest = useCallback((id: string) => {
-    const session = openSessions.find(s => s.id === id);
-    if (session) {
-      setSessionToDelete(session);
-    }
-  }, [openSessions]);
-
   // Actually delete the session
   const handleConfirmDelete = useCallback(async () => {
     if (!sessionToDelete) return;
@@ -254,33 +254,6 @@ export function App() {
     setSessionToDelete(null);
   }, []);
 
-  const handleNewSession = useCallback(async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-
-      if (response.ok) {
-        const session = await response.json() as SessionResponse;
-        setOpenSessions(prev => [...prev, {
-          id: session.id,
-          name: session.name,
-          state: session.state,
-        }]);
-        setActiveSessionId(session.id);
-        setShowSessionList(false);
-      }
-    } catch (err) {
-      console.error('Failed to create session:', err);
-    }
-  }, []);
-
-  const handleSwitchTab = useCallback((id: string) => {
-    setActiveSessionId(id);
-  }, []);
-
   const handleShowSessionList = useCallback(() => {
     setShowSessionList(true);
   }, []);
@@ -297,6 +270,52 @@ export function App() {
       prev.map(s => s.id === id ? { ...s, state } : s)
     );
   }, []);
+
+  // Fullscreen toggle (must be before early returns)
+  const handleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      document.documentElement.requestFullscreen();
+    }
+  }, []);
+
+  // Reload current session (must be before early returns)
+  const handleReload = useCallback(() => {
+    if (activeSessionId) {
+      const currentId = activeSessionId;
+      setActiveSessionId(null);
+      setTimeout(() => setActiveSessionId(currentId), 50);
+    }
+  }, [activeSessionId]);
+
+  // Auto-hide overlay after 3 seconds
+  const startOverlayTimer = useCallback(() => {
+    if (overlayTimeoutRef.current) {
+      clearTimeout(overlayTimeoutRef.current);
+    }
+    overlayTimeoutRef.current = window.setTimeout(() => {
+      setShowOverlay(false);
+    }, 3000);
+  }, []);
+
+  // Show overlay and restart timer
+  const handleShowOverlay = useCallback(() => {
+    setShowOverlay(true);
+    startOverlayTimer();
+  }, [startOverlayTimer]);
+
+  // Start timer when overlay is shown
+  useEffect(() => {
+    if (showOverlay && !showSessionList && !isLoading) {
+      startOverlayTimer();
+    }
+    return () => {
+      if (overlayTimeoutRef.current) {
+        clearTimeout(overlayTimeoutRef.current);
+      }
+    };
+  }, [showOverlay, showSessionList, isLoading, startOverlayTimer]);
 
   // Show loading
   if (isLoading) {
@@ -317,32 +336,78 @@ export function App() {
     );
   }
 
-  // Show terminal with tabs - keep all terminals mounted but hidden
-  return (
-    <div className="h-screen flex flex-col bg-gray-900">
-      {/* Tabs */}
-      <SessionTabs
-        sessions={openSessions}
-        activeSessionId={activeSessionId}
-        onSelectSession={handleSwitchTab}
-        onCloseSession={handleCloseSession}
-        onDeleteSession={handleDeleteSessionRequest}
-        onNewSession={handleNewSession}
-        onShowSessionList={handleShowSessionList}
-      />
+  // Get current active session
+  const activeSession = openSessions.find(s => s.id === activeSessionId);
 
-      {/* Terminals - all stay mounted, only active one is visible */}
-      {openSessions.map((session) => (
+  // Show terminal with overlay
+  return (
+    <div className="h-screen flex flex-col bg-gray-900 relative">
+      {/* Tap area to show overlay when hidden */}
+      {!showOverlay && (
         <div
-          key={session.id}
-          className={session.id === activeSessionId ? 'flex-1 flex flex-col min-h-0' : 'hidden'}
+          className="absolute top-0 left-0 right-0 h-8 z-40"
+          onClick={handleShowOverlay}
+        />
+      )}
+
+      {/* Compact semi-transparent overlay bar */}
+      <div
+        className={`absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-1 bg-black/40 transition-opacity duration-300 ${
+          showOverlay ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+      >
+        {/* Left: Session list button */}
+        <button
+          onClick={() => {
+            handleShowSessionList();
+            setShowOverlay(false);
+          }}
+          className="p-1 text-white/60 hover:text-white hover:bg-white/10 rounded transition-colors"
+          title="セッション一覧"
         >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+
+        {/* Center: Session name */}
+        <span className="text-white/60 text-xs truncate max-w-[120px]">
+          {activeSession?.name || '-'}
+        </span>
+
+        {/* Right: Reload + Fullscreen buttons */}
+        <div className="flex items-center">
+          <button
+            onClick={handleReload}
+            className="p-1 text-white/60 hover:text-white hover:bg-white/10 rounded transition-colors"
+            title="リロード"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+          <button
+            onClick={handleFullscreen}
+            className="p-1 text-white/60 hover:text-white hover:bg-white/10 rounded transition-colors"
+            title="フルスクリーン"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Terminal - full screen */}
+      {activeSession && (
+        <div className="flex-1 flex flex-col min-h-0">
           <TerminalPage
-            sessionId={session.id}
-            onStateChange={(state) => updateSessionState(session.id, state)}
+            key={activeSessionId}
+            sessionId={activeSession.id}
+            onStateChange={(state) => updateSessionState(activeSession.id, state)}
           />
         </div>
-      ))}
+      )}
 
       {/* Delete confirmation dialog */}
       {sessionToDelete && (

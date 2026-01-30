@@ -3,9 +3,10 @@ import { useFileViewer } from '../../hooks/useFileViewer';
 import { FileBrowser } from './FileBrowser';
 import { CodeViewer } from './CodeViewer';
 import { ImageViewer } from './ImageViewer';
+import { DiffViewer } from './DiffViewer';
 import type { FileInfo, FileChange } from '../../../../shared/types';
 
-type ViewMode = 'browser' | 'file' | 'changes';
+type ViewMode = 'browser' | 'file' | 'changes' | 'diff';
 
 interface FileViewerProps {
   sessionWorkingDir: string;
@@ -74,6 +75,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
 
   const [viewMode, setViewMode] = useState<ViewMode>('browser');
   const [showHidden, setShowHidden] = useState(false);
+  const [selectedChange, setSelectedChange] = useState<FileChange | null>(null);
 
   // Initialize
   useEffect(() => {
@@ -89,9 +91,14 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
 
   // Handle back from file view
   const handleBackFromFile = useCallback(() => {
-    clearSelectedFile();
-    setViewMode('browser');
-  }, [clearSelectedFile]);
+    if (viewMode === 'diff') {
+      setSelectedChange(null);
+      setViewMode('changes');
+    } else {
+      clearSelectedFile();
+      setViewMode('browser');
+    }
+  }, [clearSelectedFile, viewMode]);
 
   // Handle changes tab
   const handleShowChanges = useCallback(async () => {
@@ -99,11 +106,11 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
     setViewMode('changes');
   }, [getChanges]);
 
-  // Handle change file click
-  const handleChangeFileClick = useCallback(async (change: FileChange) => {
-    await readFile(change.path);
-    setViewMode('file');
-  }, [readFile]);
+  // Handle change file click - show diff view
+  const handleChangeFileClick = useCallback((change: FileChange) => {
+    setSelectedChange(change);
+    setViewMode('diff');
+  }, []);
 
   // Keyboard handling
   useEffect(() => {
@@ -140,6 +147,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
             <h2 className="text-sm font-medium">
               {viewMode === 'browser' ? 'ファイルブラウザ'
                 : viewMode === 'changes' ? '変更ファイル'
+                : viewMode === 'diff' && selectedChange ? getFileName(selectedChange.path)
                 : selectedFile ? getFileName(selectedFile.path)
                 : 'ファイル'}
             </h2>
@@ -159,7 +167,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
               <button
                 onClick={handleShowChanges}
                 className={`px-2 py-1 text-xs rounded transition-colors ${
-                  viewMode === 'changes' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
+                  viewMode === 'changes' || viewMode === 'diff' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
                 }`}
               >
                 変更
@@ -237,6 +245,15 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
               changes={changes}
               isLoading={isLoading}
               onSelectChange={handleChangeFileClick}
+            />
+          )}
+
+          {viewMode === 'diff' && selectedChange && (
+            <DiffViewer
+              oldContent={selectedChange.oldContent}
+              newContent={selectedChange.newContent}
+              fileName={getFileName(selectedChange.path)}
+              toolName={selectedChange.toolName}
             />
           )}
         </div>

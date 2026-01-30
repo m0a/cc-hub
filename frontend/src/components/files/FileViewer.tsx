@@ -209,6 +209,18 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
     setViewMode('diff');
   }, []);
 
+  // Handle browser tab click - if in diff mode, open that file
+  const handleBrowserClick = useCallback(async () => {
+    if (viewMode === 'diff' && selectedChange) {
+      // Open the file in normal view mode
+      await readFile(selectedChange.path);
+      setSelectedChange(null);
+      setViewMode('file');
+    } else {
+      setViewMode('browser');
+    }
+  }, [viewMode, selectedChange, readFile]);
+
   // Keyboard handling
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -254,12 +266,12 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
             {/* Tab buttons */}
             <div className="flex items-center bg-gray-700 rounded-lg p-0.5">
               <button
-                onClick={() => setViewMode('browser')}
+                onClick={handleBrowserClick}
                 className={`px-2 py-1 text-xs rounded transition-colors ${
-                  viewMode === 'browser' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
+                  viewMode === 'browser' || viewMode === 'file' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
                 }`}
               >
-                ブラウザ
+                {viewMode === 'diff' ? 'ファイル' : 'ブラウザ'}
               </button>
               <button
                 onClick={handleShowChanges}

@@ -102,14 +102,38 @@ export function TabletLayout({
     }
   }, [activeSessionId, onSessionStateChange]);
 
-  const handleKeyboardSend = useCallback((char: string) => {
+  // Helper to exit copy mode
+  const exitCopyMode = useCallback(async () => {
+    if (activeSessionId) {
+      try {
+        const res = await fetch(`${API_BASE}/api/sessions/${encodeURIComponent(activeSessionId)}/copy-mode`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.inCopyMode) {
+            terminalRef.current?.sendInput('q');
+            await new Promise(resolve => setTimeout(resolve, 50));
+          }
+        }
+      } catch {
+        // Ignore errors
+      }
+    }
+  }, [activeSessionId]);
+
+  const handleKeyboardSend = useCallback(async (char: string) => {
+    await exitCopyMode();
     terminalRef.current?.sendInput(char);
-  }, []);
+  }, [exitCopyMode]);
 
   const handleModeSwitch = useCallback(() => {
     setInputMode('input');
     setTimeout(() => inputRef.current?.focus(), 50);
   }, []);
+
+  // Exit copy mode when input is focused
+  const handleInputFocus = useCallback(async () => {
+    await exitCopyMode();
+  }, [exitCopyMode]);
 
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
@@ -292,6 +316,7 @@ export function TabletLayout({
                   lang="ja"
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
+                  onFocus={handleInputFocus}
                   onKeyDown={handleInputKeyDown}
                   autoCapitalize="off"
                   autoCorrect="off"

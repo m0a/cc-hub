@@ -247,6 +247,7 @@ export function Keyboard({
         onTouchStart={handleStart}
         onTouchEnd={handleEnd}
         onTouchCancel={handleCancel}
+        onContextMenu={(e) => e.preventDefault()}
         className={`
           ${compact ? 'py-2 text-sm' : 'py-3 text-base'} text-white font-medium active:bg-gray-600 select-none relative
           border border-gray-700 rounded m-0.5 flex items-center justify-center
@@ -273,6 +274,7 @@ export function Keyboard({
               <button
                 key={`${rowIndex}-${keyIndex}`}
                 onClick={onModeSwitch}
+                onContextMenu={(e) => e.preventDefault()}
                 className={`${compact ? 'py-2 text-sm' : 'py-3 text-base'} text-white font-medium bg-gray-800 active:bg-gray-600 select-none border border-gray-700 rounded m-0.5 text-center`}
                 style={{ flex: keyDef.width || 1, minWidth: 0 }}
               >
@@ -283,6 +285,7 @@ export function Keyboard({
               <button
                 key={`${rowIndex}-${keyIndex}`}
                 onClick={onFilePicker}
+                onContextMenu={(e) => e.preventDefault()}
                 disabled={isUploading}
                 className={`${compact ? 'py-2 text-sm' : 'py-3 text-base'} font-medium select-none border border-gray-700 rounded m-0.5 text-center ${
                   isUploading ? 'bg-gray-600 text-gray-400' : 'bg-gray-800 text-white active:bg-gray-600'
@@ -296,6 +299,7 @@ export function Keyboard({
               <button
                 key={`${rowIndex}-${keyIndex}`}
                 onClick={onUrlExtract}
+                onContextMenu={(e) => e.preventDefault()}
                 className={`${compact ? 'py-2 text-sm' : 'py-3 text-base'} font-medium select-none border border-gray-700 rounded m-0.5 text-center bg-gray-800 text-white active:bg-gray-600`}
                 style={{ flex: keyDef.width || 1, minWidth: 0 }}
               >

@@ -220,6 +220,25 @@ export function Keyboard({
 
     const width = keyDef.width || 1;
 
+    // Large icon for Enter key
+    const isEnterKey = keyDef.label === '↵';
+
+    // SVG Enter icon - properly centered
+    const EnterIcon = () => (
+      <svg
+        viewBox="0 0 20 20"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={compact ? 'w-5 h-5' : 'w-6 h-6'}
+      >
+        <polyline points="6,15 3,12 6,9" />
+        <path d="M3 12h11V3" />
+      </svg>
+    );
+
     return (
       <button
         onMouseDown={handleStart}
@@ -230,14 +249,14 @@ export function Keyboard({
         onTouchCancel={handleCancel}
         className={`
           ${compact ? 'py-2 text-sm' : 'py-3 text-base'} text-white font-medium active:bg-gray-600 select-none relative
-          border border-gray-700 rounded m-0.5
+          border border-gray-700 rounded m-0.5 flex items-center justify-center
           ${isActive ? 'bg-blue-600' : 'bg-gray-800'}
           ${keyDef.type === 'modifier' ? 'text-sm' : ''}
         `}
         style={{ flex: width, minWidth: 0 }}
       >
-        {displayLabel}
-        {keyDef.longLabel && !shiftPressed && (
+        {isEnterKey ? <EnterIcon /> : displayLabel}
+        {keyDef.longLabel && !shiftPressed && !isEnterKey && (
           <span className={`absolute top-0.5 right-1 ${compact ? 'text-[7px]' : 'text-[9px]'} text-gray-500`}>{keyDef.longLabel}</span>
         )}
       </button>

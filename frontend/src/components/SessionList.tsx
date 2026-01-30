@@ -93,8 +93,6 @@ function SessionItem({
     longPressFiredRef.current = false;
   };
 
-  const isExternal = (session as SessionResponse & { isExternal?: boolean }).isExternal;
-
   return (
     <div
       onClick={handleClick}
@@ -106,19 +104,14 @@ function SessionItem({
       <div className="flex items-center gap-2">
         <div className={`w-2 h-2 rounded-full ${getStateColor(session.state)}`} />
         <span className="font-medium">{session.name}</span>
-        {isExternal && (
-          <span className="text-xs text-gray-500 bg-gray-700 px-1.5 py-0.5 rounded">tmux</span>
-        )}
       </div>
       <div className="flex items-center justify-between mt-1">
         <div className="text-xs text-gray-500">
           最終アクセス: {formatDate(session.lastAccessedAt)}
         </div>
-        {!isExternal && (
-          <div className="text-xs text-gray-600">
-            長押しで削除
-          </div>
-        )}
+        <div className="text-xs text-gray-600">
+          長押しで削除
+        </div>
       </div>
     </div>
   );
@@ -161,11 +154,7 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
   };
 
   const handleDeleteRequest = (session: SessionResponse) => {
-    // Don't allow deleting external sessions
-    const isExternal = (session as SessionResponse & { isExternal?: boolean }).isExternal;
-    if (!isExternal) {
-      setSessionToDelete(session);
-    }
+    setSessionToDelete(session);
   };
 
   const formatDate = (dateStr: string) => {

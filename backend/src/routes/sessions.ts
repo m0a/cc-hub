@@ -1,73 +1,90 @@
 import { Hono } from 'hono';
 import { CreateSessionSchema } from '../../../shared/types';
-import {
-  listSessions,
-  getSession,
-  createSession,
-  deleteSession,
-} from '../services/sessions';
 import { TmuxService } from '../services/tmux';
 
-const tmuxService = new TmuxService('cchub-');
+const tmuxService = new TmuxService();
 
 export const sessions = new Hono();
 
-// GET /sessions - List all sessions (including external tmux sessions)
+// GET /sessions - List all tmux sessions
 sessions.get('/', async (c) => {
-  const [sessionList, externalSessions] = await Promise.all([
-    listSessions(),
-    tmuxService.listExternalSessions(),
-  ]);
+  const tmuxSessions = await tmuxService.listSessions();
 
-  // Merge and sort by lastAccessedAt (newest first)
-  const allSessions = [
-    ...sessionList,
-    ...externalSessions.map((s) => ({
-      id: s.id,
-      name: s.name,
-      createdAt: s.createdAt,
-      lastAccessedAt: s.createdAt,
-      state: s.attached ? 'working' as const : 'idle' as const,
-      isExternal: true,
-    })),
-  ].sort((a, b) =>
-    new Date(b.lastAccessedAt).getTime() - new Date(a.lastAccessedAt).getTime()
-  );
+  const sessions = tmuxSessions.map((s) => ({
+    id: s.id,
+    name: s.name,
+    createdAt: s.createdAt,
+    lastAccessedAt: s.createdAt,
+    state: s.attached ? 'working' as const : 'idle' as const,
+  }));
 
-  return c.json({ sessions: allSessions });
+  return c.json({ sessions });
 });
 
-// POST /sessions - Create a new session
+// POST /sessions - Create a new tmux session
 sessions.post('/', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const parsed = CreateSessionSchema.safeParse(body);
 
-  const name = parsed.success ? parsed.data.name : undefined;
-  const session = await createSession(name);
+  // Generate session name
+  const tmuxSessions = await tmuxService.listSessions();
+  const name = parsed.success && parsed.data.name
+    ? parsed.data.name
+    : `session-${tmuxSessions.length + 1}`;
 
-  return c.json(session, 201);
+  // Check if session already exists
+  const exists = await tmuxService.sessionExists(name);
+  if (exists) {
+    return c.json({ error: 'Session already exists' }, 400);
+  }
+
+  try {
+    await tmuxService.createSession(name);
+
+    return c.json({
+      id: name,
+      name: name,
+      createdAt: new Date().toISOString(),
+      lastAccessedAt: new Date().toISOString(),
+      state: 'idle',
+    }, 201);
+  } catch (error) {
+    return c.json({ error: 'Failed to create session' }, 500);
+  }
 });
 
 // GET /sessions/:id - Get a specific session
 sessions.get('/:id', async (c) => {
   const id = c.req.param('id');
-  const session = await getSession(id);
+  const tmuxSessions = await tmuxService.listSessions();
+  const session = tmuxSessions.find(s => s.id === id);
 
   if (!session) {
     return c.json({ error: 'Session not found' }, 404);
   }
 
-  return c.json(session);
+  return c.json({
+    id: session.id,
+    name: session.name,
+    createdAt: session.createdAt,
+    lastAccessedAt: session.createdAt,
+    state: session.attached ? 'working' : 'idle',
+  });
 });
 
-// DELETE /sessions/:id - Delete a session
+// DELETE /sessions/:id - Delete (kill) a tmux session
 sessions.delete('/:id', async (c) => {
   const id = c.req.param('id');
-  const success = await deleteSession(id);
 
-  if (!success) {
+  const exists = await tmuxService.sessionExists(id);
+  if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
   }
 
-  return c.json({ success: true });
+  try {
+    await tmuxService.killSession(id);
+    return c.json({ success: true });
+  } catch (error) {
+    return c.json({ error: 'Failed to delete session' }, 500);
+  }
 });

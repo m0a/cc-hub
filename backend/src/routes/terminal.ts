@@ -1,16 +1,14 @@
 import type { ServerWebSocket } from 'bun';
 import type { Subprocess } from 'bun';
 import { TmuxService } from '../services/tmux';
-import { updateSessionAccess, createSession, getSession } from '../services/sessions';
 
 interface TerminalData {
   sessionId: string;
   visitorId: string;
   process: Subprocess | null;
-  isExternal?: boolean;
 }
 
-const tmuxService = new TmuxService('cchub-');
+const tmuxService = new TmuxService();
 
 // Map to track active terminal connections
 const activeConnections = new Map<string, Set<ServerWebSocket<TerminalData>>>();
@@ -20,8 +18,8 @@ const sessionProcesses = new Map<string, Subprocess>();
 
 export const terminalWebSocket = {
   async open(ws: ServerWebSocket<TerminalData>) {
-    const { sessionId, isExternal } = ws.data;
-    console.log(`Terminal WebSocket opened for session: ${sessionId} (external: ${isExternal})`);
+    const { sessionId } = ws.data;
+    console.log(`Terminal WebSocket opened for session: ${sessionId}`);
 
     // Add to active connections
     if (!activeConnections.has(sessionId)) {
@@ -29,40 +27,17 @@ export const terminalWebSocket = {
     }
     activeConnections.get(sessionId)!.add(ws);
 
-    // Check if tmux session exists
+    // Check if tmux session exists, create if not
     const exists = await tmuxService.sessionExists(sessionId);
-
-    if (isExternal) {
-      // External session: must exist, don't create
-      if (!exists) {
-        console.error(`External tmux session not found: ${sessionId}`);
-        ws.send(JSON.stringify({ type: 'error', message: 'External session not found' }));
+    if (!exists) {
+      try {
+        await tmuxService.createSession(sessionId);
+        console.log(`Created tmux session: ${sessionId}`);
+      } catch (error) {
+        console.error('Failed to create tmux session:', error);
+        ws.send(JSON.stringify({ type: 'error', message: 'Failed to create session' }));
         ws.close();
         return;
-      }
-    } else {
-      // CC Hub session: update/create API session
-      const apiSessionId = sessionId.replace('cchub-', '');
-
-      // Update session access time (or create session if it doesn't exist in API)
-      const session = await getSession(apiSessionId);
-      if (session) {
-        await updateSessionAccess(apiSessionId);
-      } else {
-        // Create session in API if it doesn't exist (for backward compatibility)
-        await createSession(apiSessionId);
-      }
-
-      // Create tmux session if not exists
-      if (!exists) {
-        try {
-          await tmuxService.createSession(apiSessionId);
-        } catch (error) {
-          console.error('Failed to create tmux session:', error);
-          ws.send(JSON.stringify({ type: 'error', message: 'Failed to create session' }));
-          ws.close();
-          return;
-        }
       }
     }
 
@@ -186,7 +161,7 @@ export const terminalWebSocket = {
   },
 };
 
-// Upgrade HTTP request to WebSocket (no auth required)
+// Upgrade HTTP request to WebSocket
 export async function handleTerminalUpgrade(
   req: Request,
   server: { upgrade: (req: Request, options: { data: TerminalData }) => boolean }
@@ -200,30 +175,11 @@ export async function handleTerminalUpgrade(
 
   const sessionId = decodeURIComponent(pathMatch[1]);
 
-  // Auto-detect if session is external (raw tmux session) or cchub-managed
-  // Check if a tmux session with the exact name exists first
-  const rawSessionExists = await tmuxService.sessionExists(sessionId);
-  const cchubSessionId = sessionId.startsWith('cchub-') ? sessionId : `cchub-${sessionId}`;
-
-  let fullSessionId: string;
-  let isExternal: boolean;
-
-  if (rawSessionExists && !sessionId.startsWith('cchub-')) {
-    // External session: tmux session exists with exact name (e.g., "main", "life")
-    fullSessionId = sessionId;
-    isExternal = true;
-  } else {
-    // CC Hub managed session: use cchub- prefix
-    fullSessionId = cchubSessionId;
-    isExternal = false;
-  }
-
   const upgraded = server.upgrade(req, {
     data: {
-      sessionId: fullSessionId,
+      sessionId,
       visitorId: crypto.randomUUID(),
       process: null,
-      isExternal,
     },
   });
 

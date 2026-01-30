@@ -6,7 +6,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { useTerminal } from '../hooks/useTerminal';
 
-const FONT_SIZE_KEY = 'cchub-terminal-font-size';
+const FONT_SIZE_KEY_PREFIX = 'cchub-terminal-font-size-';
 const DEFAULT_FONT_SIZE = 14;
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 32;
@@ -105,8 +105,8 @@ const KEYBOARD_ROWS: KeyDef[][] = [
   ],
 ];
 
-function loadFontSize(): number {
-  const saved = localStorage.getItem(FONT_SIZE_KEY);
+function loadFontSize(sessionId: string): number {
+  const saved = localStorage.getItem(FONT_SIZE_KEY_PREFIX + sessionId);
   if (saved) {
     const size = parseInt(saved, 10);
     if (!isNaN(size) && size >= MIN_FONT_SIZE && size <= MAX_FONT_SIZE) {
@@ -116,8 +116,8 @@ function loadFontSize(): number {
   return DEFAULT_FONT_SIZE;
 }
 
-function saveFontSize(size: number): void {
-  localStorage.setItem(FONT_SIZE_KEY, String(size));
+function saveFontSize(sessionId: string, size: number): void {
+  localStorage.setItem(FONT_SIZE_KEY_PREFIX + sessionId, String(size));
 }
 
 interface TerminalProps {
@@ -147,7 +147,7 @@ export const TerminalComponent = memo(function TerminalComponent({
   const [isInitialized, setIsInitialized] = useState(false);
   const [inputMode, setInputMode] = useState<'hidden' | 'shortcuts' | 'input'>('hidden');
   const [inputValue, setInputValue] = useState('');
-  const [fontSize, setFontSize] = useState(loadFontSize);
+  const [fontSize, setFontSize] = useState(() => loadFontSize(sessionId));
   const [ctrlPressed, setCtrlPressed] = useState(false);
   const [altPressed, setAltPressed] = useState(false);
   const [shiftPressed, setShiftPressed] = useState(false);
@@ -219,7 +219,7 @@ export const TerminalComponent = memo(function TerminalComponent({
     const container = containerRef.current;
 
     // High-performance terminal configuration
-    const initialFontSize = loadFontSize();
+    const initialFontSize = loadFontSize(sessionId);
     const term = new Terminal({
       fontSize: initialFontSize,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
@@ -421,7 +421,7 @@ export const TerminalComponent = memo(function TerminalComponent({
       // Save font size after pinch zoom
       if (initialPinchDistance !== null) {
         const currentSize = term.options.fontSize || initialFontSize;
-        saveFontSize(currentSize);
+        saveFontSize(sessionId, currentSize);
         setFontSize(currentSize);
         initialPinchDistance = null;
       }

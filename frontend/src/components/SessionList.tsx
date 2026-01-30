@@ -129,9 +129,9 @@ function SessionItem({
           {shortPath}
         </div>
       )}
-      {extSession.ccSummary && (
+      {(extSession.ccSummary || extSession.ccFirstPrompt) && (
         <div className="text-xs text-blue-400 mt-1 truncate">
-          {extSession.ccSummary}
+          {extSession.ccSummary || extSession.ccFirstPrompt}
         </div>
       )}
       <div className="flex items-center justify-between mt-1">

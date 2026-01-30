@@ -12,10 +12,29 @@ const tmuxService = new TmuxService('cchub-');
 
 export const sessions = new Hono();
 
-// GET /sessions - List all sessions
+// GET /sessions - List all sessions (including external tmux sessions)
 sessions.get('/', async (c) => {
-  const sessionList = await listSessions();
-  return c.json({ sessions: sessionList });
+  const [sessionList, externalSessions] = await Promise.all([
+    listSessions(),
+    tmuxService.listExternalSessions(),
+  ]);
+
+  // Merge and sort by lastAccessedAt (newest first)
+  const allSessions = [
+    ...sessionList,
+    ...externalSessions.map((s) => ({
+      id: s.id,
+      name: s.name,
+      createdAt: s.createdAt,
+      lastAccessedAt: s.createdAt,
+      state: s.attached ? 'working' as const : 'idle' as const,
+      isExternal: true,
+    })),
+  ].sort((a, b) =>
+    new Date(b.lastAccessedAt).getTime() - new Date(a.lastAccessedAt).getTime()
+  );
+
+  return c.json({ sessions: allSessions });
 });
 
 // POST /sessions - Create a new session
@@ -27,22 +46,6 @@ sessions.post('/', async (c) => {
   const session = await createSession(name);
 
   return c.json(session, 201);
-});
-
-// GET /sessions/external - List external tmux sessions (non-cchub)
-// NOTE: Must be before /:id route
-sessions.get('/external', async (c) => {
-  const externalSessions = await tmuxService.listExternalSessions();
-  return c.json({
-    sessions: externalSessions.map((s) => ({
-      id: s.id,
-      name: s.name,
-      createdAt: s.createdAt,
-      lastAccessedAt: s.createdAt,
-      state: s.attached ? 'working' : 'idle',
-      isExternal: true,
-    })),
-  });
 });
 
 // GET /sessions/:id - Get a specific session

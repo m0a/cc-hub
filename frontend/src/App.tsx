@@ -93,18 +93,10 @@ export function App() {
   useEffect(() => {
     const fetchAndOpenSession = async () => {
       try {
-        // Fetch both regular and external sessions
-        const [sessionsRes, externalRes] = await Promise.all([
-          fetch(`${API_BASE}/api/sessions`),
-          fetch(`${API_BASE}/api/sessions/external`),
-        ]);
-
+        // Fetch all sessions (including external)
+        const sessionsRes = await fetch(`${API_BASE}/api/sessions`);
         const allSessions: SessionResponse[] = sessionsRes.ok
           ? (await sessionsRes.json()).sessions
-          : [];
-
-        const externalSessions: SessionResponse[] = externalRes.ok
-          ? (await externalRes.json()).sessions
           : [];
 
         // Try to restore previously open sessions
@@ -112,40 +104,34 @@ export function App() {
         const lastSessionId = getLastSession();
 
         if (savedSessionIds.length > 0) {
-          // Restore saved sessions (both regular and external)
+          // Restore saved sessions
           const sessionsToOpen: OpenSession[] = [];
 
           for (const id of savedSessionIds) {
-            if (id.startsWith('ext:')) {
-              // External session
-              const extId = id.slice(4);
-              const extSession = externalSessions.find(s => s.id === extId);
-              // Always restore external session (even if not in API response)
+            // Handle legacy ext: prefix by stripping it
+            const normalizedId = id.startsWith('ext:') ? id.slice(4) : id;
+            const session = allSessions.find(s => s.id === normalizedId);
+            if (session) {
               sessionsToOpen.push({
-                id: id,
-                name: extSession?.name || extId,
-                state: extSession?.state || 'idle',
+                id: session.id,
+                name: session.name,
+                state: session.state,
               });
-            } else {
-              // Regular session
-              const session = allSessions.find(s => s.id === id);
-              if (session) {
-                sessionsToOpen.push({
-                  id: session.id,
-                  name: session.name,
-                  state: session.state,
-                });
-              }
             }
           }
+
+          // Normalize lastSessionId too
+          const normalizedLastId = lastSessionId?.startsWith('ext:')
+            ? lastSessionId.slice(4)
+            : lastSessionId;
 
           if (sessionsToOpen.length > 0) {
             setOpenSessions(sessionsToOpen);
 
             // Set active session: prefer last active, fallback to first open
             const validIds = sessionsToOpen.map(s => s.id);
-            const activeId = lastSessionId && validIds.includes(lastSessionId)
-              ? lastSessionId
+            const activeId = normalizedLastId && validIds.includes(normalizedLastId)
+              ? normalizedLastId
               : validIds[0];
             setActiveSessionId(activeId);
           } else if (allSessions.length > 0) {

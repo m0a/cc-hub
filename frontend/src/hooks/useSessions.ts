@@ -5,18 +5,15 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
 
 interface UseSessionsReturn {
   sessions: SessionResponse[];
-  externalSessions: SessionResponse[];
   isLoading: boolean;
   error: string | null;
   fetchSessions: () => Promise<void>;
-  fetchExternalSessions: () => Promise<void>;
   createSession: (name?: string) => Promise<SessionResponse | null>;
   deleteSession: (id: string) => Promise<boolean>;
 }
 
 export function useSessions(): UseSessionsReturn {
   const [sessions, setSessions] = useState<SessionResponse[]>([]);
-  const [externalSessions, setExternalSessions] = useState<SessionResponse[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,20 +32,6 @@ export function useSessions(): UseSessionsReturn {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setIsLoading(false);
-    }
-  }, []);
-
-  const fetchExternalSessions = useCallback(async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/sessions/external`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch external sessions');
-      }
-      const data = await response.json();
-      setExternalSessions(data.sessions);
-    } catch (err) {
-      console.error('Failed to fetch external sessions:', err);
-      setExternalSessions([]);
     }
   }, []);
 
@@ -97,11 +80,9 @@ export function useSessions(): UseSessionsReturn {
 
   return {
     sessions,
-    externalSessions,
     isLoading,
     error,
     fetchSessions,
-    fetchExternalSessions,
     createSession,
     deleteSession,
   };

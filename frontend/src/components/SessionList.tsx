@@ -93,6 +93,8 @@ function SessionItem({
     longPressFiredRef.current = false;
   };
 
+  const isExternal = (session as SessionResponse & { isExternal?: boolean }).isExternal;
+
   return (
     <div
       onClick={handleClick}
@@ -104,14 +106,19 @@ function SessionItem({
       <div className="flex items-center gap-2">
         <div className={`w-2 h-2 rounded-full ${getStateColor(session.state)}`} />
         <span className="font-medium">{session.name}</span>
+        {isExternal && (
+          <span className="text-xs text-gray-500 bg-gray-700 px-1.5 py-0.5 rounded">tmux</span>
+        )}
       </div>
       <div className="flex items-center justify-between mt-1">
         <div className="text-xs text-gray-500">
           最終アクセス: {formatDate(session.lastAccessedAt)}
         </div>
-        <div className="text-xs text-gray-600">
-          長押しで削除
-        </div>
+        {!isExternal && (
+          <div className="text-xs text-gray-600">
+            長押しで削除
+          </div>
+        )}
       </div>
     </div>
   );
@@ -120,23 +127,19 @@ function SessionItem({
 export function SessionList({ onSelectSession, onBack }: SessionListProps) {
   const {
     sessions,
-    externalSessions,
     isLoading,
     error,
     fetchSessions,
-    fetchExternalSessions,
     createSession,
     deleteSession,
   } = useSessions();
 
   const [newSessionName, setNewSessionName] = useState('');
   const [sessionToDelete, setSessionToDelete] = useState<SessionResponse | null>(null);
-  const [showExternal, setShowExternal] = useState(false);
 
   useEffect(() => {
     fetchSessions();
-    fetchExternalSessions();
-  }, [fetchSessions, fetchExternalSessions]);
+  }, [fetchSessions]);
 
   const handleCreateSession = async () => {
     const session = await createSession(newSessionName || undefined);
@@ -155,6 +158,14 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
 
   const handleCancelDelete = () => {
     setSessionToDelete(null);
+  };
+
+  const handleDeleteRequest = (session: SessionResponse) => {
+    // Don't allow deleting external sessions
+    const isExternal = (session as SessionResponse & { isExternal?: boolean }).isExternal;
+    if (!isExternal) {
+      setSessionToDelete(session);
+    }
   };
 
   const formatDate = (dateStr: string) => {
@@ -235,7 +246,6 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
 
       {/* Session list */}
       <div className="flex-1 overflow-y-auto p-4">
-        {/* CC Hub Sessions */}
         {sessions.length === 0 ? (
           <div className="text-center text-gray-500 py-8">
             セッションがありません。新規作成してください。
@@ -247,51 +257,11 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
                 key={session.id}
                 session={session}
                 onSelect={onSelectSession}
-                onDelete={(s) => setSessionToDelete(s)}
+                onDelete={handleDeleteRequest}
                 getStateColor={getStateColor}
                 formatDate={formatDate}
               />
             ))}
-          </div>
-        )}
-
-        {/* External tmux sessions */}
-        {externalSessions.length > 0 && (
-          <div className="mt-6">
-            <button
-              onClick={() => setShowExternal(!showExternal)}
-              className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-300 mb-2"
-            >
-              <svg
-                className={`w-4 h-4 transition-transform ${showExternal ? 'rotate-90' : ''}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-              既存のtmuxセッション ({externalSessions.length})
-            </button>
-            {showExternal && (
-              <div className="space-y-2 pl-2 border-l-2 border-gray-700">
-                {externalSessions.map((session) => (
-                  <div
-                    key={session.id}
-                    onClick={() => onSelectSession({ ...session, id: `ext:${session.id}` })}
-                    className="p-3 bg-gray-800/50 hover:bg-gray-700 active:bg-gray-600 rounded cursor-pointer transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${getStateColor(session.state)}`} />
-                      <span className="font-medium">{session.name}</span>
-                      <span className="text-xs text-gray-500 bg-gray-700 px-1.5 py-0.5 rounded">tmux</span>
-                    </div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      作成: {formatDate(session.createdAt)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
       </div>

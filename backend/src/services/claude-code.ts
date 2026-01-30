@@ -48,6 +48,43 @@ export class ClaudeCodeService {
   }
 
   /**
+   * Read the last user message from a session jsonl file (for current conversation)
+   */
+  private async readLastUserMessage(filePath: string): Promise<string | null> {
+    try {
+      // Use tail to get last 100 lines efficiently
+      const proc = Bun.spawn(['tail', '-n', '100', filePath], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const text = await new Response(proc.stdout).text();
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) return null;
+
+      const lines = text.trim().split('\n').reverse();
+      for (const line of lines) {
+        try {
+          const entry = JSON.parse(line);
+          if (entry.type === 'user' && entry.message?.content) {
+            const content = entry.message.content;
+            if (Array.isArray(content)) continue;
+            if (typeof content !== 'string' || content.length === 0) continue;
+            if (content.startsWith('[Request interrupted')) continue;
+            if (content.startsWith('Implement the following plan:')) continue;
+            // Return truncated message
+            return content.slice(0, 100) + (content.length > 100 ? '...' : '');
+          }
+        } catch {
+          // Skip invalid JSON lines
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Read the first prompt from a session jsonl file
    */
   private async readFirstPromptFromFile(filePath: string): Promise<string | null> {
@@ -169,16 +206,12 @@ export class ClaudeCodeService {
             // For active sessions (not in index or much newer), read directly
             const firstPrompt = await this.readFirstPromptFromFile(join(projectDir, latestFile.name));
 
-            // If no index entry for this session, try to get summary from most recent index entry
-            let fallbackSummary: string | undefined;
-            if (!indexEntry?.summary && index?.entries && index.entries.length > 0) {
-              const sortedEntries = [...index.entries].sort((a, b) => (b.fileMtime || 0) - (a.fileMtime || 0));
-              fallbackSummary = sortedEntries[0]?.summary;
-            }
+            // Read the last user message as the current conversation summary
+            const lastUserMessage = await this.readLastUserMessage(join(projectDir, latestFile.name));
 
             return {
               sessionId,
-              summary: indexEntry?.summary || fallbackSummary,
+              summary: lastUserMessage || indexEntry?.summary,
               firstPrompt: firstPrompt || indexEntry?.firstPrompt,
               messageCount: indexEntry?.messageCount,
               modified: new Date(latestFile.mtime).toISOString(),

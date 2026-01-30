@@ -273,10 +273,12 @@ export function DiffViewer({
                 ''
               }`}
             >
-              {/* Line numbers */}
-              <div className="shrink-0 text-gray-500 text-right select-none border-r border-gray-700 bg-gray-800/50 text-xs leading-6 px-1 min-w-[2rem]">
-                {toolName === 'Write' ? line.newLineNum : (line.newLineNum || line.oldLineNum || '')}
-              </div>
+              {/* Line numbers - hidden when word wrap is enabled */}
+              {!wordWrap && (
+                <div className="shrink-0 text-gray-500 text-right select-none border-r border-gray-700 bg-gray-800/50 text-xs leading-6 px-1 min-w-[2rem]">
+                  {toolName === 'Write' ? line.newLineNum : (line.newLineNum || line.oldLineNum || '')}
+                </div>
+              )}
 
               {/* Indicator */}
               <div className={`w-4 shrink-0 text-center leading-6 text-xs ${

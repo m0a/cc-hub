@@ -105,8 +105,8 @@ export function CodeViewer({
       {/* Code content */}
       <div className="flex-1 overflow-auto">
         <div className="flex min-h-full">
-          {/* Line numbers */}
-          {showLineNumbers && (
+          {/* Line numbers - hidden when word wrap is enabled */}
+          {showLineNumbers && !wordWrap && (
             <div className="flex-shrink-0 select-none text-right py-3 bg-gray-800/50 border-r border-gray-700 text-gray-500 sticky left-0">
               {lines.map((_, i) => (
                 <div key={i} className="px-1.5 leading-6 text-xs">

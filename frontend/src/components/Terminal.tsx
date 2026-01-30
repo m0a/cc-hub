@@ -1025,22 +1025,40 @@ export const TerminalComponent = memo(function TerminalComponent({
             onChange={handleFileSelect}
           />
           {/* Header bar with hint and position toggle */}
+          {/* On tablet: hide entire bar after 3 seconds to maximize terminal area */}
           <div
-            className="bg-gray-900 px-2 py-1 flex justify-between items-center"
+            className={`bg-gray-900 flex justify-between items-center overflow-hidden transition-all duration-300 ${
+              isTablet
+                ? (showPositionToggle ? 'px-2 py-1' : 'h-0 py-0')
+                : 'px-2 py-1'
+            }`}
             onClick={() => isTablet && !showPositionToggle && setShowPositionToggle(true)}
           >
-            <span className="text-xs text-gray-500">
-              {showHint && (inputMode === 'shortcuts' ? '「あ」で日本語入力 | スクロールで閉じる' : '「ABC」で英語キーボード | スクロールで閉じる')}
-            </span>
-            {isTablet && inputMode === 'shortcuts' && (
+            {/* Hint text - only show on mobile or when position toggle is visible */}
+            {(!isTablet || showPositionToggle) && (
+              <span className="text-xs text-gray-500">
+                {showHint && (inputMode === 'shortcuts' ? '「あ」で日本語入力 | スクロールで閉じる' : '「ABC」で英語キーボード | スクロールで閉じる')}
+              </span>
+            )}
+            {isTablet && inputMode === 'shortcuts' && showPositionToggle && (
               <button
                 onClick={handlePositionToggle}
-                className={`px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded transition-opacity duration-300 ${showPositionToggle ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded"
               >
                 {keyboardPosition === 'right' ? '← 左へ' : '右へ →'}
               </button>
             )}
           </div>
+
+          {/* Tap area to show position toggle when header is hidden */}
+          {isTablet && !showPositionToggle && inputMode === 'shortcuts' && (
+            <div
+              className="h-2 bg-gray-800 flex items-center justify-center"
+              onClick={() => setShowPositionToggle(true)}
+            >
+              <div className="w-8 h-0.5 bg-gray-600 rounded-full" />
+            </div>
+          )}
 
           {/* Sliding container for keyboard modes */}
           {isAnimating ? (

@@ -7,6 +7,7 @@ import { DiffViewer } from './DiffViewer';
 import type { FileInfo, FileChange } from '../../../../shared/types';
 
 type ViewMode = 'browser' | 'file' | 'changes' | 'diff';
+type ListMode = 'browser' | 'changes';
 
 interface FileViewerProps {
   sessionWorkingDir: string;
@@ -104,11 +105,6 @@ const LANGUAGE_MAP: Record<string, string> = {
   '.proto': 'protobuf',
 };
 
-// Image extensions
-const IMAGE_EXTENSIONS = new Set([
-  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.svg',
-]);
-
 // Filename-based language detection
 const FILENAME_MAP: Record<string, string> = {
   'dockerfile': 'dockerfile',
@@ -130,6 +126,11 @@ const FILENAME_MAP: Record<string, string> = {
   'go.mod': 'go',
   'go.sum': 'plaintext',
 };
+
+// Image extensions
+const IMAGE_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.svg',
+]);
 
 function getLanguageFromPath(path: string): string {
   const fileName = path.split('/').pop()?.toLowerCase() || '';
@@ -171,8 +172,18 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
   } = useFileViewer(sessionWorkingDir);
 
   const [viewMode, setViewMode] = useState<ViewMode>('browser');
+  const [listMode, setListMode] = useState<ListMode>('browser');
   const [showHidden, setShowHidden] = useState(false);
   const [selectedChange, setSelectedChange] = useState<FileChange | null>(null);
+
+  // Detect wide screen for two-pane layout
+  const [isWideScreen, setIsWideScreen] = useState(() => window.innerWidth >= 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsWideScreen(window.innerWidth >= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Initialize
   useEffect(() => {
@@ -186,7 +197,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
     setViewMode('file');
   }, [readFile]);
 
-  // Handle back from file view
+  // Handle back from file view (mobile only)
   const handleBackFromFile = useCallback(() => {
     if (viewMode === 'diff') {
       setSelectedChange(null);
@@ -200,8 +211,19 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
   // Handle changes tab
   const handleShowChanges = useCallback(async () => {
     await getChanges();
-    setViewMode('changes');
-  }, [getChanges]);
+    setListMode('changes');
+    if (!isWideScreen) {
+      setViewMode('changes');
+    }
+  }, [getChanges, isWideScreen]);
+
+  // Handle browser tab
+  const handleShowBrowser = useCallback(() => {
+    setListMode('browser');
+    if (!isWideScreen) {
+      setViewMode('browser');
+    }
+  }, [isWideScreen]);
 
   // Handle change file click - show diff view
   const handleChangeFileClick = useCallback((change: FileChange) => {
@@ -209,23 +231,20 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
     setViewMode('diff');
   }, []);
 
-  // Handle browser tab click - if in diff mode, open that file
-  const handleBrowserClick = useCallback(async () => {
-    if (viewMode === 'diff' && selectedChange) {
-      // Open the file in normal view mode
+  // Handle open file from diff (wide screen)
+  const handleOpenFileFromDiff = useCallback(async () => {
+    if (selectedChange) {
       await readFile(selectedChange.path);
       setSelectedChange(null);
       setViewMode('file');
-    } else {
-      setViewMode('browser');
     }
-  }, [viewMode, selectedChange, readFile]);
+  }, [selectedChange, readFile]);
 
   // Keyboard handling
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (viewMode === 'file' || viewMode === 'changes') {
+        if (!isWideScreen && (viewMode === 'file' || viewMode === 'diff')) {
           handleBackFromFile();
         } else {
           onClose();
@@ -235,15 +254,176 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [viewMode, handleBackFromFile, onClose]);
+  }, [viewMode, handleBackFromFile, onClose, isWideScreen]);
 
+  // Check if content is showing
+  const hasContent = viewMode === 'file' || viewMode === 'diff';
+
+  // Two-pane layout for wide screens
+  if (isWideScreen) {
+    return (
+      <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center">
+        <div className="bg-gray-900 w-full h-full lg:w-[95%] lg:h-[90%] lg:max-w-6xl lg:rounded-lg lg:shadow-2xl overflow-hidden flex flex-col">
+          {/* Header */}
+          <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 bg-gray-800">
+            <h2 className="text-sm font-medium">ファイルブラウザ</h2>
+
+            <div className="flex items-center gap-2">
+              {/* Tab buttons */}
+              <div className="flex items-center bg-gray-700 rounded-lg p-0.5">
+                <button
+                  onClick={handleShowBrowser}
+                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                    listMode === 'browser' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  ブラウザ
+                </button>
+                <button
+                  onClick={handleShowChanges}
+                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                    listMode === 'changes' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  変更
+                </button>
+              </div>
+
+              {/* Hidden files toggle */}
+              {listMode === 'browser' && (
+                <button
+                  onClick={() => setShowHidden(!showHidden)}
+                  className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600' : 'hover:bg-gray-700'}`}
+                  title="隠しファイルを表示"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                </button>
+              )}
+
+              {/* Close button */}
+              <button
+                onClick={onClose}
+                className="p-1.5 hover:bg-gray-700 rounded transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div className="px-3 py-2 bg-red-900/50 text-red-300 text-sm border-b border-red-800">
+              {error}
+            </div>
+          )}
+
+          {/* Two-pane content */}
+          <div className="flex-1 flex overflow-hidden">
+            {/* Left pane: File list or Changes */}
+            <div className="w-1/3 min-w-[250px] max-w-[400px] border-r border-gray-700 overflow-hidden flex flex-col">
+              {listMode === 'browser' ? (
+                <FileBrowser
+                  files={files}
+                  currentPath={currentPath}
+                  parentPath={parentPath}
+                  isLoading={isLoading}
+                  onNavigate={navigateTo}
+                  onNavigateUp={navigateUp}
+                  onSelectFile={handleSelectFile}
+                  showHidden={showHidden}
+                />
+              ) : (
+                <ChangesView
+                  changes={changes}
+                  isLoading={isLoading}
+                  onSelectChange={handleChangeFileClick}
+                  selectedPath={selectedChange?.path}
+                />
+              )}
+            </div>
+
+            {/* Right pane: Content */}
+            <div className="flex-1 overflow-hidden flex flex-col">
+              {hasContent ? (
+                <>
+                  {/* Content header */}
+                  <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-700 bg-gray-800/50">
+                    <span className="text-sm text-gray-300 truncate flex-1">
+                      {viewMode === 'diff' && selectedChange
+                        ? getFileName(selectedChange.path)
+                        : selectedFile
+                        ? getFileName(selectedFile.path)
+                        : ''}
+                    </span>
+                    {viewMode === 'diff' && (
+                      <button
+                        onClick={handleOpenFileFromDiff}
+                        className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+                      >
+                        ファイルを開く
+                      </button>
+                    )}
+                  </div>
+                  {/* Content body */}
+                  <div className="flex-1 overflow-hidden">
+                    {viewMode === 'file' && selectedFile && (
+                      isImageFile(selectedFile.path) ? (
+                        <ImageViewer
+                          content={selectedFile.content}
+                          mimeType={selectedFile.mimeType}
+                          fileName={getFileName(selectedFile.path)}
+                          size={selectedFile.size}
+                        />
+                      ) : (
+                        <CodeViewer
+                          content={selectedFile.content}
+                          language={getLanguageFromPath(selectedFile.path)}
+                          fileName={getFileName(selectedFile.path)}
+                          truncated={selectedFile.truncated}
+                          showLineNumbers={true}
+                        />
+                      )
+                    )}
+                    {viewMode === 'diff' && selectedChange && (
+                      <DiffViewer
+                        oldContent={selectedChange.oldContent}
+                        newContent={selectedChange.newContent}
+                        fileName={getFileName(selectedChange.path)}
+                        toolName={selectedChange.toolName}
+                      />
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1 flex items-center justify-center text-gray-500">
+                  <div className="text-center">
+                    <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <div>ファイルを選択してください</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Single-pane layout for narrow screens (mobile)
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center">
       <div className="bg-gray-900 w-full h-full lg:w-[90%] lg:h-[90%] lg:max-w-5xl lg:rounded-lg lg:shadow-2xl overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 bg-gray-800">
           <div className="flex items-center gap-2">
-            {viewMode !== 'browser' && (
+            {(viewMode === 'file' || viewMode === 'diff') && (
               <button
                 onClick={handleBackFromFile}
                 className="p-1.5 hover:bg-gray-700 rounded transition-colors"
@@ -266,12 +446,12 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
             {/* Tab buttons */}
             <div className="flex items-center bg-gray-700 rounded-lg p-0.5">
               <button
-                onClick={handleBrowserClick}
+                onClick={handleShowBrowser}
                 className={`px-2 py-1 text-xs rounded transition-colors ${
                   viewMode === 'browser' || viewMode === 'file' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
                 }`}
               >
-                {viewMode === 'diff' ? 'ファイル' : 'ブラウザ'}
+                ブラウザ
               </button>
               <button
                 onClick={handleShowChanges}
@@ -376,10 +556,12 @@ function ChangesView({
   changes,
   isLoading,
   onSelectChange,
+  selectedPath,
 }: {
   changes: FileChange[];
   isLoading: boolean;
   onSelectChange: (change: FileChange) => void;
+  selectedPath?: string;
 }) {
   if (isLoading) {
     return (
@@ -407,7 +589,9 @@ function ChangesView({
           <div
             key={`${change.path}-${i}`}
             onClick={() => onSelectChange(change)}
-            className="flex items-center gap-3 px-3 py-2 hover:bg-gray-800 active:bg-gray-700 cursor-pointer transition-colors"
+            className={`flex items-center gap-3 px-3 py-2 hover:bg-gray-800 active:bg-gray-700 cursor-pointer transition-colors ${
+              selectedPath === change.path ? 'bg-gray-800' : ''
+            }`}
           >
             <div className={`w-2 h-2 rounded-full shrink-0 ${
               change.toolName === 'Write' ? 'bg-green-500' : 'bg-yellow-500'

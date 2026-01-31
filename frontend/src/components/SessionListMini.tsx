@@ -144,7 +144,6 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
   const containerRef = useRef<HTMLDivElement>(null);
   const [resumingSession, setResumingSession] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('sessions');
-  const [pendingSelectSessionId, setPendingSelectSessionId] = useState<string | null>(null);
 
   // Conversation viewer state
   const [viewingConversation, setViewingConversation] = useState<{
@@ -165,17 +164,6 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
 
     return () => clearInterval(interval);
   }, [fetchSessions]);
-
-  // Auto-select session when it becomes available after resume
-  useEffect(() => {
-    if (pendingSelectSessionId && sessions.length > 0) {
-      const session = sessions.find(s => s.id === pendingSelectSessionId);
-      if (session) {
-        onSelectSession(session);
-        setPendingSelectSessionId(null);
-      }
-    }
-  }, [sessions, pendingSelectSessionId, onSelectSession]);
 
   // Scroll active session into view
   useEffect(() => {
@@ -216,7 +204,7 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
     setActiveTab('sessions');
 
     // Wait for the session to be created
-    await new Promise(resolve => setTimeout(resolve, 800));
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     // Fetch sessions and find the new one
     const response = await fetch(`${API_BASE}/api/sessions`);
@@ -224,13 +212,12 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
       const data = await response.json();
       const newSession = data.sessions?.find((s: SessionResponse) => s.id === tmuxSessionId);
       if (newSession) {
-        // Directly call onSelectSession with the session from API
         onSelectSession(newSession);
       }
     }
 
-    // Also refresh the local sessions list
-    fetchSessions();
+    // Refresh the local sessions list after selection
+    setTimeout(fetchSessions, 500);
   }, [fetchSessions, onSelectSession]);
 
   // Show conversation for an active session

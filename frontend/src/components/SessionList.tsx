@@ -465,14 +465,9 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
 
       {activeTab === 'history' && (
         <SessionHistory
-          onSessionResumed={(tmuxSessionId) => {
+          onSelectSession={onSelectSession}
+          onSessionResumed={() => {
             fetchSessions();
-            setTimeout(() => {
-              const newSession = sessions.find(s => s.id === tmuxSessionId);
-              if (newSession) {
-                onSelectSession(newSession);
-              }
-            }, 500);
             setActiveTab('sessions');
           }}
         />

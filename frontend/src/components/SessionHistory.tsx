@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react';
 import { useSessionHistory } from '../hooks/useSessionHistory';
-import type { HistorySession, ConversationMessage } from '../../../shared/types';
+import type { HistorySession, ConversationMessage, SessionResponse } from '../../../shared/types';
 import { ConversationViewer } from './ConversationViewer';
 
 interface SessionHistoryProps {
-  onSessionResumed?: (tmuxSessionId: string) => void;
+  onSessionResumed?: () => void;
+  onSelectSession?: (session: SessionResponse) => void;
 }
 
 function formatRelativeTime(isoDate: string): string {
@@ -213,7 +214,9 @@ function ProjectGroupItem({
   );
 }
 
-export function SessionHistory({ onSessionResumed }: SessionHistoryProps) {
+const API_BASE = import.meta.env.VITE_API_URL || '';
+
+export function SessionHistory({ onSessionResumed, onSelectSession }: SessionHistoryProps) {
   const { sessions, isLoading, error, resumeSession, fetchConversation, fetchSessionMetadata } = useSessionHistory();
   const [resumingId, setResumingId] = useState<string | null>(null);
   const [selectedSession, setSelectedSession] = useState<HistorySession | null>(null);
@@ -236,8 +239,28 @@ export function SessionHistory({ onSessionResumed }: SessionHistoryProps) {
     setResumingId(session.sessionId);
     try {
       const result = await resumeSession(session.sessionId, session.projectPath);
-      if (result && onSessionResumed) {
-        onSessionResumed(result.tmuxSessionId);
+
+      if (result) {
+        // Wait for the tmux session to be created
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Fetch the new session
+        const response = await fetch(`${API_BASE}/api/sessions`);
+        let foundSession: SessionResponse | undefined;
+        if (response.ok) {
+          const data = await response.json();
+          foundSession = data.sessions?.find((s: { id: string }) => s.id === result.tmuxSessionId);
+        }
+
+        // Select the new session via onSelectSession prop
+        if (onSelectSession && foundSession) {
+          onSelectSession(foundSession);
+        }
+
+        // Notify parent (for tab switching, etc.)
+        if (onSessionResumed) {
+          onSessionResumed();
+        }
       }
       setSelectedSession(null);
     } finally {

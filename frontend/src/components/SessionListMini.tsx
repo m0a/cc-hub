@@ -198,27 +198,15 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
     }
   }, [sessions, onSelectSession, fetchSessions]);
 
-  // Handle session resumed from history
-  const handleHistorySessionResumed = useCallback(async (tmuxSessionId: string) => {
+  // Handle session resumed from history - switch to sessions tab
+  // Note: Session selection is already handled by SessionHistory via onSelectSession prop
+  const handleHistorySessionResumed = useCallback(async () => {
     // Switch to sessions tab
     setActiveTab('sessions');
 
-    // Wait for the session to be created
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Fetch sessions and find the new one
-    const response = await fetch(`${API_BASE}/api/sessions`);
-    if (response.ok) {
-      const data = await response.json();
-      const newSession = data.sessions?.find((s: SessionResponse) => s.id === tmuxSessionId);
-      if (newSession) {
-        onSelectSession(newSession);
-      }
-    }
-
-    // Refresh the local sessions list after selection
+    // Refresh the local sessions list
     setTimeout(fetchSessions, 500);
-  }, [fetchSessions, onSelectSession]);
+  }, [fetchSessions]);
 
   // Show conversation for an active session
   const handleShowConversation = useCallback(async (ccSessionId: string, title: string, subtitle: string) => {
@@ -296,7 +284,10 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
         </div>
       ) : activeTab === 'history' ? (
         <div className="flex-1 overflow-y-auto">
-          <SessionHistory onSessionResumed={handleHistorySessionResumed} />
+          <SessionHistory
+            onSessionResumed={handleHistorySessionResumed}
+            onSelectSession={onSelectSession}
+          />
         </div>
       ) : (
         <div className="flex-1 overflow-hidden">

@@ -33,37 +33,6 @@ export function ConversationViewer({
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-gray-900">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 bg-gray-800">
-        <button
-          onClick={onClose}
-          className="p-1 text-gray-400 hover:text-white"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <div className="flex-1 mx-3 text-center">
-          <div className="text-sm text-white truncate">
-            {title}
-          </div>
-          {subtitle && (
-            <div className="text-xs text-gray-400">
-              {subtitle}
-            </div>
-          )}
-        </div>
-        {onResume && (
-          <button
-            onClick={onResume}
-            disabled={isResuming}
-            className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white rounded"
-          >
-            {isResuming ? '...' : '再開'}
-          </button>
-        )}
-      </div>
-
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {isLoading ? (
@@ -95,6 +64,33 @@ export function ConversationViewer({
             ))}
             <div ref={messagesEndRef} />
           </>
+        )}
+      </div>
+
+      {/* Footer (moved from header for mobile usability) */}
+      <div className="flex items-center px-3 py-2 border-t border-gray-700 bg-gray-800 shrink-0">
+        <button
+          onClick={onClose}
+          className="text-gray-400 hover:text-white p-1"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <div className="flex-1 min-w-0 ml-2">
+          <h2 className="text-sm font-medium text-white truncate">{title}</h2>
+          {subtitle && (
+            <p className="text-xs text-gray-400 truncate">{subtitle}</p>
+          )}
+        </div>
+        {onResume && (
+          <button
+            onClick={onResume}
+            disabled={isResuming}
+            className="ml-2 px-3 py-1 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white rounded shrink-0"
+          >
+            {isResuming ? '再開中...' : '再開'}
+          </button>
         )}
       </div>
     </div>

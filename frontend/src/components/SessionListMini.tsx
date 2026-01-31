@@ -157,7 +157,6 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
   const { sessions, fetchSessions } = useSessions();
   const { fetchConversation } = useSessionHistory();
   const containerRef = useRef<HTMLDivElement>(null);
-  const [resumingSession, setResumingSession] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('sessions');
 
   // Conversation viewer state
@@ -190,7 +189,6 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
 
   // Resume a Claude session
   const handleResume = useCallback(async (sessionId: string, ccSessionId?: string) => {
-    setResumingSession(sessionId);
     try {
       const response = await fetch(`${API_BASE}/api/sessions/${sessionId}/resume`, {
         method: 'POST',
@@ -208,8 +206,6 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
       }
     } catch (err) {
       console.error('Failed to resume session:', err);
-    } finally {
-      setResumingSession(null);
     }
   }, [sessions, onSelectSession, fetchSessions]);
 

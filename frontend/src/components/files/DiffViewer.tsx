@@ -263,11 +263,11 @@ export function DiffViewer({
 
       {/* Diff content */}
       <div ref={scrollContainerRef} className="flex-1 overflow-auto">
-        <div className="min-h-full">
+        <div className={`min-h-full ${wordWrap ? '' : 'min-w-fit'}`}>
           {diffLines.map((line, i) => (
             <div
               key={i}
-              className={`flex ${
+              className={`flex min-w-full ${
                 line.type === 'add' ? 'bg-green-900/30' :
                 line.type === 'remove' ? 'bg-red-900/30' :
                 ''

@@ -420,8 +420,66 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center">
       <div className="bg-gray-900 w-full h-full lg:w-[90%] lg:h-[90%] lg:max-w-5xl lg:rounded-lg lg:shadow-2xl overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 bg-gray-800">
+        {/* Error */}
+        {error && (
+          <div className="px-3 py-2 bg-red-900/50 text-red-300 text-sm border-b border-red-800">
+            {error}
+          </div>
+        )}
+
+        {/* Content */}
+        <div className="flex-1 overflow-hidden">
+          {viewMode === 'browser' && (
+            <FileBrowser
+              files={files}
+              currentPath={currentPath}
+              parentPath={parentPath}
+              isLoading={isLoading}
+              onNavigate={navigateTo}
+              onNavigateUp={navigateUp}
+              onSelectFile={handleSelectFile}
+              showHidden={showHidden}
+            />
+          )}
+
+          {viewMode === 'file' && selectedFile && (
+            isImageFile(selectedFile.path) ? (
+              <ImageViewer
+                content={selectedFile.content}
+                mimeType={selectedFile.mimeType}
+                fileName={getFileName(selectedFile.path)}
+                size={selectedFile.size}
+              />
+            ) : (
+              <CodeViewer
+                content={selectedFile.content}
+                language={getLanguageFromPath(selectedFile.path)}
+                fileName={getFileName(selectedFile.path)}
+                truncated={selectedFile.truncated}
+              />
+            )
+          )}
+
+          {viewMode === 'changes' && (
+            <ChangesView
+              changes={changes}
+              isLoading={isLoading}
+              onSelectChange={handleChangeFileClick}
+            />
+          )}
+
+          {viewMode === 'diff' && selectedChange && (
+            <DiffViewer
+              oldContent={selectedChange.oldContent}
+              newContent={selectedChange.newContent}
+              fileName={getFileName(selectedChange.path)}
+              toolName={selectedChange.toolName}
+            />
+          )}
+        </div>
+
+        {/* Footer controls - at bottom for easier touch access */}
+        <div className="flex items-center justify-between px-3 py-2 border-t border-gray-700 bg-gray-800">
           <div className="flex items-center gap-2">
             {(viewMode === 'file' || viewMode === 'diff') && (
               <button
@@ -487,64 +545,6 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
               </svg>
             </button>
           </div>
-        </div>
-
-        {/* Error */}
-        {error && (
-          <div className="px-3 py-2 bg-red-900/50 text-red-300 text-sm border-b border-red-800">
-            {error}
-          </div>
-        )}
-
-        {/* Content */}
-        <div className="flex-1 overflow-hidden">
-          {viewMode === 'browser' && (
-            <FileBrowser
-              files={files}
-              currentPath={currentPath}
-              parentPath={parentPath}
-              isLoading={isLoading}
-              onNavigate={navigateTo}
-              onNavigateUp={navigateUp}
-              onSelectFile={handleSelectFile}
-              showHidden={showHidden}
-            />
-          )}
-
-          {viewMode === 'file' && selectedFile && (
-            isImageFile(selectedFile.path) ? (
-              <ImageViewer
-                content={selectedFile.content}
-                mimeType={selectedFile.mimeType}
-                fileName={getFileName(selectedFile.path)}
-                size={selectedFile.size}
-              />
-            ) : (
-              <CodeViewer
-                content={selectedFile.content}
-                language={getLanguageFromPath(selectedFile.path)}
-                fileName={getFileName(selectedFile.path)}
-                truncated={selectedFile.truncated}
-              />
-            )
-          )}
-
-          {viewMode === 'changes' && (
-            <ChangesView
-              changes={changes}
-              isLoading={isLoading}
-              onSelectChange={handleChangeFileClick}
-            />
-          )}
-
-          {viewMode === 'diff' && selectedChange && (
-            <DiffViewer
-              oldContent={selectedChange.oldContent}
-              newContent={selectedChange.newContent}
-              fileName={getFileName(selectedChange.path)}
-              toolName={selectedChange.toolName}
-            />
-          )}
         </div>
       </div>
     </div>

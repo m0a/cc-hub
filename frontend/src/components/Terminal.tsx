@@ -774,17 +774,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           className="absolute inset-0 z-10"
           style={{ touchAction: 'none' }}
         />
-        {/* Keyboard button for mobile - hidden when input bar is shown or hideKeyboard prop */}
-        {!hideKeyboard && inputMode === 'hidden' && (
-          <button
-            onClick={handleKeyboardButtonClick}
-            className="absolute bottom-4 right-4 z-20 w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 flex items-center justify-center text-white text-2xl transition-colors"
-            style={{ touchAction: 'manipulation' }}
-            aria-label="Show keyboard"
-          >
-            ⌨
-          </button>
-        )}
         {(!isInitialized || !isConnected) && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-30">
             <div className="text-white text-lg">

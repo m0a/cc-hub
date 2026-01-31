@@ -36,6 +36,9 @@ interface TerminalProps {
   onError?: (error: string) => void;
   onReady?: (send: (data: string) => void) => void;
   hideKeyboard?: boolean;  // Hide built-in keyboard (for tablet split layout)
+  overlayContent?: React.ReactNode;  // Custom overlay content (rendered above keyboard)
+  onOverlayTap?: () => void;  // Called when tap area is touched
+  showOverlay?: boolean;  // Control overlay visibility
 }
 
 // Ref interface for external keyboard input
@@ -52,6 +55,9 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   onError,
   onReady,
   hideKeyboard,
+  overlayContent,
+  onOverlayTap,
+  showOverlay = true,
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -867,6 +873,19 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           onTouchStart={handleInputBarTouchStart}
           onTouchEnd={handleInputBarTouchEnd}
         >
+          {/* Custom overlay content (from parent) */}
+          {overlayContent}
+
+          {/* Tap area to show overlay when hidden */}
+          {!showOverlay && onOverlayTap && (
+            <div
+              className="h-6 bg-gray-800/50 flex items-center justify-center"
+              onClick={onOverlayTap}
+            >
+              <div className="w-10 h-1 bg-gray-600 rounded-full" />
+            </div>
+          )}
+
           {/* Hidden file input for image upload (shared across modes) */}
           <input
             type="file"

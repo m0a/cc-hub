@@ -212,14 +212,26 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
 
   // Handle session resumed from history
   const handleHistorySessionResumed = useCallback(async (tmuxSessionId: string) => {
-    // Switch to sessions tab and set pending selection
+    // Switch to sessions tab
     setActiveTab('sessions');
-    setPendingSelectSessionId(tmuxSessionId);
 
-    // Wait a bit for the session to be created, then fetch
-    await new Promise(resolve => setTimeout(resolve, 500));
-    await fetchSessions();
-  }, [fetchSessions]);
+    // Wait for the session to be created
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    // Fetch sessions and find the new one
+    const response = await fetch(`${API_BASE}/api/sessions`);
+    if (response.ok) {
+      const data = await response.json();
+      const newSession = data.sessions?.find((s: SessionResponse) => s.id === tmuxSessionId);
+      if (newSession) {
+        // Directly call onSelectSession with the session from API
+        onSelectSession(newSession);
+      }
+    }
+
+    // Also refresh the local sessions list
+    fetchSessions();
+  }, [fetchSessions, onSelectSession]);
 
   // Show conversation for an active session
   const handleShowConversation = useCallback(async (ccSessionId: string, title: string, subtitle: string) => {

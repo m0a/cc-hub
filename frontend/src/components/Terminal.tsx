@@ -586,8 +586,14 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     fileInputRef.current?.click();
   };
 
-  // Extract URLs from terminal buffer
+  // Extract URLs from terminal buffer (toggle menu)
   const handleExtractUrls = () => {
+    // If menu is already open, close it
+    if (showUrlMenu) {
+      setShowUrlMenu(false);
+      return;
+    }
+
     const term = terminalRef.current;
     if (!term) return;
 
@@ -843,13 +849,13 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           {/* Custom overlay content (from parent) - only show when overlay is visible */}
           {showOverlay && overlayContent}
 
-          {/* Minimal tap area to show overlay when hidden (keyboard visible state) */}
+          {/* Tap area to show overlay when hidden (keyboard visible state) */}
           {!showOverlay && overlayContent && onOverlayTap && (
             <div
-              className="h-2 flex items-center justify-center"
+              className="h-4 flex items-center justify-center"
               onClick={onOverlayTap}
             >
-              <div className="w-8 h-0.5 bg-gray-600 rounded-full" />
+              <div className="w-10 h-1 bg-gray-600 rounded-full" />
             </div>
           )}
 

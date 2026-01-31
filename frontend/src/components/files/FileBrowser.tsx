@@ -109,24 +109,6 @@ export function FileBrowser({
 
   return (
     <div className="flex flex-col h-full bg-gray-900 text-white">
-      {/* Path bar */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-700 bg-gray-800">
-        {parentPath && (
-          <button
-            onClick={onNavigateUp}
-            className="p-1.5 hover:bg-gray-700 rounded transition-colors shrink-0"
-            title="上のフォルダへ"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-        )}
-        <div className="flex-1 text-sm text-gray-300 truncate font-mono" title={currentPath}>
-          {shortPath}
-        </div>
-      </div>
-
       {/* File list */}
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
@@ -163,6 +145,24 @@ export function FileBrowser({
             ))}
           </div>
         )}
+      </div>
+
+      {/* Path bar - at bottom */}
+      <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-700 bg-gray-800">
+        {parentPath && (
+          <button
+            onClick={onNavigateUp}
+            className="p-1.5 hover:bg-gray-700 rounded transition-colors shrink-0"
+            title="上のフォルダへ"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+        )}
+        <div className="flex-1 text-sm text-gray-300 truncate font-mono" title={currentPath}>
+          {shortPath}
+        </div>
       </div>
     </div>
   );

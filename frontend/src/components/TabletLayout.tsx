@@ -205,13 +205,18 @@ export function TabletLayout({
     }
   }, []);
 
-  // URL extract from terminal buffer
+  // URL extract from terminal buffer (toggle menu)
   const handleUrlExtract = useCallback(() => {
+    // If menu is already open, close it
+    if (showUrlMenu) {
+      setShowUrlMenu(false);
+      return;
+    }
     const urls = terminalRef.current?.extractUrls() || [];
     setDetectedUrls(urls);
     setUrlPage(0);
     setShowUrlMenu(true);
-  }, []);
+  }, [showUrlMenu]);
 
   // Copy URL to clipboard
   const handleCopyUrl = useCallback((url: string) => {

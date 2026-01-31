@@ -14,6 +14,7 @@ interface OpenSession {
   state: SessionState;
   currentPath?: string;
   ccSessionId?: string;
+  currentCommand?: string;
 }
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -137,13 +138,14 @@ export function App() {
             const normalizedId = id.startsWith('ext:') ? id.slice(4) : id;
             const session = allSessions.find(s => s.id === normalizedId);
             if (session) {
-              const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string };
+              const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string };
               sessionsToOpen.push({
                 id: session.id,
                 name: session.name,
                 state: session.state,
                 currentPath: extSession.currentPath,
                 ccSessionId: extSession.ccSessionId,
+                currentCommand: extSession.currentCommand,
               });
             }
           }
@@ -164,13 +166,14 @@ export function App() {
             setActiveSessionId(activeId);
           } else if (allSessions.length > 0) {
             // No valid saved sessions, open most recent
-            const mostRecent = allSessions[0] as SessionResponse & { currentPath?: string; ccSessionId?: string };
+            const mostRecent = allSessions[0] as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string };
             setOpenSessions([{
               id: mostRecent.id,
               name: mostRecent.name,
               state: mostRecent.state,
               currentPath: mostRecent.currentPath,
               ccSessionId: mostRecent.ccSessionId,
+              currentCommand: mostRecent.currentCommand,
             }]);
             setActiveSessionId(mostRecent.id);
           } else {
@@ -178,13 +181,14 @@ export function App() {
           }
         } else if (allSessions.length > 0) {
           // No saved sessions, open most recent
-          const mostRecent = allSessions[0] as SessionResponse & { currentPath?: string; ccSessionId?: string };
+          const mostRecent = allSessions[0] as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string };
           setOpenSessions([{
             id: mostRecent.id,
             name: mostRecent.name,
             state: mostRecent.state,
             currentPath: mostRecent.currentPath,
             ccSessionId: mostRecent.ccSessionId,
+            currentCommand: mostRecent.currentCommand,
           }]);
           setActiveSessionId(mostRecent.id);
         } else {
@@ -222,13 +226,14 @@ export function App() {
       setActiveSessionId(session.id);
     } else {
       // Add to open sessions
-      const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string };
+      const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string };
       setOpenSessions(prev => [...prev, {
         id: extSession.id,
         name: extSession.name,
         state: extSession.state,
         currentPath: extSession.currentPath,
         ccSessionId: extSession.ccSessionId,
+        currentCommand: extSession.currentCommand,
       }]);
       setActiveSessionId(session.id);
     }
@@ -328,6 +333,20 @@ export function App() {
       setConversation(messages);
     } finally {
       setLoadingConversation(false);
+    }
+  }, [openSessions, activeSessionId, fetchConversation]);
+
+  // Refresh conversation (for auto-refresh)
+  const handleRefreshConversation = useCallback(async () => {
+    const activeSession = openSessions.find(s => s.id === activeSessionId);
+    const ccSessionId = activeSession?.ccSessionId;
+    if (!ccSessionId) return;
+
+    try {
+      const messages = await fetchConversation(ccSessionId);
+      setConversation(messages);
+    } catch (err) {
+      console.error('Failed to refresh conversation:', err);
     }
   }, [openSessions, activeSessionId, fetchConversation]);
 
@@ -511,6 +530,8 @@ export function App() {
           isLoading={loadingConversation}
           onClose={() => setShowConversation(false)}
           scrollToBottom={true}
+          isActive={activeSession?.currentCommand === 'claude'}
+          onRefresh={handleRefreshConversation}
         />
       )}
     </div>

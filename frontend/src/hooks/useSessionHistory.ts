@@ -87,7 +87,9 @@ export function useSessionHistory(): UseSessionHistoryResult {
 
   const fetchConversation = useCallback(async (sessionId: string): Promise<ConversationMessage[]> => {
     try {
-      const response = await fetch(`${API_BASE}/api/sessions/history/${sessionId}/conversation`);
+      const response = await fetch(`${API_BASE}/api/sessions/history/${sessionId}/conversation`, {
+        cache: 'no-store',  // Disable browser cache for live updates
+      });
       if (!response.ok) {
         throw new Error('Failed to fetch conversation');
       }

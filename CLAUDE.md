@@ -82,3 +82,11 @@ STATIC_ROOT=../frontend/dist  # Static files location
 ## Type Sharing
 
 Types are defined in `shared/types.ts` with Zod schemas for validation. Import from `../../../shared/types` in both backend and frontend.
+
+## Debugging
+
+### Remote Logging
+
+Frontend `console.log/warn/error/info` calls are automatically sent to the backend via `/api/logs`. Logs are written to `logs/frontend.log`.
+
+This enables debugging on mobile/tablet devices without access to browser DevTools. Use `tail -f logs/frontend.log` to monitor frontend logs in real-time.

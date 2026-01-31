@@ -37,13 +37,19 @@ export function ConversationViewer({
 
   // Auto-refresh when session is active (silently in background)
   useEffect(() => {
+    console.log('[ConversationViewer] Auto-refresh effect:', { isActive, hasOnRefresh: !!onRefresh });
     if (!isActive || !onRefresh) return;
 
+    console.log('[ConversationViewer] Setting up 3s interval');
     const interval = setInterval(() => {
+      console.log('[ConversationViewer] Refreshing...');
       onRefresh();
     }, 3000); // Refresh every 3 seconds
 
-    return () => clearInterval(interval);
+    return () => {
+      console.log('[ConversationViewer] Clearing interval');
+      clearInterval(interval);
+    };
   }, [isActive, onRefresh]);
 
   return (

@@ -130,7 +130,7 @@ function SessionItem({
   onSelect: (session: SessionResponse) => void;
   onDelete: (session: SessionResponse) => void;
   onResume?: (sessionId: string, ccSessionId?: string) => void;
-  onShowConversation?: (ccSessionId: string, title: string, subtitle: string) => void;
+  onShowConversation?: (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => void;
 }) {
   const longPressTimerRef = useRef<number | null>(null);
   const longPressFiredRef = useRef(false);
@@ -208,7 +208,7 @@ function SessionItem({
     if (extSession.ccSessionId) {
       const title = extSession.ccSummary || extSession.ccFirstPrompt || session.name;
       const subtitle = shortPath;
-      onShowConversation?.(extSession.ccSessionId, title, subtitle);
+      onShowConversation?.(extSession.ccSessionId, title, subtitle, isClaudeRunning);
     }
   };
 
@@ -288,6 +288,7 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
     sessionId: string;
     title: string;
     subtitle: string;
+    isActive: boolean;
   } | null>(null);
   const [conversation, setConversation] = useState<ConversationMessage[]>([]);
   const [loadingConversation, setLoadingConversation] = useState(false);
@@ -326,8 +327,8 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
   }, [sessions, onSelectSession, fetchSessions]);
 
   // Show conversation for an active session
-  const handleShowConversation = useCallback(async (ccSessionId: string, title: string, subtitle: string) => {
-    setViewingConversation({ sessionId: ccSessionId, title, subtitle });
+  const handleShowConversation = useCallback(async (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => {
+    setViewingConversation({ sessionId: ccSessionId, title, subtitle, isActive });
     setLoadingConversation(true);
     setConversation([]);
     try {
@@ -337,6 +338,17 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
       setLoadingConversation(false);
     }
   }, [fetchConversation]);
+
+  // Refresh conversation (for auto-refresh)
+  const handleRefreshConversation = useCallback(async () => {
+    if (!viewingConversation) return;
+    try {
+      const messages = await fetchConversation(viewingConversation.sessionId);
+      setConversation(messages);
+    } catch (err) {
+      console.error('Failed to refresh conversation:', err);
+    }
+  }, [viewingConversation, fetchConversation]);
 
   const handleCreateSession = async (name: string) => {
     const session = await createSession(name || undefined);
@@ -502,6 +514,8 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
           messages={conversation}
           isLoading={loadingConversation}
           onClose={() => setViewingConversation(null)}
+          isActive={viewingConversation.isActive}
+          onRefresh={handleRefreshConversation}
         />
       )}
     </div>

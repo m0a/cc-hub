@@ -92,6 +92,7 @@ function SessionMiniItem({
     if (extSession.ccSessionId) {
       const title = extSession.ccSummary || extSession.ccFirstPrompt || session.name;
       const subtitle = extSession.currentPath?.replace(/^\/home\/[^/]+\//, '~/') || '';
+      console.log('[SessionMiniItem] Showing conversation:', { ccSessionId: extSession.ccSessionId, isClaudeRunning, currentCommand: extSession.currentCommand });
       onShowConversation?.(extSession.ccSessionId, title, subtitle, isClaudeRunning);
     }
   };
@@ -222,6 +223,7 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
 
   // Show conversation for an active session
   const handleShowConversation = useCallback(async (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => {
+    console.log('[SessionListMini] handleShowConversation called:', { ccSessionId, isActive });
     setViewingConversation({ sessionId: ccSessionId, title, subtitle, isActive });
     setLoadingConversation(true);
     setConversation([]);

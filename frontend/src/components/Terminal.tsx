@@ -545,28 +545,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     };
   }, [fontSize, isInitialized]);
 
-  // Show shortcuts bar
-  const handleKeyboardButtonClick = () => {
-    setInputMode('shortcuts');
-    setShowHint(true);
-    // Hide hint after 3 seconds
-    if (hintTimeoutRef.current) {
-      clearTimeout(hintTimeoutRef.current);
-    }
-    hintTimeoutRef.current = window.setTimeout(() => {
-      setShowHint(false);
-    }, 3000);
-    // Refit terminal and focus input to show keyboard
-    setTimeout(() => {
-      fitAddonRef.current?.fit();
-      if (terminalRef.current) {
-        resizeRef.current(terminalRef.current.cols, terminalRef.current.rows);
-      }
-      // Focus hidden input to show soft keyboard
-      inputRef.current?.focus();
-    }, 50);
-  };
-
   // Handle file selection for image upload
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

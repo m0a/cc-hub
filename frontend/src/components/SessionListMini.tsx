@@ -199,17 +199,24 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
   }, [sessions, onSelectSession, fetchSessions]);
 
   // Handle session resumed from history
-  const handleHistorySessionResumed = useCallback((tmuxSessionId: string) => {
-    // Refresh sessions and select the new one
-    fetchSessions();
-    setTimeout(() => {
-      const newSession = sessions.find(s => s.id === tmuxSessionId);
+  const handleHistorySessionResumed = useCallback(async (tmuxSessionId: string) => {
+    // Switch to sessions tab immediately
+    setActiveTab('sessions');
+
+    // Wait a bit for the session to be created, then fetch and select
+    await new Promise(resolve => setTimeout(resolve, 500));
+    await fetchSessions();
+
+    // Fetch sessions again to get the updated list
+    const response = await fetch(`${API_BASE}/api/sessions`);
+    if (response.ok) {
+      const data = await response.json();
+      const newSession = data.sessions?.find((s: SessionResponse) => s.id === tmuxSessionId);
       if (newSession) {
         onSelectSession(newSession);
       }
-    }, 500);
-    setActiveTab('sessions');
-  }, [sessions, onSelectSession, fetchSessions]);
+    }
+  }, [onSelectSession, fetchSessions]);
 
   // Show conversation for an active session
   const handleShowConversation = useCallback(async (ccSessionId: string, title: string, subtitle: string) => {

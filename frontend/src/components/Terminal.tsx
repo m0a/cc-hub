@@ -840,16 +840,16 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           onTouchStart={handleInputBarTouchStart}
           onTouchEnd={handleInputBarTouchEnd}
         >
-          {/* Custom overlay content (from parent) */}
-          {overlayContent}
+          {/* Custom overlay content (from parent) - only show when overlay is visible */}
+          {showOverlay && overlayContent}
 
-          {/* Tap area to show overlay when hidden */}
-          {!showOverlay && onOverlayTap && (
+          {/* Minimal tap area to show overlay when hidden (keyboard visible state) */}
+          {!showOverlay && overlayContent && onOverlayTap && (
             <div
-              className="h-6 bg-gray-800/50 flex items-center justify-center"
+              className="h-2 flex items-center justify-center"
               onClick={onOverlayTap}
             >
-              <div className="w-10 h-1 bg-gray-600 rounded-full" />
+              <div className="w-8 h-0.5 bg-gray-600 rounded-full" />
             </div>
           )}
 

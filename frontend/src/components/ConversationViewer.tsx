@@ -10,6 +10,8 @@ interface ConversationViewerProps {
   onResume?: () => void;
   isResuming?: boolean;
   scrollToBottom?: boolean;
+  isActive?: boolean;  // Whether the session is actively running
+  onRefresh?: () => void;  // Callback to refresh conversation
 }
 
 export function ConversationViewer({
@@ -21,6 +23,8 @@ export function ConversationViewer({
   onResume,
   isResuming,
   scrollToBottom = false,
+  isActive = false,
+  onRefresh,
 }: ConversationViewerProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -30,6 +34,17 @@ export function ConversationViewer({
       messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
     }
   }, [messages, isLoading, scrollToBottom]);
+
+  // Auto-refresh when session is active (silently in background)
+  useEffect(() => {
+    if (!isActive || !onRefresh) return;
+
+    const interval = setInterval(() => {
+      onRefresh();
+    }, 3000); // Refresh every 3 seconds
+
+    return () => clearInterval(interval);
+  }, [isActive, onRefresh]);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-gray-900">

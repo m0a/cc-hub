@@ -41,7 +41,7 @@ function SessionMiniItem({
   isActive: boolean;
   onClick: () => void;
   onResume?: (sessionId: string, ccSessionId?: string) => void;
-  onShowConversation?: (ccSessionId: string, title: string, subtitle: string) => void;
+  onShowConversation?: (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => void;
 }) {
   // Get extra session info
   const extSession = session as SessionResponse & {
@@ -92,7 +92,7 @@ function SessionMiniItem({
     if (extSession.ccSessionId) {
       const title = extSession.ccSummary || extSession.ccFirstPrompt || session.name;
       const subtitle = extSession.currentPath?.replace(/^\/home\/[^/]+\//, '~/') || '';
-      onShowConversation?.(extSession.ccSessionId, title, subtitle);
+      onShowConversation?.(extSession.ccSessionId, title, subtitle, isClaudeRunning);
     }
   };
 
@@ -164,6 +164,7 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
     sessionId: string;
     title: string;
     subtitle: string;
+    isActive: boolean;  // Whether Claude is actively running
   } | null>(null);
   const [conversation, setConversation] = useState<ConversationMessage[]>([]);
   const [loadingConversation, setLoadingConversation] = useState(false);
@@ -220,8 +221,8 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
   }, [fetchSessions]);
 
   // Show conversation for an active session
-  const handleShowConversation = useCallback(async (ccSessionId: string, title: string, subtitle: string) => {
-    setViewingConversation({ sessionId: ccSessionId, title, subtitle });
+  const handleShowConversation = useCallback(async (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => {
+    setViewingConversation({ sessionId: ccSessionId, title, subtitle, isActive });
     setLoadingConversation(true);
     setConversation([]);
     try {
@@ -231,6 +232,17 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
       setLoadingConversation(false);
     }
   }, [fetchConversation]);
+
+  // Refresh conversation (for auto-refresh)
+  const handleRefreshConversation = useCallback(async () => {
+    if (!viewingConversation) return;
+    try {
+      const messages = await fetchConversation(viewingConversation.sessionId);
+      setConversation(messages);
+    } catch (err) {
+      console.error('Failed to refresh conversation:', err);
+    }
+  }, [viewingConversation, fetchConversation]);
 
   return (
     <div className="h-full flex flex-col bg-gray-900">
@@ -314,6 +326,8 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
           messages={conversation}
           isLoading={loadingConversation}
           onClose={() => setViewingConversation(null)}
+          isActive={viewingConversation.isActive}
+          onRefresh={handleRefreshConversation}
         />
       )}
     </div>

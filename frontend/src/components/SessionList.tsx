@@ -279,30 +279,6 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
 
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700">
-        {onBack ? (
-          <button
-            onClick={onBack}
-            className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-        ) : (
-          <div className="w-9" />
-        )}
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-        </button>
-      </div>
-
       {/* Error message */}
       {error && (
         <div className="p-4 bg-red-900/50 text-red-300 text-sm">
@@ -329,6 +305,30 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Bottom bar */}
+      <div className="flex items-center justify-between px-3 py-2 border-t border-gray-700 bg-black/80">
+        {onBack ? (
+          <button
+            onClick={onBack}
+            className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+        ) : (
+          <div className="w-9" />
+        )}
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
       </div>
 
       {/* Confirm delete dialog */}

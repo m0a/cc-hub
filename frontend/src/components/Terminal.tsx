@@ -36,6 +36,9 @@ interface TerminalProps {
   onError?: (error: string) => void;
   onReady?: (send: (data: string) => void) => void;
   hideKeyboard?: boolean;  // Hide built-in keyboard (for tablet split layout)
+  overlayContent?: React.ReactNode;  // Custom overlay content (rendered above keyboard)
+  onOverlayTap?: () => void;  // Called when tap area is touched
+  showOverlay?: boolean;  // Control overlay visibility
 }
 
 // Ref interface for external keyboard input
@@ -52,6 +55,9 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   onError,
   onReady,
   hideKeyboard,
+  overlayContent,
+  onOverlayTap,
+  showOverlay = true,
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -539,28 +545,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     };
   }, [fontSize, isInitialized]);
 
-  // Show shortcuts bar
-  const handleKeyboardButtonClick = () => {
-    setInputMode('shortcuts');
-    setShowHint(true);
-    // Hide hint after 3 seconds
-    if (hintTimeoutRef.current) {
-      clearTimeout(hintTimeoutRef.current);
-    }
-    hintTimeoutRef.current = window.setTimeout(() => {
-      setShowHint(false);
-    }, 3000);
-    // Refit terminal and focus input to show keyboard
-    setTimeout(() => {
-      fitAddonRef.current?.fit();
-      if (terminalRef.current) {
-        resizeRef.current(terminalRef.current.cols, terminalRef.current.rows);
-      }
-      // Focus hidden input to show soft keyboard
-      inputRef.current?.focus();
-    }, 50);
-  };
-
   // Handle file selection for image upload
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -768,17 +752,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           className="absolute inset-0 z-10"
           style={{ touchAction: 'none' }}
         />
-        {/* Keyboard button for mobile - hidden when input bar is shown or hideKeyboard prop */}
-        {!hideKeyboard && inputMode === 'hidden' && (
-          <button
-            onClick={handleKeyboardButtonClick}
-            className="absolute bottom-4 right-4 z-20 w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 flex items-center justify-center text-white text-2xl transition-colors"
-            style={{ touchAction: 'manipulation' }}
-            aria-label="Show keyboard"
-          >
-            ⌨
-          </button>
-        )}
         {(!isInitialized || !isConnected) && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-30">
             <div className="text-white text-lg">
@@ -867,6 +840,19 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           onTouchStart={handleInputBarTouchStart}
           onTouchEnd={handleInputBarTouchEnd}
         >
+          {/* Custom overlay content (from parent) - only show when overlay is visible */}
+          {showOverlay && overlayContent}
+
+          {/* Minimal tap area to show overlay when hidden (keyboard visible state) */}
+          {!showOverlay && overlayContent && onOverlayTap && (
+            <div
+              className="h-2 flex items-center justify-center"
+              onClick={onOverlayTap}
+            >
+              <div className="w-8 h-0.5 bg-gray-600 rounded-full" />
+            </div>
+          )}
+
           {/* Hidden file input for image upload (shared across modes) */}
           <input
             type="file"
@@ -875,8 +861,8 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             ref={fileInputRef}
             onChange={handleFileSelect}
           />
-          {/* Header bar with hint and position toggle */}
-          {/* On tablet: hide entire bar after 3 seconds to maximize terminal area */}
+          {/* Header bar with hint and position toggle - hidden when overlay content is present */}
+          {!overlayContent && (
           <div
             className={`bg-gray-900 flex justify-between items-center overflow-hidden transition-all duration-300 ${
               isTablet
@@ -900,6 +886,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
               </button>
             )}
           </div>
+          )}
 
           {/* Tap area to show position toggle when header is hidden */}
           {isTablet && !showPositionToggle && inputMode === 'shortcuts' && (
@@ -1038,6 +1025,58 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Bottom overlay when keyboard is hidden (mobile only) */}
+      {!hideKeyboard && inputMode === 'hidden' && overlayContent && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-black border-t border-gray-700">
+          {/* Overlay content with keyboard button */}
+          <div className="flex items-center">
+            <div className="flex-1">{overlayContent}</div>
+            {/* Keyboard show button */}
+            <button
+              onClick={() => {
+                setInputMode('shortcuts');
+                setShowHint(true);
+                if (hintTimeoutRef.current) clearTimeout(hintTimeoutRef.current);
+                hintTimeoutRef.current = window.setTimeout(() => setShowHint(false), 5000);
+              }}
+              className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors mr-2"
+              title="キーボード表示"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <rect x="2" y="6" width="20" height="12" rx="2" />
+                <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Tap area to show overlay when hidden */}
+          {!showOverlay && onOverlayTap && (
+            <div
+              className="absolute inset-0 z-50"
+              onClick={onOverlayTap}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Tap area at bottom when keyboard hidden and no overlay content */}
+      {!hideKeyboard && inputMode === 'hidden' && !overlayContent && (
+        <div
+          className="fixed bottom-0 left-0 right-0 h-8 z-40 bg-black/50 flex items-center justify-center"
+          onClick={() => {
+            setInputMode('shortcuts');
+            setShowHint(true);
+            if (hintTimeoutRef.current) clearTimeout(hintTimeoutRef.current);
+            hintTimeoutRef.current = window.setTimeout(() => setShowHint(false), 5000);
+          }}
+        >
+          <svg className="w-5 h-5 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <rect x="2" y="6" width="20" height="12" rx="2" />
+            <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
+          </svg>
         </div>
       )}
     </div>

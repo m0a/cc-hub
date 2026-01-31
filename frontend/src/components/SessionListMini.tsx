@@ -144,6 +144,7 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
   const containerRef = useRef<HTMLDivElement>(null);
   const [resumingSession, setResumingSession] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('sessions');
+  const [pendingSelectSessionId, setPendingSelectSessionId] = useState<string | null>(null);
 
   // Conversation viewer state
   const [viewingConversation, setViewingConversation] = useState<{
@@ -164,6 +165,17 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
 
     return () => clearInterval(interval);
   }, [fetchSessions]);
+
+  // Auto-select session when it becomes available after resume
+  useEffect(() => {
+    if (pendingSelectSessionId && sessions.length > 0) {
+      const session = sessions.find(s => s.id === pendingSelectSessionId);
+      if (session) {
+        onSelectSession(session);
+        setPendingSelectSessionId(null);
+      }
+    }
+  }, [sessions, pendingSelectSessionId, onSelectSession]);
 
   // Scroll active session into view
   useEffect(() => {
@@ -200,23 +212,14 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
 
   // Handle session resumed from history
   const handleHistorySessionResumed = useCallback(async (tmuxSessionId: string) => {
-    // Switch to sessions tab immediately
+    // Switch to sessions tab and set pending selection
     setActiveTab('sessions');
+    setPendingSelectSessionId(tmuxSessionId);
 
-    // Wait a bit for the session to be created, then fetch and select
+    // Wait a bit for the session to be created, then fetch
     await new Promise(resolve => setTimeout(resolve, 500));
     await fetchSessions();
-
-    // Fetch sessions again to get the updated list
-    const response = await fetch(`${API_BASE}/api/sessions`);
-    if (response.ok) {
-      const data = await response.json();
-      const newSession = data.sessions?.find((s: SessionResponse) => s.id === tmuxSessionId);
-      if (newSession) {
-        onSelectSession(newSession);
-      }
-    }
-  }, [onSelectSession, fetchSessions]);
+  }, [fetchSessions]);
 
   // Show conversation for an active session
   const handleShowConversation = useCallback(async (ccSessionId: string, title: string, subtitle: string) => {

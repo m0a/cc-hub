@@ -54,6 +54,10 @@ function SessionMiniItem({
     waitingToolName?: string;
     indicatorState?: IndicatorState;
     ccSessionId?: string;
+    // Phase 2 fields
+    messageCount?: number;
+    gitBranch?: string;
+    durationMinutes?: number;
   };
 
   const isClaudeRunning = extSession.currentCommand === 'claude';
@@ -130,6 +134,17 @@ function SessionMiniItem({
       {(extSession.ccSummary || extSession.ccFirstPrompt) && (
         <div className="text-[10px] text-blue-400 mt-0.5 truncate pl-3.5">
           {extSession.ccSummary || extSession.ccFirstPrompt}
+        </div>
+      )}
+      {/* Phase 2: Metadata display (B1, B2, B3) */}
+      {(extSession.messageCount || extSession.gitBranch) && (
+        <div className="flex items-center gap-2 mt-0.5 text-[10px] text-gray-500 pl-3.5">
+          {extSession.messageCount !== undefined && extSession.messageCount > 0 && (
+            <span>{extSession.messageCount}msg</span>
+          )}
+          {extSession.gitBranch && (
+            <span className="text-purple-400 truncate max-w-[80px]">{extSession.gitBranch}</span>
+          )}
         </div>
       )}
     </div>

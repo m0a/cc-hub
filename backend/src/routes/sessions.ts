@@ -63,6 +63,14 @@ sessions.get('/', async (c) => {
       ccSession?.waitingToolName
     );
 
+    // Calculate session duration from modified time
+    let durationMinutes: number | undefined;
+    if (ccSession?.modified) {
+      const modified = new Date(ccSession.modified);
+      const now = new Date();
+      durationMinutes = Math.round((now.getTime() - modified.getTime()) / 60000);
+    }
+
     return {
       id: s.id,
       name: s.name,
@@ -80,6 +88,10 @@ sessions.get('/', async (c) => {
       // New fields for dashboard
       indicatorState,
       ccSessionId: ccSession?.sessionId,
+      // Phase 2 fields: B1, B2, B3
+      messageCount: ccSession?.messageCount,
+      gitBranch: ccSession?.gitBranch,
+      durationMinutes,
     };
   });
 

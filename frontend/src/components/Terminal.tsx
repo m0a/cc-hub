@@ -861,8 +861,8 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             ref={fileInputRef}
             onChange={handleFileSelect}
           />
-          {/* Header bar with hint and position toggle */}
-          {/* On tablet: hide entire bar after 3 seconds to maximize terminal area */}
+          {/* Header bar with hint and position toggle - hidden when overlay content is present */}
+          {!overlayContent && (
           <div
             className={`bg-gray-900 flex justify-between items-center overflow-hidden transition-all duration-300 ${
               isTablet
@@ -886,6 +886,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
               </button>
             )}
           </div>
+          )}
 
           {/* Tap area to show position toggle when header is hidden */}
           {isTablet && !showPositionToggle && inputMode === 'shortcuts' && (

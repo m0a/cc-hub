@@ -166,6 +166,56 @@ sessions.get('/prompts/search', async (c) => {
   return c.json({ prompts });
 });
 
+// POST /sessions/history/resume - Resume a session from history (creates new tmux session)
+// NOTE: Must be defined BEFORE /:id routes
+const ResumeHistorySchema = z.object({
+  sessionId: z.string(),
+  projectPath: z.string(),
+});
+
+sessions.post('/history/resume', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = ResumeHistorySchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid request: sessionId and projectPath required' }, 400);
+  }
+
+  const { sessionId, projectPath } = parsed.data;
+
+  try {
+    // Generate a unique tmux session name based on project
+    const projectName = projectPath.split('/').pop() || 'session';
+    const tmuxSessions = await tmuxService.listSessions();
+    let tmuxSessionName = projectName;
+    let counter = 1;
+    while (tmuxSessions.some(s => s.name === tmuxSessionName)) {
+      tmuxSessionName = `${projectName}-${counter++}`;
+    }
+
+    // Create new tmux session
+    await tmuxService.createSession(tmuxSessionName);
+
+    // Change to project directory and run claude -r
+    const command = `cd ${projectPath} && claude -r ${sessionId}`;
+    const success = await tmuxService.sendKeys(tmuxSessionName, command);
+
+    if (!success) {
+      // Clean up the session if command failed
+      await tmuxService.killSession(tmuxSessionName);
+      return c.json({ error: 'Failed to start Claude session' }, 500);
+    }
+
+    return c.json({
+      success: true,
+      tmuxSessionId: tmuxSessionName,
+      ccSessionId: sessionId,
+    });
+  } catch (error) {
+    return c.json({ error: 'Failed to resume session from history' }, 500);
+  }
+});
+
 // GET /sessions/:id - Get a specific session
 sessions.get('/:id', async (c) => {
   const id = c.req.param('id');
@@ -245,51 +295,3 @@ sessions.post('/:id/resume', async (c) => {
   }
 });
 
-const ResumeHistorySchema = z.object({
-  sessionId: z.string(),
-  projectPath: z.string(),
-});
-
-// POST /sessions/history/resume - Resume a session from history (creates new tmux session)
-sessions.post('/history/resume', async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  const parsed = ResumeHistorySchema.safeParse(body);
-
-  if (!parsed.success) {
-    return c.json({ error: 'Invalid request: sessionId and projectPath required' }, 400);
-  }
-
-  const { sessionId, projectPath } = parsed.data;
-
-  try {
-    // Generate a unique tmux session name based on project
-    const projectName = projectPath.split('/').pop() || 'session';
-    const tmuxSessions = await tmuxService.listSessions();
-    let tmuxSessionName = projectName;
-    let counter = 1;
-    while (tmuxSessions.some(s => s.name === tmuxSessionName)) {
-      tmuxSessionName = `${projectName}-${counter++}`;
-    }
-
-    // Create new tmux session
-    await tmuxService.createSession(tmuxSessionName);
-
-    // Change to project directory and run claude -r
-    const command = `cd ${projectPath} && claude -r ${sessionId}`;
-    const success = await tmuxService.sendKeys(tmuxSessionName, command);
-
-    if (!success) {
-      // Clean up the session if command failed
-      await tmuxService.killSession(tmuxSessionName);
-      return c.json({ error: 'Failed to start Claude session' }, 500);
-    }
-
-    return c.json({
-      success: true,
-      tmuxSessionId: tmuxSessionName,
-      ccSessionId: sessionId,
-    });
-  } catch (error) {
-    return c.json({ error: 'Failed to resume session from history' }, 500);
-  }
-});

@@ -4,10 +4,12 @@ import { CreateSessionSchema, type IndicatorState } from '../../../shared/types'
 import { TmuxService } from '../services/tmux';
 import { ClaudeCodeService } from '../services/claude-code';
 import { SessionHistoryService } from '../services/session-history';
+import { PromptHistoryService } from '../services/prompt-history';
 
 const tmuxService = new TmuxService();
 const claudeCodeService = new ClaudeCodeService();
 const sessionHistoryService = new SessionHistoryService();
+const promptHistoryService = new PromptHistoryService();
 
 export const sessions = new Hono();
 
@@ -147,6 +149,21 @@ sessions.post('/history/metadata', async (c) => {
   const { sessionIds } = parsed.data;
   const metadata = await sessionHistoryService.getSessionsMetadata(sessionIds);
   return c.json({ metadata });
+});
+
+// GET /sessions/prompts/search - Search prompt history (C1)
+sessions.get('/prompts/search', async (c) => {
+  const query = c.req.query('q') || '';
+  const limit = parseInt(c.req.query('limit') || '20', 10);
+
+  if (!query.trim()) {
+    // Return recent prompts if no query
+    const prompts = await promptHistoryService.getRecentPrompts(limit);
+    return c.json({ prompts });
+  }
+
+  const prompts = await promptHistoryService.searchPrompts(query, limit);
+  return c.json({ prompts });
 });
 
 // GET /sessions/:id - Get a specific session

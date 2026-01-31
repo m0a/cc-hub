@@ -2,6 +2,7 @@ import { useDashboard } from '../../hooks/useDashboard';
 import { UsageLimits } from './UsageLimits';
 import { DailyUsageChart } from './DailyUsageChart';
 import { ModelUsageChart } from './ModelUsageChart';
+import { HourlyHeatmap } from './HourlyHeatmap';
 
 interface DashboardProps {
   className?: string;
@@ -31,6 +32,9 @@ export function Dashboard({ className = '' }: DashboardProps) {
       <UsageLimits data={data?.usageLimits || null} />
       <DailyUsageChart data={data?.dailyActivity || []} />
       <ModelUsageChart data={data?.modelUsage || []} />
+      {data?.hourlyActivity && Object.keys(data.hourlyActivity).length > 0 && (
+        <HourlyHeatmap data={data.hourlyActivity} />
+      )}
     </div>
   );
 }

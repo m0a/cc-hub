@@ -20,6 +20,7 @@ interface StatsCache {
       cacheCreationInputTokens: number;
     };
   };
+  hourCounts?: Record<string, number>;
 }
 
 // API reference pricing (per 1M tokens)
@@ -121,5 +122,21 @@ export class StatsService {
     if (modelId.includes('opus')) return 'Opus';
     if (modelId.includes('sonnet')) return 'Sonnet';
     return modelId;
+  }
+
+  // Phase 3: Get hourly activity for heatmap
+  async getHourlyActivity(): Promise<Record<number, number>> {
+    const stats = await this.readStatsCache();
+    if (!stats?.hourCounts) {
+      return {};
+    }
+
+    // Convert string keys to numbers and ensure all 24 hours are present
+    const result: Record<number, number> = {};
+    for (let i = 0; i < 24; i++) {
+      result[i] = stats.hourCounts[String(i)] || 0;
+    }
+
+    return result;
   }
 }

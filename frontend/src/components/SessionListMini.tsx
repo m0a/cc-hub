@@ -4,6 +4,7 @@ import { useSessions } from '../hooks/useSessions';
 import { useSessionHistory } from '../hooks/useSessionHistory';
 import { SessionHistory } from './SessionHistory';
 import { ConversationViewer } from './ConversationViewer';
+import { PromptSearch } from './PromptSearch';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -135,7 +136,7 @@ function SessionMiniItem({
   );
 }
 
-type TabType = 'sessions' | 'history';
+type TabType = 'sessions' | 'history' | 'search';
 
 export function SessionListMini({ onSelectSession, activeSessionId, onCreateSession }: SessionListMiniProps) {
   const { sessions, fetchSessions } = useSessions();
@@ -244,6 +245,14 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
           >
             履歴
           </button>
+          <button
+            onClick={() => setActiveTab('search')}
+            className={`text-xs font-medium px-1 ${
+              activeTab === 'search' ? 'text-white' : 'text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            検索
+          </button>
         </div>
         {activeTab === 'sessions' && onCreateSession && (
           <button
@@ -276,9 +285,13 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
             ))
           )}
         </div>
-      ) : (
+      ) : activeTab === 'history' ? (
         <div className="flex-1 overflow-y-auto">
           <SessionHistory onSessionResumed={handleHistorySessionResumed} />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-hidden">
+          <PromptSearch />
         </div>
       )}
 

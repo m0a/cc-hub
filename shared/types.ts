@@ -228,6 +228,7 @@ export interface DashboardResponse {
   dailyActivity: DailyActivity[];
   modelUsage: ModelUsage[];
   costEstimates: CostEstimate[];
+  hourlyActivity?: Record<number, number>; // Phase 3: Hour (0-23) -> session count
 }
 
 export interface ExtendedSessionResponse extends SessionResponse {

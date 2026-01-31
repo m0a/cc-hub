@@ -10,10 +10,11 @@ export const dashboard = new Hono();
 
 // GET /dashboard - Get dashboard data
 dashboard.get('/', async (c) => {
-  const [usageLimits, dailyActivity, modelUsage] = await Promise.all([
+  const [usageLimits, dailyActivity, modelUsage, hourlyActivity] = await Promise.all([
     anthropicUsageService.getUsageLimits(),
     statsService.getDailyActivity(14),
     statsService.getModelUsage(),
+    statsService.getHourlyActivity(),
   ]);
 
   const response: DashboardResponse = {
@@ -22,6 +23,7 @@ dashboard.get('/', async (c) => {
     dailyActivity,
     modelUsage,
     costEstimates: [],
+    hourlyActivity,
   };
 
   return c.json(response);

@@ -1,0 +1,102 @@
+import { useRef, useEffect } from 'react';
+import type { ConversationMessage } from '../../../shared/types';
+
+interface ConversationViewerProps {
+  title: string;
+  subtitle?: string;
+  messages: ConversationMessage[];
+  isLoading: boolean;
+  onClose: () => void;
+  onResume?: () => void;
+  isResuming?: boolean;
+  scrollToBottom?: boolean;
+}
+
+export function ConversationViewer({
+  title,
+  subtitle,
+  messages,
+  isLoading,
+  onClose,
+  onResume,
+  isResuming,
+  scrollToBottom = false,
+}: ConversationViewerProps) {
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to bottom when messages load and scrollToBottom is enabled
+  useEffect(() => {
+    if (scrollToBottom && messages.length > 0 && !isLoading) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+    }
+  }, [messages, isLoading, scrollToBottom]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-gray-900">
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 bg-gray-800">
+        <button
+          onClick={onClose}
+          className="p-1 text-gray-400 hover:text-white"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <div className="flex-1 mx-3 text-center">
+          <div className="text-sm text-white truncate">
+            {title}
+          </div>
+          {subtitle && (
+            <div className="text-xs text-gray-400">
+              {subtitle}
+            </div>
+          )}
+        </div>
+        {onResume && (
+          <button
+            onClick={onResume}
+            disabled={isResuming}
+            className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white rounded"
+          >
+            {isResuming ? '...' : '再開'}
+          </button>
+        )}
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        {isLoading ? (
+          <div className="text-center text-gray-500 py-8">
+            読み込み中...
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="text-center text-gray-500 py-8">
+            メッセージがありません
+          </div>
+        ) : (
+          <>
+            {messages.map((msg, index) => (
+              <div
+                key={index}
+                className={`${
+                  msg.role === 'user'
+                    ? 'ml-8 bg-blue-900/30 border-l-2 border-blue-500'
+                    : 'mr-8 bg-gray-800 border-l-2 border-gray-600'
+                } p-2 rounded`}
+              >
+                <div className="text-xs text-gray-400 mb-1">
+                  {msg.role === 'user' ? 'You' : 'Claude'}
+                </div>
+                <div className="text-sm text-gray-200 whitespace-pre-wrap break-words">
+                  {msg.content}
+                </div>
+              </div>
+            ))}
+            <div ref={messagesEndRef} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

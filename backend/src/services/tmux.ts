@@ -260,4 +260,21 @@ export class TmuxService {
       return null;
     }
   }
+
+  /**
+   * Send keys to a tmux session
+   */
+  async sendKeys(sessionId: string, keys: string): Promise<boolean> {
+    try {
+      const proc = Bun.spawn(['tmux', 'send-keys', '-t', sessionId, keys, 'Enter'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const exitCode = await proc.exited;
+      return exitCode === 0;
+    } catch {
+      return false;
+    }
+  }
 }

@@ -1,12 +1,37 @@
 import { Hono } from 'hono';
-import { CreateSessionSchema } from '../../../shared/types';
+import { z } from 'zod';
+import { CreateSessionSchema, type IndicatorState } from '../../../shared/types';
 import { TmuxService } from '../services/tmux';
 import { ClaudeCodeService } from '../services/claude-code';
+import { SessionHistoryService } from '../services/session-history';
 
 const tmuxService = new TmuxService();
 const claudeCodeService = new ClaudeCodeService();
+const sessionHistoryService = new SessionHistoryService();
 
 export const sessions = new Hono();
+
+// Helper to determine indicator state
+function getIndicatorState(
+  isClaudeRunning: boolean,
+  waitingForInput: boolean,
+  waitingToolName?: string
+): IndicatorState {
+  if (!isClaudeRunning) {
+    return 'completed'; // Not running Claude = shell prompt
+  }
+
+  if (waitingForInput) {
+    return 'waiting_input';
+  }
+
+  // If Claude is running but not waiting, it's processing
+  return 'processing';
+}
+
+const ResumeSessionSchema = z.object({
+  ccSessionId: z.string().optional(),
+});
 
 // GET /sessions - List all tmux sessions
 sessions.get('/', async (c) => {
@@ -29,6 +54,13 @@ sessions.get('/', async (c) => {
       ? (ccSession?.waitingForInput || s.waitingForInput)
       : s.waitingForInput;
 
+    // Calculate indicator state
+    const indicatorState = getIndicatorState(
+      isClaudeRunning,
+      waitingForInput || false,
+      ccSession?.waitingToolName
+    );
+
     return {
       id: s.id,
       name: s.name,
@@ -43,6 +75,9 @@ sessions.get('/', async (c) => {
       // Use Claude Code summary instead of terminal preview
       ccSummary: ccSession?.summary,
       ccFirstPrompt: ccSession?.firstPrompt,
+      // New fields for dashboard
+      indicatorState,
+      ccSessionId: ccSession?.sessionId,
     };
   });
 
@@ -79,6 +114,39 @@ sessions.post('/', async (c) => {
   } catch (error) {
     return c.json({ error: 'Failed to create session' }, 500);
   }
+});
+
+// GET /sessions/history - Get past Claude Code session history
+// NOTE: This must be defined BEFORE /:id to prevent "history" being interpreted as an id
+sessions.get('/history', async (c) => {
+  const includeMetadata = c.req.query('metadata') === 'true';
+  const history = await sessionHistoryService.getRecentSessions(30, includeMetadata);
+  return c.json({ sessions: history });
+});
+
+// GET /sessions/history/:sessionId/conversation - Get conversation history for a session
+sessions.get('/history/:sessionId/conversation', async (c) => {
+  const sessionId = c.req.param('sessionId');
+  const messages = await sessionHistoryService.getConversation(sessionId);
+  return c.json({ messages });
+});
+
+// POST /sessions/history/metadata - Lazy load metadata for specific sessions
+const MetadataRequestSchema = z.object({
+  sessionIds: z.array(z.string()),
+});
+
+sessions.post('/history/metadata', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = MetadataRequestSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid request: sessionIds array required' }, 400);
+  }
+
+  const { sessionIds } = parsed.data;
+  const metadata = await sessionHistoryService.getSessionsMetadata(sessionIds);
+  return c.json({ metadata });
 });
 
 // GET /sessions/:id - Get a specific session
@@ -129,5 +197,82 @@ sessions.delete('/:id', async (c) => {
     return c.json({ success: true });
   } catch (error) {
     return c.json({ error: 'Failed to delete session' }, 500);
+  }
+});
+
+// POST /sessions/:id/resume - Resume a Claude Code session
+sessions.post('/:id/resume', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = ResumeSessionSchema.safeParse(body);
+
+  const exists = await tmuxService.sessionExists(id);
+  if (!exists) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+
+  try {
+    // Build the claude resume command
+    const ccSessionId = parsed.success ? parsed.data.ccSessionId : undefined;
+    const command = ccSessionId ? `claude -r ${ccSessionId}` : 'claude -r';
+
+    // Send the command to the tmux session
+    const success = await tmuxService.sendKeys(id, command);
+    if (!success) {
+      return c.json({ error: 'Failed to send command' }, 500);
+    }
+
+    return c.json({ success: true, command });
+  } catch (error) {
+    return c.json({ error: 'Failed to resume session' }, 500);
+  }
+});
+
+const ResumeHistorySchema = z.object({
+  sessionId: z.string(),
+  projectPath: z.string(),
+});
+
+// POST /sessions/history/resume - Resume a session from history (creates new tmux session)
+sessions.post('/history/resume', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = ResumeHistorySchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid request: sessionId and projectPath required' }, 400);
+  }
+
+  const { sessionId, projectPath } = parsed.data;
+
+  try {
+    // Generate a unique tmux session name based on project
+    const projectName = projectPath.split('/').pop() || 'session';
+    const tmuxSessions = await tmuxService.listSessions();
+    let tmuxSessionName = projectName;
+    let counter = 1;
+    while (tmuxSessions.some(s => s.name === tmuxSessionName)) {
+      tmuxSessionName = `${projectName}-${counter++}`;
+    }
+
+    // Create new tmux session
+    await tmuxService.createSession(tmuxSessionName);
+
+    // Change to project directory and run claude -r
+    const command = `cd ${projectPath} && claude -r ${sessionId}`;
+    const success = await tmuxService.sendKeys(tmuxSessionName, command);
+
+    if (!success) {
+      // Clean up the session if command failed
+      await tmuxService.killSession(tmuxSessionName);
+      return c.json({ error: 'Failed to start Claude session' }, 500);
+    }
+
+    return c.json({
+      success: true,
+      tmuxSessionId: tmuxSessionName,
+      ccSessionId: sessionId,
+    });
+  } catch (error) {
+    return c.json({ error: 'Failed to resume session from history' }, 500);
   }
 });

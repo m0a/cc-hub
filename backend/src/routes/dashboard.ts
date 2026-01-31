@@ -1,0 +1,28 @@
+import { Hono } from 'hono';
+import { StatsService } from '../services/stats-service';
+import { AnthropicUsageService } from '../services/anthropic-usage';
+import type { DashboardResponse } from '../../../shared/types';
+
+const statsService = new StatsService();
+const anthropicUsageService = new AnthropicUsageService();
+
+export const dashboard = new Hono();
+
+// GET /dashboard - Get dashboard data
+dashboard.get('/', async (c) => {
+  const [usageLimits, dailyActivity, modelUsage] = await Promise.all([
+    anthropicUsageService.getUsageLimits(),
+    statsService.getDailyActivity(14),
+    statsService.getModelUsage(),
+  ]);
+
+  const response: DashboardResponse = {
+    limits: null, // Deprecated
+    usageLimits,
+    dailyActivity,
+    modelUsage,
+    costEstimates: [],
+  };
+
+  return c.json(response);
+});

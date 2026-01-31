@@ -3,6 +3,7 @@ import { TerminalComponent, type TerminalRef } from './Terminal';
 import { Keyboard } from './Keyboard';
 import { SessionListMini } from './SessionListMini';
 import { FileViewer } from './files/FileViewer';
+import { Dashboard } from './dashboard/Dashboard';
 import type { SessionResponse, SessionState } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -44,6 +45,7 @@ export function TabletLayout({
   const [showUrlMenu, setShowUrlMenu] = useState(false);
   const [urlPage, setUrlPage] = useState(0);
   const URL_PAGE_SIZE = 5;
+  const [rightPanelTab, setRightPanelTab] = useState<'sessions' | 'dashboard'>('sessions');
 
   // Resizable split ratio (percentage for left panel)
   const [splitRatio, setSplitRatio] = useState(() => {
@@ -297,14 +299,44 @@ export function TabletLayout({
         <div className="w-0.5 h-8 bg-gray-500 rounded-full" />
       </div>
 
-      {/* Right: Session List + Keyboard */}
+      {/* Right: Session List / Dashboard + Keyboard */}
       <div className="h-full flex flex-col flex-1">
-        {/* Top: Session List */}
-        <div className="flex-1 min-h-0 border-b border-gray-700">
-          <SessionListMini
-            activeSessionId={activeSessionId}
-            onSelectSession={onSelectSession}
-          />
+        {/* Top: Tab Switcher + Content */}
+        <div className="flex-1 min-h-0 border-b border-gray-700 flex flex-col">
+          {/* Tab header */}
+          <div className="flex items-center border-b border-gray-700 shrink-0">
+            <button
+              onClick={() => setRightPanelTab('sessions')}
+              className={`flex-1 px-2 py-1.5 text-xs font-medium transition-colors ${
+                rightPanelTab === 'sessions'
+                  ? 'text-white bg-gray-800'
+                  : 'text-gray-400 hover:text-gray-300'
+              }`}
+            >
+              Sessions
+            </button>
+            <button
+              onClick={() => setRightPanelTab('dashboard')}
+              className={`flex-1 px-2 py-1.5 text-xs font-medium transition-colors ${
+                rightPanelTab === 'dashboard'
+                  ? 'text-white bg-gray-800'
+                  : 'text-gray-400 hover:text-gray-300'
+              }`}
+            >
+              Dashboard
+            </button>
+          </div>
+          {/* Tab content */}
+          <div className="flex-1 min-h-0 overflow-hidden">
+            {rightPanelTab === 'sessions' ? (
+              <SessionListMini
+                activeSessionId={activeSessionId}
+                onSelectSession={onSelectSession}
+              />
+            ) : (
+              <Dashboard className="h-full" />
+            )}
+          </div>
         </div>
 
         {/* Bottom: Keyboard */}

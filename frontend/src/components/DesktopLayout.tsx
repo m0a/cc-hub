@@ -266,6 +266,20 @@ export function DesktopLayout({
         return;
       }
 
+      // Ctrl/Cmd + V: Paste to terminal
+      if (!e.shiftKey && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        navigator.clipboard.readText().then(text => {
+          if (text) {
+            const ref = terminalRefs.current?.get(desktopState.activePane);
+            ref?.sendInput(text);
+          }
+        }).catch(() => {
+          // Clipboard access denied
+        });
+        return;
+      }
+
       // Ctrl/Cmd + B: Toggle side panel
       if (!e.shiftKey && e.key.toLowerCase() === 'b') {
         e.preventDefault();

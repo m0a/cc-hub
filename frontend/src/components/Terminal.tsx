@@ -46,6 +46,7 @@ export interface TerminalRef {
   sendInput: (char: string) => void;
   focus: () => void;
   extractUrls: () => string[];
+  getSelection: () => string;
 }
 
 export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(function TerminalComponent({
@@ -68,6 +69,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const sendRef = useRef<(data: string) => void>(() => {});
   const resizeRef = useRef<(cols: number, rows: number) => void>(() => {});
   const closeInputBarRef = useRef<() => void>(() => {});
+  const selectionRef = useRef<string>('');
   const [isInitialized, setIsInitialized] = useState(false);
   const [inputMode, setInputMode] = useState<'hidden' | 'shortcuts' | 'input'>('hidden');
   const [inputValue, setInputValue] = useState('');
@@ -81,6 +83,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const [showUrlMenu, setShowUrlMenu] = useState(false);
   const [urlPage, setUrlPage] = useState(0);
   const URL_PAGE_SIZE = 5;
+  // Detect touch device (for overlay behavior)
+  const [isTouchDevice] = useState(() => {
+    const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    const hasCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
+    return hasTouch && hasCoarsePointer;
+  });
   // Detect tablet (larger touch screen)
   const [isTablet, setIsTablet] = useState(() => window.innerWidth >= 640);
   // Keyboard position for tablet
@@ -153,10 +161,11 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     resizeRef.current = resize;
   }, [send, resize]);
 
-  // Expose sendInput, focus, and extractUrls for external keyboard
+  // Expose sendInput, focus, extractUrls, and getSelection for external keyboard
   useImperativeHandle(ref, () => ({
     sendInput: (char: string) => sendRef.current(char),
     focus: () => terminalRef.current?.focus(),
+    getSelection: () => selectionRef.current,
     extractUrls: () => {
       const term = terminalRef.current;
       if (!term) return [];
@@ -266,15 +275,53 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     });
     term.loadAddon(webLinksAddon);
 
+    // Handle OSC 52 (clipboard) - allows tmux to copy to system clipboard
+    term.parser.registerOscHandler(52, (data) => {
+      // Format: [target];[base64-data]
+      // target is usually 'c' for clipboard
+      const parts = data.split(';');
+      if (parts.length >= 2) {
+        const base64Data = parts.slice(1).join(';');
+        try {
+          // Decode base64 to UTF-8 properly
+          const binaryString = atob(base64Data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          const text = new TextDecoder('utf-8').decode(bytes);
+          navigator.clipboard.writeText(text).catch(console.error);
+        } catch {
+          // Invalid base64, ignore
+        }
+      }
+      return true;
+    });
+
     fitAddon.fit();
 
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
     setIsInitialized(true);
 
+    // Handle Shift+Enter for Claude Code multiline input
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type === 'keydown' && e.shiftKey && e.key === 'Enter') {
+        e.preventDefault();
+        sendRef.current('\\\r');
+        return false; // Prevent default xterm handling
+      }
+      return true; // Let xterm handle other keys
+    });
+
     // Handle keyboard input - register once, use ref for send
     const onDataDisposable = term.onData((data) => {
       sendRef.current(data);
+    });
+
+    // Track selection changes for copy functionality
+    const onSelectionDisposable = term.onSelectionChange(() => {
+      selectionRef.current = term.getSelection();
     });
 
     // Connect to WebSocket
@@ -444,6 +491,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       window.removeEventListener('resize', doResize);
       viewport?.removeEventListener('resize', doResize);
       onDataDisposable.dispose();
+      onSelectionDisposable.dispose();
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
@@ -752,10 +800,10 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           ref={containerRef}
           className="absolute inset-0 p-1"
         />
-        {/* Touch overlay for scrolling */}
+        {/* Touch overlay for scrolling (disabled on PC to allow terminal focus) */}
         <div
           ref={overlayRef}
-          className="absolute inset-0 z-10"
+          className={`absolute inset-0 z-10 ${isTouchDevice ? '' : 'pointer-events-none'}`}
           style={{ touchAction: 'none' }}
         />
         {(!isInitialized || !isConnected) && (

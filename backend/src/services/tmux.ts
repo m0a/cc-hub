@@ -242,6 +242,28 @@ export class TmuxService {
   }
 
   /**
+   * Get tmux paste buffer content
+   */
+  async getBuffer(): Promise<string | null> {
+    try {
+      const proc = Bun.spawn(['tmux', 'show-buffer'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) {
+        return null;
+      }
+
+      const text = await new Response(proc.stdout).text();
+      return text;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Capture the scrollback buffer from a tmux session
    */
   async captureScrollback(sessionId: string, lines: number = 1000): Promise<string | null> {

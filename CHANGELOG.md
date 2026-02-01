@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.4] - 2026-02-01
+
+### Added
+- **CLI強化**
+  - `--help` / `--version` オプション
+  - `-p, --port` / `-H, --host` / `-P, --password` オプション
+  - `cchub setup` - systemdサービス登録コマンド
+  - `cchub update` - 自動更新コマンド（GitHub Releases連携）
+  - `cchub status` - サービス状態確認コマンド
+
+- **systemd連携**
+  - ユーザーサービスファイル自動生成
+  - 自動再起動（Restart=always）
+  - 毎日の自動更新チェック（timer）
+
+### Changed
+- Tailscale必須化（常にHTTPS）
+- 環境変数からCLI引数ベースの設定に変更
+
+### Removed
+- 自己署名証明書機能（TLS=1）
+- カスタム証明書機能（TLS_CERT/TLS_KEY）
+- 環境変数による設定（PORT, HOST, TLS）
+
 ## [0.0.3] - 2026-02-01
 
 ### Added

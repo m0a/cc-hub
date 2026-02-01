@@ -8,16 +8,19 @@ Claude Codeセッションをリモート管理するWebベースのターミナ
 - **タブレット最適化UI** - 分割レイアウト、カスタムソフトキーボード
 - **ファイルビューア** - シンタックスハイライト付きコード表示、画像プレビュー
 - **変更追跡** - Claude Codeによるファイル編集の差分表示
-- **TLS対応** - 自己署名証明書、Tailscale証明書のサポート
+- **Tailscale連携** - Tailscale証明書による安全なHTTPS接続
+- **自動更新** - GitHub Releasesからの自動アップデート
+- **systemd連携** - サービス登録・自動再起動
 - **ダッシュボード** - 使用量リミット表示、日別統計、コスト推定
 - **セッション履歴** - 過去のClaude Codeセッション閲覧・再開
 - **会話ビューア** - Markdownレンダリング、画像表示対応
 
 ## 必要環境
 
-- [Bun](https://bun.sh/) 1.0+
+- [Tailscale](https://tailscale.com/) - 必須（HTTPS証明書に使用）
 - [tmux](https://github.com/tmux/tmux) 3.0+
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
+- [Bun](https://bun.sh/) 1.0+ - 開発時のみ
 
 ## セットアップ
 
@@ -48,28 +51,41 @@ bun run build:binary
 ./dist/cchub
 ```
 
-## 設定
-
-環境変数で設定を変更できます：
-
-| 変数 | デフォルト | 説明 |
-|------|-----------|------|
-| `PORT` | 3000 | サーバーポート |
-| `HOST` | 0.0.0.0 | バインドアドレス |
-| `TLS` | - | `1`で自己署名証明書、`tailscale`でTailscale証明書 |
-| `TLS_CERT` | - | カスタム証明書パス |
-| `TLS_KEY` | - | カスタム秘密鍵パス |
-
-### Tailscale HTTPS
-
-Tailscaleネットワーク内でHTTPSを使用する場合：
+## コマンド
 
 ```bash
-# 証明書生成を許可（初回のみ）
-sudo tailscale set --operator=$USER
+# サーバー起動
+cchub                        # ポート5923で起動
+cchub -p 8080                # ポート指定
+cchub -P mypassword          # パスワード付きで起動
 
-# Tailscale証明書で起動
-TLS=tailscale bun run dev:backend
+# systemdサービス登録（自動再起動・自動更新）
+cchub setup -P mypassword
+
+# 更新
+cchub update                 # 最新版に更新
+cchub update --check         # 更新確認のみ
+
+# 状態確認
+cchub status
+```
+
+### オプション
+
+| オプション | 説明 | デフォルト |
+|-----------|------|-----------|
+| `-p, --port` | ポート番号 | 5923 |
+| `-H, --host` | バインドアドレス | 0.0.0.0 |
+| `-P, --password` | 認証パスワード | なし |
+| `-h, --help` | ヘルプ表示 | - |
+| `-v, --version` | バージョン表示 | - |
+
+### Tailscale設定
+
+初回のみ証明書生成を許可する設定が必要です：
+
+```bash
+sudo tailscale set --operator=$USER
 ```
 
 ## 使い方

@@ -80,17 +80,36 @@ Browser <--WebSocket--> Hono Server <--PTY--> tmux <--pipe--> Claude Code
 
 The backend upgrades HTTP to WebSocket for terminal connections, creates a PTY, and attaches it to tmux.
 
-## Environment Variables
+## CLI Commands
 
 ```bash
-PORT=3000              # Server port
-HOST=0.0.0.0           # Server host
-TLS=1                  # Enable TLS (auto-generates self-signed cert)
-TLS=tailscale          # Use Tailscale certificate
-TLS_CERT=/path         # Custom TLS certificate
-TLS_KEY=/path          # Custom TLS key
-STATIC_ROOT=../frontend/dist  # Static files location
+# Server
+cchub                    # Start server (port 5923)
+cchub -p 8080           # Custom port
+cchub -P password       # With password auth
+
+# Management
+cchub setup -P pass     # Register systemd service
+cchub update            # Update from GitHub Releases
+cchub status            # Show service status
+
+# Help
+cchub --help
+cchub --version
 ```
+
+### CLI Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-p, --port` | Port number | 5923 |
+| `-H, --host` | Bind address | 0.0.0.0 |
+| `-P, --password` | Auth password | none |
+
+### Requirements
+
+- Tailscale must be running (used for HTTPS certificates)
+- Run `sudo tailscale set --operator=$USER` once to allow cert generation
 
 ## Type Sharing
 

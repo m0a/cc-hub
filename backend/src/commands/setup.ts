@@ -10,7 +10,7 @@ After=network.target tailscaled.service
 
 [Service]
 Type=simple
-ExecStart=__EXEC_PATH__ -p __PORT__
+ExecStart=__SHELL__ -lc 'exec __EXEC_PATH__ -p __PORT__'
 EnvironmentFile=%h/.config/cchub/env
 Restart=always
 RestartSec=3
@@ -54,7 +54,7 @@ export async function setupSystemd(port: number, password?: string): Promise<voi
   await mkdir(configDir, { recursive: true });
   await mkdir(systemdDir, { recursive: true });
 
-  // Create environment file
+  // Create environment file (password only, PATH/TERM come from login shell)
   const envContent = password ? `PASSWORD=${password}\n` : '# PASSWORD=yourpassword\n';
   const envPath = join(configDir, 'env');
   await writeFile(envPath, envContent);
@@ -62,7 +62,9 @@ export async function setupSystemd(port: number, password?: string): Promise<voi
   console.log(`✅ 環境変数ファイル: ${envPath}`);
 
   // Create main service file
+  const shell = process.env.SHELL || '/bin/bash';
   const serviceContent = SERVICE_TEMPLATE
+    .replace(/__SHELL__/g, shell)
     .replace(/__EXEC_PATH__/g, execPath)
     .replace(/__PORT__/g, String(port));
   const servicePath = join(systemdDir, 'cchub.service');

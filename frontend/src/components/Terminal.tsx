@@ -81,6 +81,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const [showUrlMenu, setShowUrlMenu] = useState(false);
   const [urlPage, setUrlPage] = useState(0);
   const URL_PAGE_SIZE = 5;
+  // Detect touch device (for overlay behavior)
+  const [isTouchDevice] = useState(() => {
+    const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    const hasCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
+    return hasTouch && hasCoarsePointer;
+  });
   // Detect tablet (larger touch screen)
   const [isTablet, setIsTablet] = useState(() => window.innerWidth >= 640);
   // Keyboard position for tablet
@@ -752,10 +758,10 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           ref={containerRef}
           className="absolute inset-0 p-1"
         />
-        {/* Touch overlay for scrolling */}
+        {/* Touch overlay for scrolling (disabled on PC to allow terminal focus) */}
         <div
           ref={overlayRef}
-          className="absolute inset-0 z-10"
+          className={`absolute inset-0 z-10 ${isTouchDevice ? '' : 'pointer-events-none'}`}
           style={{ touchAction: 'none' }}
         />
         {(!isInitialized || !isConnected) && (

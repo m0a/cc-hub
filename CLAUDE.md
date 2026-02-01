@@ -40,24 +40,37 @@ shared/      # Shared types and Zod schemas
 
 ### Backend Services
 
-- **TmuxService** (`services/tmux.ts`) - Manages tmux sessions, spawns Claude Code processes, handles terminal resize
+- **TmuxService** (`services/tmux.ts`) - Manages tmux sessions, spawns Claude Code processes, handles terminal resize, PTY-based session identification
 - **FileService** (`services/file-service.ts`) - Secure file operations with path traversal prevention
 - **FileChangeTracker** (`services/file-change-tracker.ts`) - Parses Claude Code `.jsonl` logs to track file changes
-- **ClaudeCodeService** (`services/claude-code.ts`) - Monitors Claude Code state from `.jsonl` files
+- **ClaudeCodeService** (`services/claude-code.ts`) - Monitors Claude Code state from `.jsonl` files, PTY-based session matching
+- **SessionHistoryService** (`services/session-history.ts`) - Reads past Claude Code session history and conversations
+- **AnthropicUsageService** (`services/anthropic-usage.ts`) - Fetches usage limits from Anthropic API
+- **StatsService** (`services/stats-service.ts`) - Reads cached statistics from `~/.claude/stats-cache.json`
+- **UsageTrackerService** (`services/usage-tracker.ts`) - Reads limit tracker data
 
 ### Key API Routes
 
 - `POST /api/sessions` - Create new Claude Code session
 - `GET /api/sessions/:id/terminal` - WebSocket connection to tmux session
+- `POST /api/sessions/:id/resume` - Resume Claude Code session with `claude -r`
+- `GET /api/sessions/history` - Get past Claude Code session history
+- `GET /api/sessions/history/:sessionId/conversation` - Get conversation for a session
+- `POST /api/sessions/history/resume` - Resume session from history
 - `GET /api/files/list` - Directory listing (restricted to session working directory)
 - `GET /api/files/read` - File content (with size limits)
 - `GET /api/files/changes/:sessionWorkingDir` - Claude Code changes from `.jsonl`
+- `GET /api/files/images/:filename` - Serve conversation images
+- `GET /api/dashboard` - Dashboard data (usage limits, statistics, cost estimates)
 
 ### Frontend Components
 
 - **Terminal.tsx** - xterm.js terminal with custom soft keyboard
-- **TabletLayout.tsx** - Split-pane layout for tablets (terminal + session list + keyboard)
+- **TabletLayout.tsx** - Split-pane layout for tablets (terminal + session list + keyboard + dashboard)
 - **FileViewer** (`components/files/`) - File browser, code viewer with syntax highlighting, diff viewer
+- **Dashboard** (`components/dashboard/`) - Usage limits, daily charts, model usage, cost estimates
+- **SessionHistory.tsx** - Past session browser with project grouping
+- **ConversationViewer.tsx** - Markdown-rendered conversation display with image support
 
 ### Terminal Communication
 

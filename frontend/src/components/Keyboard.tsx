@@ -96,7 +96,7 @@ const NUM_ROWS: KeyDef[][] = [
     { label: '0', key: '0', shiftKey: ')' },
     { label: '⌫', key: '\x7f', width: 1.5, type: 'special' },
   ],
-  // Row 2: Symbols top
+  // Row 2: Symbols
   [
     { label: '-', key: '-', shiftKey: '_' },
     { label: '=', key: '=', shiftKey: '+' },
@@ -106,12 +106,11 @@ const NUM_ROWS: KeyDef[][] = [
     { label: ';', key: ';', shiftKey: ':' },
     { label: "'", key: "'", shiftKey: '"' },
     { label: '`', key: '`', shiftKey: '~' },
-    { label: 'TAB', key: '\t', type: 'special' },
     { label: '↵', key: '\r', width: 1.5, type: 'special' },
   ],
-  // Row 3: More symbols
+  // Row 3: Shift symbols
   [
-    { label: '#=', key: 'LAYER_SYM', width: 1.5, type: 'layer' },
+    { label: '⇧', key: 'SHIFT', width: 1.5, type: 'modifier' },
     { label: '!', key: '!' },
     { label: '@', key: '@' },
     { label: '#', key: '#' },
@@ -136,63 +135,7 @@ const NUM_ROWS: KeyDef[][] = [
   ],
 ];
 
-// Extended symbols layer
-const SYM_ROWS: KeyDef[][] = [
-  // Row 1: Special symbols
-  [
-    { label: '~', key: '~' },
-    { label: '`', key: '`' },
-    { label: '|', key: '|' },
-    { label: '•', key: '•' },
-    { label: '√', key: '√' },
-    { label: '÷', key: '÷' },
-    { label: '×', key: '×' },
-    { label: '¶', key: '¶' },
-    { label: '∆', key: '∆' },
-    { label: '£', key: '£' },
-    { label: '⌫', key: '\x7f', width: 1.5, type: 'special' },
-  ],
-  // Row 2
-  [
-    { label: '€', key: '€' },
-    { label: '¥', key: '¥' },
-    { label: '¢', key: '¢' },
-    { label: '©', key: '©' },
-    { label: '®', key: '®' },
-    { label: '™', key: '™' },
-    { label: '°', key: '°' },
-    { label: '{', key: '{' },
-    { label: '}', key: '}' },
-    { label: '↵', key: '\r', width: 1.5, type: 'special' },
-  ],
-  // Row 3
-  [
-    { label: '123', key: 'LAYER_NUM', width: 1.5, type: 'layer' },
-    { label: '<', key: '<' },
-    { label: '>', key: '>' },
-    { label: '_', key: '_' },
-    { label: '+', key: '+' },
-    { label: '"', key: '"' },
-    { label: ':', key: ':' },
-    { label: '?', key: '?' },
-    { label: '↑', key: '\x1b[A', type: 'special' },
-    { label: '…', key: '…' },
-  ],
-  // Row 4
-  [
-    { label: 'ABC', key: 'LAYER_MAIN', width: 1.5, type: 'layer' },
-    { label: 'CTRL', key: 'CTRL', type: 'modifier' },
-    { label: 'ALT', key: 'ALT', type: 'modifier' },
-    { label: '', key: ' ', width: 3, type: 'special' },
-    { label: '[', key: '[' },
-    { label: ']', key: ']' },
-    { label: '←', key: '\x1b[D', type: 'special' },
-    { label: '↓', key: '\x1b[B', type: 'special' },
-    { label: '→', key: '\x1b[C', type: 'special' },
-  ],
-];
-
-type Layer = 'main' | 'num' | 'sym';
+type Layer = 'main' | 'num';
 
 interface KeyboardProps {
   onSend: (char: string) => void;
@@ -226,7 +169,6 @@ export function Keyboard({
   const getCurrentRows = (): KeyDef[][] => {
     switch (layer) {
       case 'num': return NUM_ROWS;
-      case 'sym': return SYM_ROWS;
       default: return MAIN_ROWS;
     }
   };
@@ -237,7 +179,6 @@ export function Keyboard({
     if (keyDef.type === 'layer') {
       if (keyDef.key === 'LAYER_MAIN') setLayer('main');
       else if (keyDef.key === 'LAYER_NUM') setLayer('num');
-      else if (keyDef.key === 'LAYER_SYM') setLayer('sym');
       return;
     }
 

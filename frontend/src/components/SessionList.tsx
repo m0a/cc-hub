@@ -482,6 +482,7 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
             fetchSessions();
             setActiveTab('sessions');
           }}
+          activeSessions={sessions}
         />
       )}
 

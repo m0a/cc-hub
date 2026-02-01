@@ -312,6 +312,7 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
           <SessionHistory
             onSessionResumed={handleHistorySessionResumed}
             onSelectSession={onSelectSession}
+            activeSessions={sessions}
           />
         </div>
       ) : (

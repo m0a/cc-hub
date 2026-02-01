@@ -1,11 +1,17 @@
 import { useState, useMemo } from 'react';
-import { useSessionHistory } from '../hooks/useSessionHistory';
+import { useSessionHistory, ProjectInfo } from '../hooks/useSessionHistory';
 import type { HistorySession, ConversationMessage, SessionResponse } from '../../../shared/types';
 import { ConversationViewer } from './ConversationViewer';
+
+// Extended session type with ccSessionId
+interface ActiveSession extends SessionResponse {
+  ccSessionId?: string;
+}
 
 interface SessionHistoryProps {
   onSessionResumed?: () => void;
   onSelectSession?: (session: SessionResponse) => void;
+  activeSessions?: ActiveSession[];
 }
 
 function formatRelativeTime(isoDate: string): string {
@@ -23,7 +29,6 @@ function formatRelativeTime(isoDate: string): string {
   return date.toLocaleDateString('ja-JP');
 }
 
-// Format duration in minutes to human-readable
 function formatDuration(minutes?: number): string | null {
   if (!minutes || minutes <= 0) return null;
   if (minutes < 60) return `${minutes}分`;
@@ -32,50 +37,20 @@ function formatDuration(minutes?: number): string | null {
   return mins > 0 ? `${hours}時間${mins}分` : `${hours}時間`;
 }
 
-// Group sessions by project path
-interface ProjectGroup {
-  projectPath: string;
-  projectName: string;
-  sessions: HistorySession[];
-  latestModified: string;
-}
-
-function groupByProject(sessions: HistorySession[]): ProjectGroup[] {
-  const groups = new Map<string, ProjectGroup>();
-
-  for (const session of sessions) {
-    const existing = groups.get(session.projectPath);
-    if (existing) {
-      existing.sessions.push(session);
-      if (session.modified > existing.latestModified) {
-        existing.latestModified = session.modified;
-      }
-    } else {
-      groups.set(session.projectPath, {
-        projectPath: session.projectPath,
-        projectName: session.projectName,
-        sessions: [session],
-        latestModified: session.modified,
-      });
-    }
-  }
-
-  // Sort groups by latest modified (newest first)
-  return Array.from(groups.values()).sort(
-    (a, b) => new Date(b.latestModified).getTime() - new Date(a.latestModified).getTime()
-  );
-}
-
 function HistoryItem({
   session,
   onTap,
   onResume,
+  onNavigate,
   isResuming,
+  isActive,
 }: {
   session: HistorySession;
   onTap: () => void;
   onResume: () => void;
+  onNavigate: () => void;
   isResuming: boolean;
+  isActive: boolean;
 }) {
   const displayText = session.firstPrompt || session.summary || 'No description';
   const truncatedText = displayText.length > 60
@@ -96,7 +71,6 @@ function HistoryItem({
           <div className="text-sm text-gray-200 break-words">
             {truncatedText}
           </div>
-          {/* Phase 2: Metadata display */}
           <div className="flex flex-wrap items-center gap-2 mt-1 text-[10px] text-gray-500">
             <span>{formatRelativeTime(session.modified)}</span>
             {duration && (
@@ -125,52 +99,67 @@ function HistoryItem({
             )}
           </div>
         </div>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onResume();
-          }}
-          disabled={isResuming}
-          className="shrink-0 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white rounded transition-colors"
-        >
-          {isResuming ? '...' : '再開'}
-        </button>
+        {isActive ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onNavigate();
+            }}
+            className="shrink-0 px-2 py-1 text-xs bg-green-600 hover:bg-green-500 text-white rounded transition-colors"
+          >
+            移動
+          </button>
+        ) : (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onResume();
+            }}
+            disabled={isResuming}
+            className="shrink-0 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white rounded transition-colors"
+          >
+            {isResuming ? '...' : '再開'}
+          </button>
+        )}
       </div>
     </div>
   );
 }
 
 function ProjectGroupItem({
-  group,
+  project,
+  sessions,
+  isLoading,
+  onExpand,
   onTap,
   onResume,
+  onNavigate,
   resumingId,
-  onExpand,
+  activeCcSessionIds,
 }: {
-  group: ProjectGroup;
+  project: ProjectInfo;
+  sessions: HistorySession[] | undefined;
+  isLoading: boolean;
+  onExpand: () => void;
   onTap: (session: HistorySession) => void;
   onResume: (session: HistorySession) => void;
+  onNavigate: (session: HistorySession) => void;
   resumingId: string | null;
-  onExpand?: (sessionIds: string[]) => void;
+  activeCcSessionIds: Set<string>;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [hasLoadedMetadata, setHasLoadedMetadata] = useState(false);
 
   const handleToggle = () => {
     const newExpanded = !isExpanded;
     setIsExpanded(newExpanded);
 
-    // Lazy load metadata when first expanded
-    if (newExpanded && !hasLoadedMetadata && onExpand) {
-      const sessionIds = group.sessions.map(s => s.sessionId);
-      onExpand(sessionIds);
-      setHasLoadedMetadata(true);
+    if (newExpanded && !sessions) {
+      onExpand();
     }
   };
 
   return (
     <div className="border-b border-gray-700">
-      {/* Project header */}
       <button
         onClick={handleToggle}
         className="w-full px-3 py-2 flex items-center gap-2 hover:bg-gray-700/50 transition-colors text-left"
@@ -188,26 +177,33 @@ function ProjectGroupItem({
         </svg>
         <div className="flex-1 min-w-0">
           <div className="text-sm text-gray-200 truncate">
-            {group.projectName}
+            {project.projectName}
           </div>
         </div>
         <span className="text-xs text-gray-500 shrink-0">
-          {group.sessions.length}件
+          {project.sessionCount}件
         </span>
       </button>
 
-      {/* Sessions list */}
       {isExpanded && (
         <div className="bg-gray-900/50">
-          {group.sessions.map((session) => (
-            <HistoryItem
-              key={session.sessionId}
-              session={session}
-              onTap={() => onTap(session)}
-              onResume={() => onResume(session)}
-              isResuming={resumingId === session.sessionId}
-            />
-          ))}
+          {isLoading ? (
+            <div className="px-3 py-2 text-xs text-gray-500">読み込み中...</div>
+          ) : sessions && sessions.length > 0 ? (
+            sessions.map((session) => (
+              <HistoryItem
+                key={session.sessionId}
+                session={session}
+                onTap={() => onTap(session)}
+                onResume={() => onResume(session)}
+                onNavigate={() => onNavigate(session)}
+                isResuming={resumingId === session.sessionId}
+                isActive={activeCcSessionIds.has(session.sessionId)}
+              />
+            ))
+          ) : (
+            <div className="px-3 py-2 text-xs text-gray-500">セッションがありません</div>
+          )}
         </div>
       )}
     </div>
@@ -216,24 +212,56 @@ function ProjectGroupItem({
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
-export function SessionHistory({ onSessionResumed, onSelectSession }: SessionHistoryProps) {
-  const { sessions, isLoading, error, resumeSession, fetchConversation, fetchSessionMetadata } = useSessionHistory();
+export function SessionHistory({ onSessionResumed, onSelectSession, activeSessions = [] }: SessionHistoryProps) {
+  const {
+    projects,
+    isLoadingProjects,
+    sessionsByProject,
+    loadingProjects,
+    fetchProjectSessions,
+    refreshAllLoadedProjects,
+    resumeSession,
+    fetchConversation,
+    error,
+  } = useSessionHistory();
+
   const [resumingId, setResumingId] = useState<string | null>(null);
   const [selectedSession, setSelectedSession] = useState<HistorySession | null>(null);
   const [conversation, setConversation] = useState<ConversationMessage[]>([]);
   const [loadingConversation, setLoadingConversation] = useState(false);
-  const [projectFilter, setProjectFilter] = useState<string>('all');
 
-  // Get all unique projects for filter dropdown
-  const allProjectGroups = useMemo(() => groupByProject(sessions), [sessions]);
+  // Create a Set of active ccSessionIds for quick lookup
+  const activeCcSessionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const s of activeSessions) {
+      if (s.ccSessionId) {
+        ids.add(s.ccSessionId);
+      }
+    }
+    return ids;
+  }, [activeSessions]);
 
-  // Filter sessions by selected project
-  const filteredSessions = useMemo(() => {
-    if (projectFilter === 'all') return sessions;
-    return sessions.filter(s => s.projectPath === projectFilter);
-  }, [sessions, projectFilter]);
+  // Create a Map from ccSessionId to SessionResponse for navigation
+  const sessionsByCcId = useMemo(() => {
+    const map = new Map<string, SessionResponse[]>();
+    for (const s of activeSessions) {
+      if (s.ccSessionId) {
+        const list = map.get(s.ccSessionId) || [];
+        list.push(s);
+        map.set(s.ccSessionId, list);
+      }
+    }
+    return map;
+  }, [activeSessions]);
 
-  const projectGroups = useMemo(() => groupByProject(filteredSessions), [filteredSessions]);
+  const findActiveSession = (historySession: HistorySession): SessionResponse | undefined => {
+    const candidates = sessionsByCcId.get(historySession.sessionId);
+    if (!candidates || candidates.length === 0) return undefined;
+    if (candidates.length === 1) return candidates[0];
+
+    const projectBasename = historySession.projectPath.split('/').pop() || '';
+    return candidates.find(s => s.name === projectBasename) || candidates[0];
+  };
 
   const handleResume = async (session: HistorySession) => {
     setResumingId(session.sessionId);
@@ -241,10 +269,8 @@ export function SessionHistory({ onSessionResumed, onSelectSession }: SessionHis
       const result = await resumeSession(session.sessionId, session.projectPath);
 
       if (result) {
-        // Wait for the tmux session to be created
         await new Promise(resolve => setTimeout(resolve, 1000));
 
-        // Fetch the new session
         const response = await fetch(`${API_BASE}/api/sessions`);
         let foundSession: SessionResponse | undefined;
         if (response.ok) {
@@ -252,19 +278,30 @@ export function SessionHistory({ onSessionResumed, onSelectSession }: SessionHis
           foundSession = data.sessions?.find((s: { id: string }) => s.id === result.tmuxSessionId);
         }
 
-        // Select the new session via onSelectSession prop
         if (onSelectSession && foundSession) {
           onSelectSession(foundSession);
         }
 
-        // Notify parent (for tab switching, etc.)
         if (onSessionResumed) {
           onSessionResumed();
         }
+
+        // Refresh loaded projects to show updated session info
+        await refreshAllLoadedProjects();
       }
       setSelectedSession(null);
     } finally {
       setResumingId(null);
+    }
+  };
+
+  const handleNavigate = (session: HistorySession) => {
+    const activeSession = findActiveSession(session);
+    if (activeSession && onSelectSession) {
+      onSelectSession(activeSession);
+      if (onSessionResumed) {
+        onSessionResumed();
+      }
     }
   };
 
@@ -280,7 +317,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession }: SessionHis
     }
   };
 
-  if (isLoading) {
+  if (isLoadingProjects) {
     return (
       <div className="p-4 text-center text-gray-500 text-sm">
         履歴を読み込み中...
@@ -296,7 +333,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession }: SessionHis
     );
   }
 
-  if (sessions.length === 0) {
+  if (projects.length === 0) {
     return (
       <div className="p-4 text-center text-gray-500 text-sm">
         過去のセッションはありません
@@ -306,34 +343,19 @@ export function SessionHistory({ onSessionResumed, onSelectSession }: SessionHis
 
   return (
     <div className="flex flex-col h-full">
-      {/* Project filter (C2) */}
-      {allProjectGroups.length > 1 && (
-        <div className="px-2 py-1.5 border-b border-gray-700 shrink-0">
-          <select
-            value={projectFilter}
-            onChange={(e) => setProjectFilter(e.target.value)}
-            className="w-full text-xs bg-gray-800 text-gray-200 border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-blue-500"
-          >
-            <option value="all">すべてのプロジェクト</option>
-            {allProjectGroups.map((group) => (
-              <option key={group.projectPath} value={group.projectPath}>
-                {group.projectName} ({group.sessions.length})
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {/* Sessions list */}
       <div className="flex-1 overflow-y-auto">
-        {projectGroups.map((group) => (
+        {projects.map((project) => (
           <ProjectGroupItem
-            key={group.projectPath}
-            group={group}
+            key={project.dirName}
+            project={project}
+            sessions={sessionsByProject.get(project.dirName)}
+            isLoading={loadingProjects.has(project.dirName)}
+            onExpand={() => fetchProjectSessions(project.dirName)}
             onTap={handleTap}
             onResume={handleResume}
+            onNavigate={handleNavigate}
             resumingId={resumingId}
-            onExpand={fetchSessionMetadata}
+            activeCcSessionIds={activeCcSessionIds}
           />
         ))}
       </div>

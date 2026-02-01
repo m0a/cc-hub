@@ -3,69 +3,101 @@ import type { HistorySession, ConversationMessage } from '../../../shared/types'
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+export interface ProjectInfo {
+  dirName: string;
+  projectPath: string;
+  projectName: string;
+  sessionCount: number;
+  latestModified?: string;
+}
+
 interface UseSessionHistoryResult {
+  // Project-level data (fast initial load)
+  projects: ProjectInfo[];
+  isLoadingProjects: boolean;
+
+  // Session-level data (lazy loaded per project)
+  sessionsByProject: Map<string, HistorySession[]>;
+  loadingProjects: Set<string>;
+  fetchProjectSessions: (dirName: string, forceRefresh?: boolean) => Promise<void>;
+  refreshAllLoadedProjects: () => Promise<void>;
+
+  // Legacy: all sessions (for backward compatibility)
   sessions: HistorySession[];
   isLoading: boolean;
   error: string | null;
+
+  // Actions
   refresh: () => Promise<void>;
   resumeSession: (sessionId: string, projectPath: string) => Promise<{ tmuxSessionId: string } | null>;
   fetchConversation: (sessionId: string) => Promise<ConversationMessage[]>;
-  fetchSessionMetadata: (sessionIds: string[]) => Promise<void>;
 }
 
 export function useSessionHistory(): UseSessionHistoryResult {
-  const [sessions, setSessions] = useState<HistorySession[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [projects, setProjects] = useState<ProjectInfo[]>([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
+  const [sessionsByProject, setSessionsByProject] = useState<Map<string, HistorySession[]>>(new Map());
+  const [loadingProjects, setLoadingProjects] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
-  // Initial fetch without metadata (fast)
-  const fetchHistory = useCallback(async () => {
+  // Fetch project list (fast)
+  const fetchProjects = useCallback(async () => {
     try {
-      setIsLoading(true);
+      setIsLoadingProjects(true);
       setError(null);
-      const response = await fetch(`${API_BASE}/api/sessions/history`);
+      const response = await fetch(`${API_BASE}/api/sessions/history/projects`);
       if (!response.ok) {
-        throw new Error('Failed to fetch session history');
+        throw new Error('Failed to fetch projects');
       }
       const data = await response.json();
-      setSessions(data.sessions || []);
+      setProjects(data.projects || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
-      setIsLoading(false);
+      setIsLoadingProjects(false);
     }
   }, []);
 
-  // Lazy load metadata for specific sessions
-  const fetchSessionMetadata = useCallback(async (sessionIds: string[]) => {
-    if (sessionIds.length === 0) return;
+  // Fetch sessions for a specific project (lazy)
+  const fetchProjectSessions = useCallback(async (dirName: string, forceRefresh = false) => {
+    // Skip if already loaded or loading (unless forceRefresh)
+    if (!forceRefresh && (sessionsByProject.has(dirName) || loadingProjects.has(dirName))) {
+      return;
+    }
 
     try {
-      const response = await fetch(`${API_BASE}/api/sessions/history/metadata`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionIds }),
-      });
+      setLoadingProjects(prev => new Set(prev).add(dirName));
 
-      if (!response.ok) return;
-
+      const response = await fetch(`${API_BASE}/api/sessions/history/projects/${encodeURIComponent(dirName)}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch project sessions');
+      }
       const data = await response.json();
-      const metadataMap = new Map<string, Partial<HistorySession>>(
-        Object.entries(data.metadata || {})
-      );
 
-      // Update sessions with metadata
-      setSessions(prev => prev.map(session => {
-        const meta = metadataMap.get(session.sessionId);
-        if (meta) {
-          return { ...session, ...meta };
-        }
-        return session;
-      }));
+      setSessionsByProject(prev => {
+        const next = new Map(prev);
+        next.set(dirName, data.sessions || []);
+        return next;
+      });
     } catch (err) {
-      console.error('Failed to fetch session metadata:', err);
+      console.error('Failed to fetch project sessions:', err);
+    } finally {
+      setLoadingProjects(prev => {
+        const next = new Set(prev);
+        next.delete(dirName);
+        return next;
+      });
     }
-  }, []);
+  }, [sessionsByProject, loadingProjects]);
+
+  // Refresh all loaded projects (after resume, etc.)
+  const refreshAllLoadedProjects = useCallback(async () => {
+    const loadedDirNames = Array.from(sessionsByProject.keys());
+    // Clear cache
+    setSessionsByProject(new Map());
+    // Re-fetch all
+    await Promise.all(loadedDirNames.map(dirName => fetchProjectSessions(dirName, true)));
+  }, [sessionsByProject, fetchProjectSessions]);
 
   const resumeSession = useCallback(async (sessionId: string, projectPath: string) => {
     try {
@@ -88,7 +120,7 @@ export function useSessionHistory(): UseSessionHistoryResult {
   const fetchConversation = useCallback(async (sessionId: string): Promise<ConversationMessage[]> => {
     try {
       const response = await fetch(`${API_BASE}/api/sessions/history/${sessionId}/conversation`, {
-        cache: 'no-store',  // Disable browser cache for live updates
+        cache: 'no-store',
       });
       if (!response.ok) {
         throw new Error('Failed to fetch conversation');
@@ -101,17 +133,27 @@ export function useSessionHistory(): UseSessionHistoryResult {
     }
   }, []);
 
+  // Initial load: projects only
   useEffect(() => {
-    fetchHistory();
-  }, [fetchHistory]);
+    fetchProjects();
+  }, [fetchProjects]);
+
+  // Compute all sessions for backward compatibility
+  const sessions = Array.from(sessionsByProject.values()).flat();
+  const isLoading = isLoadingProjects;
 
   return {
+    projects,
+    isLoadingProjects,
+    sessionsByProject,
+    loadingProjects,
+    fetchProjectSessions,
+    refreshAllLoadedProjects,
     sessions,
     isLoading,
     error,
-    refresh: fetchHistory,
+    refresh: fetchProjects,
     resumeSession,
     fetchConversation,
-    fetchSessionMetadata,
   };
 }

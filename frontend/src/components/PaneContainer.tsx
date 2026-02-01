@@ -1,11 +1,24 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { TerminalComponent, type TerminalRef } from './Terminal';
-import type { SessionState } from '../../../shared/types';
+import { ConversationViewer } from './ConversationViewer';
+import type { SessionState, ConversationMessage } from '../../../shared/types';
+
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 // ペインノード型定義
 export type PaneNode =
   | { type: 'terminal'; sessionId: string | null; id: string }
   | { type: 'split'; direction: 'horizontal' | 'vertical'; children: PaneNode[]; ratio: number[]; id: string };
+
+// Extended session type with ccSessionId
+interface ExtendedSession {
+  id: string;
+  name: string;
+  state: SessionState;
+  currentPath?: string;
+  ccSessionId?: string;
+  currentCommand?: string;
+}
 
 interface PaneContainerProps {
   node: PaneNode;
@@ -14,7 +27,7 @@ interface PaneContainerProps {
   onSelectSession: (paneId: string, sessionId?: string) => void;
   onSessionStateChange: (sessionId: string, state: SessionState) => void;
   onSplitRatioChange: (nodeId: string, ratio: number[]) => void;
-  sessions: { id: string; name: string; state: SessionState; currentPath?: string }[];
+  sessions: ExtendedSession[];
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
 }
 
@@ -65,7 +78,7 @@ interface TerminalPaneProps {
   onFocus: () => void;
   onSelectSession: (sessionId?: string) => void;
   onSessionStateChange: (sessionId: string, state: SessionState) => void;
-  sessions: { id: string; name: string; state: SessionState; currentPath?: string }[];
+  sessions: ExtendedSession[];
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
 }
 
@@ -80,6 +93,9 @@ function TerminalPane({
   terminalRefs,
 }: TerminalPaneProps) {
   const terminalRef = useRef<TerminalRef>(null);
+  const [showConversation, setShowConversation] = useState(false);
+  const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
 
   // Register terminal ref
   useEffect(() => {
@@ -104,6 +120,41 @@ function TerminalPane({
   }, [sessionId, onSessionStateChange]);
 
   const session = sessionId ? sessions.find(s => s.id === sessionId) : null;
+  const ccSessionId = session?.ccSessionId;
+  const isClaudeRunning = session?.currentCommand === 'claude';
+
+  // Fetch conversation when showing
+  const fetchConversation = useCallback(async () => {
+    if (!ccSessionId) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/sessions/history/${ccSessionId}/conversation`);
+      if (response.ok) {
+        const data = await response.json();
+        setMessages(data.messages || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch conversation:', err);
+    }
+  }, [ccSessionId]);
+
+  // Load conversation when toggle is switched on
+  useEffect(() => {
+    if (showConversation && ccSessionId) {
+      setIsLoadingMessages(true);
+      fetchConversation().finally(() => setIsLoadingMessages(false));
+    }
+  }, [showConversation, ccSessionId, fetchConversation]);
+
+  // Reset conversation state when session changes
+  useEffect(() => {
+    setShowConversation(false);
+    setMessages([]);
+  }, [sessionId]);
+
+  const handleToggleConversation = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowConversation(prev => !prev);
+  }, []);
 
   return (
     <div
@@ -112,28 +163,59 @@ function TerminalPane({
     >
       {/* Pane header */}
       <div className="flex items-center justify-between px-2 py-1 bg-black/50 border-b border-gray-700 shrink-0 text-xs">
-        <span className="text-white/70 truncate max-w-[200px]">
-          {session?.name || 'セッション未選択'}
+        <span className="text-white/70 truncate flex-1">
+          {showConversation ? '会話履歴' : (session?.name || 'セッション未選択')}
         </span>
-        {sessionId && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectSession();
-            }}
-            className="p-0.5 text-white/50 hover:text-white/80 transition-colors"
-            title="セッション変更"
-          >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
-            </svg>
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {/* Conversation toggle button */}
+          {ccSessionId && (
+            <button
+              onClick={handleToggleConversation}
+              className={`p-0.5 transition-colors ${
+                showConversation
+                  ? 'text-blue-400 hover:text-blue-300'
+                  : 'text-white/50 hover:text-white/80'
+              }`}
+              title={showConversation ? 'ターミナルに戻る' : '会話履歴を表示'}
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+              </svg>
+            </button>
+          )}
+          {/* Session change button */}
+          {sessionId && !showConversation && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectSession();
+              }}
+              className="p-0.5 text-white/50 hover:text-white/80 transition-colors"
+              title="セッション変更"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Terminal or session selector */}
+      {/* Terminal, conversation, or session selector */}
       <div className="flex-1 min-h-0">
-        {sessionId ? (
+        {showConversation && ccSessionId ? (
+          <ConversationViewer
+            title="会話履歴"
+            subtitle={session?.name}
+            messages={messages}
+            isLoading={isLoadingMessages}
+            onClose={() => setShowConversation(false)}
+            inline={true}
+            scrollToBottom={true}
+            isActive={isClaudeRunning}
+            onRefresh={fetchConversation}
+          />
+        ) : sessionId ? (
           <TerminalComponent
             key={sessionId}
             ref={terminalRef}
@@ -145,9 +227,9 @@ function TerminalPane({
         ) : (
           <SessionSelector
             sessions={sessions}
-            onSelect={(session) => {
+            onSelect={(sess) => {
               // Directly set session ID via callback
-              onSelectSession(session.id);
+              onSelectSession(sess.id);
             }}
           />
         )}
@@ -157,8 +239,8 @@ function TerminalPane({
 }
 
 interface SessionSelectorProps {
-  sessions: { id: string; name: string; state: SessionState; currentPath?: string }[];
-  onSelect: (session: { id: string; name: string; state: SessionState; currentPath?: string }) => void;
+  sessions: ExtendedSession[];
+  onSelect: (session: ExtendedSession) => void;
 }
 
 function SessionSelector({ sessions, onSelect }: SessionSelectorProps) {
@@ -195,7 +277,7 @@ interface SplitContainerProps {
   onSelectSession: (paneId: string, sessionId?: string) => void;
   onSessionStateChange: (sessionId: string, state: SessionState) => void;
   onSplitRatioChange: (nodeId: string, ratio: number[]) => void;
-  sessions: { id: string; name: string; state: SessionState; currentPath?: string }[];
+  sessions: ExtendedSession[];
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
 }
 

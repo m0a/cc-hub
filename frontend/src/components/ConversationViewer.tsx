@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useMemo } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ConversationMessage } from '../../../shared/types';
@@ -24,6 +24,7 @@ interface ConversationViewerProps {
   scrollToBottom?: boolean;
   isActive?: boolean;  // Whether the session is actively running
   onRefresh?: () => void;  // Callback to refresh conversation
+  inline?: boolean;  // If true, render inline instead of fullscreen modal
 }
 
 export function ConversationViewer({
@@ -37,6 +38,7 @@ export function ConversationViewer({
   scrollToBottom = false,
   isActive = false,
   onRefresh,
+  inline = false,
 }: ConversationViewerProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [prevMessageCount, setPrevMessageCount] = useState(0);
@@ -54,23 +56,24 @@ export function ConversationViewer({
 
   // Auto-refresh when session is active (silently in background)
   useEffect(() => {
-    console.log('[ConversationViewer] Auto-refresh effect:', { isActive, hasOnRefresh: !!onRefresh });
     if (!isActive || !onRefresh) return;
 
-    console.log('[ConversationViewer] Setting up 3s interval');
     const interval = setInterval(() => {
-      console.log('[ConversationViewer] Refreshing...');
       onRefresh();
     }, 3000); // Refresh every 3 seconds
 
     return () => {
-      console.log('[ConversationViewer] Clearing interval');
       clearInterval(interval);
     };
   }, [isActive, onRefresh]);
 
+  // Container class based on inline mode
+  const containerClass = inline
+    ? 'h-full flex flex-col bg-gray-900'
+    : 'fixed inset-0 z-50 flex flex-col bg-gray-900';
+
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-gray-900">
+    <div className={containerClass}>
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {isLoading ? (
@@ -161,32 +164,34 @@ export function ConversationViewer({
         )}
       </div>
 
-      {/* Footer (moved from header for mobile usability) */}
-      <div className="flex items-center px-3 py-2 border-t border-gray-700 bg-gray-800 shrink-0">
-        <button
-          onClick={onClose}
-          className="text-gray-400 hover:text-white p-1"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <div className="flex-1 min-w-0 ml-2">
-          <h2 className="text-sm font-medium text-white truncate">{title}</h2>
-          {subtitle && (
-            <p className="text-xs text-gray-400 truncate">{subtitle}</p>
+      {/* Footer - only show in modal mode */}
+      {!inline && (
+        <div className="flex items-center px-3 py-2 border-t border-gray-700 bg-gray-800 shrink-0">
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white p-1"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <div className="flex-1 min-w-0 ml-2">
+            <h2 className="text-sm font-medium text-white truncate">{title}</h2>
+            {subtitle && (
+              <p className="text-xs text-gray-400 truncate">{subtitle}</p>
+            )}
+          </div>
+          {onResume && (
+            <button
+              onClick={onResume}
+              disabled={isResuming}
+              className="ml-2 px-3 py-1 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white rounded shrink-0"
+            >
+              {isResuming ? '再開中...' : '再開'}
+            </button>
           )}
         </div>
-        {onResume && (
-          <button
-            onClick={onResume}
-            disabled={isResuming}
-            className="ml-2 px-3 py-1 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white rounded shrink-0"
-          >
-            {isResuming ? '再開中...' : '再開'}
-          </button>
-        )}
-      </div>
+      )}
     </div>
   );
 }

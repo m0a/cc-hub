@@ -52,6 +52,10 @@ export const terminalWebSocket = {
       try {
         proc = Bun.spawn(['tmux', 'attach', '-t', sessionId], {
           stdin: 'pipe',
+          env: {
+            ...process.env,
+            TERM: 'xterm-256color',
+          },
           terminal: {
             cols: 80,
             rows: 24,

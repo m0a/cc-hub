@@ -218,16 +218,20 @@ function SessionItem({
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchCancel}
-      className="p-3 bg-gray-800 hover:bg-gray-700 active:bg-gray-600 rounded cursor-pointer transition-colors"
+      className={`p-3 rounded cursor-pointer transition-colors ${
+        isClaudeRunning
+          ? 'bg-gray-800 hover:bg-gray-700 active:bg-gray-600 border-l-2 border-green-500'
+          : 'bg-gray-800/60 hover:bg-gray-700/70 active:bg-gray-600/70'
+      }`}
     >
       <div className="flex items-center gap-2">
         <div className={`w-2 h-2 rounded-full ${getIndicatorColor(indicatorState)}`} />
-        <span className="font-medium truncate flex-1">{displayTitle}</span>
+        <span className={`font-medium truncate flex-1 ${!isClaudeRunning ? 'text-gray-300' : ''}`}>{displayTitle}</span>
         {isWaiting && (
-          <span className="text-xs text-yellow-400 bg-yellow-900/50 px-1.5 py-0.5 rounded shrink-0">{waitingLabel}</span>
+          <span className="text-xs text-yellow-400 bg-yellow-900/50 px-1.5 py-0.5 rounded shrink-0 animate-pulse">{waitingLabel}</span>
         )}
         {isClaudeRunning && !isWaiting && (
-          <span className="text-xs text-green-400 bg-green-900/50 px-1.5 py-0.5 rounded shrink-0">cc</span>
+          <span className="text-xs text-green-400 bg-green-900/50 px-1.5 py-0.5 rounded shrink-0 animate-pulse">処理中</span>
         )}
         {showConversationButton && (
           <button
@@ -383,74 +387,57 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
 
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white">
-      {/* Tab header */}
-      <div className="flex border-b border-gray-700 shrink-0">
-        <button
-          onClick={() => setActiveTab('sessions')}
-          className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-            activeTab === 'sessions'
-              ? 'text-white bg-gray-800 border-b-2 border-blue-500'
-              : 'text-gray-400 hover:text-gray-300'
-          }`}
-        >
-          セッション
-        </button>
-        <button
-          onClick={() => setActiveTab('history')}
-          className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-            activeTab === 'history'
-              ? 'text-white bg-gray-800 border-b-2 border-blue-500'
-              : 'text-gray-400 hover:text-gray-300'
-          }`}
-        >
-          履歴
-        </button>
-        <button
-          onClick={() => setActiveTab('dashboard')}
-          className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-            activeTab === 'dashboard'
-              ? 'text-white bg-gray-800 border-b-2 border-blue-500'
-              : 'text-gray-400 hover:text-gray-300'
-          }`}
-        >
-          Dashboard
-        </button>
-      </div>
-
       {/* Error message */}
       {error && activeTab === 'sessions' && (
-        <div className="p-4 bg-red-900/50 text-red-300 text-sm">
+        <div className="p-4 bg-red-900/50 text-red-300 text-sm shrink-0">
           {error}
         </div>
       )}
 
       {/* Tab content */}
       {activeTab === 'sessions' && (
-        <>
-          {/* Session list */}
-          <div className="flex-1 overflow-y-auto p-4">
-            {sessions.length === 0 ? (
-              <div className="text-center text-gray-500 py-8">
-                セッションがありません。新規作成してください。
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {sessions.map((session) => (
-                  <SessionItem
-                    key={session.id}
-                    session={session}
-                    onSelect={onSelectSession}
-                    onDelete={handleDeleteRequest}
-                    onResume={handleResume}
-                    onShowConversation={handleShowConversation}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          {sessions.length === 0 ? (
+            <div className="text-center text-gray-500 py-8">
+              セッションがありません。新規作成してください。
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {sessions.map((session) => (
+                <SessionItem
+                  key={session.id}
+                  session={session}
+                  onSelect={onSelectSession}
+                  onDelete={handleDeleteRequest}
+                  onResume={handleResume}
+                  onShowConversation={handleShowConversation}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
-          {/* Bottom bar */}
-          <div className="flex items-center justify-between px-3 py-2 border-t border-gray-700 bg-black/80">
+      {activeTab === 'history' && (
+        <SessionHistory
+          onSelectSession={onSelectSession}
+          onSessionResumed={() => {
+            fetchSessions();
+            setActiveTab('sessions');
+          }}
+          activeSessions={sessions}
+        />
+      )}
+
+      {activeTab === 'dashboard' && (
+        <Dashboard className="flex-1" />
+      )}
+
+      {/* Bottom bar with tabs */}
+      <div className="border-t border-gray-700 bg-black/80 shrink-0">
+        {/* Action buttons (only for sessions tab) */}
+        {activeTab === 'sessions' && (
+          <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700">
             {onBack ? (
               <button
                 onClick={onBack}
@@ -472,23 +459,42 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
               </svg>
             </button>
           </div>
-        </>
-      )}
+        )}
 
-      {activeTab === 'history' && (
-        <SessionHistory
-          onSelectSession={onSelectSession}
-          onSessionResumed={() => {
-            fetchSessions();
-            setActiveTab('sessions');
-          }}
-          activeSessions={sessions}
-        />
-      )}
-
-      {activeTab === 'dashboard' && (
-        <Dashboard className="flex-1" />
-      )}
+        {/* Tab navigation */}
+        <div className="flex">
+          <button
+            onClick={() => setActiveTab('sessions')}
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'sessions'
+                ? 'text-white bg-gray-800 border-t-2 border-blue-500'
+                : 'text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            セッション
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'history'
+                ? 'text-white bg-gray-800 border-t-2 border-blue-500'
+                : 'text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            履歴
+          </button>
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'dashboard'
+                ? 'text-white bg-gray-800 border-t-2 border-blue-500'
+                : 'text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            Dashboard
+          </button>
+        </div>
+      </div>
 
       {/* Confirm delete dialog */}
       {sessionToDelete && (

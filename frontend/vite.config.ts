@@ -71,12 +71,14 @@ export default defineConfig({
     https: httpsConfig,
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'https://localhost:3000',
         changeOrigin: true,
+        secure: false,
       },
       '/ws': {
-        target: 'ws://localhost:3000',
+        target: 'wss://localhost:3000',
         ws: true,
+        secure: false,
       },
     },
   },

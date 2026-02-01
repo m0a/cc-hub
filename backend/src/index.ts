@@ -9,6 +9,17 @@ import { upload } from './routes/upload';
 import { files } from './routes/files';
 import { dashboard } from './routes/dashboard';
 import { terminalWebSocket, handleTerminalUpgrade } from './routes/terminal';
+import { parseArgs, runCli, VERSION } from './cli';
+
+// Parse CLI arguments
+const args = parseArgs(process.argv.slice(2));
+const cliResult = await runCli(args);
+
+if (cliResult === 'exit') {
+  process.exit(0);
+}
+
+// Server mode - continue with startup
 
 // Try to load embedded assets (available in compiled binary)
 let getStaticAsset: ((path: string) => { content: Buffer; contentType: string } | null) | null = null;
@@ -30,7 +41,7 @@ app.use('*', cors({
 }));
 
 // Health check
-app.get('/health', (c) => c.json({ status: 'ok' }));
+app.get('/health', (c) => c.json({ status: 'ok', version: VERSION }));
 
 // API routes
 app.route('/api/auth', auth);
@@ -78,158 +89,109 @@ if (EMBEDDED_MODE && getStaticAsset) {
 // Export app type for Hono RPC
 export type AppType = typeof app;
 
-// Start server with WebSocket support
-const port = parseInt(process.env.PORT || '3000', 10);
-const host = process.env.HOST || '0.0.0.0';
+// Tailscale certificate setup (required)
+const fs = await import('node:fs');
+const path = await import('node:path');
 
-// TLS configuration
-const tlsMode = process.env.TLS;
-const tlsSelfSigned = tlsMode === '1' || tlsMode === 'auto';
-const tlsTailscale = tlsMode === 'tailscale';
-let tlsCert = process.env.TLS_CERT;
-let tlsKey = process.env.TLS_KEY;
-const tlsCA = process.env.TLS_CA;
+// Check if tailscale command exists
+const whichResult = Bun.spawnSync(['which', 'tailscale']);
+if (whichResult.exitCode !== 0) {
+  console.error('❌ エラー: tailscale コマンドが見つかりません');
+  console.error('   インストール: https://tailscale.com/download');
+  process.exit(1);
+}
 
-// Tailscale certificate generation
-if (tlsTailscale && (!tlsCert || !tlsKey)) {
-  const fs = await import('node:fs');
-  const path = await import('node:path');
+// Get Tailscale hostname
+const statusResult = Bun.spawnSync(['tailscale', 'status', '--json']);
+if (statusResult.exitCode !== 0) {
+  console.error('❌ エラー: Tailscale の状態を取得できません');
+  console.error('   Tailscale が起動しているか確認してください');
+  process.exit(1);
+}
 
-  // Check if tailscale command exists
-  const whichResult = Bun.spawnSync(['which', 'tailscale']);
-  if (whichResult.exitCode !== 0) {
-    console.error('❌ Error: tailscale command not found');
-    console.error('   Please install Tailscale: https://tailscale.com/download');
-    process.exit(1);
+let tailscaleHostname: string;
+try {
+  const status = JSON.parse(statusResult.stdout.toString());
+  const dnsName = status.Self?.DNSName;
+  if (!dnsName) {
+    throw new Error('DNSName not found in Tailscale status');
   }
+  // Remove trailing dot if present
+  tailscaleHostname = dnsName.replace(/\.$/, '');
+} catch (e) {
+  console.error('❌ エラー: Tailscale のステータスを解析できません');
+  process.exit(1);
+}
 
-  // Get Tailscale hostname
-  const statusResult = Bun.spawnSync(['tailscale', 'status', '--json']);
-  if (statusResult.exitCode !== 0) {
-    console.error('❌ Error: Failed to get Tailscale status');
-    console.error('   Is Tailscale running?');
-    process.exit(1);
-  }
+const certDir = path.join(process.env.HOME || '/tmp', '.tailscale-certs');
+const certPath = path.join(certDir, `${tailscaleHostname}.crt`);
+const keyPath = path.join(certDir, `${tailscaleHostname}.key`);
 
-  let tailscaleHostname: string;
+// Check if cert needs to be generated or renewed
+let needsCert = !fs.existsSync(certPath) || !fs.existsSync(keyPath);
+
+if (!needsCert) {
+  // Check if cert is expiring soon (within 7 days)
   try {
-    const status = JSON.parse(statusResult.stdout.toString());
-    const dnsName = status.Self?.DNSName;
-    if (!dnsName) {
-      throw new Error('DNSName not found in Tailscale status');
+    const checkResult = Bun.spawnSync([
+      'openssl', 'x509', '-in', certPath, '-checkend', String(7 * 24 * 60 * 60)
+    ]);
+    needsCert = checkResult.exitCode !== 0;
+  } catch {
+    needsCert = true;
+  }
+}
+
+if (needsCert) {
+  console.log('🔐 Tailscale 証明書を生成中...');
+  fs.mkdirSync(certDir, { recursive: true, mode: 0o700 });
+
+  const certResult = Bun.spawnSync([
+    'tailscale', 'cert',
+    '--cert-file', certPath,
+    '--key-file', keyPath,
+    tailscaleHostname
+  ]);
+
+  if (certResult.exitCode !== 0) {
+    const stderr = certResult.stderr.toString();
+    console.error('❌ エラー: Tailscale 証明書の生成に失敗しました');
+    console.error(stderr);
+    if (stderr.includes('Access denied') || stderr.includes('cert access denied')) {
+      console.error('');
+      console.error('💡 ヒント: 以下のコマンドを一度実行してください:');
+      console.error('   sudo tailscale set --operator=$USER');
     }
-    // Remove trailing dot if present
-    tailscaleHostname = dnsName.replace(/\.$/, '');
-  } catch (e) {
-    console.error('❌ Error: Failed to parse Tailscale status');
     process.exit(1);
   }
-
-  console.log(`🔗 Tailscale hostname: ${tailscaleHostname}`);
-
-  const certDir = path.join(process.env.HOME || '/tmp', '.tailscale-certs');
-  const certPath = path.join(certDir, `${tailscaleHostname}.crt`);
-  const keyPath = path.join(certDir, `${tailscaleHostname}.key`);
-
-  // Check if cert needs to be generated or renewed
-  let needsCert = !fs.existsSync(certPath) || !fs.existsSync(keyPath);
-
-  if (!needsCert) {
-    // Check if cert is expiring soon (within 7 days)
-    try {
-      const checkResult = Bun.spawnSync([
-        'openssl', 'x509', '-in', certPath, '-checkend', String(7 * 24 * 60 * 60)
-      ]);
-      needsCert = checkResult.exitCode !== 0;
-    } catch {
-      needsCert = true;
-    }
-  }
-
-  if (needsCert) {
-    console.log('🔐 Generating Tailscale certificate...');
-    fs.mkdirSync(certDir, { recursive: true, mode: 0o700 });
-
-    const certResult = Bun.spawnSync([
-      'tailscale', 'cert',
-      '--cert-file', certPath,
-      '--key-file', keyPath,
-      tailscaleHostname
-    ]);
-
-    if (certResult.exitCode !== 0) {
-      const stderr = certResult.stderr.toString();
-      console.error('❌ Error: Failed to generate Tailscale certificate');
-      console.error(stderr);
-      if (stderr.includes('Access denied') || stderr.includes('cert access denied')) {
-        console.error('');
-        console.error('💡 Hint: Run this once to allow certificate generation without sudo:');
-        console.error('   sudo tailscale set --operator=$USER');
-      }
-      process.exit(1);
-    }
-    console.log(`📜 Certificate generated at: ${certDir}`);
-  }
-
-  tlsCert = certPath;
-  tlsKey = keyPath;
+  console.log(`📜 証明書を生成しました: ${certDir}`);
 }
 
-// Auto-generate self-signed certificate if TLS=1 and no cert provided
-if (tlsSelfSigned && (!tlsCert || !tlsKey)) {
-  const os = await import('node:os');
-  const fs = await import('node:fs');
-  const path = await import('node:path');
-
-  const certDir = path.join(os.tmpdir(), 'cchub-tls');
-  const certPath = path.join(certDir, 'cert.pem');
-  const keyPath = path.join(certDir, 'key.pem');
-
-  // Check if cert already exists
-  if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) {
-    console.log('🔐 Generating self-signed certificate...');
-    fs.mkdirSync(certDir, { recursive: true });
-
-    const result = Bun.spawnSync([
-      'openssl', 'req', '-x509', '-newkey', 'rsa:2048',
-      '-keyout', keyPath,
-      '-out', certPath,
-      '-days', '365',
-      '-nodes',
-      '-subj', '/CN=localhost',
-      '-addext', `subjectAltName=DNS:localhost,DNS:${os.hostname()},IP:127.0.0.1`
-    ]);
-
-    if (result.exitCode !== 0) {
-      console.error('Failed to generate certificate:', result.stderr.toString());
-      process.exit(1);
-    }
-    console.log(`📜 Certificate generated at: ${certDir}`);
-  }
-
-  tlsCert = certPath;
-  tlsKey = keyPath;
+// Password warning
+if (!args.password) {
+  console.log('⚠️  パスワード未設定: -P オプションで設定を推奨');
 }
 
-const tlsEnabled = !!(tlsCert && tlsKey);
-
-const protocol = tlsEnabled ? 'https' : 'http';
-console.log(`🚀 CC Hub backend starting on ${protocol}://${host}:${port}`);
-console.log(`📁 Serving static files from: ${EMBEDDED_MODE ? '(embedded)' : staticRoot}`);
-if (tlsEnabled) {
-  console.log(`🔒 TLS enabled`);
+// Store password in environment for auth middleware
+if (args.password) {
+  process.env.CCHUB_PASSWORD = args.password;
 }
+
+// Start server
+const port = args.port;
+const host = args.host;
+
+console.log(`🚀 CC Hub v${VERSION}`);
+console.log(`   URL: https://${tailscaleHostname}:${port}`);
+console.log(`   静的ファイル: ${EMBEDDED_MODE ? '(埋め込み)' : staticRoot}`);
 
 export default {
   port,
   hostname: host,
-  ...(tlsEnabled && {
-    tls: {
-      cert: Bun.file(tlsCert!),
-      key: Bun.file(tlsKey!),
-      ...(tlsCA && { ca: Bun.file(tlsCA) }),
-    },
-  }),
+  tls: {
+    cert: Bun.file(certPath),
+    key: Bun.file(keyPath),
+  },
   async fetch(req: Request, server: Parameters<typeof handleTerminalUpgrade>[1]) {
     // Handle WebSocket upgrades for terminal
     const wsResponse = await handleTerminalUpgrade(req, server);

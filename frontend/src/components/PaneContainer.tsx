@@ -272,52 +272,60 @@ function SplitContainer({
 
   const isHorizontal = node.direction === 'horizontal';
 
+  // Build elements array with panes and dividers interleaved
+  const elements: React.ReactNode[] = [];
+  node.children.forEach((child, index) => {
+    // Child pane
+    elements.push(
+      <div
+        key={child.id}
+        style={{
+          [isHorizontal ? 'width' : 'height']: `calc(${node.ratio[index]}% - ${index < node.children.length - 1 ? 2 : 0}px)`,
+          [isHorizontal ? 'height' : 'width']: '100%',
+        }}
+        className="flex-shrink-0 overflow-hidden"
+      >
+        <PaneContainer
+          node={child}
+          activePane={activePane}
+          onFocusPane={onFocusPane}
+          onSelectSession={onSelectSession}
+          onSessionStateChange={onSessionStateChange}
+          onSplitRatioChange={onSplitRatioChange}
+          sessions={sessions}
+          terminalRefs={terminalRefs}
+        />
+      </div>
+    );
+
+    // Divider (not after last child)
+    if (index < node.children.length - 1) {
+      elements.push(
+        <div
+          key={`divider-${child.id}`}
+          onMouseDown={handleDragStart(index)}
+          onTouchStart={handleDragStart(index)}
+          className={`
+            ${isHorizontal ? 'w-1 h-full cursor-col-resize' : 'h-1 w-full cursor-row-resize'}
+            flex items-center justify-center bg-gray-700 hover:bg-blue-500/50 transition-colors flex-shrink-0 z-10
+            ${isDragging === index ? 'bg-blue-500/70' : ''}
+          `}
+        >
+          <div className={`
+            ${isHorizontal ? 'w-0.5 h-6' : 'h-0.5 w-6'}
+            bg-gray-500 rounded-full
+          `} />
+        </div>
+      );
+    }
+  });
+
   return (
     <div
       ref={containerRef}
       className={`h-full w-full flex ${isHorizontal ? 'flex-row' : 'flex-col'}`}
     >
-      {node.children.map((child, index) => (
-        <div key={child.id} className="contents">
-          {/* Child pane */}
-          <div
-            style={{
-              [isHorizontal ? 'width' : 'height']: `${node.ratio[index]}%`,
-              [isHorizontal ? 'height' : 'width']: '100%',
-            }}
-            className="flex-shrink-0"
-          >
-            <PaneContainer
-              node={child}
-              activePane={activePane}
-              onFocusPane={onFocusPane}
-              onSelectSession={onSelectSession}
-              onSessionStateChange={onSessionStateChange}
-              onSplitRatioChange={onSplitRatioChange}
-              sessions={sessions}
-              terminalRefs={terminalRefs}
-            />
-          </div>
-
-          {/* Divider (not after last child) */}
-          {index < node.children.length - 1 && (
-            <div
-              onMouseDown={handleDragStart(index)}
-              onTouchStart={handleDragStart(index)}
-              className={`
-                ${isHorizontal ? 'w-1 h-full cursor-col-resize' : 'h-1 w-full cursor-row-resize'}
-                flex items-center justify-center bg-gray-700 hover:bg-blue-500/50 transition-colors flex-shrink-0
-                ${isDragging === index ? 'bg-blue-500/70' : ''}
-              `}
-            >
-              <div className={`
-                ${isHorizontal ? 'w-0.5 h-6' : 'h-0.5 w-6'}
-                bg-gray-500 rounded-full
-              `} />
-            </div>
-          )}
-        </div>
-      ))}
+      {elements}
     </div>
   );
 }

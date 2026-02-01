@@ -200,6 +200,7 @@ export function DesktopLayout({
   onReload,
 }: DesktopLayoutProps) {
   const terminalRefs = useRef<Map<string, TerminalRef | null>>(new Map());
+  const activePaneRef = useRef<string>('');
   const [showSidePanel, setShowSidePanel] = useState(false);
   const [sidePanelTab, setSidePanelTab] = useState<'sessions' | 'dashboard'>('sessions');
   const [showFileViewer, setShowFileViewer] = useState(false);
@@ -226,6 +227,11 @@ export function DesktopLayout({
   useEffect(() => {
     localStorage.setItem(DESKTOP_STATE_KEY, JSON.stringify(desktopState));
   }, [desktopState]);
+
+  // Keep activePaneRef in sync
+  useEffect(() => {
+    activePaneRef.current = desktopState.activePane;
+  }, [desktopState.activePane]);
 
   // Update initial session if state was fresh
   useEffect(() => {
@@ -271,11 +277,11 @@ export function DesktopLayout({
         e.preventDefault();
         navigator.clipboard.readText().then(text => {
           if (text) {
-            const ref = terminalRefs.current?.get(desktopState.activePane);
+            const ref = terminalRefs.current?.get(activePaneRef.current);
             ref?.sendInput(text);
           }
-        }).catch(() => {
-          // Clipboard access denied
+        }).catch((err) => {
+          console.error('Clipboard read failed:', err);
         });
         return;
       }
@@ -311,7 +317,7 @@ export function DesktopLayout({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [sessions, desktopState]);
+  }, [sessions]);
 
   const handleSplit = useCallback((direction: 'horizontal' | 'vertical') => {
     setDesktopState(prev => {

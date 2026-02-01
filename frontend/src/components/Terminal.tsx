@@ -46,6 +46,7 @@ export interface TerminalRef {
   sendInput: (char: string) => void;
   focus: () => void;
   extractUrls: () => string[];
+  getSelection: () => string;
 }
 
 export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(function TerminalComponent({
@@ -159,10 +160,11 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     resizeRef.current = resize;
   }, [send, resize]);
 
-  // Expose sendInput, focus, and extractUrls for external keyboard
+  // Expose sendInput, focus, extractUrls, and getSelection for external keyboard
   useImperativeHandle(ref, () => ({
     sendInput: (char: string) => sendRef.current(char),
     focus: () => terminalRef.current?.focus(),
+    getSelection: () => terminalRef.current?.getSelection() || '',
     extractUrls: () => {
       const term = terminalRef.current;
       if (!term) return [];

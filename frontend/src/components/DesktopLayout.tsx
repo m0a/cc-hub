@@ -273,6 +273,20 @@ export function DesktopLayout({
         return;
       }
 
+      // Ctrl/Cmd + C: Copy selection from terminal
+      if (!e.shiftKey && e.key.toLowerCase() === 'c') {
+        const ref = terminalRefs.current?.get(activePaneRef.current);
+        const selection = ref?.getSelection();
+        if (selection) {
+          e.preventDefault();
+          navigator.clipboard.writeText(selection).catch(err => {
+            console.error('Clipboard write failed:', err);
+          });
+        }
+        // If no selection, let default Ctrl+C pass through (interrupt signal)
+        return;
+      }
+
       // Ctrl/Cmd + V: Paste to terminal (text or image)
       if (!e.shiftKey && e.key.toLowerCase() === 'v') {
         e.preventDefault();

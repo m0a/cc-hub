@@ -114,12 +114,18 @@ export async function setupSystemd(port: number, password?: string): Promise<voi
   console.log('  journalctl --user -u cchub -f    # ログ確認');
   console.log('');
 
-  // Check linger status
+  // Enable linger for boot-time startup
   const lingerResult = Bun.spawnSync(['loginctl', 'show-user', process.env.USER || '', '--property=Linger']);
   const lingerOutput = lingerResult.stdout.toString();
   if (!lingerOutput.includes('Linger=yes')) {
-    console.log('💡 ヒント: PC起動時にも自動起動させるには:');
-    console.log(`   loginctl enable-linger ${process.env.USER}`);
+    console.log('🔄 PC起動時の自動起動を有効化中...');
+    const enableResult = Bun.spawnSync(['loginctl', 'enable-linger', process.env.USER || '']);
+    if (enableResult.exitCode === 0) {
+      console.log('✅ PC起動時の自動起動を有効化しました');
+    } else {
+      console.log('⚠️  自動起動の有効化に失敗しました。手動で実行してください:');
+      console.log(`   loginctl enable-linger ${process.env.USER}`);
+    }
     console.log('');
   }
 

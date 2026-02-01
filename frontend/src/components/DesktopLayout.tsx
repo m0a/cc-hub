@@ -250,6 +250,14 @@ export function DesktopLayout({
       const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
       const modifier = isMac ? e.metaKey : e.ctrlKey;
 
+      // Shift+Enter: Send backslash + newline for Claude Code multiline input
+      if (e.shiftKey && e.key === 'Enter') {
+        e.preventDefault();
+        const ref = terminalRefs.current?.get(activePaneRef.current);
+        ref?.sendInput('\\\n');
+        return;
+      }
+
       if (!modifier) return;
 
       // Ctrl/Cmd + D: Vertical split (right)

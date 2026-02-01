@@ -321,9 +321,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
     // Track selection changes for copy functionality
     const onSelectionDisposable = term.onSelectionChange(() => {
-      const sel = term.getSelection();
-      console.log('Selection changed:', sel);
-      selectionRef.current = sel;
+      selectionRef.current = term.getSelection();
     });
 
     // Connect to WebSocket

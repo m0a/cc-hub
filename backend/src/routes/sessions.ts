@@ -64,15 +64,20 @@ sessions.get('/', async (c) => {
     let ccSession: Awaited<ReturnType<typeof claudeCodeService.getSessionForPath>> | undefined;
 
     if (s.currentCommand === 'claude' && s.currentPath) {
-      // Try to get session by PTY-detected session ID first
-      const sessionId = sessionIdByTmuxId.get(s.id);
-      if (sessionId) {
-        // Load session info for this specific session ID
-        ccSession = await claudeCodeService.getSessionById(sessionId, s.currentPath);
-      }
-      // Fallback to path-based lookup
-      if (!ccSession) {
-        ccSession = ccSessionsByPath.get(s.currentPath) || undefined;
+      // Always use path-based lookup to get the most recently modified session
+      // This handles context compaction where the session ID changes mid-session
+      const pathSession = ccSessionsByPath.get(s.currentPath);
+
+      // Get the command-line session ID (from -r flag)
+      const ptySessionId = sessionIdByTmuxId.get(s.id);
+
+      if (pathSession) {
+        // If path-based session differs from PTY session, prefer path-based
+        // (This happens after context compaction when a new session file is created)
+        ccSession = pathSession;
+      } else if (ptySessionId) {
+        // Fallback to PTY-based session if path lookup failed
+        ccSession = await claudeCodeService.getSessionById(ptySessionId, s.currentPath);
       }
     }
 

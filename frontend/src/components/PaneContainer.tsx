@@ -137,8 +137,8 @@ function TerminalPane({
           return freshSession.ccSessionId || null;
         }
       }
-    } catch (err) {
-      console.error('Failed to fetch session info:', err);
+    } catch {
+      // Ignore errors
     }
     return null;
   }, [sessionId]);
@@ -153,8 +153,8 @@ function TerminalPane({
         const data = await response.json();
         setMessages(data.messages || []);
       }
-    } catch (err) {
-      console.error('Failed to fetch conversation:', err);
+    } catch {
+      // Ignore errors
     }
   }, [currentCcSessionId]);
 

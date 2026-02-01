@@ -6,6 +6,7 @@ interface TmuxSessionInfo {
   currentCommand?: string;
   currentPath?: string;
   paneTitle?: string;
+  paneTty?: string;
   preview?: string;
   waitingForInput?: boolean;
 }
@@ -43,9 +44,9 @@ export class TmuxService {
           };
         });
 
-      // Get pane info for each session (command, path, title)
+      // Get pane info for each session (command, path, title, tty)
       // Use | as separator since path can contain :
-      const panesProc = Bun.spawn(['tmux', 'list-panes', '-a', '-F', '#{session_name}|#{pane_current_command}|#{pane_title}|#{pane_current_path}'], {
+      const panesProc = Bun.spawn(['tmux', 'list-panes', '-a', '-F', '#{session_name}|#{pane_current_command}|#{pane_title}|#{pane_tty}|#{pane_current_path}'], {
         stdout: 'pipe',
         stderr: 'pipe',
       });
@@ -53,7 +54,7 @@ export class TmuxService {
       const panesText = await new Response(panesProc.stdout).text();
       const panesExitCode = await panesProc.exited;
 
-      const paneInfo = new Map<string, { command: string; path: string; title: string }>();
+      const paneInfo = new Map<string, { command: string; path: string; title: string; tty: string }>();
       if (panesExitCode === 0) {
         panesText
           .trim()
@@ -61,13 +62,13 @@ export class TmuxService {
           .filter((line) => line.length > 0)
           .forEach((line) => {
             const parts = line.split('|');
-            if (parts.length >= 4) {
-              const [sessionName, command, title, ...pathParts] = parts;
+            if (parts.length >= 5) {
+              const [sessionName, command, title, tty, ...pathParts] = parts;
               // Path might contain |, so join the rest
               const path = pathParts.join('|');
               // Only store first pane info per session
               if (!paneInfo.has(sessionName)) {
-                paneInfo.set(sessionName, { command, path, title });
+                paneInfo.set(sessionName, { command, path, title, tty });
               }
             }
           });
@@ -95,6 +96,7 @@ export class TmuxService {
           currentCommand: info?.command,
           currentPath: info?.path,
           paneTitle: info?.title,
+          paneTty: info?.tty,
           preview: previews.get(session.id),
           waitingForInput: waitingStatus.get(session.id),
         };

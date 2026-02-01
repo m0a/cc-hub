@@ -39,15 +39,42 @@ const ResumeSessionSchema = z.object({
 sessions.get('/', async (c) => {
   const tmuxSessions = await tmuxService.listSessions();
 
+  // Get Claude Code session IDs from PTY for each tmux session running claude
+  const sessionIdByTmuxId = new Map<string, string>();
+  await Promise.all(
+    tmuxSessions
+      .filter(s => s.currentCommand === 'claude' && s.paneTty)
+      .map(async (s) => {
+        const sessionId = await claudeCodeService.getSessionIdFromTty(s.paneTty!);
+        if (sessionId) {
+          sessionIdByTmuxId.set(s.id, sessionId);
+        }
+      })
+  );
+
   // Get Claude Code session info for sessions running claude
   const claudePaths = tmuxSessions
     .filter(s => s.currentCommand === 'claude' && s.currentPath)
     .map(s => s.currentPath!);
 
-  const ccSessions = await claudeCodeService.getSessionsForPaths(claudePaths);
+  // Also get sessions by path for fallback (when session ID not found from PTY)
+  const ccSessionsByPath = await claudeCodeService.getSessionsForPaths(claudePaths);
 
-  const sessions = tmuxSessions.map((s) => {
-    const ccSession = s.currentPath ? ccSessions.get(s.currentPath) : undefined;
+  const sessions = await Promise.all(tmuxSessions.map(async (s) => {
+    let ccSession: Awaited<ReturnType<typeof claudeCodeService.getSessionForPath>> | undefined;
+
+    if (s.currentCommand === 'claude' && s.currentPath) {
+      // Try to get session by PTY-detected session ID first
+      const sessionId = sessionIdByTmuxId.get(s.id);
+      if (sessionId) {
+        // Load session info for this specific session ID
+        ccSession = await claudeCodeService.getSessionById(sessionId, s.currentPath);
+      }
+      // Fallback to path-based lookup
+      if (!ccSession) {
+        ccSession = ccSessionsByPath.get(s.currentPath) || undefined;
+      }
+    }
 
     // Combine jsonl-based and terminal-based waiting detection
     // Either source detecting waiting = waiting for input
@@ -71,6 +98,9 @@ sessions.get('/', async (c) => {
       durationMinutes = Math.round((now.getTime() - modified.getTime()) / 60000);
     }
 
+    // Only include Claude Code info when claude is actually running
+    const includeClaudeInfo = s.currentCommand === 'claude';
+
     return {
       id: s.id,
       name: s.name,
@@ -80,20 +110,18 @@ sessions.get('/', async (c) => {
       currentCommand: s.currentCommand,
       currentPath: s.currentPath,
       paneTitle: s.paneTitle,
-      waitingForInput,
-      waitingToolName: ccSession?.waitingToolName,
-      // Use Claude Code summary instead of terminal preview
-      ccSummary: ccSession?.summary,
-      ccFirstPrompt: ccSession?.firstPrompt,
-      // New fields for dashboard
-      indicatorState,
-      ccSessionId: ccSession?.sessionId,
-      // Phase 2 fields: B1, B2, B3
-      messageCount: ccSession?.messageCount,
-      gitBranch: ccSession?.gitBranch,
-      durationMinutes,
+      waitingForInput: includeClaudeInfo ? waitingForInput : undefined,
+      waitingToolName: includeClaudeInfo ? ccSession?.waitingToolName : undefined,
+      ccSummary: includeClaudeInfo ? ccSession?.summary : undefined,
+      ccFirstPrompt: includeClaudeInfo ? ccSession?.firstPrompt : undefined,
+      indicatorState: includeClaudeInfo ? indicatorState : undefined,
+      ccSessionId: includeClaudeInfo ? ccSession?.sessionId : undefined,
+      messageCount: includeClaudeInfo ? ccSession?.messageCount : undefined,
+      gitBranch: includeClaudeInfo ? ccSession?.gitBranch : undefined,
+      durationMinutes: includeClaudeInfo ? durationMinutes : undefined,
+      firstMessageId: includeClaudeInfo ? ccSession?.firstMessageId : undefined,
     };
-  });
+  }));
 
   return c.json({ sessions });
 });
@@ -128,6 +156,19 @@ sessions.post('/', async (c) => {
   } catch (error) {
     return c.json({ error: 'Failed to create session' }, 500);
   }
+});
+
+// GET /sessions/history/projects - Get list of projects (fast, no file content reading)
+sessions.get('/history/projects', async (c) => {
+  const projects = await sessionHistoryService.getProjects();
+  return c.json({ projects });
+});
+
+// GET /sessions/history/projects/:dirName - Get sessions for a specific project
+sessions.get('/history/projects/:dirName', async (c) => {
+  const dirName = c.req.param('dirName');
+  const sessions = await sessionHistoryService.getProjectSessions(dirName);
+  return c.json({ sessions });
 });
 
 // GET /sessions/history - Get past Claude Code session history

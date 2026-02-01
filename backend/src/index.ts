@@ -7,6 +7,7 @@ import { logs } from './routes/logs';
 import { sessions } from './routes/sessions';
 import { upload } from './routes/upload';
 import { files } from './routes/files';
+import { dashboard } from './routes/dashboard';
 import { terminalWebSocket, handleTerminalUpgrade } from './routes/terminal';
 
 // Try to load embedded assets (available in compiled binary)
@@ -37,6 +38,7 @@ app.route('/api/logs', logs);
 app.route('/api/sessions', sessions);
 app.route('/api/upload', upload);
 app.route('/api/files', files);
+app.route('/api/dashboard', dashboard);
 
 // Static files handling
 const staticRoot = process.env.STATIC_ROOT || '../frontend/dist';

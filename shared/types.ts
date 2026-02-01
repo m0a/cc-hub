@@ -157,3 +157,121 @@ export interface FileChangesResponse {
   sessionId: string;
   changes: FileChange[];
 }
+
+// =============================================================================
+// Dashboard Types
+// =============================================================================
+
+export type IndicatorState = 'processing' | 'waiting_input' | 'idle' | 'completed';
+
+export interface LimitRange {
+  min: number;
+  max: number;
+}
+
+export interface CycleLimitInfo {
+  used: number;
+  limit: LimitRange;
+  percentage: number;
+  resetTime?: string;
+  isStale?: boolean; // Data is older than expected cycle
+}
+
+export interface LimitsInfo {
+  plan: string;
+  cycle5h: CycleLimitInfo;
+  weeklyOpus: CycleLimitInfo;
+  weeklySonnet: CycleLimitInfo;
+}
+
+export interface DailyActivity {
+  date: string;
+  messageCount: number;
+  sessionCount: number;
+  tokensIn: number;
+  tokensOut: number;
+}
+
+export interface ModelUsage {
+  model: string;
+  totalTokensIn: number;
+  totalTokensOut: number;
+  totalCacheRead: number;
+  totalCacheWrite: number;
+}
+
+export interface CostEstimate {
+  model: string;
+  inputCost: number;
+  outputCost: number;
+  cacheReadCost: number;
+  cacheWriteCost: number;
+  totalCost: number;
+}
+
+// Usage limits from Anthropic API
+export interface UsageCycleInfo {
+  utilization: number;
+  resetsAt: string;
+  timeRemaining: string;
+  estimatedHitTime?: string; // When limit will be hit at current rate
+}
+
+export interface UsageLimits {
+  fiveHour: UsageCycleInfo;
+  sevenDay: UsageCycleInfo;
+}
+
+export interface DashboardResponse {
+  limits: LimitsInfo | null; // Deprecated, kept for compatibility
+  usageLimits: UsageLimits | null; // New: from Anthropic API
+  dailyActivity: DailyActivity[];
+  modelUsage: ModelUsage[];
+  costEstimates: CostEstimate[];
+  hourlyActivity?: Record<number, number>; // Phase 3: Hour (0-23) -> session count
+}
+
+export interface ExtendedSessionResponse extends SessionResponse {
+  indicatorState?: IndicatorState;
+  ccSessionId?: string;
+  currentCommand?: string;
+  currentPath?: string;
+  paneTitle?: string;
+  ccSummary?: string;
+  ccFirstPrompt?: string;
+  waitingForInput?: boolean;
+  waitingToolName?: string;
+}
+
+// =============================================================================
+// Session History Types
+// =============================================================================
+
+export interface HistorySession {
+  sessionId: string;
+  projectPath: string;
+  projectName: string;
+  firstPrompt?: string;
+  summary?: string;
+  modified: string;
+  // Phase 2 additions
+  startTime?: string;
+  endTime?: string;
+  durationMinutes?: number;
+  messageCount?: number;
+  gitBranch?: string;
+}
+
+export interface HistorySessionsResponse {
+  sessions: HistorySession[];
+}
+
+export interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp?: string;
+}
+
+export interface ConversationResponse {
+  messages: ConversationMessage[];
+}

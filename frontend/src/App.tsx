@@ -3,7 +3,9 @@ import { TerminalPage } from './pages/TerminalPage';
 import { SessionList } from './components/SessionList';
 import { TabletLayout } from './components/TabletLayout';
 import { FileViewer } from './components/files/FileViewer';
-import type { SessionResponse, SessionState } from '../../shared/types';
+import { ConversationViewer } from './components/ConversationViewer';
+import { useSessionHistory } from './hooks/useSessionHistory';
+import type { SessionResponse, SessionState, ConversationMessage } from '../../shared/types';
 
 // Session info type (simplified from SessionTabs)
 interface OpenSession {
@@ -11,6 +13,8 @@ interface OpenSession {
   name: string;
   state: SessionState;
   currentPath?: string;
+  ccSessionId?: string;
+  currentCommand?: string;
 }
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -93,6 +97,12 @@ export function App() {
   const [showFileViewer, setShowFileViewer] = useState(false);
   const overlayTimeoutRef = useRef<number | null>(null);
 
+  // Conversation viewer state
+  const { fetchConversation } = useSessionHistory();
+  const [showConversation, setShowConversation] = useState(false);
+  const [conversation, setConversation] = useState<ConversationMessage[]>([]);
+  const [loadingConversation, setLoadingConversation] = useState(false);
+
   // Tablet detection (width >= 640px AND height >= 500px)
   // This prevents landscape phones from triggering tablet mode
   const checkIsTablet = () => window.innerWidth >= 640 && window.innerHeight >= 500;
@@ -128,12 +138,14 @@ export function App() {
             const normalizedId = id.startsWith('ext:') ? id.slice(4) : id;
             const session = allSessions.find(s => s.id === normalizedId);
             if (session) {
-              const extSession = session as SessionResponse & { currentPath?: string };
+              const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string };
               sessionsToOpen.push({
                 id: session.id,
                 name: session.name,
                 state: session.state,
                 currentPath: extSession.currentPath,
+                ccSessionId: extSession.ccSessionId,
+                currentCommand: extSession.currentCommand,
               });
             }
           }
@@ -154,12 +166,14 @@ export function App() {
             setActiveSessionId(activeId);
           } else if (allSessions.length > 0) {
             // No valid saved sessions, open most recent
-            const mostRecent = allSessions[0] as SessionResponse & { currentPath?: string };
+            const mostRecent = allSessions[0] as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string };
             setOpenSessions([{
               id: mostRecent.id,
               name: mostRecent.name,
               state: mostRecent.state,
               currentPath: mostRecent.currentPath,
+              ccSessionId: mostRecent.ccSessionId,
+              currentCommand: mostRecent.currentCommand,
             }]);
             setActiveSessionId(mostRecent.id);
           } else {
@@ -167,12 +181,14 @@ export function App() {
           }
         } else if (allSessions.length > 0) {
           // No saved sessions, open most recent
-          const mostRecent = allSessions[0] as SessionResponse & { currentPath?: string };
+          const mostRecent = allSessions[0] as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string };
           setOpenSessions([{
             id: mostRecent.id,
             name: mostRecent.name,
             state: mostRecent.state,
             currentPath: mostRecent.currentPath,
+            ccSessionId: mostRecent.ccSessionId,
+            currentCommand: mostRecent.currentCommand,
           }]);
           setActiveSessionId(mostRecent.id);
         } else {
@@ -210,12 +226,14 @@ export function App() {
       setActiveSessionId(session.id);
     } else {
       // Add to open sessions
-      const extSession = session as SessionResponse & { currentPath?: string };
+      const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string };
       setOpenSessions(prev => [...prev, {
         id: extSession.id,
         name: extSession.name,
         state: extSession.state,
         currentPath: extSession.currentPath,
+        ccSessionId: extSession.ccSessionId,
+        currentCommand: extSession.currentCommand,
       }]);
       setActiveSessionId(session.id);
     }
@@ -298,6 +316,39 @@ export function App() {
       setTimeout(() => setActiveSessionId(currentId), 50);
     }
   }, [activeSessionId]);
+
+  // Show conversation history for current session
+  const handleShowConversation = useCallback(async () => {
+    const activeSession = openSessions.find(s => s.id === activeSessionId);
+    const ccSessionId = activeSession?.ccSessionId;
+    if (!ccSessionId) return;
+
+    setShowConversation(true);
+    setLoadingConversation(true);
+    setConversation([]);
+    setShowOverlay(false);
+
+    try {
+      const messages = await fetchConversation(ccSessionId);
+      setConversation(messages);
+    } finally {
+      setLoadingConversation(false);
+    }
+  }, [openSessions, activeSessionId, fetchConversation]);
+
+  // Refresh conversation (for auto-refresh)
+  const handleRefreshConversation = useCallback(async () => {
+    const activeSession = openSessions.find(s => s.id === activeSessionId);
+    const ccSessionId = activeSession?.ccSessionId;
+    if (!ccSessionId) return;
+
+    try {
+      const messages = await fetchConversation(ccSessionId);
+      setConversation(messages);
+    } catch (err) {
+      console.error('Failed to refresh conversation:', err);
+    }
+  }, [openSessions, activeSessionId, fetchConversation]);
 
   // Auto-hide overlay after 3 seconds
   const startOverlayTimer = useCallback(() => {
@@ -386,7 +437,7 @@ export function App() {
         {activeSession?.name || '-'}
       </span>
 
-      {/* Right: Reload + File browser + Session list buttons */}
+      {/* Right: Reload + History + File browser + Session list buttons */}
       <div className="flex items-center gap-1">
         <button
           onClick={handleReload}
@@ -397,6 +448,17 @@ export function App() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
         </button>
+        {activeSession?.ccSessionId && (
+          <button
+            onClick={handleShowConversation}
+            className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+            title="会話履歴"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </button>
+        )}
         <button
           onClick={() => {
             setShowFileViewer(true);
@@ -456,6 +518,20 @@ export function App() {
         <FileViewer
           sessionWorkingDir={activeSession.currentPath}
           onClose={() => setShowFileViewer(false)}
+        />
+      )}
+
+      {/* Conversation Viewer Modal */}
+      {showConversation && (
+        <ConversationViewer
+          title={activeSession?.name || 'Conversation'}
+          subtitle={activeSession?.currentPath?.replace(/^\/home\/[^/]+\//, '~/') || ''}
+          messages={conversation}
+          isLoading={loadingConversation}
+          onClose={() => setShowConversation(false)}
+          scrollToBottom={true}
+          isActive={activeSession?.currentCommand === 'claude'}
+          onRefresh={handleRefreshConversation}
         />
       )}
     </div>

@@ -195,6 +195,8 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
   const handleSelectFile = useCallback(async (file: FileInfo) => {
     await readFile(file.path);
     setViewMode('file');
+    // Push history state for back navigation
+    window.history.pushState({ fileViewer: true, path: file.path }, '', window.location.href);
   }, [readFile]);
 
   // Handle back from file view (mobile only)
@@ -207,6 +209,27 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
       setViewMode('browser');
     }
   }, [clearSelectedFile, viewMode]);
+
+  // Handle browser back navigation within file viewer
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      // Check if we're in file viewer context
+      if (e.state?.fileViewer || viewMode === 'file' || viewMode === 'diff') {
+        if (viewMode === 'diff') {
+          setSelectedChange(null);
+          setViewMode('changes');
+        } else if (viewMode === 'file') {
+          clearSelectedFile();
+          setViewMode('browser');
+        }
+        // Prevent default by pushing new state
+        window.history.pushState({ fileViewer: true, browser: true }, '', window.location.href);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [viewMode, clearSelectedFile]);
 
   // Handle changes tab
   const handleShowChanges = useCallback(async () => {

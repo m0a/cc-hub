@@ -115,6 +115,36 @@ export function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Handle browser back navigation - return to terminal from overlays
+  useEffect(() => {
+    const handlePopState = () => {
+      // Close any open overlays and return to terminal
+      if (showSessionList) {
+        setShowSessionList(false);
+        window.history.pushState({ view: 'terminal' }, '', window.location.href);
+      } else if (showFileViewer) {
+        setShowFileViewer(false);
+        window.history.pushState({ view: 'terminal' }, '', window.location.href);
+      } else if (showConversation) {
+        setShowConversation(false);
+        window.history.pushState({ view: 'terminal' }, '', window.location.href);
+      } else {
+        // Already at terminal, prevent leaving the app
+        window.history.pushState({ view: 'terminal' }, '', window.location.href);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [showSessionList, showFileViewer, showConversation]);
+
+  // Push history state when opening overlays
+  useEffect(() => {
+    if (showSessionList || showFileViewer || showConversation) {
+      window.history.pushState({ view: 'overlay' }, '', window.location.href);
+    }
+  }, [showSessionList, showFileViewer, showConversation]);
+
   // On mount, fetch sessions and restore from localStorage
   useEffect(() => {
     const fetchAndOpenSession = async () => {

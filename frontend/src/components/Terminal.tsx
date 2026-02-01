@@ -283,7 +283,13 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       if (parts.length >= 2) {
         const base64Data = parts.slice(1).join(';');
         try {
-          const text = atob(base64Data);
+          // Decode base64 to UTF-8 properly
+          const binaryString = atob(base64Data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          const text = new TextDecoder('utf-8').decode(bytes);
           navigator.clipboard.writeText(text).catch(console.error);
         } catch {
           // Invalid base64, ignore

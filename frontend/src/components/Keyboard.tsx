@@ -253,6 +253,13 @@ export function Keyboard({
       return;
     }
 
+    // Handle Shift+Enter for multiline input (send backslash + enter)
+    if (shiftPressed && keyDef.key === '\r') {
+      onSend('\\\r');  // Backslash + Enter for line continuation
+      setShiftPressed(false);
+      return;
+    }
+
     // Determine the character to send
     let char = shiftPressed ? (keyDef.shiftKey || keyDef.key.toUpperCase()) : keyDef.key;
 

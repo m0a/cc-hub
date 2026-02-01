@@ -208,29 +208,47 @@ export class SessionHistoryService {
 
           if (jsonlFiles.length === 0) return;
 
-          // Read projectPath from first session file (more accurate than parsing dir name)
-          const firstFile = join(projectDir, jsonlFiles[0]);
-          let projectPath = dir.replace(/^-/, '/').replace(/-/g, '/'); // fallback
+          // Read projectPath from session files (try multiple files until cwd is found)
+          let projectPath: string | null = null;
 
-          try {
-            const fileStream = createReadStream(firstFile);
-            const rl = createInterface({ input: fileStream, crlfDelay: Infinity });
-            let linesRead = 0;
+          // Prefer non-agent files first (they have cwd earlier in the file)
+          const sortedFiles = [...jsonlFiles].sort((a, b) => {
+            const aIsAgent = a.startsWith('agent-');
+            const bIsAgent = b.startsWith('agent-');
+            if (aIsAgent && !bIsAgent) return 1;
+            if (!aIsAgent && bIsAgent) return -1;
+            return 0;
+          });
 
-            for await (const line of rl) {
-              linesRead++;
-              if (linesRead > 20) break;
-              try {
-                const entry = JSON.parse(line);
-                if (entry.cwd) {
-                  projectPath = entry.cwd;
-                  break;
-                }
-              } catch { /* skip */ }
-            }
-            rl.close();
-            fileStream.destroy();
-          } catch { /* use fallback */ }
+          for (const file of sortedFiles) { // Try all files until cwd is found
+            if (projectPath) break;
+            const filePath = join(projectDir, file);
+
+            try {
+              const fileStream = createReadStream(filePath);
+              const rl = createInterface({ input: fileStream, crlfDelay: Infinity });
+              let linesRead = 0;
+
+              for await (const line of rl) {
+                linesRead++;
+                if (linesRead > 30) break;
+                try {
+                  const entry = JSON.parse(line);
+                  if (entry.cwd) {
+                    projectPath = entry.cwd;
+                    break;
+                  }
+                } catch { /* skip */ }
+              }
+              rl.close();
+              fileStream.destroy();
+            } catch { /* try next file */ }
+          }
+
+          // Fallback: parse from directory name (may be inaccurate for paths with hyphens)
+          if (!projectPath) {
+            projectPath = dir.replace(/^-/, '/').replace(/-/g, '/');
+          }
 
           const projectName = projectPath.replace(/^\/home\/[^/]+\//, '~/');
           const latestModified = dirStat.mtime.toISOString();

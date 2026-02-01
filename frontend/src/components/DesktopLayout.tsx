@@ -252,8 +252,11 @@ export function DesktopLayout({
 
       // Shift+Enter: Send backslash + enter for Claude Code multiline input
       if (e.shiftKey && e.key === 'Enter') {
+        console.log('Shift+Enter detected');
         e.preventDefault();
+        e.stopPropagation();
         const ref = terminalRefs.current?.get(activePaneRef.current);
+        console.log('ref:', ref, 'activePane:', activePaneRef.current);
         ref?.sendInput('\\\r');
         return;
       }

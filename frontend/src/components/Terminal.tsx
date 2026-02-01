@@ -275,6 +275,23 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     });
     term.loadAddon(webLinksAddon);
 
+    // Handle OSC 52 (clipboard) - allows tmux to copy to system clipboard
+    term.parser.registerOscHandler(52, (data) => {
+      // Format: [target];[base64-data]
+      // target is usually 'c' for clipboard
+      const parts = data.split(';');
+      if (parts.length >= 2) {
+        const base64Data = parts.slice(1).join(';');
+        try {
+          const text = atob(base64Data);
+          navigator.clipboard.writeText(text).catch(console.error);
+        } catch {
+          // Invalid base64, ignore
+        }
+      }
+      return true;
+    });
+
     fitAddon.fit();
 
     terminalRef.current = term;

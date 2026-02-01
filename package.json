@@ -1,8 +1,12 @@
 {
   "name": "cc-hub",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "private": true,
-  "workspaces": ["backend", "frontend", "shared"],
+  "workspaces": [
+    "backend",
+    "frontend",
+    "shared"
+  ],
   "scripts": {
     "dev": "bun run stop; bun run --filter '*' dev",
     "dev:backend": "bun run --filter backend dev",

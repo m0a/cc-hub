@@ -6,6 +6,7 @@ import { FileViewer } from './files/FileViewer';
 import type { TerminalRef } from './Terminal';
 import type { SessionResponse, SessionState } from '../../../shared/types';
 
+const API_BASE = import.meta.env.VITE_API_URL || '';
 const DESKTOP_STATE_KEY = 'cchub-desktop-state';
 
 interface OpenSession {
@@ -272,17 +273,10 @@ export function DesktopLayout({
         return;
       }
 
-      // Ctrl/Cmd + V: Paste to terminal
+      // Ctrl/Cmd + V: Paste to terminal (text or image)
       if (!e.shiftKey && e.key.toLowerCase() === 'v') {
         e.preventDefault();
-        navigator.clipboard.readText().then(text => {
-          if (text) {
-            const ref = terminalRefs.current?.get(activePaneRef.current);
-            ref?.sendInput(text);
-          }
-        }).catch((err) => {
-          console.error('Clipboard read failed:', err);
-        });
+        handlePaste();
         return;
       }
 
@@ -332,6 +326,59 @@ export function DesktopLayout({
       if (!newRoot) return prev; // Can't close last pane
       return { root: newRoot, activePane: nextPane || prev.activePane };
     });
+  }, []);
+
+  // Handle paste (text or image)
+  const handlePaste = useCallback(async () => {
+    try {
+      // Try to read clipboard items (for images)
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        // Check for image
+        const imageType = item.types.find(t => t.startsWith('image/'));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          const formData = new FormData();
+          formData.append('image', blob, 'clipboard-image.png');
+
+          const response = await fetch(`${API_BASE}/api/upload/image`, {
+            method: 'POST',
+            body: formData,
+          });
+
+          const result = await response.json();
+          if (response.ok && result.path) {
+            const ref = terminalRefs.current?.get(activePaneRef.current);
+            ref?.sendInput(result.path);
+          } else {
+            console.error('Upload failed:', result.error);
+          }
+          return;
+        }
+
+        // Check for text
+        if (item.types.includes('text/plain')) {
+          const blob = await item.getType('text/plain');
+          const text = await blob.text();
+          if (text) {
+            const ref = terminalRefs.current?.get(activePaneRef.current);
+            ref?.sendInput(text);
+          }
+          return;
+        }
+      }
+    } catch {
+      // Fallback to readText for browsers that don't support clipboard.read()
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text) {
+          const ref = terminalRefs.current?.get(activePaneRef.current);
+          ref?.sendInput(text);
+        }
+      } catch (err) {
+        console.error('Clipboard read failed:', err);
+      }
+    }
   }, []);
 
   const handleFocusNavigation = useCallback((key: string) => {

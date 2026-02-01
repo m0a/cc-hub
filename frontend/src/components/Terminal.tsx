@@ -69,6 +69,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const sendRef = useRef<(data: string) => void>(() => {});
   const resizeRef = useRef<(cols: number, rows: number) => void>(() => {});
   const closeInputBarRef = useRef<() => void>(() => {});
+  const selectionRef = useRef<string>('');
   const [isInitialized, setIsInitialized] = useState(false);
   const [inputMode, setInputMode] = useState<'hidden' | 'shortcuts' | 'input'>('hidden');
   const [inputValue, setInputValue] = useState('');
@@ -164,7 +165,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   useImperativeHandle(ref, () => ({
     sendInput: (char: string) => sendRef.current(char),
     focus: () => terminalRef.current?.focus(),
-    getSelection: () => terminalRef.current?.getSelection() || '',
+    getSelection: () => selectionRef.current,
     extractUrls: () => {
       const term = terminalRef.current;
       if (!term) return [];
@@ -283,6 +284,11 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     // Handle keyboard input - register once, use ref for send
     const onDataDisposable = term.onData((data) => {
       sendRef.current(data);
+    });
+
+    // Track selection changes for copy functionality
+    const onSelectionDisposable = term.onSelectionChange(() => {
+      selectionRef.current = term.getSelection();
     });
 
     // Connect to WebSocket
@@ -452,6 +458,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       window.removeEventListener('resize', doResize);
       viewport?.removeEventListener('resize', doResize);
       onDataDisposable.dispose();
+      onSelectionDisposable.dispose();
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;

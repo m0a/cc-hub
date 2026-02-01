@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { TerminalPage } from './pages/TerminalPage';
 import { SessionList } from './components/SessionList';
 import { TabletLayout } from './components/TabletLayout';
+import { DesktopLayout } from './components/DesktopLayout';
 import { FileViewer } from './components/files/FileViewer';
 import { ConversationViewer } from './components/ConversationViewer';
 import { useSessionHistory } from './hooks/useSessionHistory';
@@ -103,14 +104,34 @@ export function App() {
   const [conversation, setConversation] = useState<ConversationMessage[]>([]);
   const [loadingConversation, setLoadingConversation] = useState(false);
 
-  // Tablet detection (width >= 640px AND height >= 500px)
-  // This prevents landscape phones from triggering tablet mode
-  const checkIsTablet = () => window.innerWidth >= 640 && window.innerHeight >= 500;
-  const [isTablet, setIsTablet] = useState(checkIsTablet);
+  // Device type detection
+  // - desktop: PC (非タッチデバイス) → ソフトキーボード不要
+  // - tablet: タッチデバイスで width >= 640px && height >= 500px
+  // - mobile: タッチデバイスでそれ以外
+  type DeviceType = 'mobile' | 'tablet' | 'desktop';
 
-  // Update tablet detection on resize
+  const checkIsTouchDevice = (): boolean => {
+    // タッチデバイス判定: タッチイベント対応 かつ 粗いポインター（指）
+    const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    const hasCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
+    return hasTouch && hasCoarsePointer;
+  };
+
+  const checkDeviceType = (): DeviceType => {
+    // PCの場合は常にdesktop（ソフトキーボード不要）
+    if (!checkIsTouchDevice()) return 'desktop';
+
+    // タッチデバイスの場合はサイズで判定
+    const width = window.innerWidth;
+    if (width >= 640 && window.innerHeight >= 500) return 'tablet';
+    return 'mobile';
+  };
+
+  const [deviceType, setDeviceType] = useState<DeviceType>(checkDeviceType);
+
+  // Update device type on resize
   useEffect(() => {
-    const handleResize = () => setIsTablet(checkIsTablet());
+    const handleResize = () => setDeviceType(checkDeviceType());
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -417,8 +438,22 @@ export function App() {
     );
   }
 
+  // Desktop layout: PC向け分割ペインレイアウト
+  if (deviceType === 'desktop') {
+    return (
+      <DesktopLayout
+        sessions={openSessions}
+        activeSessionId={activeSessionId}
+        onSelectSession={handleSelectSession}
+        onSessionStateChange={updateSessionState}
+        onShowSessionList={handleShowSessionList}
+        onReload={handleReload}
+      />
+    );
+  }
+
   // Tablet layout: split view with terminal, session list, and keyboard
-  if (isTablet) {
+  if (deviceType === 'tablet') {
     return (
       <TabletLayout
         sessions={openSessions}

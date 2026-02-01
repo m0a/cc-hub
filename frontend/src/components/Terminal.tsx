@@ -304,6 +304,16 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     fitAddonRef.current = fitAddon;
     setIsInitialized(true);
 
+    // Handle Shift+Enter for Claude Code multiline input
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type === 'keydown' && e.shiftKey && e.key === 'Enter') {
+        e.preventDefault();
+        sendRef.current('\\\r');
+        return false; // Prevent default xterm handling
+      }
+      return true; // Let xterm handle other keys
+    });
+
     // Handle keyboard input - register once, use ref for send
     const onDataDisposable = term.onData((data) => {
       sendRef.current(data);

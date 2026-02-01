@@ -269,6 +269,16 @@ sessions.post('/history/resume', async (c) => {
   }
 });
 
+// GET /sessions/clipboard - Get tmux paste buffer (global)
+// NOTE: Must be defined BEFORE /:id routes
+sessions.get('/clipboard', async (c) => {
+  const buffer = await tmuxService.getBuffer();
+  if (buffer === null) {
+    return c.json({ error: 'No buffer content' }, 404);
+  }
+  return c.json({ content: buffer });
+});
+
 // GET /sessions/:id - Get a specific session
 sessions.get('/:id', async (c) => {
   const id = c.req.param('id');

@@ -273,22 +273,34 @@ export function DesktopLayout({
         return;
       }
 
-      // Ctrl/Cmd + C: Copy selection from terminal
+      // Ctrl/Cmd + C: Copy from tmux buffer or terminal selection
       if (!e.shiftKey && e.key.toLowerCase() === 'c') {
         const ref = terminalRefs.current?.get(activePaneRef.current);
-        console.log('Cmd+C pressed, activePane:', activePaneRef.current, 'ref:', ref);
         const selection = ref?.getSelection();
-        console.log('Selection:', selection, 'length:', selection?.length);
+
+        // First try xterm selection
         if (selection) {
           e.preventDefault();
-          navigator.clipboard.writeText(selection).then(() => {
-            console.log('Copied to clipboard:', selection);
-          }).catch(err => {
+          navigator.clipboard.writeText(selection).catch(err => {
             console.error('Clipboard write failed:', err);
           });
           return;
         }
-        // If no selection, let default Ctrl+C pass through (interrupt signal)
+
+        // Then try tmux buffer
+        e.preventDefault();
+        fetch(`${API_BASE}/api/sessions/clipboard`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.content) {
+              navigator.clipboard.writeText(data.content).catch(err => {
+                console.error('Clipboard write failed:', err);
+              });
+            }
+          })
+          .catch(() => {
+            // No buffer content, ignore
+          });
         return;
       }
 

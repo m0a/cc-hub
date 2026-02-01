@@ -8,31 +8,26 @@ interface KeyDef {
   longKey?: string;     // Character on long press
   longLabel?: string;   // Long press label
   width?: number;       // Relative width (default 1)
-  type?: 'normal' | 'modifier' | 'special';
+  type?: 'normal' | 'modifier' | 'special' | 'action' | 'layer';
+  color?: 'green' | 'red' | 'blue' | 'default';  // Action button colors
 }
 
-// Full QWERTY keyboard layout (5 rows)
-const KEYBOARD_ROWS: KeyDef[][] = [
-  // Row 1: ESC, numbers, backspace
+// Top action bar for Claude Code specific actions
+const ACTION_BAR: KeyDef[] = [
+  { label: 'ESC', key: '\x1b', type: 'action' },
+  { label: 'TAB', key: '\t', type: 'action' },
+  { label: '^C', key: '\x03', type: 'action', color: 'red' },  // Ctrl+C: interrupt
+  { label: '^E', key: '\x05', type: 'action' },  // Ctrl+E: end of line
+  { label: '^O', key: '\x0f', type: 'action' },  // Ctrl+O
+  { label: '📁', key: 'FILE_PICKER', type: 'special' },
+  { label: '🔗', key: 'URL_EXTRACT', type: 'special' },
+  { label: 'あ', key: 'MODE_SWITCH', type: 'special' },
+];
+
+// Main layer: QWERTY with cursors
+const MAIN_ROWS: KeyDef[][] = [
+  // Row 1: QWERTY top row
   [
-    { label: 'ESC', key: '\x1b', width: 1.5, type: 'special' },
-    { label: '1', key: '1', shiftKey: '!', longKey: '!', longLabel: '!' },
-    { label: '2', key: '2', shiftKey: '@', longKey: '@', longLabel: '@' },
-    { label: '3', key: '3', shiftKey: '#', longKey: '#', longLabel: '#' },
-    { label: '4', key: '4', shiftKey: '$', longKey: '$', longLabel: '$' },
-    { label: '5', key: '5', shiftKey: '%', longKey: '%', longLabel: '%' },
-    { label: '6', key: '6', shiftKey: '^', longKey: '^', longLabel: '^' },
-    { label: '7', key: '7', shiftKey: '&', longKey: '&', longLabel: '&' },
-    { label: '8', key: '8', shiftKey: '*', longKey: '*', longLabel: '*' },
-    { label: '9', key: '9', shiftKey: '(', longKey: '(', longLabel: '(' },
-    { label: '0', key: '0', shiftKey: ')', longKey: ')', longLabel: ')' },
-    { label: '-', key: '-', shiftKey: '_', longKey: '_', longLabel: '_' },
-    { label: '=', key: '=', shiftKey: '+', longKey: '+', longLabel: '+' },
-    { label: '⌫', key: '\x7f', width: 1.5, type: 'special' },
-  ],
-  // Row 2: TAB, QWERTY row, brackets, backslash
-  [
-    { label: 'TAB', key: '\t', width: 1.5, type: 'special' },
     { label: 'q', key: 'q', shiftKey: 'Q' },
     { label: 'w', key: 'w', shiftKey: 'W' },
     { label: 'e', key: 'e', shiftKey: 'E' },
@@ -43,13 +38,10 @@ const KEYBOARD_ROWS: KeyDef[][] = [
     { label: 'i', key: 'i', shiftKey: 'I' },
     { label: 'o', key: 'o', shiftKey: 'O' },
     { label: 'p', key: 'p', shiftKey: 'P' },
-    { label: '[', key: '[', shiftKey: '{', longKey: '{', longLabel: '{' },
-    { label: ']', key: ']', shiftKey: '}', longKey: '}', longLabel: '}' },
-    { label: '\\', key: '\\', shiftKey: '|', longKey: '|', longLabel: '|', width: 1.5 },
+    { label: '⌫', key: '\x7f', width: 1.5, type: 'special' },
   ],
-  // Row 3: CTRL, ASDF row, semicolon, quote, enter
+  // Row 2: ASDF row
   [
-    { label: 'CTRL', key: 'CTRL', width: 1.75, type: 'modifier' },
     { label: 'a', key: 'a', shiftKey: 'A' },
     { label: 's', key: 's', shiftKey: 'S' },
     { label: 'd', key: 'd', shiftKey: 'D' },
@@ -59,13 +51,11 @@ const KEYBOARD_ROWS: KeyDef[][] = [
     { label: 'j', key: 'j', shiftKey: 'J' },
     { label: 'k', key: 'k', shiftKey: 'K' },
     { label: 'l', key: 'l', shiftKey: 'L' },
-    { label: ';', key: ';', shiftKey: ':', longKey: ':', longLabel: ':' },
-    { label: "'", key: "'", shiftKey: '"', longKey: '"', longLabel: '"' },
-    { label: '↵', key: '\r', width: 2.25, type: 'special' },
+    { label: '↵', key: '\r', width: 1.5, type: 'special' },
   ],
-  // Row 4: SHIFT, ZXCV row, punctuation, arrow up
+  // Row 3: ZXCV row
   [
-    { label: 'SHFT', key: 'SHIFT', width: 2, type: 'modifier' },
+    { label: '⇧', key: 'SHIFT', width: 1.5, type: 'modifier' },
     { label: 'z', key: 'z', shiftKey: 'Z' },
     { label: 'x', key: 'x', shiftKey: 'X' },
     { label: 'c', key: 'c', shiftKey: 'C' },
@@ -73,32 +63,87 @@ const KEYBOARD_ROWS: KeyDef[][] = [
     { label: 'b', key: 'b', shiftKey: 'B' },
     { label: 'n', key: 'n', shiftKey: 'N' },
     { label: 'm', key: 'm', shiftKey: 'M' },
-    { label: ',', key: ',', shiftKey: '<', longKey: '<', longLabel: '<' },
+    { label: '↑', key: '\x1b[A', type: 'special' },
     { label: '.', key: '.', shiftKey: '>', longKey: '>', longLabel: '>' },
-    { label: '/', key: '/', shiftKey: '?', longKey: '?', longLabel: '?' },
-    { label: '↑', key: '\x1b[A', width: 2, type: 'special' },
   ],
-  // Row 5: ALT, space, file picker, URL extract, mode switch, arrows
+  // Row 4: Bottom row with cursors
   [
-    { label: 'ALT', key: 'ALT', width: 1.5, type: 'modifier' },
-    { label: '`', key: '`', shiftKey: '~', longKey: '~', longLabel: '~' },
-    { label: 'SPACE', key: ' ', width: 4, type: 'special' },
-    { label: '📁', key: 'FILE_PICKER', width: 1, type: 'special' },
-    { label: '🔗', key: 'URL_EXTRACT', width: 1, type: 'special' },
-    { label: 'あ', key: 'MODE_SWITCH', width: 1, type: 'special' },
+    { label: '123', key: 'LAYER_NUM', width: 1.5, type: 'layer' },
+    { label: 'CTRL', key: 'CTRL', type: 'modifier' },
+    { label: 'ALT', key: 'ALT', type: 'modifier' },
+    { label: '', key: ' ', width: 3, type: 'special' },  // Space bar
+    { label: ',', key: ',', shiftKey: '<', longKey: '<', longLabel: '<' },
+    { label: '/', key: '/', shiftKey: '?', longKey: '?', longLabel: '?' },
     { label: '←', key: '\x1b[D', type: 'special' },
     { label: '↓', key: '\x1b[B', type: 'special' },
     { label: '→', key: '\x1b[C', type: 'special' },
   ],
 ];
 
+// Numbers and symbols layer
+const NUM_ROWS: KeyDef[][] = [
+  // Row 1: Numbers
+  [
+    { label: '1', key: '1', shiftKey: '!' },
+    { label: '2', key: '2', shiftKey: '@' },
+    { label: '3', key: '3', shiftKey: '#' },
+    { label: '4', key: '4', shiftKey: '$' },
+    { label: '5', key: '5', shiftKey: '%' },
+    { label: '6', key: '6', shiftKey: '^' },
+    { label: '7', key: '7', shiftKey: '&' },
+    { label: '8', key: '8', shiftKey: '*' },
+    { label: '9', key: '9', shiftKey: '(' },
+    { label: '0', key: '0', shiftKey: ')' },
+    { label: '⌫', key: '\x7f', width: 1.5, type: 'special' },
+  ],
+  // Row 2: Symbols
+  [
+    { label: '-', key: '-', shiftKey: '_' },
+    { label: '=', key: '=', shiftKey: '+' },
+    { label: '[', key: '[', shiftKey: '{' },
+    { label: ']', key: ']', shiftKey: '}' },
+    { label: '\\', key: '\\', shiftKey: '|' },
+    { label: ';', key: ';', shiftKey: ':' },
+    { label: "'", key: "'", shiftKey: '"' },
+    { label: '`', key: '`', shiftKey: '~' },
+    { label: '↵', key: '\r', width: 1.5, type: 'special' },
+  ],
+  // Row 3: Shift symbols
+  [
+    { label: '⇧', key: 'SHIFT', width: 1.5, type: 'modifier' },
+    { label: '!', key: '!' },
+    { label: '@', key: '@' },
+    { label: '#', key: '#' },
+    { label: '$', key: '$' },
+    { label: '%', key: '%' },
+    { label: '^', key: '^' },
+    { label: '&', key: '&' },
+    { label: '↑', key: '\x1b[A', type: 'special' },
+    { label: '*', key: '*' },
+  ],
+  // Row 4: Bottom with cursors
+  [
+    { label: 'ABC', key: 'LAYER_MAIN', width: 1.5, type: 'layer' },
+    { label: 'CTRL', key: 'CTRL', type: 'modifier' },
+    { label: 'ALT', key: 'ALT', type: 'modifier' },
+    { label: '', key: ' ', width: 3, type: 'special' },
+    { label: '(', key: '(' },
+    { label: ')', key: ')' },
+    { label: '←', key: '\x1b[D', type: 'special' },
+    { label: '↓', key: '\x1b[B', type: 'special' },
+    { label: '→', key: '\x1b[C', type: 'special' },
+  ],
+];
+
+type Layer = 'main' | 'num';
+
 interface KeyboardProps {
   onSend: (char: string) => void;
   onFilePicker?: () => void;
   onUrlExtract?: () => void;
   onModeSwitch?: () => void;
-  isUploading?: boolean;  // Show uploading state on file picker
-  compact?: boolean;  // Compact mode for tablet
+  isUploading?: boolean;
+  compact?: boolean;
   className?: string;
 }
 
@@ -111,6 +156,7 @@ export function Keyboard({
   compact = false,
   className = ''
 }: KeyboardProps) {
+  const [layer, setLayer] = useState<Layer>('main');
   const [ctrlPressed, setCtrlPressed] = useState(false);
   const [altPressed, setAltPressed] = useState(false);
   const [shiftPressed, setShiftPressed] = useState(false);
@@ -119,8 +165,23 @@ export function Keyboard({
   const longPressTimerRef = useRef<number | null>(null);
   const longPressFiredRef = useRef(false);
 
+  // Get current keyboard rows based on layer
+  const getCurrentRows = (): KeyDef[][] => {
+    switch (layer) {
+      case 'num': return NUM_ROWS;
+      default: return MAIN_ROWS;
+    }
+  };
+
   // Send keyboard key with modifiers
   const sendKeyPress = useCallback((keyDef: KeyDef) => {
+    // Handle layer switching
+    if (keyDef.type === 'layer') {
+      if (keyDef.key === 'LAYER_MAIN') setLayer('main');
+      else if (keyDef.key === 'LAYER_NUM') setLayer('num');
+      return;
+    }
+
     // Handle modifier keys
     if (keyDef.type === 'modifier') {
       if (keyDef.key === 'CTRL') {
@@ -130,6 +191,13 @@ export function Keyboard({
       } else if (keyDef.key === 'SHIFT') {
         setShiftPressed(!shiftPressed);
       }
+      return;
+    }
+
+    // Handle Shift+Enter for multiline input (send backslash + enter)
+    if (shiftPressed && keyDef.key === '\r') {
+      onSend('\\\r');  // Backslash + Enter for line continuation
+      setShiftPressed(false);
       return;
     }
 
@@ -157,13 +225,12 @@ export function Keyboard({
     }
 
     onSend(char);
-  }, [ctrlPressed, altPressed, shiftPressed, onSend]);
+  }, [ctrlPressed, altPressed, shiftPressed, onSend, layer]);
 
   // Handle long press for alternative characters
   const sendLongPress = useCallback((keyDef: KeyDef) => {
     if (keyDef.longKey) {
       onSend(keyDef.longKey);
-      // Reset modifiers
       setCtrlPressed(false);
       setAltPressed(false);
       setShiftPressed(false);
@@ -205,7 +272,7 @@ export function Keyboard({
     };
 
     // Determine display label based on shift state
-    const displayLabel = keyDef.type === 'modifier' || keyDef.type === 'special'
+    const displayLabel = keyDef.type === 'modifier' || keyDef.type === 'special' || keyDef.type === 'layer' || keyDef.type === 'action'
       ? keyDef.label
       : shiftPressed && keyDef.shiftKey
         ? keyDef.shiftKey
@@ -222,8 +289,19 @@ export function Keyboard({
 
     // Large icon for Enter key
     const isEnterKey = keyDef.label === '↵';
+    const isSpaceKey = keyDef.key === ' ' && keyDef.type === 'special';
 
-    // SVG Enter icon - properly centered
+    // Get background color
+    const getBgColor = () => {
+      if (isActive) return 'bg-blue-600';
+      if (keyDef.color === 'green') return 'bg-green-700 active:bg-green-600';
+      if (keyDef.color === 'red') return 'bg-red-700 active:bg-red-600';
+      if (keyDef.color === 'blue') return 'bg-blue-700 active:bg-blue-600';
+      if (keyDef.type === 'layer') return 'bg-gray-700';
+      return 'bg-gray-800';
+    };
+
+    // SVG Enter icon
     const EnterIcon = () => (
       <svg
         viewBox="0 0 20 20"
@@ -251,12 +329,12 @@ export function Keyboard({
         className={`
           ${compact ? 'py-2 text-sm' : 'py-3 text-base'} text-white font-medium active:bg-gray-600 select-none relative
           border border-gray-700 rounded m-0.5 flex items-center justify-center
-          ${isActive ? 'bg-blue-600' : 'bg-gray-800'}
-          ${keyDef.type === 'modifier' ? 'text-sm' : ''}
+          ${getBgColor()}
+          ${keyDef.type === 'modifier' || keyDef.type === 'layer' ? 'text-xs' : ''}
         `}
         style={{ flex: width, minWidth: 0 }}
       >
-        {isEnterKey ? <EnterIcon /> : displayLabel}
+        {isEnterKey ? <EnterIcon /> : isSpaceKey ? '' : displayLabel}
         {keyDef.longLabel && !shiftPressed && !isEnterKey && (
           <span className={`absolute top-0.5 right-1 ${compact ? 'text-[7px]' : 'text-[9px]'} text-gray-500`}>{keyDef.longLabel}</span>
         )}
@@ -264,50 +342,67 @@ export function Keyboard({
     );
   };
 
+  // Action button component
+  const ActionButton = ({ keyDef }: { keyDef: KeyDef }) => {
+    const handleClick = () => {
+      if (keyDef.key === 'FILE_PICKER') {
+        onFilePicker?.();
+      } else if (keyDef.key === 'URL_EXTRACT') {
+        onUrlExtract?.();
+      } else if (keyDef.key === 'MODE_SWITCH') {
+        onModeSwitch?.();
+      } else {
+        onSend(keyDef.key);
+      }
+    };
+
+    const getBgColor = () => {
+      if (keyDef.color === 'green') return 'bg-green-700 active:bg-green-600';
+      if (keyDef.color === 'red') return 'bg-red-700 active:bg-red-600';
+      return 'bg-gray-700 active:bg-gray-600';
+    };
+
+    const width = keyDef.width || 1;
+
+    // Handle uploading state for file picker
+    if (keyDef.key === 'FILE_PICKER' && isUploading) {
+      return (
+        <button
+          disabled
+          className={`${compact ? 'py-1.5 text-xs' : 'py-2 text-sm'} font-medium select-none border border-gray-700 rounded m-0.5 text-center bg-gray-600 text-gray-400`}
+          style={{ flex: width, minWidth: 0 }}
+        >
+          ⏳
+        </button>
+      );
+    }
+
+    return (
+      <button
+        onClick={handleClick}
+        onContextMenu={(e) => e.preventDefault()}
+        className={`${compact ? 'py-1.5 text-xs' : 'py-2 text-sm'} font-medium select-none border border-gray-700 rounded m-0.5 text-center text-white ${getBgColor()}`}
+        style={{ flex: width, minWidth: 0 }}
+      >
+        {keyDef.label}
+      </button>
+    );
+  };
+
   return (
     <div className={`bg-black px-0.5 pb-1 ${className}`}>
-      {KEYBOARD_ROWS.map((row, rowIndex) => (
+      {/* Action bar */}
+      <div className="flex mb-0.5">
+        {ACTION_BAR.map((keyDef, index) => (
+          <ActionButton key={index} keyDef={keyDef} />
+        ))}
+      </div>
+
+      {/* Main keyboard */}
+      {getCurrentRows().map((row, rowIndex) => (
         <div key={rowIndex} className="flex">
           {row.map((keyDef, keyIndex) => (
-            keyDef.key === 'MODE_SWITCH' ? (
-              // Mode switch key
-              <button
-                key={`${rowIndex}-${keyIndex}`}
-                onClick={onModeSwitch}
-                onContextMenu={(e) => e.preventDefault()}
-                className={`${compact ? 'py-2 text-sm' : 'py-3 text-base'} text-white font-medium bg-gray-800 active:bg-gray-600 select-none border border-gray-700 rounded m-0.5 text-center`}
-                style={{ flex: keyDef.width || 1, minWidth: 0 }}
-              >
-                あ
-              </button>
-            ) : keyDef.key === 'FILE_PICKER' ? (
-              // File picker button
-              <button
-                key={`${rowIndex}-${keyIndex}`}
-                onClick={onFilePicker}
-                onContextMenu={(e) => e.preventDefault()}
-                disabled={isUploading}
-                className={`${compact ? 'py-2 text-sm' : 'py-3 text-base'} font-medium select-none border border-gray-700 rounded m-0.5 text-center ${
-                  isUploading ? 'bg-gray-600 text-gray-400' : 'bg-gray-800 text-white active:bg-gray-600'
-                }`}
-                style={{ flex: keyDef.width || 1, minWidth: 0 }}
-              >
-                {isUploading ? '⏳' : '📁'}
-              </button>
-            ) : keyDef.key === 'URL_EXTRACT' ? (
-              // URL extract button
-              <button
-                key={`${rowIndex}-${keyIndex}`}
-                onClick={onUrlExtract}
-                onContextMenu={(e) => e.preventDefault()}
-                className={`${compact ? 'py-2 text-sm' : 'py-3 text-base'} font-medium select-none border border-gray-700 rounded m-0.5 text-center bg-gray-800 text-white active:bg-gray-600`}
-                style={{ flex: keyDef.width || 1, minWidth: 0 }}
-              >
-                🔗
-              </button>
-            ) : (
-              <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />
-            )
+            <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />
           ))}
         </div>
       ))}

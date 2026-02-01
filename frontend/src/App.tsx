@@ -115,6 +115,36 @@ export function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Handle browser back navigation - return to terminal from overlays
+  useEffect(() => {
+    const handlePopState = () => {
+      // Close any open overlays and return to terminal
+      if (showSessionList) {
+        setShowSessionList(false);
+        window.history.pushState({ view: 'terminal' }, '', window.location.href);
+      } else if (showFileViewer) {
+        setShowFileViewer(false);
+        window.history.pushState({ view: 'terminal' }, '', window.location.href);
+      } else if (showConversation) {
+        setShowConversation(false);
+        window.history.pushState({ view: 'terminal' }, '', window.location.href);
+      } else {
+        // Already at terminal, prevent leaving the app
+        window.history.pushState({ view: 'terminal' }, '', window.location.href);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [showSessionList, showFileViewer, showConversation]);
+
+  // Push history state when opening overlays
+  useEffect(() => {
+    if (showSessionList || showFileViewer || showConversation) {
+      window.history.pushState({ view: 'overlay' }, '', window.location.href);
+    }
+  }, [showSessionList, showFileViewer, showConversation]);
+
   // On mount, fetch sessions and restore from localStorage
   useEffect(() => {
     const fetchAndOpenSession = async () => {
@@ -299,15 +329,6 @@ export function App() {
     );
   }, []);
 
-  // Fullscreen toggle (must be before early returns)
-  const handleFullscreen = useCallback(() => {
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    } else {
-      document.documentElement.requestFullscreen();
-    }
-  }, []);
-
   // Reload current session (must be before early returns)
   const handleReload = useCallback(() => {
     if (activeSessionId) {
@@ -350,14 +371,13 @@ export function App() {
     }
   }, [openSessions, activeSessionId, fetchConversation]);
 
-  // Auto-hide overlay after 3 seconds
+  // Keep overlay visible (no auto-hide)
   const startOverlayTimer = useCallback(() => {
+    // Disabled: keep overlay always visible
     if (overlayTimeoutRef.current) {
       clearTimeout(overlayTimeoutRef.current);
+      overlayTimeoutRef.current = null;
     }
-    overlayTimeoutRef.current = window.setTimeout(() => {
-      setShowOverlay(false);
-    }, 3000);
   }, []);
 
   // Show overlay and restart timer
@@ -421,18 +441,7 @@ export function App() {
         showOverlay ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}
     >
-      {/* Left: Fullscreen button */}
-      <button
-        onClick={handleFullscreen}
-        className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-        title="フルスクリーン"
-      >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-        </svg>
-      </button>
-
-      {/* Center: Session name */}
+      {/* Left: Session name */}
       <span className="text-white/70 text-sm truncate max-w-[150px]">
         {activeSession?.name || '-'}
       </span>

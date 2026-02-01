@@ -19,12 +19,16 @@ export interface UsageLimits {
     resetsAt: string;
     timeRemaining: string;
     estimatedHitTime?: string; // When limit will be hit at current rate
+    status: 'safe' | 'warning' | 'danger' | 'exceeded'; // Overall status
+    statusMessage: string; // Human-readable message
   };
   sevenDay: {
     utilization: number;
     resetsAt: string;
     timeRemaining: string;
     estimatedHitTime?: string;
+    status: 'safe' | 'warning' | 'danger' | 'exceeded';
+    statusMessage: string;
   };
 }
 
@@ -68,24 +72,70 @@ export class AnthropicUsageService {
 
       const data: UsageResponse = await response.json();
 
+      const fiveHourEstimate = this.estimateHitTime(data.five_hour.utilization, data.five_hour.resets_at, 5);
+      const sevenDayEstimate = this.estimateHitTime(data.seven_day.utilization, data.seven_day.resets_at, 7 * 24);
+
       return {
         fiveHour: {
           utilization: data.five_hour.utilization,
           resetsAt: data.five_hour.resets_at,
           timeRemaining: this.formatTimeRemaining(data.five_hour.resets_at),
-          estimatedHitTime: this.estimateHitTime(data.five_hour.utilization, data.five_hour.resets_at, 5),
+          estimatedHitTime: fiveHourEstimate,
+          ...this.calculateStatus(data.five_hour.utilization, fiveHourEstimate, this.formatTimeRemaining(data.five_hour.resets_at)),
         },
         sevenDay: {
           utilization: data.seven_day.utilization,
           resetsAt: data.seven_day.resets_at,
           timeRemaining: this.formatTimeRemaining(data.seven_day.resets_at),
-          estimatedHitTime: this.estimateHitTime(data.seven_day.utilization, data.seven_day.resets_at, 7 * 24),
+          estimatedHitTime: sevenDayEstimate,
+          ...this.calculateStatus(data.seven_day.utilization, sevenDayEstimate, this.formatTimeRemaining(data.seven_day.resets_at)),
         },
       };
     } catch (err) {
       console.error('Error fetching usage:', err);
       return null;
     }
+  }
+
+  /**
+   * Calculate status and message based on utilization and estimated hit time
+   */
+  private calculateStatus(
+    utilization: number,
+    estimatedHitTime: string | undefined,
+    timeRemaining: string
+  ): { status: 'safe' | 'warning' | 'danger' | 'exceeded'; statusMessage: string } {
+    if (utilization >= 100) {
+      return { status: 'exceeded', statusMessage: 'リミット到達中' };
+    }
+
+    if (estimatedHitTime) {
+      // Will hit limit before reset
+      return {
+        status: 'danger',
+        statusMessage: `このペースで${estimatedHitTime}後にリミット到達`,
+      };
+    }
+
+    // Won't hit limit before reset
+    if (utilization >= 75) {
+      return {
+        status: 'warning',
+        statusMessage: `余裕あり（リセットまで${timeRemaining}）`,
+      };
+    }
+
+    if (utilization >= 50) {
+      return {
+        status: 'safe',
+        statusMessage: `順調（リセットまで${timeRemaining}）`,
+      };
+    }
+
+    return {
+      status: 'safe',
+      statusMessage: `余裕十分（リセットまで${timeRemaining}）`,
+    };
   }
 
   private formatTimeRemaining(resetsAt: string): string {

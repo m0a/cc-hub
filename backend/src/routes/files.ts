@@ -1,4 +1,6 @@
 import { Hono } from 'hono';
+import { readFile } from 'node:fs/promises';
+import { join, basename } from 'node:path';
 import { FileService } from '../services/file-service';
 import { FileChangeTracker } from '../services/file-change-tracker';
 import type { FileListResponse, FileReadResponse, FileChangesResponse } from '../../../shared/types';
@@ -122,4 +124,42 @@ files.get('/language', async (c) => {
   const isText = fileService.isTextFile(path);
 
   return c.json({ language, isImage, isText });
+});
+
+/**
+ * GET /files/images/:filename - Serve conversation images
+ * Only serves images from /tmp/cchub-images/ for security
+ */
+const IMAGES_DIR = '/tmp/cchub-images';
+
+files.get('/images/:filename', async (c) => {
+  const filename = c.req.param('filename');
+
+  // Security: only allow alphanumeric, dash, dot for filename
+  if (!filename || !/^[\w\-.]+\.(png|jpg|jpeg|gif|webp)$/i.test(filename)) {
+    return c.json({ error: 'Invalid filename' }, 400);
+  }
+
+  const filePath = join(IMAGES_DIR, basename(filename));
+
+  try {
+    const data = await readFile(filePath);
+    const ext = filename.split('.').pop()?.toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      png: 'image/png',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      gif: 'image/gif',
+      webp: 'image/webp',
+    };
+
+    return new Response(data, {
+      headers: {
+        'Content-Type': mimeTypes[ext || 'png'] || 'application/octet-stream',
+        'Cache-Control': 'public, max-age=86400',
+      },
+    });
+  } catch {
+    return c.json({ error: 'Image not found' }, 404);
+  }
 });

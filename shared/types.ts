@@ -215,6 +215,8 @@ export interface UsageCycleInfo {
   resetsAt: string;
   timeRemaining: string;
   estimatedHitTime?: string; // When limit will be hit at current rate
+  status?: 'safe' | 'warning' | 'danger' | 'exceeded'; // Overall status
+  statusMessage?: string; // Human-readable prediction message
 }
 
 export interface UsageLimits {
@@ -260,6 +262,8 @@ export interface HistorySession {
   durationMinutes?: number;
   messageCount?: number;
   gitBranch?: string;
+  // For session matching with active sessions
+  firstMessageUuid?: string;
 }
 
 export interface HistorySessionsResponse {

@@ -1,5 +1,17 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState, useMemo } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { ConversationMessage } from '../../../shared/types';
+
+const API_BASE = import.meta.env.VITE_API_URL || '';
+
+// Convert [Image: source: /tmp/cchub-images/xxx.png] to actual image
+function processImageReferences(content: string): string {
+  return content.replace(
+    /\[Image: source: \/tmp\/cchub-images\/([^\]]+)\]/g,
+    (_, filename) => `![Screenshot](${API_BASE}/api/files/images/${filename})`
+  );
+}
 
 interface ConversationViewerProps {
   title: string;
@@ -27,13 +39,18 @@ export function ConversationViewer({
   onRefresh,
 }: ConversationViewerProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [prevMessageCount, setPrevMessageCount] = useState(0);
 
-  // Scroll to bottom when messages load and scrollToBottom is enabled
+  // Scroll to bottom only when NEW messages are added (not on every refresh)
   useEffect(() => {
     if (scrollToBottom && messages.length > 0 && !isLoading) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+      // Only scroll if message count increased (new message added)
+      if (messages.length > prevMessageCount) {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+      }
+      setPrevMessageCount(messages.length);
     }
-  }, [messages, isLoading, scrollToBottom]);
+  }, [messages, isLoading, scrollToBottom, prevMessageCount]);
 
   // Auto-refresh when session is active (silently in background)
   useEffect(() => {
@@ -78,8 +95,64 @@ export function ConversationViewer({
                 <div className="text-xs text-gray-400 mb-1">
                   {msg.role === 'user' ? 'You' : 'Claude'}
                 </div>
-                <div className="text-sm text-gray-200 whitespace-pre-wrap break-words">
-                  {msg.content}
+                <div className="text-sm text-gray-200 markdown-content">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      pre: ({ children }) => (
+                        <pre className="bg-gray-900 p-2 rounded overflow-x-auto my-2 text-xs">
+                          {children}
+                        </pre>
+                      ),
+                      code: ({ children, className }) => {
+                        const isBlock = className?.includes('language-');
+                        return isBlock ? (
+                          <code className="text-green-300">{children}</code>
+                        ) : (
+                          <code className="bg-gray-700 px-1 rounded text-blue-300">{children}</code>
+                        );
+                      },
+                      p: ({ children }) => <p className="my-1">{children}</p>,
+                      ul: ({ children }) => <ul className="list-disc ml-4 my-1">{children}</ul>,
+                      ol: ({ children }) => <ol className="list-decimal ml-4 my-1">{children}</ol>,
+                      li: ({ children }) => <li className="my-0.5">{children}</li>,
+                      h1: ({ children }) => <h1 className="text-lg font-bold my-2">{children}</h1>,
+                      h2: ({ children }) => <h2 className="text-base font-bold my-2">{children}</h2>,
+                      h3: ({ children }) => <h3 className="text-sm font-bold my-1">{children}</h3>,
+                      strong: ({ children }) => <strong className="font-bold text-white">{children}</strong>,
+                      a: ({ href, children }) => (
+                        <a href={href} className="text-blue-400 underline" target="_blank" rel="noopener noreferrer">
+                          {children}
+                        </a>
+                      ),
+                      blockquote: ({ children }) => (
+                        <blockquote className="border-l-2 border-gray-500 pl-2 my-2 text-gray-400">
+                          {children}
+                        </blockquote>
+                      ),
+                      table: ({ children }) => (
+                        <div className="overflow-x-auto my-2">
+                          <table className="min-w-full text-xs border border-gray-600">{children}</table>
+                        </div>
+                      ),
+                      th: ({ children }) => (
+                        <th className="border border-gray-600 px-2 py-1 bg-gray-700">{children}</th>
+                      ),
+                      td: ({ children }) => (
+                        <td className="border border-gray-600 px-2 py-1">{children}</td>
+                      ),
+                      img: ({ src, alt }) => (
+                        <img
+                          src={src}
+                          alt={alt || 'Screenshot'}
+                          className="max-w-full h-auto rounded my-2 border border-gray-600"
+                          loading="lazy"
+                        />
+                      ),
+                    }}
+                  >
+                    {processImageReferences(msg.content)}
+                  </ReactMarkdown>
                 </div>
               </div>
             ))}

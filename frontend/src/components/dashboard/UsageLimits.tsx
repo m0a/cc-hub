@@ -8,46 +8,50 @@ function ProgressBar({
   label,
   utilization,
   timeRemaining,
-  estimatedHitTime,
+  status,
+  statusMessage,
 }: {
   label: string;
   utilization: number;
   timeRemaining: string;
-  estimatedHitTime?: string;
+  status: 'safe' | 'warning' | 'danger' | 'exceeded';
+  statusMessage: string;
 }) {
-  const getBarColor = (pct: number) => {
-    if (pct >= 90) return 'bg-red-500';
-    if (pct >= 75) return 'bg-yellow-500';
-    if (pct >= 50) return 'bg-blue-500';
-    return 'bg-green-500';
+  const getBarColor = () => {
+    switch (status) {
+      case 'exceeded': return 'bg-red-600';
+      case 'danger': return 'bg-red-500';
+      case 'warning': return 'bg-yellow-500';
+      default: return 'bg-green-500';
+    }
   };
 
-  const getTextColor = (pct: number) => {
-    if (pct >= 90) return 'text-red-400';
-    if (pct >= 75) return 'text-yellow-400';
-    return 'text-gray-300';
+  const getStatusColor = () => {
+    switch (status) {
+      case 'exceeded': return 'text-red-400';
+      case 'danger': return 'text-red-400';
+      case 'warning': return 'text-yellow-400';
+      default: return 'text-green-400';
+    }
   };
 
   return (
     <div className="mb-3">
       <div className="flex justify-between text-xs mb-1">
         <span className="text-gray-300">{label}</span>
-        <span className={getTextColor(utilization)}>
+        <span className="text-gray-300">
           {utilization.toFixed(0)}%
-          <span className="text-gray-500 ml-1">({timeRemaining})</span>
         </span>
       </div>
       <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
         <div
-          className={`h-full ${getBarColor(utilization)} transition-all duration-300`}
+          className={`h-full ${getBarColor()} transition-all duration-300`}
           style={{ width: `${Math.min(100, utilization)}%` }}
         />
       </div>
-      {estimatedHitTime && (
-        <div className="text-[10px] text-orange-400 mt-0.5">
-          このペースで約{estimatedHitTime}後にリミット到達
-        </div>
-      )}
+      <div className={`text-[10px] mt-0.5 ${getStatusColor()}`}>
+        {statusMessage}
+      </div>
     </div>
   );
 }
@@ -69,14 +73,16 @@ export function UsageLimits({ data }: UsageLimitsProps) {
         label="5-Hour Cycle"
         utilization={data.fiveHour.utilization}
         timeRemaining={data.fiveHour.timeRemaining}
-        estimatedHitTime={data.fiveHour.estimatedHitTime}
+        status={data.fiveHour.status || 'safe'}
+        statusMessage={data.fiveHour.statusMessage || `リセットまで${data.fiveHour.timeRemaining}`}
       />
 
       <ProgressBar
         label="7-Day Cycle"
         utilization={data.sevenDay.utilization}
         timeRemaining={data.sevenDay.timeRemaining}
-        estimatedHitTime={data.sevenDay.estimatedHitTime}
+        status={data.sevenDay.status || 'safe'}
+        statusMessage={data.sevenDay.statusMessage || `リセットまで${data.sevenDay.timeRemaining}`}
       />
     </div>
   );

@@ -245,22 +245,22 @@ export function DesktopLayout({
 
       if (!modifier) return;
 
-      // Ctrl/Cmd + Shift + D: Vertical split
-      if (e.shiftKey && e.key.toLowerCase() === 'd') {
+      // Ctrl/Cmd + D: Vertical split (right)
+      if (!e.shiftKey && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         handleSplit('horizontal');
         return;
       }
 
-      // Ctrl/Cmd + Shift + E: Horizontal split
-      if (e.shiftKey && e.key.toLowerCase() === 'e') {
+      // Ctrl/Cmd + Shift + D: Horizontal split (bottom)
+      if (e.shiftKey && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         handleSplit('vertical');
         return;
       }
 
-      // Ctrl/Cmd + Shift + W: Close pane
-      if (e.shiftKey && e.key.toLowerCase() === 'w') {
+      // Ctrl/Cmd + W: Close pane
+      if (!e.shiftKey && e.key.toLowerCase() === 'w') {
         e.preventDefault();
         handleClosePane();
         return;
@@ -411,7 +411,7 @@ export function DesktopLayout({
             <button
               onClick={() => handleSplit('horizontal')}
               className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-              title="縦分割 (Ctrl+Shift+D)"
+              title="縦分割 (Ctrl+D)"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                 <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -421,7 +421,7 @@ export function DesktopLayout({
             <button
               onClick={() => handleSplit('vertical')}
               className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-              title="横分割 (Ctrl+Shift+E)"
+              title="横分割 (Ctrl+Shift+D)"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                 <rect x="3" y="3" width="18" height="18" rx="2" />

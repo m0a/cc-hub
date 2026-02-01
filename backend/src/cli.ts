@@ -2,6 +2,10 @@
 
 const VERSION = '0.0.4';
 
+// 開発モード判定（bun run --watch で実行されている場合）
+const isDev = process.argv.some(arg => arg.includes('--watch'));
+const DEFAULT_PORT = isDev ? 3000 : 5923;
+
 interface CliOptions {
   command: 'serve' | 'setup' | 'update' | 'status' | 'help' | 'version';
   port: number;
@@ -22,7 +26,7 @@ CC Hub v${VERSION} - Claude Code セッションマネージャー
   cchub status                 サービス状態確認
 
 オプション:
-  -p, --port <port>      ポート番号 (デフォルト: 5923)
+  -p, --port <port>      ポート番号 (デフォルト: 本番5923/開発3000)
   -H, --host <host>      バインドアドレス (デフォルト: 0.0.0.0)
   -P, --password <pass>  認証パスワード
 
@@ -35,7 +39,7 @@ updateオプション:
   -v, --version          バージョンを表示
 
 例:
-  cchub                      サーバー起動（ポート5923）
+  cchub                      サーバー起動（本番: 5923）
   cchub -p 8080 -P secret    ポート8080、パスワード付きで起動
   cchub setup -P secret      systemdに登録
   cchub update               最新版に更新
@@ -49,7 +53,7 @@ function printVersion(): void {
 export function parseArgs(args: string[]): CliOptions {
   const options: CliOptions = {
     command: 'serve',
-    port: 5923,
+    port: DEFAULT_PORT,
     host: '0.0.0.0',
   };
 

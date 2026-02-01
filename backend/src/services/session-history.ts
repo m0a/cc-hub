@@ -500,10 +500,29 @@ export class SessionHistoryService {
             }
           }
 
-          // Skip empty messages and meta messages
+          // Skip empty messages and internal meta messages
           if (!content) continue;
-          if (content.startsWith('<command-message>')) continue;
           if (content.startsWith('<system-reminder>')) continue;
+          if (content.startsWith('<local-command-caveat>')) continue;
+
+          // Format command-related messages for readability
+          content = content
+            .replace(/<command-name>([^<]*)<\/command-name>/g, '📌 コマンド: $1')
+            .replace(/<command-message>([^<]*)<\/command-message>/g, '$1')
+            .replace(/<command-args>([^<]*)<\/command-args>/g, '')
+            .replace(/<local-command-stdout>([^<]*)<\/local-command-stdout>/g, '💬 $1')
+            .replace(/<task-notification>.*?<status>([^<]*)<\/status>.*?<summary>([^<]*)<\/summary>.*?<\/task-notification>.*/gs, '⚙️ タスク ($1): $2')
+            .replace(/<bash-notification>.*?<status>([^<]*)<\/status>.*?<summary>([^<]*)<\/summary>.*/gs, '🖥️ バックグラウンド ($1): $2')
+            .replace(/<bash-input>([^<]*)<\/bash-input>/g, '⌨️ 入力: $1')
+            // Handle incomplete notification fragments
+            .replace(/<status>([^<]*)<\/status>/g, '[$1]')
+            .replace(/<summary>([^<]*)<\/summary>/g, '$1')
+            .replace(/<task-id>[^<]*<\/task-id>/g, '')
+            .replace(/<output-file>[^<]*<\/output-file>/g, '')
+            .replace(/<shell-id>[^<]*<\/shell-id>/g, '')
+            // Remove terminal escape sequences
+            .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
+            .replace(/\[\?[0-9]+[hl]/g, '');
 
           // Clean up long system prompts
           if (content.length > 2000) {

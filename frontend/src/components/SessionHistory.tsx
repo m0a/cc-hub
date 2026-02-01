@@ -369,6 +369,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
           onClose={() => setSelectedSession(null)}
           onResume={() => handleResume(selectedSession)}
           isResuming={resumingId === selectedSession.sessionId}
+          scrollToBottom={true}
         />
       )}
     </div>

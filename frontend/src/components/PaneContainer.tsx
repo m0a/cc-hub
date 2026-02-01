@@ -96,6 +96,8 @@ function TerminalPane({
   const [showConversation, setShowConversation] = useState(false);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [currentCcSessionId, setCurrentCcSessionId] = useState<string | null>(null);
+  const [isClaudeRunning, setIsClaudeRunning] = useState(false);
 
   // Register terminal ref
   useEffect(() => {
@@ -120,14 +122,33 @@ function TerminalPane({
   }, [sessionId, onSessionStateChange]);
 
   const session = sessionId ? sessions.find(s => s.id === sessionId) : null;
-  const ccSessionId = session?.ccSessionId;
-  const isClaudeRunning = session?.currentCommand === 'claude';
 
-  // Fetch conversation when showing
-  const fetchConversation = useCallback(async () => {
-    if (!ccSessionId) return;
+  // Fetch fresh session info from API to get current ccSessionId
+  const fetchSessionInfo = useCallback(async () => {
+    if (!sessionId) return null;
     try {
-      const response = await fetch(`${API_BASE}/api/sessions/history/${ccSessionId}/conversation`);
+      const response = await fetch(`${API_BASE}/api/sessions`);
+      if (response.ok) {
+        const data = await response.json();
+        const freshSession = data.sessions.find((s: ExtendedSession) => s.id === sessionId);
+        if (freshSession) {
+          setCurrentCcSessionId(freshSession.ccSessionId || null);
+          setIsClaudeRunning(freshSession.currentCommand === 'claude');
+          return freshSession.ccSessionId || null;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch session info:', err);
+    }
+    return null;
+  }, [sessionId]);
+
+  // Fetch conversation using fresh ccSessionId
+  const fetchConversation = useCallback(async (ccId?: string) => {
+    const targetCcSessionId = ccId || currentCcSessionId;
+    if (!targetCcSessionId) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/sessions/history/${targetCcSessionId}/conversation`);
       if (response.ok) {
         const data = await response.json();
         setMessages(data.messages || []);
@@ -135,26 +156,32 @@ function TerminalPane({
     } catch (err) {
       console.error('Failed to fetch conversation:', err);
     }
-  }, [ccSessionId]);
-
-  // Load conversation when toggle is switched on
-  useEffect(() => {
-    if (showConversation && ccSessionId) {
-      setIsLoadingMessages(true);
-      fetchConversation().finally(() => setIsLoadingMessages(false));
-    }
-  }, [showConversation, ccSessionId, fetchConversation]);
+  }, [currentCcSessionId]);
 
   // Reset conversation state when session changes
   useEffect(() => {
     setShowConversation(false);
     setMessages([]);
+    setCurrentCcSessionId(null);
   }, [sessionId]);
 
-  const handleToggleConversation = useCallback((e: React.MouseEvent) => {
+  // Handle toggle - fetch fresh session info first
+  const handleToggleConversation = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!showConversation) {
+      // Opening conversation - fetch fresh data
+      setIsLoadingMessages(true);
+      const freshCcSessionId = await fetchSessionInfo();
+      if (freshCcSessionId) {
+        await fetchConversation(freshCcSessionId);
+      }
+      setIsLoadingMessages(false);
+    }
     setShowConversation(prev => !prev);
-  }, []);
+  }, [showConversation, fetchSessionInfo, fetchConversation]);
+
+  // Check if we have a ccSessionId (from props or fresh fetch)
+  const hasCcSessionId = currentCcSessionId || session?.ccSessionId;
 
   return (
     <div
@@ -167,8 +194,8 @@ function TerminalPane({
           {showConversation ? '会話履歴' : (session?.name || 'セッション未選択')}
         </span>
         <div className="flex items-center gap-1">
-          {/* Conversation toggle button */}
-          {ccSessionId && (
+          {/* Conversation toggle button - show for Claude sessions */}
+          {(hasCcSessionId || session?.currentCommand === 'claude') && (
             <button
               onClick={handleToggleConversation}
               className={`p-0.5 transition-colors ${
@@ -203,7 +230,7 @@ function TerminalPane({
 
       {/* Terminal, conversation, or session selector */}
       <div className="flex-1 min-h-0">
-        {showConversation && ccSessionId ? (
+        {showConversation && currentCcSessionId ? (
           <ConversationViewer
             title="会話履歴"
             subtitle={session?.name}
@@ -213,7 +240,7 @@ function TerminalPane({
             inline={true}
             scrollToBottom={true}
             isActive={isClaudeRunning}
-            onRefresh={fetchConversation}
+            onRefresh={() => fetchConversation(currentCcSessionId || undefined)}
           />
         ) : sessionId ? (
           <TerminalComponent

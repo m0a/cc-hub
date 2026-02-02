@@ -141,7 +141,7 @@ function ProjectGroupItem({
   sessions: HistorySession[] | undefined;
   isLoading: boolean;
   onExpand: () => void;
-  onTap: (session: HistorySession) => void;
+  onTap: (session: HistorySession, projectDirName: string) => void;
   onResume: (session: HistorySession) => void;
   onNavigate: (session: HistorySession) => void;
   resumingId: string | null;
@@ -194,7 +194,7 @@ function ProjectGroupItem({
               <HistoryItem
                 key={session.sessionId}
                 session={session}
-                onTap={() => onTap(session)}
+                onTap={() => onTap(session, project.dirName)}
                 onResume={() => onResume(session)}
                 onNavigate={() => onNavigate(session)}
                 isResuming={resumingId === session.sessionId}
@@ -305,12 +305,12 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
     }
   };
 
-  const handleTap = async (session: HistorySession) => {
+  const handleTap = async (session: HistorySession, projectDirName: string) => {
     setSelectedSession(session);
     setLoadingConversation(true);
     setConversation([]);
     try {
-      const messages = await fetchConversation(session.sessionId);
+      const messages = await fetchConversation(session.sessionId, projectDirName);
       setConversation(messages);
     } finally {
       setLoadingConversation(false);

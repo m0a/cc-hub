@@ -378,9 +378,31 @@ export class SessionHistoryService {
     }
   }
 
-  async getConversation(sessionId: string): Promise<ConversationMessage[]> {
+  async getConversation(sessionId: string, projectDirName?: string): Promise<ConversationMessage[]> {
     try {
-      // Find the session file
+      // If projectDirName is provided, look directly in that directory
+      if (projectDirName) {
+        const projectDir = join(this.projectsDir, projectDirName);
+        const directPath = join(projectDir, `${sessionId}.jsonl`);
+        const messages = await this.parseJsonlFile(directPath);
+        if (messages.length > 0) {
+          return messages;
+        }
+        // Fallback: check sessions-index.json for fullPath
+        const indexPath = join(projectDir, 'sessions-index.json');
+        try {
+          const content = await readFile(indexPath, 'utf-8');
+          const index: SessionsIndex = JSON.parse(content);
+          const entry = index.entries.find(e => e.sessionId === sessionId);
+          if (entry?.fullPath) {
+            return await this.parseJsonlFile(entry.fullPath);
+          }
+        } catch {
+          // Index not found or parse error
+        }
+      }
+
+      // Fallback: search all project directories (legacy behavior)
       const projectDirs = await readdir(this.projectsDir);
 
       for (const dir of projectDirs) {

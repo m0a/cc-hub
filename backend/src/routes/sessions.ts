@@ -64,20 +64,25 @@ sessions.get('/', async (c) => {
     let ccSession: Awaited<ReturnType<typeof claudeCodeService.getSessionForPath>> | undefined;
 
     if (s.currentCommand === 'claude' && s.currentPath) {
-      // Always use path-based lookup to get the most recently modified session
-      // This handles context compaction where the session ID changes mid-session
-      const pathSession = ccSessionsByPath.get(s.currentPath);
-
       // Get the command-line session ID (from -r flag)
       const ptySessionId = sessionIdByTmuxId.get(s.id);
 
-      if (pathSession) {
-        // If path-based session differs from PTY session, prefer path-based
-        // (This happens after context compaction when a new session file is created)
-        ccSession = pathSession;
-      } else if (ptySessionId) {
-        // Fallback to PTY-based session if path lookup failed
+      if (ptySessionId) {
+        // PTY session ID is the most reliable - use it first
         ccSession = await claudeCodeService.getSessionById(ptySessionId, s.currentPath);
+      }
+
+      if (!ccSession && s.paneTty) {
+        // Try to find session by process start time (for sessions without -r flag)
+        ccSession = await claudeCodeService.getSessionByTtyStartTime(s.paneTty, s.currentPath);
+      }
+
+      if (!ccSession) {
+        // Last fallback to path-based lookup
+        const pathSession = ccSessionsByPath.get(s.currentPath);
+        if (pathSession) {
+          ccSession = pathSession;
+        }
       }
     }
 
@@ -187,7 +192,8 @@ sessions.get('/history', async (c) => {
 // GET /sessions/history/:sessionId/conversation - Get conversation history for a session
 sessions.get('/history/:sessionId/conversation', async (c) => {
   const sessionId = c.req.param('sessionId');
-  const messages = await sessionHistoryService.getConversation(sessionId);
+  const projectDirName = c.req.query('projectDirName');
+  const messages = await sessionHistoryService.getConversation(sessionId, projectDirName);
   return c.json({ messages });
 });
 

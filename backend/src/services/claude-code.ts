@@ -52,13 +52,16 @@ export class ClaudeCodeService {
 
   /**
    * Get Claude Code session ID from PTY by checking the running process
-   * Returns session ID from `-r <session-id>` argument or null
+   * Returns session ID from `-r <session-id>` argument or tries to find by process start time
    */
   async getSessionIdFromTty(tty: string): Promise<string | null> {
     try {
       // Get pts number from tty path (e.g., /dev/pts/10 -> pts/10)
       const ptsMatch = tty.match(/pts\/\d+$/);
-      if (!ptsMatch) return null;
+      if (!ptsMatch) {
+        console.log(`[getSessionIdFromTty] No pts match for tty: ${tty}`);
+        return null;
+      }
       const pts = ptsMatch[0];
 
       // Find claude process running on this PTY
@@ -69,14 +72,106 @@ export class ClaudeCodeService {
 
       const text = await new Response(proc.stdout).text();
       const exitCode = await proc.exited;
-      if (exitCode !== 0) return null;
+      if (exitCode !== 0) {
+        console.log(`[getSessionIdFromTty] ps command failed for ${pts}`);
+        return null;
+      }
 
       // Look for "claude -r <session-id>" pattern
       for (const line of text.split('\n')) {
         const match = line.match(/claude\s+-r\s+([a-f0-9-]{36})/i);
         if (match) {
+          console.log(`[getSessionIdFromTty] Found session ID ${match[1]} for ${pts}`);
           return match[1];
         }
+      }
+
+      console.log(`[getSessionIdFromTty] No -r flag found for ${pts}`);
+      return null;
+    } catch (err) {
+      console.log(`[getSessionIdFromTty] Error: ${err}`);
+      return null;
+    }
+  }
+
+  /**
+   * Get Claude Code session for a PTY by process start time
+   * Used when -r flag is not present
+   */
+  async getSessionByTtyStartTime(tty: string, workingDir: string): Promise<ClaudeCodeSession | null> {
+    try {
+      // Get pts number from tty path
+      const ptsMatch = tty.match(/pts\/\d+$/);
+      if (!ptsMatch) return null;
+      const pts = ptsMatch[0];
+
+      // Get process start time
+      const proc = Bun.spawn(['ps', '-t', pts, '-o', 'lstart=,args='], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const text = await new Response(proc.stdout).text();
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) return null;
+
+      // Find claude process line and extract start time
+      let processStartTime: Date | null = null;
+      for (const line of text.split('\n')) {
+        if (line.includes('claude') && !line.includes('-r')) {
+          // Parse date from line (format: "Sun Feb  1 18:28:29 2026 claude")
+          const dateMatch = line.match(/^([A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+\d+:\d+:\d+\s+\d+)/);
+          if (dateMatch) {
+            processStartTime = new Date(dateMatch[1]);
+            break;
+          }
+        }
+      }
+
+      if (!processStartTime) {
+        console.log(`[getSessionByTtyStartTime] No process start time found for ${pts}`);
+        return null;
+      }
+
+      console.log(`[getSessionByTtyStartTime] Process start time for ${pts}: ${processStartTime.toISOString()}`);
+
+      // Find session file modified after process start time
+      const projectName = this.pathToProjectName(workingDir);
+      const projectDir = join(this.claudeDir, projectName);
+
+      try {
+        const files = await readdir(projectDir);
+        const jsonlFiles = files.filter(f => f.endsWith('.jsonl') && !f.startsWith('agent-'));
+
+        // Get stats for all files
+        const fileStats = await Promise.all(
+          jsonlFiles.map(async (file) => {
+            try {
+              const filePath = join(projectDir, file);
+              const fileStat = await stat(filePath);
+              return { name: file, mtime: fileStat.mtimeMs, ctime: fileStat.ctimeMs };
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        // Find files modified after process start (using mtime, not ctime)
+        // This handles both new sessions and resumed sessions
+        const validStats = fileStats
+          .filter((s): s is { name: string; mtime: number; ctime: number } => s !== null)
+          .filter(s => s.mtime >= processStartTime!.getTime() - 5000) // 5s tolerance
+          .sort((a, b) => b.mtime - a.mtime); // Most recently modified first
+
+        console.log(`[getSessionByTtyStartTime] Found ${validStats.length} candidate files for ${pts}`);
+        if (validStats.length > 0) {
+          const sessionFile = validStats[0];
+          const sessionId = sessionFile.name.replace('.jsonl', '');
+          console.log(`[getSessionByTtyStartTime] Selected session ${sessionId} (mtime: ${new Date(sessionFile.mtime).toISOString()}) for ${pts}`);
+          return await this.getSessionById(sessionId, workingDir);
+        }
+      } catch {
+        // Directory doesn't exist
       }
 
       return null;
@@ -104,8 +199,15 @@ export class ClaudeCodeService {
         try {
           const entry = JSON.parse(line);
           if (entry.type === 'user' && entry.message?.content) {
-            const content = entry.message.content;
-            if (Array.isArray(content)) continue;
+            let content = entry.message.content;
+            // Handle array content (extract first text block)
+            if (Array.isArray(content)) {
+              const textBlock = content.find((block: { type: string; text?: string }) =>
+                block.type === 'text' && typeof block.text === 'string'
+              );
+              if (!textBlock?.text) continue;
+              content = textBlock.text;
+            }
             if (typeof content !== 'string' || content.length === 0) continue;
             if (content.startsWith('[Request interrupted')) continue;
             if (content.startsWith('Implement the following plan:')) continue;
@@ -235,8 +337,15 @@ export class ClaudeCodeService {
           try {
             const entry = JSON.parse(line);
             if (entry.type === 'user' && entry.message?.content) {
-              const content = entry.message.content;
-              if (Array.isArray(content)) return;
+              let content = entry.message.content;
+              // Handle array content (extract first text block)
+              if (Array.isArray(content)) {
+                const textBlock = content.find((block: { type: string; text?: string }) =>
+                  block.type === 'text' && typeof block.text === 'string'
+                );
+                if (!textBlock?.text) return;
+                content = textBlock.text;
+              }
               if (typeof content !== 'string' || content.length === 0) return;
               if (content.startsWith('[Request interrupted')) return;
               if (content.startsWith('Implement the following plan:')) {

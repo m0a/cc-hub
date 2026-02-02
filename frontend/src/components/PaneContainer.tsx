@@ -1,9 +1,20 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { TerminalComponent, type TerminalRef } from './Terminal';
 import { ConversationViewer } from './ConversationViewer';
-import type { SessionState, ConversationMessage } from '../../../shared/types';
+import { FileViewer } from './files/FileViewer';
+import { SessionList } from './SessionList';
+import { Dashboard } from './dashboard/Dashboard';
+import type { SessionState, ConversationMessage, SessionResponse } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
+const SESSION_LIST_WIDTH_KEY = 'cchub-session-list-width';
+const DEFAULT_SESSION_LIST_WIDTH = 256; // 256px = w-64
+const MIN_SESSION_LIST_WIDTH = 150;
+const MAX_SESSION_LIST_WIDTH = 500;
+const SESSION_LIST_SCALE_KEY = 'cchub-session-list-scale';
+const DEFAULT_SESSION_LIST_SCALE = 1;
+const MIN_SESSION_LIST_SCALE = 0.5;
+const MAX_SESSION_LIST_SCALE = 2;
 
 // ペインノード型定義
 export type PaneNode =
@@ -27,8 +38,11 @@ interface PaneContainerProps {
   onSelectSession: (paneId: string, sessionId?: string) => void;
   onSessionStateChange: (sessionId: string, state: SessionState) => void;
   onSplitRatioChange: (nodeId: string, ratio: number[]) => void;
+  onClosePane: (paneId: string) => void;
   sessions: ExtendedSession[];
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
+  isTablet?: boolean;
+  globalReloadKey?: number;
 }
 
 export function PaneContainer({
@@ -38,8 +52,11 @@ export function PaneContainer({
   onSelectSession,
   onSessionStateChange,
   onSplitRatioChange,
+  onClosePane,
   sessions,
   terminalRefs,
+  isTablet = false,
+  globalReloadKey = 0,
 }: PaneContainerProps) {
   if (node.type === 'terminal') {
     return (
@@ -50,23 +67,47 @@ export function PaneContainer({
         onFocus={() => onFocusPane(node.id)}
         onSelectSession={(sessionId) => onSelectSession(node.id, sessionId)}
         onSessionStateChange={onSessionStateChange}
+        onClose={() => onClosePane(node.id)}
         sessions={sessions}
         terminalRefs={terminalRefs}
+        globalReloadKey={globalReloadKey}
       />
     );
   }
 
-  // Split node
+  if (node.type === 'split') {
+    return (
+      <SplitContainer
+        node={node}
+        activePane={activePane}
+        onFocusPane={onFocusPane}
+        onSelectSession={onSelectSession}
+        onSessionStateChange={onSessionStateChange}
+        onSplitRatioChange={onSplitRatioChange}
+        onClosePane={onClosePane}
+        sessions={sessions}
+        terminalRefs={terminalRefs}
+        isTablet={isTablet}
+        globalReloadKey={globalReloadKey}
+      />
+    );
+  }
+
+  // Fallback for unknown/legacy pane types (empty, sessions, dashboard)
+  // Treat them as terminal panes with no session selected
+  const legacyNode = node as { id: string };
   return (
-    <SplitContainer
-      node={node}
-      activePane={activePane}
-      onFocusPane={onFocusPane}
-      onSelectSession={onSelectSession}
+    <TerminalPane
+      paneId={legacyNode.id}
+      sessionId={null}
+      isActive={activePane === legacyNode.id}
+      onFocus={() => onFocusPane(legacyNode.id)}
+      onSelectSession={(sessionId) => onSelectSession(legacyNode.id, sessionId)}
       onSessionStateChange={onSessionStateChange}
-      onSplitRatioChange={onSplitRatioChange}
+      onClose={() => onClosePane(legacyNode.id)}
       sessions={sessions}
       terminalRefs={terminalRefs}
+      globalReloadKey={globalReloadKey}
     />
   );
 }
@@ -78,8 +119,10 @@ interface TerminalPaneProps {
   onFocus: () => void;
   onSelectSession: (sessionId?: string) => void;
   onSessionStateChange: (sessionId: string, state: SessionState) => void;
+  onClose: () => void;
   sessions: ExtendedSession[];
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
+  globalReloadKey?: number;
 }
 
 function TerminalPane({
@@ -89,15 +132,132 @@ function TerminalPane({
   onFocus,
   onSelectSession,
   onSessionStateChange,
+  onClose,
   sessions,
   terminalRefs,
+  globalReloadKey = 0,
 }: TerminalPaneProps) {
   const terminalRef = useRef<TerminalRef>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [showConversation, setShowConversation] = useState(false);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [currentCcSessionId, setCurrentCcSessionId] = useState<string | null>(null);
   const [isClaudeRunning, setIsClaudeRunning] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [showFileViewer, setShowFileViewer] = useState(false);
+  const [showSessionList, setShowSessionList] = useState(false);
+
+  // Session list sidebar width (resizable by drag)
+  const [sessionListWidth, setSessionListWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem(SESSION_LIST_WIDTH_KEY);
+      return saved ? parseInt(saved, 10) : DEFAULT_SESSION_LIST_WIDTH;
+    } catch {
+      return DEFAULT_SESSION_LIST_WIDTH;
+    }
+  });
+  const [isDraggingSidebar, setIsDraggingSidebar] = useState(false);
+
+  // Session list scale (pinch zoom)
+  const [sessionListScale, setSessionListScale] = useState(() => {
+    try {
+      const saved = localStorage.getItem(SESSION_LIST_SCALE_KEY);
+      return saved ? parseFloat(saved) : DEFAULT_SESSION_LIST_SCALE;
+    } catch {
+      return DEFAULT_SESSION_LIST_SCALE;
+    }
+  });
+
+  // Save session list width and scale to localStorage
+  useEffect(() => {
+    localStorage.setItem(SESSION_LIST_WIDTH_KEY, String(sessionListWidth));
+  }, [sessionListWidth]);
+
+  useEffect(() => {
+    localStorage.setItem(SESSION_LIST_SCALE_KEY, String(sessionListScale));
+  }, [sessionListScale]);
+
+  // Handle sidebar resize drag
+  useEffect(() => {
+    if (!isDraggingSidebar) return;
+
+    const handleMove = (e: MouseEvent | TouchEvent) => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+      // Calculate width from right edge
+      const newWidth = rect.right - clientX;
+      setSessionListWidth(Math.max(MIN_SESSION_LIST_WIDTH, Math.min(MAX_SESSION_LIST_WIDTH, newWidth)));
+    };
+
+    const handleEnd = () => {
+      setIsDraggingSidebar(false);
+    };
+
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleEnd);
+    document.addEventListener('touchmove', handleMove);
+    document.addEventListener('touchend', handleEnd);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleEnd);
+      document.removeEventListener('touchmove', handleMove);
+      document.removeEventListener('touchend', handleEnd);
+    };
+  }, [isDraggingSidebar]);
+
+  const handleSidebarDragStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    setIsDraggingSidebar(true);
+  }, []);
+
+  // Pinch gesture for content scale (zoom)
+  const pinchStartRef = useRef<{ distance: number; scale: number } | null>(null);
+
+  const getTouchDistance = (touches: React.TouchList | TouchList): number => {
+    if (touches.length < 2) return 0;
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const handleSidebarTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      pinchStartRef.current = {
+        distance: getTouchDistance(e.touches),
+        scale: sessionListScale,
+      };
+    }
+  }, [sessionListScale]);
+
+  const handleSidebarTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchStartRef.current) {
+      e.preventDefault();
+      const currentDistance = getTouchDistance(e.touches);
+      const ratio = currentDistance / pinchStartRef.current.distance;
+      const newScale = pinchStartRef.current.scale * ratio;
+      setSessionListScale(Math.max(MIN_SESSION_LIST_SCALE, Math.min(MAX_SESSION_LIST_SCALE, newScale)));
+    }
+  }, []);
+
+  const handleSidebarTouchEnd = useCallback(() => {
+    pinchStartRef.current = null;
+  }, []);
+
+  // Reload terminal by remounting
+  const handleReload = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setReloadKey(prev => prev + 1);
+  }, []);
+
+  // Open file viewer
+  const handleOpenFileViewer = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowFileViewer(true);
+  }, []);
 
   // Register terminal ref
   useEffect(() => {
@@ -185,6 +345,7 @@ function TerminalPane({
 
   return (
     <div
+      ref={containerRef}
       className={`h-full flex flex-col bg-gray-900 ${isActive ? 'ring-2 ring-blue-500' : ''}`}
       onClick={onFocus}
     >
@@ -210,6 +371,30 @@ function TerminalPane({
               </svg>
             </button>
           )}
+          {/* File browser button */}
+          {session?.currentPath && !showConversation && (
+            <button
+              onClick={handleOpenFileViewer}
+              className="p-0.5 text-white/50 hover:text-white/80 transition-colors"
+              title="ファイルブラウザ"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+              </svg>
+            </button>
+          )}
+          {/* Reload button */}
+          {sessionId && !showConversation && (
+            <button
+              onClick={handleReload}
+              className="p-0.5 text-white/50 hover:text-white/80 transition-colors"
+              title="リロード"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+          )}
           {/* Session change button */}
           {sessionId && !showConversation && (
             <button
@@ -225,42 +410,125 @@ function TerminalPane({
               </svg>
             </button>
           )}
+          {/* Session list toggle button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowSessionList(!showSessionList);
+            }}
+            className={`p-0.5 transition-colors ${
+              showSessionList
+                ? 'text-blue-400 hover:text-blue-300'
+                : 'text-white/50 hover:text-white/80'
+            }`}
+            title={showSessionList ? 'セッション一覧を閉じる' : 'セッション一覧を表示'}
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+            </svg>
+          </button>
+          {/* Close button */}
+          <button
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+            className="p-0.5 text-white/50 hover:text-red-400 transition-colors"
+            title="ペインを閉じる"
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
       </div>
 
-      {/* Terminal, conversation, or session selector */}
-      <div className="flex-1 min-h-0">
-        {showConversation && currentCcSessionId ? (
-          <ConversationViewer
-            title="会話履歴"
-            subtitle={session?.name}
-            messages={messages}
-            isLoading={isLoadingMessages}
-            onClose={() => setShowConversation(false)}
-            inline={true}
-            scrollToBottom={true}
-            isActive={isClaudeRunning}
-            onRefresh={() => fetchConversation(currentCcSessionId || undefined)}
-          />
-        ) : sessionId ? (
-          <TerminalComponent
-            key={sessionId}
-            ref={terminalRef}
-            sessionId={sessionId}
-            hideKeyboard={true}
-            onConnect={handleConnect}
-            onDisconnect={handleDisconnect}
-          />
-        ) : (
-          <SessionSelector
-            sessions={sessions}
-            onSelect={(sess) => {
-              // Directly set session ID via callback
-              onSelectSession(sess.id);
-            }}
-          />
+      {/* Terminal, conversation, or session selector - with optional session list sidebar */}
+      <div className="flex-1 min-h-0 flex">
+        {/* Main content */}
+        <div className={`${showSessionList ? 'flex-1' : 'w-full'} min-w-0`}>
+          {showConversation && currentCcSessionId ? (
+            <ConversationViewer
+              title="会話履歴"
+              subtitle={session?.name}
+              messages={messages}
+              isLoading={isLoadingMessages}
+              onClose={() => setShowConversation(false)}
+              inline={true}
+              scrollToBottom={true}
+              isActive={isClaudeRunning}
+              onRefresh={() => fetchConversation(currentCcSessionId || undefined)}
+            />
+          ) : sessionId ? (
+            <TerminalComponent
+              key={`${sessionId}-${reloadKey}-${globalReloadKey}`}
+              ref={terminalRef}
+              sessionId={sessionId}
+              hideKeyboard={true}
+              onConnect={handleConnect}
+              onDisconnect={handleDisconnect}
+            />
+          ) : (
+            <SessionSelector
+              sessions={sessions}
+              onSelect={(sess) => {
+                // Directly set session ID via callback
+                onSelectSession(sess.id);
+              }}
+            />
+          )}
+        </div>
+
+        {/* Session list sidebar */}
+        {showSessionList && (
+          <>
+            {/* Resize handle */}
+            <div
+              onMouseDown={handleSidebarDragStart}
+              onTouchStart={handleSidebarDragStart}
+              className={`w-1.5 h-full cursor-col-resize flex items-center justify-center shrink-0 transition-colors ${
+                isDraggingSidebar ? 'bg-blue-500/50' : 'bg-gray-700 hover:bg-blue-500/30'
+              }`}
+            >
+              <div className="w-0.5 h-8 bg-gray-500 rounded-full" />
+            </div>
+            {/* Sidebar content - pinch to zoom */}
+            <div
+              className="border-l border-gray-700 flex flex-col shrink-0 overflow-hidden"
+              style={{ width: sessionListWidth, touchAction: 'none' }}
+              onTouchStart={handleSidebarTouchStart}
+              onTouchMove={handleSidebarTouchMove}
+              onTouchEnd={handleSidebarTouchEnd}
+            >
+              <div className="px-2 py-1 bg-black/30 border-b border-gray-700 text-xs text-white/70 flex items-center justify-between">
+                <span>セッション一覧</span>
+                <span className="text-white/40">{Math.round(sessionListScale * 100)}%</span>
+              </div>
+              <div className="flex-1 overflow-auto">
+                <div
+                  style={{
+                    transform: `scale(${sessionListScale})`,
+                    transformOrigin: 'top left',
+                    width: `${100 / sessionListScale}%`,
+                  }}
+                >
+                  <SessionList
+                    onSelectSession={(sess) => {
+                      onSelectSession(sess.id);
+                      // Keep session list open after selection
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          </>
         )}
       </div>
+
+      {/* File Viewer Modal */}
+      {showFileViewer && session?.currentPath && (
+        <FileViewer
+          sessionWorkingDir={session.currentPath}
+          onClose={() => setShowFileViewer(false)}
+        />
+      )}
     </div>
   );
 }
@@ -304,8 +572,11 @@ interface SplitContainerProps {
   onSelectSession: (paneId: string, sessionId?: string) => void;
   onSessionStateChange: (sessionId: string, state: SessionState) => void;
   onSplitRatioChange: (nodeId: string, ratio: number[]) => void;
+  onClosePane: (paneId: string) => void;
   sessions: ExtendedSession[];
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
+  isTablet?: boolean;
+  globalReloadKey?: number;
 }
 
 function SplitContainer({
@@ -315,8 +586,11 @@ function SplitContainer({
   onSelectSession,
   onSessionStateChange,
   onSplitRatioChange,
+  onClosePane,
   sessions,
   terminalRefs,
+  isTablet = false,
+  globalReloadKey = 0,
 }: SplitContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState<number | null>(null);
@@ -381,6 +655,9 @@ function SplitContainer({
 
   const isHorizontal = node.direction === 'horizontal';
 
+  // Divider size: 4px on desktop, 8px on tablet for easier touch
+  const dividerSize = isTablet ? 8 : 4;
+
   // Build elements array with panes and dividers interleaved
   const elements: React.ReactNode[] = [];
   node.children.forEach((child, index) => {
@@ -389,7 +666,7 @@ function SplitContainer({
       <div
         key={child.id}
         style={{
-          [isHorizontal ? 'width' : 'height']: `calc(${node.ratio[index]}% - ${index < node.children.length - 1 ? 2 : 0}px)`,
+          [isHorizontal ? 'width' : 'height']: `calc(${node.ratio[index]}% - ${index < node.children.length - 1 ? dividerSize / 2 : 0}px)`,
           [isHorizontal ? 'height' : 'width']: '100%',
         }}
         className="flex-shrink-0 overflow-hidden"
@@ -401,8 +678,11 @@ function SplitContainer({
           onSelectSession={onSelectSession}
           onSessionStateChange={onSessionStateChange}
           onSplitRatioChange={onSplitRatioChange}
+          onClosePane={onClosePane}
           sessions={sessions}
           terminalRefs={terminalRefs}
+          isTablet={isTablet}
+          globalReloadKey={globalReloadKey}
         />
       </div>
     );
@@ -414,14 +694,17 @@ function SplitContainer({
           key={`divider-${child.id}`}
           onMouseDown={handleDragStart(index)}
           onTouchStart={handleDragStart(index)}
+          style={{
+            [isHorizontal ? 'width' : 'height']: `${dividerSize}px`,
+          }}
           className={`
-            ${isHorizontal ? 'w-1 h-full cursor-col-resize' : 'h-1 w-full cursor-row-resize'}
+            ${isHorizontal ? 'h-full cursor-col-resize' : 'w-full cursor-row-resize'}
             flex items-center justify-center bg-gray-700 hover:bg-blue-500/50 transition-colors flex-shrink-0 z-10
             ${isDragging === index ? 'bg-blue-500/70' : ''}
           `}
         >
           <div className={`
-            ${isHorizontal ? 'w-0.5 h-6' : 'h-0.5 w-6'}
+            ${isHorizontal ? 'w-0.5 h-8' : 'h-0.5 w-8'}
             bg-gray-500 rounded-full
           `} />
         </div>

@@ -351,16 +351,34 @@ function SessionItem({
   const longPressTimerRef = useRef<number | null>(null);
   const longPressFiredRef = useRef(false);
 
-  const handleTouchStart = () => {
+  const handleTouchStart = (e: React.TouchEvent) => {
+    console.log('[SessionItem] Touch start:', session.name);
     longPressFiredRef.current = false;
     longPressTimerRef.current = window.setTimeout(() => {
+      console.log('[SessionItem] Long press fired:', session.name);
       longPressFiredRef.current = true;
+      // Prevent browser context menu by stopping event propagation
+      e.preventDefault();
       onDelete(session);
     }, 600);
   };
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+    // Prevent browser context menu on long press
+    e.preventDefault();
+  };
+
   const handleTouchEnd = () => {
     if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleTouchMove = () => {
+    // Cancel long press when touch moves (scrolling)
+    if (longPressTimerRef.current) {
+      console.log('[SessionItem] Touch move - canceling long press');
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
@@ -432,9 +450,12 @@ function SessionItem({
     <div
       onClick={handleClick}
       onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchCancel}
-      className={`p-3 rounded cursor-pointer transition-colors ${
+      onContextMenu={handleContextMenu}
+      style={{ touchAction: 'pan-y', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
+      className={`p-3 rounded cursor-pointer transition-colors select-none ${
         isClaudeRunning
           ? 'bg-gray-800 hover:bg-gray-700 active:bg-gray-600 border-l-2 border-green-500'
           : 'bg-gray-800/60 hover:bg-gray-700/70 active:bg-gray-600/70'

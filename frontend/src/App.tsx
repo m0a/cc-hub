@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { TerminalPage } from './pages/TerminalPage';
 import { SessionList } from './components/SessionList';
-import { TabletLayout } from './components/TabletLayout';
+// TabletLayout is deprecated - now using DesktopLayout with isTablet prop
+// import { TabletLayout } from './components/TabletLayout';
 import { DesktopLayout } from './components/DesktopLayout';
 import { FileViewer } from './components/files/FileViewer';
 import { ConversationViewer } from './components/ConversationViewer';
@@ -452,16 +453,17 @@ export function App() {
     );
   }
 
-  // Tablet layout: split view with terminal, session list, and keyboard
+  // Tablet layout: use DesktopLayout with floating keyboard
   if (deviceType === 'tablet') {
     return (
-      <TabletLayout
+      <DesktopLayout
         sessions={openSessions}
         activeSessionId={activeSessionId}
         onSelectSession={handleSelectSession}
         onSessionStateChange={updateSessionState}
         onShowSessionList={handleShowSessionList}
         onReload={handleReload}
+        isTablet={true}
       />
     );
   }

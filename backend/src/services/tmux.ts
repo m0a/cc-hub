@@ -205,7 +205,20 @@ export class TmuxService {
       const lines = text.trim().split('\n');
       const lastLine = lines[lines.length - 1] || '';
 
-      // First check for processing patterns - if found, NOT waiting
+      // Check for completion patterns first - if found, definitely waiting
+      // These indicate Claude finished processing and is waiting for input
+      const completionPatterns = [
+        '✻ worked',
+        '✻ cooked',
+        '✻ crunched',
+        '✻ done',
+      ];
+
+      if (completionPatterns.some(pattern => lastLines.includes(pattern))) {
+        return true;  // Completed, waiting for input
+      }
+
+      // Check for active processing patterns - if found, NOT waiting
       // These are specific Claude Code spinner patterns with emoji prefix
       const processingPatterns = [
         '✽ crunching',

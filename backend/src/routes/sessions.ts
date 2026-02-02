@@ -100,9 +100,10 @@ sessions.get('/', async (c) => {
         // Process is sleeping (S state with epoll_wait) = definitely waiting for input
         waitingForInput = true;
       } else {
-        // Process is actively running (R state with no wchan) = processing
-        // Only check jsonl for tool-specific waiting (AskUserQuestion, etc.)
-        waitingForInput = ccSession?.waitingForInput || false;
+        // Process is running (R state), check multiple indicators
+        // Terminal patterns detect completion (✻ Worked) and prompts (accept edits)
+        // jsonl detects tool-specific waiting (AskUserQuestion, etc.)
+        waitingForInput = s.waitingForInput || ccSession?.waitingForInput || false;
       }
     } else {
       waitingForInput = s.waitingForInput || false;

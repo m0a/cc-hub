@@ -93,16 +93,16 @@ sessions.get('/', async (c) => {
     let waitingForInput = false;
 
     if (isClaudeRunning) {
-      // Check process state
+      // Check process state (most reliable indicator)
       const isProcessActive = await tmuxService.isProcessRunning(s.id);
 
       if (!isProcessActive) {
         // Process is sleeping (S state with epoll_wait) = definitely waiting for input
         waitingForInput = true;
       } else {
-        // Process is running (R state), but might still be waiting for input
-        // Check terminal patterns and jsonl as secondary indicators
-        waitingForInput = ccSession?.waitingForInput || s.waitingForInput || false;
+        // Process is actively running (R state with no wchan) = processing
+        // Only check jsonl for tool-specific waiting (AskUserQuestion, etc.)
+        waitingForInput = ccSession?.waitingForInput || false;
       }
     } else {
       waitingForInput = s.waitingForInput || false;

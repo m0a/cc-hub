@@ -88,6 +88,41 @@ cchub status
 sudo tailscale set --operator=$USER
 ```
 
+### tmux設定（オプション）
+
+CC Hubはデフォルトのtmux設定で動作しますが、以下の設定を推奨します：
+
+```bash
+# ~/.tmux.conf
+set -g mouse on              # マウス操作を有効化
+set -g history-limit 10000   # スクロールバック履歴を増やす
+```
+
+### 新環境へのデプロイ
+
+```bash
+# 1. 依存関係のインストール
+sudo apt install tmux        # Ubuntu/Debian
+# または
+brew install tmux            # macOS
+
+# 2. Tailscale設定（初回のみ）
+sudo tailscale set --operator=$USER
+
+# 3. CC Hub起動
+./cchub
+# または
+./cchub -P mypassword        # パスワード付き
+
+# 4. systemdサービスとして登録（オプション）
+./cchub setup -P mypassword
+```
+
+サービス登録すると以下の機能が有効になります：
+- システム起動時に自動起動
+- クラッシュ時の自動再起動
+- `cchub update` で自動更新
+
 ## 使い方
 
 1. ブラウザでCC Hubを開く

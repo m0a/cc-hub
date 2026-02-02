@@ -77,8 +77,10 @@ sessions.get('/', async (c) => {
         ccSession = await claudeCodeService.getSessionByTtyStartTime(s.paneTty, s.currentPath);
       }
 
-      if (!ccSession) {
-        // Last fallback to path-based lookup
+      // Only use path-based fallback if we have a PTY session ID (resumed with -r flag)
+      // For new sessions without -r, don't show unrelated session info
+      if (!ccSession && ptySessionId) {
+        // Last fallback to path-based lookup (only for resumed sessions)
         const pathSession = ccSessionsByPath.get(s.currentPath);
         if (pathSession) {
           ccSession = pathSession;
@@ -155,6 +157,11 @@ sessions.post('/', async (c) => {
 
   try {
     await tmuxService.createSession(name);
+
+    // If workingDir is specified, change to that directory and start claude
+    if (parsed.success && parsed.data.workingDir) {
+      await tmuxService.sendKeys(name, `cd ${parsed.data.workingDir} && claude`);
+    }
 
     return c.json({
       id: name,

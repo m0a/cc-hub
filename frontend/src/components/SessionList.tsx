@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import type { SessionResponse, IndicatorState, ConversationMessage } from '../../../shared/types';
+import type { SessionResponse, IndicatorState, ConversationMessage, FileInfo } from '../../../shared/types';
 import { useSessions } from '../hooks/useSessions';
 import { useSessionHistory } from '../hooks/useSessionHistory';
 import { Dashboard } from './dashboard/Dashboard';
@@ -7,6 +7,31 @@ import { SessionHistory } from './SessionHistory';
 import { ConversationViewer } from './ConversationViewer';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
+
+// Directory browser API functions
+async function browseDirectory(path?: string): Promise<{ path: string; files: FileInfo[]; parentPath: string | null }> {
+  const url = path
+    ? `${API_BASE}/api/files/browse?path=${encodeURIComponent(path)}`
+    : `${API_BASE}/api/files/browse`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error('Failed to browse directory');
+  }
+  return response.json();
+}
+
+async function createDirectory(path: string): Promise<{ path: string; success: boolean }> {
+  const response = await fetch(`${API_BASE}/api/files/mkdir`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to create directory');
+  }
+  return response.json();
+}
 
 // Get indicator color for session state
 function getIndicatorColor(state?: IndicatorState): string {
@@ -67,48 +92,239 @@ function ConfirmDialog({
   );
 }
 
-// Create session modal
+// Create session modal with directory picker
 function CreateSessionModal({
   onConfirm,
   onCancel,
 }: {
-  onConfirm: (name: string) => void;
+  onConfirm: (name: string, workingDir?: string) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState('');
+  const [nameManuallyEdited, setNameManuallyEdited] = useState(false);
+  const [currentPath, setCurrentPath] = useState<string>('');
+  const [directories, setDirectories] = useState<FileInfo[]>([]);
+  const [parentPath, setParentPath] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showNewFolderInput, setShowNewFolderInput] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [creatingFolder, setCreatingFolder] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const newFolderInputRef = useRef<HTMLInputElement>(null);
 
+  // Load initial directory
   useEffect(() => {
-    inputRef.current?.focus();
+    loadDirectory();
   }, []);
 
-  const handleSubmit = () => {
-    onConfirm(name);
+  // Focus new folder input when shown
+  useEffect(() => {
+    if (showNewFolderInput) {
+      newFolderInputRef.current?.focus();
+    }
+  }, [showNewFolderInput]);
+
+  const loadDirectory = async (path?: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const result = await browseDirectory(path);
+      setCurrentPath(result.path);
+      setDirectories(result.files);
+      setParentPath(result.parentPath);
+
+      // Auto-suggest session name from directory name (only if not manually edited)
+      if (!nameManuallyEdited) {
+        const dirName = result.path.split('/').pop() || '';
+        setName(dirName);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load directory');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
+  const handleDirectoryClick = (dir: FileInfo) => {
+    loadDirectory(dir.path);
+  };
+
+  const handleGoUp = () => {
+    if (parentPath) {
+      loadDirectory(parentPath);
+    }
+  };
+
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setName(e.target.value);
+    setNameManuallyEdited(true);
+  };
+
+  const handleSubmit = () => {
+    onConfirm(name, currentPath);
+  };
+
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) return;
+
+    setCreatingFolder(true);
+    setError(null);
+    try {
+      const newPath = `${currentPath}/${newFolderName.trim()}`;
+      await createDirectory(newPath);
+      setShowNewFolderInput(false);
+      setNewFolderName('');
+      // Navigate to the new directory
+      loadDirectory(newPath);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create folder');
+    } finally {
+      setCreatingFolder(false);
+    }
+  };
+
+  const shortPath = currentPath.replace(/^\/home\/[^/]+/, '~');
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="bg-gray-800 rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
-        <h3 className="text-lg font-bold text-white mb-4">新規セッション</h3>
-        <input
-          ref={inputRef}
-          type="text"
-          placeholder="セッション名（空欄で自動生成）"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-          className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 mb-4"
-        />
-        <div className="flex gap-3 justify-end">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-4 bg-black/70">
+      <div className="bg-gray-800 rounded-lg p-4 max-w-md w-full mx-4 shadow-xl max-h-[70vh] flex flex-col">
+        <h3 className="text-lg font-bold text-white mb-3">新規セッション</h3>
+
+        {/* Session name input */}
+        <div className="mb-3">
+          <label className="text-xs text-gray-400 mb-1 block">セッション名</label>
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder="空欄で自動生成"
+            value={name}
+            onChange={handleNameChange}
+            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+            className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm"
+          />
+        </div>
+
+        {/* Directory picker */}
+        <div className="flex-1 min-h-0 flex flex-col">
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs text-gray-400">作業ディレクトリ</label>
+            <button
+              onClick={() => setShowNewFolderInput(true)}
+              className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+              disabled={showNewFolderInput}
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              新規フォルダ
+            </button>
+          </div>
+
+          {/* Current path display */}
+          <div className="text-xs text-gray-300 bg-gray-900 px-2 py-1.5 rounded mb-2 truncate">
+            {shortPath}
+          </div>
+
+          {/* New folder input */}
+          {showNewFolderInput && (
+            <div className="flex gap-2 mb-2">
+              <input
+                ref={newFolderInputRef}
+                type="text"
+                placeholder="フォルダ名"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleCreateFolder();
+                  if (e.key === 'Escape') {
+                    setShowNewFolderInput(false);
+                    setNewFolderName('');
+                  }
+                }}
+                className="flex-1 px-2 py-1 bg-gray-900 border border-gray-600 rounded text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm"
+                disabled={creatingFolder}
+              />
+              <button
+                onClick={handleCreateFolder}
+                disabled={creatingFolder || !newFolderName.trim()}
+                className="px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 rounded text-sm transition-colors"
+              >
+                {creatingFolder ? '...' : '作成'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowNewFolderInput(false);
+                  setNewFolderName('');
+                }}
+                className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-sm transition-colors"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
+          {/* Error display */}
+          {error && (
+            <div className="text-xs text-red-400 mb-2">{error}</div>
+          )}
+
+          {/* Directory list */}
+          <div className="flex-1 overflow-y-auto bg-gray-900 rounded border border-gray-700">
+            {isLoading ? (
+              <div className="p-4 text-center text-gray-500 text-sm">読み込み中...</div>
+            ) : (
+              <div className="divide-y divide-gray-800">
+                {/* Parent directory */}
+                {parentPath && (
+                  <button
+                    onClick={handleGoUp}
+                    className="w-full px-3 py-2 text-left hover:bg-gray-800 flex items-center gap-2 text-sm"
+                  >
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                    </svg>
+                    <span className="text-gray-300">..</span>
+                  </button>
+                )}
+
+                {/* Directories (hide hidden directories) */}
+                {directories.filter(dir => !dir.isHidden).map((dir) => (
+                  <button
+                    key={dir.path}
+                    onClick={() => handleDirectoryClick(dir)}
+                    className="w-full px-3 py-2 text-left hover:bg-gray-800 flex items-center gap-2 text-sm"
+                  >
+                    <svg className="w-4 h-4 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                    </svg>
+                    <span className={`truncate ${dir.isHidden ? 'text-gray-500' : 'text-gray-200'}`}>
+                      {dir.name}
+                    </span>
+                  </button>
+                ))}
+
+                {directories.length === 0 && !parentPath && (
+                  <div className="p-4 text-center text-gray-500 text-sm">
+                    サブディレクトリがありません
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex gap-3 justify-end mt-3 pt-3 border-t border-gray-700">
           <button
             onClick={onCancel}
-            className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded font-medium transition-colors"
+            className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded font-medium transition-colors text-sm"
           >
             キャンセル
           </button>
           <button
             onClick={handleSubmit}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded font-medium transition-colors"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded font-medium transition-colors text-sm"
           >
             作成
           </button>
@@ -354,8 +570,8 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
     }
   }, [viewingConversation, fetchConversation]);
 
-  const handleCreateSession = async (name: string) => {
-    const session = await createSession(name || undefined);
+  const handleCreateSession = async (name: string, workingDir?: string) => {
+    const session = await createSession(name || undefined, workingDir);
     if (session) {
       setShowCreateModal(false);
       onSelectSession(session);

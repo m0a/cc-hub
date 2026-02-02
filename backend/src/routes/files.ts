@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdir, realpath } from 'node:fs/promises';
 import { join, basename } from 'node:path';
+import { homedir } from 'node:os';
 import { FileService } from '../services/file-service';
 import { FileChangeTracker } from '../services/file-change-tracker';
-import type { FileListResponse, FileReadResponse, FileChangesResponse } from '../../../shared/types';
+import type { FileListResponse, FileReadResponse, FileChangesResponse, FileInfo } from '../../../shared/types';
 
 const fileService = new FileService();
 const changeTracker = new FileChangeTracker();
@@ -161,5 +162,106 @@ files.get('/images/:filename', async (c) => {
     });
   } catch {
     return c.json({ error: 'Image not found' }, 404);
+  }
+});
+
+/**
+ * GET /files/browse - Browse directories (session-independent)
+ * Query params:
+ *   - path: Directory path to browse (optional, defaults to home)
+ * Security: Only allows access within home directory
+ */
+files.get('/browse', async (c) => {
+  const requestedPath = c.req.query('path') || homedir();
+  const homeDir = homedir();
+
+  try {
+    // Resolve paths to prevent traversal attacks
+    const resolvedHome = await realpath(homeDir);
+    let resolvedPath: string;
+
+    try {
+      resolvedPath = await realpath(requestedPath);
+    } catch {
+      // Path doesn't exist, return error
+      return c.json({ error: 'Path not found' }, 404);
+    }
+
+    // Security: ensure path is within home directory
+    if (!resolvedPath.startsWith(resolvedHome + '/') && resolvedPath !== resolvedHome) {
+      return c.json({ error: 'Access denied: path outside home directory' }, 403);
+    }
+
+    // List only directories
+    const allFiles = await fileService.listDirectory(resolvedPath, homeDir);
+    const directories: FileInfo[] = allFiles.filter(f => f.type === 'directory');
+
+    // Get parent path (only if within home)
+    let parentPath: string | null = null;
+    const parent = join(resolvedPath, '..');
+    try {
+      const resolvedParent = await realpath(parent);
+      if (resolvedParent.startsWith(resolvedHome) || resolvedParent === resolvedHome) {
+        parentPath = resolvedParent;
+      }
+    } catch {
+      // Ignore parent resolution errors
+    }
+
+    return c.json({
+      path: resolvedPath,
+      files: directories,
+      parentPath,
+    } as FileListResponse);
+  } catch (error) {
+    console.error('Browse error:', error);
+    return c.json({ error: 'Failed to browse directory' }, 500);
+  }
+});
+
+/**
+ * POST /files/mkdir - Create a new directory
+ * Body: { path: string }
+ * Security: Only allows creation within home directory
+ */
+files.post('/mkdir', async (c) => {
+  const body = await c.req.json<{ path: string }>();
+  const requestedPath = body?.path;
+
+  if (!requestedPath) {
+    return c.json({ error: 'Missing path parameter' }, 400);
+  }
+
+  const homeDir = homedir();
+
+  try {
+    const resolvedHome = await realpath(homeDir);
+
+    // Validate parent directory exists and is within home
+    const parentDir = join(requestedPath, '..');
+    let resolvedParent: string;
+
+    try {
+      resolvedParent = await realpath(parentDir);
+    } catch {
+      return c.json({ error: 'Parent directory not found' }, 404);
+    }
+
+    if (!resolvedParent.startsWith(resolvedHome + '/') && resolvedParent !== resolvedHome) {
+      return c.json({ error: 'Access denied: path outside home directory' }, 403);
+    }
+
+    // Create directory
+    await mkdir(requestedPath, { recursive: false });
+
+    // Return the created path
+    const resolvedPath = await realpath(requestedPath);
+    return c.json({ path: resolvedPath, success: true });
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('EEXIST')) {
+      return c.json({ error: 'Directory already exists' }, 409);
+    }
+    console.error('Mkdir error:', error);
+    return c.json({ error: 'Failed to create directory' }, 500);
   }
 });

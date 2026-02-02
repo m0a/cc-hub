@@ -88,6 +88,7 @@ export const RegisterSchema = z.object({
 
 export const CreateSessionSchema = z.object({
   name: z.string().min(1).max(64).optional(),
+  workingDir: z.string().optional(),
 });
 
 export const ResizeTerminalSchema = z.object({

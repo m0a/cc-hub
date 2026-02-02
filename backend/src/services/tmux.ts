@@ -205,7 +205,25 @@ export class TmuxService {
       const lines = text.trim().split('\n');
       const lastLine = lines[lines.length - 1] || '';
 
-      // Check for completion patterns first - if found, definitely waiting
+      // Check for active processing patterns FIRST - if found, NOT waiting
+      // These are specific Claude Code spinner patterns with emoji prefix
+      // Processing takes priority over completion (completion may be in scroll buffer)
+      const processingPatterns = [
+        '✽ crunching',
+        '✽ embellishing',
+        '✽ thinking',
+        '✽ working',
+        '✻ thinking',
+        '✻ crunching',
+        '⏳ working',
+        '✽',  // Any spinning indicator
+      ];
+
+      if (processingPatterns.some(pattern => lastLines.includes(pattern))) {
+        return false;  // Currently processing, not waiting
+      }
+
+      // Check for completion patterns - if found, definitely waiting
       // These indicate Claude finished processing and is waiting for input
       const completionPatterns = [
         '✻ worked',
@@ -216,21 +234,6 @@ export class TmuxService {
 
       if (completionPatterns.some(pattern => lastLines.includes(pattern))) {
         return true;  // Completed, waiting for input
-      }
-
-      // Check for active processing patterns - if found, NOT waiting
-      // These are specific Claude Code spinner patterns with emoji prefix
-      const processingPatterns = [
-        '✽ crunching',
-        '✽ embellishing',
-        '✽ thinking',
-        '✻ thinking',
-        '✻ crunching',
-        '⏳ working',
-      ];
-
-      if (processingPatterns.some(pattern => lastLines.includes(pattern))) {
-        return false;  // Currently processing, not waiting
       }
 
       // Check for common waiting patterns in Claude Code

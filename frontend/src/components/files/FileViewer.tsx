@@ -4,6 +4,7 @@ import { FileBrowser } from './FileBrowser';
 import { CodeViewer } from './CodeViewer';
 import { ImageViewer } from './ImageViewer';
 import { DiffViewer } from './DiffViewer';
+import { MarkdownViewer } from './MarkdownViewer';
 import type { FileInfo, FileChange } from '../../../../shared/types';
 
 type ViewMode = 'browser' | 'file' | 'changes' | 'diff';
@@ -132,6 +133,9 @@ const IMAGE_EXTENSIONS = new Set([
   '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.svg',
 ]);
 
+// Markdown extensions
+const MARKDOWN_EXTENSIONS = new Set(['.md', '.mdx', '.markdown']);
+
 function getLanguageFromPath(path: string): string {
   const fileName = path.split('/').pop()?.toLowerCase() || '';
 
@@ -148,6 +152,11 @@ function getLanguageFromPath(path: string): string {
 function isImageFile(path: string): boolean {
   const ext = path.toLowerCase().match(/\.[^.]+$/)?.[0];
   return ext ? IMAGE_EXTENSIONS.has(ext) : false;
+}
+
+function isMarkdownFile(path: string): boolean {
+  const ext = path.toLowerCase().match(/\.[^.]+$/)?.[0];
+  return ext ? MARKDOWN_EXTENSIONS.has(ext) : false;
 }
 
 function getFileName(path: string): string {
@@ -402,6 +411,12 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                           fileName={getFileName(selectedFile.path)}
                           size={selectedFile.size}
                         />
+                      ) : isMarkdownFile(selectedFile.path) ? (
+                        <MarkdownViewer
+                          content={selectedFile.content}
+                          fileName={getFileName(selectedFile.path)}
+                          truncated={selectedFile.truncated}
+                        />
                       ) : (
                         <CodeViewer
                           content={selectedFile.content}
@@ -472,6 +487,12 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                 mimeType={selectedFile.mimeType}
                 fileName={getFileName(selectedFile.path)}
                 size={selectedFile.size}
+              />
+            ) : isMarkdownFile(selectedFile.path) ? (
+              <MarkdownViewer
+                content={selectedFile.content}
+                fileName={getFileName(selectedFile.path)}
+                truncated={selectedFile.truncated}
               />
             ) : (
               <CodeViewer

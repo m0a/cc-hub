@@ -1,8 +1,9 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { PaneContainer, type PaneNode } from './PaneContainer';
-import { SessionListMini } from './SessionListMini';
+import { SessionList } from './SessionList';
 import { Dashboard } from './dashboard/Dashboard';
 import { FileViewer } from './files/FileViewer';
+import { FloatingKeyboard } from './FloatingKeyboard';
 import type { TerminalRef } from './Terminal';
 import type { SessionResponse, SessionState } from '../../../shared/types';
 
@@ -29,6 +30,7 @@ interface DesktopLayoutProps {
   onSessionStateChange: (id: string, state: SessionState) => void;
   onShowSessionList: () => void;
   onReload: () => void;
+  isTablet?: boolean;
 }
 
 // Generate unique ID
@@ -60,7 +62,7 @@ function findPaneById(node: PaneNode, id: string): PaneNode | null {
 
 // Find parent of a pane
 function findParent(root: PaneNode, id: string): { parent: Extract<PaneNode, { type: 'split' }>; index: number } | null {
-  if (root.type === 'terminal') return null;
+  if (root.type !== 'split') return null;
   for (let i = 0; i < root.children.length; i++) {
     if (root.children[i].id === id) {
       return { parent: root, index: i };
@@ -71,24 +73,27 @@ function findParent(root: PaneNode, id: string): { parent: Extract<PaneNode, { t
   return null;
 }
 
-// Get all terminal pane IDs in order
+// Get all pane IDs in order (leaf nodes only)
 function getAllPaneIds(node: PaneNode): string[] {
-  if (node.type === 'terminal') return [node.id];
-  return node.children.flatMap(getAllPaneIds);
+  if (node.type === 'split') {
+    return node.children.flatMap(getAllPaneIds);
+  }
+  // terminal, sessions, dashboard, empty are all leaf nodes
+  return [node.id];
 }
 
-// Split a pane
+// Split a pane (creates a new terminal pane)
 function splitPane(
   root: PaneNode,
   paneId: string,
-  direction: 'horizontal' | 'vertical',
-  newSessionId: string | null
+  direction: 'horizontal' | 'vertical'
 ): { newRoot: PaneNode; newPaneId: string } {
   const newPaneId = generatePaneId();
-  const newPane: PaneNode = { type: 'terminal', sessionId: newSessionId, id: newPaneId };
+  const newPane: PaneNode = { type: 'terminal', sessionId: null, id: newPaneId };
 
   function splitNode(node: PaneNode): PaneNode {
-    if (node.id === paneId && node.type === 'terminal') {
+    // Split any leaf node (terminal)
+    if (node.id === paneId && node.type !== 'split') {
       // Create new split containing this pane and new pane
       return {
         type: 'split',
@@ -112,7 +117,8 @@ function splitPane(
 
 // Close a pane
 function closePane(root: PaneNode, paneId: string): { newRoot: PaneNode | null; nextPane: string | null } {
-  if (root.type === 'terminal') {
+  // Check if root is a leaf node (not split)
+  if (root.type !== 'split') {
     // Only pane, can't close
     if (root.id === paneId) {
       return { newRoot: null, nextPane: null };
@@ -192,6 +198,8 @@ function updateSessionId(root: PaneNode, paneId: string, sessionId: string): Pan
   return root;
 }
 
+const KEYBOARD_VISIBLE_KEY = 'cchub-floating-keyboard-visible';
+
 export function DesktopLayout({
   sessions,
   activeSessionId,
@@ -199,6 +207,7 @@ export function DesktopLayout({
   onSessionStateChange,
   onShowSessionList,
   onReload,
+  isTablet = false,
 }: DesktopLayoutProps) {
   const terminalRefs = useRef<Map<string, TerminalRef | null>>(new Map());
   const activePaneRef = useRef<string>('');
@@ -207,15 +216,61 @@ export function DesktopLayout({
   const [showFileViewer, setShowFileViewer] = useState(false);
   const [pendingSessionPane, setPendingSessionPane] = useState<string | null>(null);
 
+  // Floating keyboard state (for tablet mode)
+  const [showKeyboard, setShowKeyboard] = useState(() => {
+    if (!isTablet) return false;
+    try {
+      return localStorage.getItem(KEYBOARD_VISIBLE_KEY) === 'true';
+    } catch {}
+    return true; // Default to visible on tablet
+  });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [detectedUrls, setDetectedUrls] = useState<string[]>([]);
+  const [showUrlMenu, setShowUrlMenu] = useState(false);
+  const [urlPage, setUrlPage] = useState(0);
+  const URL_PAGE_SIZE = 5;
+
+  // Handle global reload (browser reload)
+  const handleGlobalReload = useCallback(() => {
+    window.location.reload();
+  }, []);
+
+  // Keep onReload reference for compatibility
+  void onReload;
+
+  // Save keyboard visibility state
+  useEffect(() => {
+    if (isTablet) {
+      localStorage.setItem(KEYBOARD_VISIBLE_KEY, String(showKeyboard));
+    }
+  }, [showKeyboard, isTablet]);
+
+  // Use onShowSessionList in tablet mode for session list
+  void onShowSessionList;
+
+  // Migrate old pane types to terminal
+  const migratePaneNode = (node: PaneNode): PaneNode => {
+    // Handle legacy types (empty, sessions, dashboard) - convert to terminal
+    const nodeType = (node as { type: string }).type;
+    if (nodeType === 'empty' || nodeType === 'sessions' || nodeType === 'dashboard') {
+      return { type: 'terminal', sessionId: null, id: node.id };
+    }
+    if (node.type === 'split') {
+      return { ...node, children: node.children.map(migratePaneNode) };
+    }
+    return node;
+  };
+
   // Load/save desktop state
   const [desktopState, setDesktopState] = useState<DesktopState>(() => {
     try {
       const saved = localStorage.getItem(DESKTOP_STATE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved) as DesktopState;
-        // Validate structure
+        // Validate structure and migrate old types
         if (parsed.root && parsed.activePane) {
-          return parsed;
+          return { ...parsed, root: migratePaneNode(parsed.root) };
         }
       }
     } catch {
@@ -347,14 +402,15 @@ export function DesktopLayout({
 
   const handleSplit = useCallback((direction: 'horizontal' | 'vertical') => {
     setDesktopState(prev => {
-      const { newRoot, newPaneId } = splitPane(prev.root, prev.activePane, direction, null);
+      const { newRoot, newPaneId } = splitPane(prev.root, prev.activePane, direction);
       return { root: newRoot, activePane: newPaneId };
     });
   }, []);
 
-  const handleClosePane = useCallback(() => {
+  const handleClosePane = useCallback((paneId?: string) => {
     setDesktopState(prev => {
-      const { newRoot, nextPane } = closePane(prev.root, prev.activePane);
+      const targetPaneId = paneId || prev.activePane;
+      const { newRoot, nextPane } = closePane(prev.root, targetPaneId);
       if (!newRoot) return prev; // Can't close last pane
       return { root: newRoot, activePane: nextPane || prev.activePane };
     });
@@ -430,6 +486,70 @@ export function DesktopLayout({
     const ref = terminalRefs.current.get(allPanes[nextIndex]);
     ref?.focus();
   }, [desktopState.root, desktopState.activePane]);
+
+  // Floating keyboard handlers (for tablet mode)
+  const handleKeyboardSend = useCallback((char: string) => {
+    const ref = terminalRefs.current?.get(activePaneRef.current);
+    ref?.sendInput(char);
+  }, []);
+
+  const handleFilePicker = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    e.target.value = '';
+    setIsUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const response = await fetch(`${API_BASE}/api/upload/image`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.path) {
+        const ref = terminalRefs.current?.get(activePaneRef.current);
+        ref?.sendInput(result.path);
+      } else {
+        console.error('Upload failed:', result.error);
+      }
+    } catch (err) {
+      console.error('Upload error:', err);
+    } finally {
+      setIsUploading(false);
+    }
+  }, []);
+
+  const handleUrlExtract = useCallback(() => {
+    if (showUrlMenu) {
+      setShowUrlMenu(false);
+      return;
+    }
+    const ref = terminalRefs.current?.get(activePaneRef.current);
+    const urls = ref?.extractUrls() || [];
+    setDetectedUrls(urls);
+    setUrlPage(0);
+    setShowUrlMenu(true);
+  }, [showUrlMenu]);
+
+  const handleCopyUrl = useCallback((url: string) => {
+    navigator.clipboard.writeText(url).then(() => {
+      setShowUrlMenu(false);
+    }).catch(console.error);
+  }, []);
+
+  const handleOpenUrl = useCallback((url: string) => {
+    window.open(url, '_blank');
+    setShowUrlMenu(false);
+  }, []);
 
   const handleFocusPane = useCallback((paneId: string) => {
     setDesktopState(prev => ({ ...prev, activePane: paneId }));
@@ -539,16 +659,38 @@ export function DesktopLayout({
               </svg>
             </button>
 
-            {/* Reload */}
+            {/* Reload all panes */}
             <button
-              onClick={onReload}
+              onClick={handleGlobalReload}
               className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-              title="リロード"
+              title="全ペインをリロード"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
+
+            {/* Keyboard toggle (tablet only) */}
+            {isTablet && (
+              <button
+                onClick={() => setShowKeyboard(prev => !prev)}
+                className={`p-1 rounded transition-colors ${
+                  showKeyboard
+                    ? 'text-green-400 bg-green-500/20 hover:bg-green-500/30'
+                    : 'text-white/70 hover:text-white hover:bg-white/10'
+                }`}
+                title={showKeyboard ? 'キーボードを隠す' : 'キーボードを表示'}
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <rect x="2" y="6" width="20" height="12" rx="2" />
+                  <line x1="6" y1="10" x2="6" y2="10" strokeLinecap="round" />
+                  <line x1="10" y1="10" x2="10" y2="10" strokeLinecap="round" />
+                  <line x1="14" y1="10" x2="14" y2="10" strokeLinecap="round" />
+                  <line x1="18" y1="10" x2="18" y2="10" strokeLinecap="round" />
+                  <line x1="6" y1="14" x2="18" y2="14" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
 
@@ -561,60 +703,118 @@ export function DesktopLayout({
             onSelectSession={handleSelectSessionForPane}
             onSessionStateChange={onSessionStateChange}
             onSplitRatioChange={handleSplitRatioChange}
+            onClosePane={handleClosePane}
             sessions={sessions}
             terminalRefs={terminalRefs}
+            isTablet={isTablet}
           />
         </div>
       </div>
 
-      {/* Side panel */}
+      {/* Side panel - overlay on tablet, inline on desktop */}
       {showSidePanel && (
-        <div className="w-80 h-full flex flex-col border-l border-gray-700 bg-gray-900 shrink-0">
-          {/* Tab header */}
-          <div className="flex items-center border-b border-gray-700 shrink-0">
-            <button
-              onClick={() => setSidePanelTab('sessions')}
-              className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-                sidePanelTab === 'sessions'
-                  ? 'text-white bg-gray-800'
-                  : 'text-gray-400 hover:text-gray-300'
-              }`}
-            >
-              Sessions
-            </button>
-            <button
-              onClick={() => setSidePanelTab('dashboard')}
-              className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-                sidePanelTab === 'dashboard'
-                  ? 'text-white bg-gray-800'
-                  : 'text-gray-400 hover:text-gray-300'
-              }`}
-            >
-              Dashboard
-            </button>
-            <button
+        isTablet ? (
+          // Tablet: Overlay side panel
+          <div className="fixed inset-0 z-40">
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-black/50"
               onClick={() => setShowSidePanel(false)}
-              className="p-2 text-gray-400 hover:text-white transition-colors"
-              title="閉じる"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            />
+            {/* Panel */}
+            <div className="absolute right-0 top-0 bottom-0 w-80 bg-gray-900 shadow-xl flex flex-col">
+              {/* Tab header */}
+              <div className="flex items-center border-b border-gray-700 shrink-0">
+                <button
+                  onClick={() => setSidePanelTab('sessions')}
+                  className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                    sidePanelTab === 'sessions'
+                      ? 'text-white bg-gray-800'
+                      : 'text-gray-400 hover:text-gray-300'
+                  }`}
+                >
+                  Sessions
+                </button>
+                <button
+                  onClick={() => setSidePanelTab('dashboard')}
+                  className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                    sidePanelTab === 'dashboard'
+                      ? 'text-white bg-gray-800'
+                      : 'text-gray-400 hover:text-gray-300'
+                  }`}
+                >
+                  Dashboard
+                </button>
+                <button
+                  onClick={() => setShowSidePanel(false)}
+                  className="p-2 text-gray-400 hover:text-white transition-colors"
+                  title="閉じる"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              {/* Tab content */}
+              <div className="flex-1 min-h-0 overflow-hidden">
+                {sidePanelTab === 'sessions' ? (
+                  <SessionList
+                    onSelectSession={handleSessionSelect}
+                  />
+                ) : (
+                  <Dashboard className="h-full" />
+                )}
+              </div>
+            </div>
           </div>
+        ) : (
+          // Desktop: Inline side panel
+          <div className="w-80 h-full flex flex-col border-l border-gray-700 bg-gray-900 shrink-0">
+            {/* Tab header */}
+            <div className="flex items-center border-b border-gray-700 shrink-0">
+              <button
+                onClick={() => setSidePanelTab('sessions')}
+                className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                  sidePanelTab === 'sessions'
+                    ? 'text-white bg-gray-800'
+                    : 'text-gray-400 hover:text-gray-300'
+                }`}
+              >
+                Sessions
+              </button>
+              <button
+                onClick={() => setSidePanelTab('dashboard')}
+                className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                  sidePanelTab === 'dashboard'
+                    ? 'text-white bg-gray-800'
+                    : 'text-gray-400 hover:text-gray-300'
+                }`}
+              >
+                Dashboard
+              </button>
+              <button
+                onClick={() => setShowSidePanel(false)}
+                className="p-2 text-gray-400 hover:text-white transition-colors"
+                title="閉じる"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
 
-          {/* Tab content */}
-          <div className="flex-1 min-h-0 overflow-hidden">
-            {sidePanelTab === 'sessions' ? (
-              <SessionListMini
-                activeSessionId={activeSession?.id || null}
-                onSelectSession={handleSessionSelect}
-              />
-            ) : (
-              <Dashboard className="h-full" />
-            )}
+            {/* Tab content */}
+            <div className="flex-1 min-h-0 overflow-hidden">
+              {sidePanelTab === 'sessions' ? (
+                <SessionList
+                  onSelectSession={handleSessionSelect}
+                />
+              ) : (
+                <Dashboard className="h-full" />
+              )}
+            </div>
           </div>
-        </div>
+        )
       )}
 
       {/* File Viewer Modal */}
@@ -624,6 +824,96 @@ export function DesktopLayout({
           onClose={() => setShowFileViewer(false)}
         />
       )}
+
+      {/* Floating Keyboard (tablet only) */}
+      {isTablet && (
+        <>
+          {/* Hidden file input for image upload */}
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp"
+            className="hidden"
+            ref={fileInputRef}
+            onChange={handleFileSelect}
+          />
+
+          <FloatingKeyboard
+            visible={showKeyboard}
+            onClose={() => setShowKeyboard(false)}
+            onSend={handleKeyboardSend}
+            onFilePicker={handleFilePicker}
+            onUrlExtract={handleUrlExtract}
+            isUploading={isUploading}
+          />
+        </>
+      )}
+
+      {/* URL menu (tablet only) */}
+      {isTablet && showUrlMenu && (() => {
+        const totalPages = Math.ceil(detectedUrls.length / URL_PAGE_SIZE);
+        const startIdx = urlPage * URL_PAGE_SIZE;
+        const pageUrls = detectedUrls.slice(startIdx, startIdx + URL_PAGE_SIZE);
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+            <div className="bg-gray-800 rounded-lg w-full max-w-md max-h-[80vh] flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+                <span className="text-white font-medium">
+                  URL一覧 {detectedUrls.length > 0 && `(${startIdx + 1}-${Math.min(startIdx + URL_PAGE_SIZE, detectedUrls.length)}/${detectedUrls.length})`}
+                </span>
+                <button
+                  onClick={() => setShowUrlMenu(false)}
+                  className="p-1 text-gray-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-2">
+                {detectedUrls.length === 0 ? (
+                  <p className="text-gray-500 text-center py-4">URLが見つかりません</p>
+                ) : (
+                  pageUrls.map((url, index) => (
+                    <div key={startIdx + index} className="flex items-center gap-2 p-2 hover:bg-gray-700 rounded">
+                      <span className="flex-1 text-white text-sm truncate">{url}</span>
+                      <button
+                        onClick={() => handleCopyUrl(url)}
+                        className="px-2 py-1 text-xs bg-gray-600 hover:bg-gray-500 text-white rounded"
+                      >
+                        コピー
+                      </button>
+                      <button
+                        onClick={() => handleOpenUrl(url)}
+                        className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded"
+                      >
+                        開く
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-4 px-4 py-3 border-t border-gray-700">
+                  <button
+                    onClick={() => setUrlPage(p => Math.max(0, p - 1))}
+                    disabled={urlPage === 0}
+                    className={`px-3 py-1 rounded ${urlPage === 0 ? 'bg-gray-700 text-gray-500' : 'bg-gray-600 text-white hover:bg-gray-500'}`}
+                  >
+                    前へ
+                  </button>
+                  <span className="text-gray-400 text-sm">{urlPage + 1} / {totalPages}</span>
+                  <button
+                    onClick={() => setUrlPage(p => Math.min(totalPages - 1, p + 1))}
+                    disabled={urlPage >= totalPages - 1}
+                    className={`px-3 py-1 rounded ${urlPage >= totalPages - 1 ? 'bg-gray-700 text-gray-500' : 'bg-gray-600 text-white hover:bg-gray-500'}`}
+                  >
+                    次へ
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

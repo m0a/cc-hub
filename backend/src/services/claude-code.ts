@@ -234,8 +234,8 @@ export class ClaudeCodeService {
    */
   private async checkWaitingState(filePath: string): Promise<string | null> {
     try {
-      // Use tail to get last 20 lines
-      const proc = Bun.spawn(['tail', '-n', '20', filePath], {
+      // Use tail to get last 50 lines (increased from 20 for better accuracy)
+      const proc = Bun.spawn(['tail', '-n', '50', filePath], {
         stdout: 'pipe',
         stderr: 'pipe',
       });
@@ -244,7 +244,15 @@ export class ClaudeCodeService {
       if (exitCode !== 0) return null;
 
       const lines = text.trim().split('\n');
-      const entries: Array<{ type: string; message?: { content?: Array<{ type: string; name?: string; id?: string }> }; toolUseResult?: unknown }> = [];
+      interface JsonlEntry {
+        type: string;
+        message?: {
+          content?: Array<{ type: string; name?: string; id?: string; tool_use_id?: string }>;
+          stop_reason?: string | null;
+        };
+        toolUseResult?: unknown;
+      }
+      const entries: JsonlEntry[] = [];
 
       for (const line of lines) {
         try {
@@ -254,49 +262,74 @@ export class ClaudeCodeService {
         }
       }
 
-      // Find the last assistant message with tool_use
+      // Filter to only user/assistant messages (ignore system, progress, etc.)
+      const conversationEntries = entries.filter(e =>
+        e.type === 'user' || e.type === 'assistant'
+      );
+
+      if (conversationEntries.length === 0) {
+        return null;
+      }
+
+      // Step 1: Find the last assistant message (searching backwards)
       let lastToolUse: { name: string; id: string } | null = null;
+      let lastAssistantEntry: JsonlEntry | null = null;
+      let lastAssistantIndex = -1;
 
-      for (let i = entries.length - 1; i >= 0; i--) {
-        const entry = entries[i];
-
-        // If we find a tool_result, the tool has been executed
-        if (entry.type === 'user' && entry.toolUseResult !== undefined) {
-          return null; // Not waiting, tool result received
-        }
-
-        // Look for assistant messages with tool_use
+      for (let i = conversationEntries.length - 1; i >= 0; i--) {
+        const entry = conversationEntries[i];
         if (entry.type === 'assistant' && entry.message?.content) {
+          lastAssistantEntry = entry;
+          lastAssistantIndex = i;
           for (const block of entry.message.content) {
             if (block.type === 'tool_use' && block.name && block.id) {
               lastToolUse = { name: block.name, id: block.id };
               break;
             }
           }
-          if (lastToolUse) break;
+          break;
         }
       }
 
-      // Check if the last tool_use is still pending
+      // If no assistant message found, not waiting
+      if (lastAssistantIndex === -1 || !lastAssistantEntry) {
+        return null;
+      }
+
+      // Step 2: If assistant message has tool_use, check for tool_result
       if (lastToolUse) {
-        // These tools always wait for user input
-        const waitingTools = ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode'];
-        if (waitingTools.includes(lastToolUse.name)) {
+        // Check if tool_result exists after this tool_use
+        let hasResult = false;
+        for (let i = lastAssistantIndex + 1; i < conversationEntries.length; i++) {
+          const entry = conversationEntries[i];
+          if (entry.type === 'user' && entry.message?.content) {
+            for (const block of entry.message.content) {
+              if (block.type === 'tool_result' && block.tool_use_id === lastToolUse.id) {
+                hasResult = true;
+                break;
+              }
+            }
+          }
+          if (hasResult) break;
+        }
+        if (!hasResult) {
+          // Tool use is pending - waiting for permission or execution
           return lastToolUse.name;
         }
+      }
 
-        // For other tools, check if there's a tool_result with matching tool_use_id
-        const hasResult = entries.some(entry =>
-          entry.type === 'user' &&
-          entry.message?.content?.some(
-            (block: { type: string; tool_use_id?: string }) =>
-              block.type === 'tool_result' && block.tool_use_id === lastToolUse!.id
+      // Step 3: Check if conversation ended with end_turn (waiting for next user input)
+      const stopReason = lastAssistantEntry.message?.stop_reason;
+      if (stopReason === 'end_turn') {
+        // Assistant finished speaking, waiting for user input
+        // Check if there's a user message after this
+        const hasUserAfter = conversationEntries.slice(lastAssistantIndex + 1).some(
+          e => e.type === 'user' && e.message?.content?.some(
+            (b: { type: string }) => b.type === 'text'
           )
         );
-
-        if (!hasResult) {
-          // Tool use is pending - might be waiting for permission
-          return lastToolUse.name;
+        if (!hasUserAfter) {
+          return 'UserInput'; // Special marker for text input waiting
         }
       }
 
@@ -529,15 +562,24 @@ export class ClaudeCodeService {
             const indexEntry = index?.entries?.find(e => e.sessionId === sessionId);
 
             // If this file is in the index and not much newer, use cached data
+            // But always check waiting state for accuracy
             if (indexEntry && (latestFile.mtime - (indexEntry.fileMtime || 0)) < 60000) {
+              const filePath = join(projectDir, latestFile.name);
+              const waitingToolName = await this.checkWaitingState(filePath);
+              const lastUserMessage = await this.readLastUserMessage(filePath);
+              const firstMessageId = await this.readFirstMessageId(filePath);
+
               return {
                 sessionId: indexEntry.sessionId,
-                summary: indexEntry.summary,
+                summary: lastUserMessage || indexEntry.summary,
                 firstPrompt: indexEntry.firstPrompt,
                 messageCount: indexEntry.messageCount,
                 modified: indexEntry.modified,
                 gitBranch: indexEntry.gitBranch,
                 projectPath: indexEntry.projectPath,
+                waitingForInput: waitingToolName !== null,
+                waitingToolName: waitingToolName || undefined,
+                firstMessageId: firstMessageId || undefined,
               };
             }
 

@@ -138,11 +138,59 @@ export class TmuxService {
   }
 
   /**
+   * Check if Claude process is running (not sleeping/waiting)
+   * Returns true if actively processing, false if waiting for input
+   */
+  async isProcessRunning(sessionId: string): Promise<boolean> {
+    try {
+      // Get pane TTY
+      const ttyProc = Bun.spawn(['tmux', 'list-panes', '-t', sessionId, '-F', '#{pane_tty}'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const tty = (await new Response(ttyProc.stdout).text()).trim();
+      if (!tty) return false;
+
+      const pts = tty.replace('/dev/', '');
+
+      // Get process state
+      const psProc = Bun.spawn(['ps', '-t', pts, '-o', 'stat,wchan,comm'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const psOutput = await new Response(psProc.stdout).text();
+
+      // Find claude process line
+      for (const line of psOutput.split('\n')) {
+        if (line.includes('claude')) {
+          const parts = line.trim().split(/\s+/);
+          if (parts.length >= 2) {
+            const stat = parts[0];
+            const wchan = parts[1];
+
+            // R = Running (processing)
+            // S with do_epo/ep_poll = epoll_wait (waiting for input)
+            if (stat.startsWith('R')) {
+              return true;  // Actively running
+            }
+            if (stat.startsWith('S') && (wchan === 'do_epo' || wchan === 'ep_poll' || wchan === 'poll_s')) {
+              return false;  // Sleeping in event loop (waiting for input)
+            }
+          }
+        }
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Check if a session is waiting for user input
    */
   async isWaitingForInput(sessionId: string): Promise<boolean> {
     try {
-      const proc = Bun.spawn(['tmux', 'capture-pane', '-t', sessionId, '-p', '-S', '-10'], {
+      const proc = Bun.spawn(['tmux', 'capture-pane', '-t', sessionId, '-p', '-S', '-15'], {
         stdout: 'pipe',
         stderr: 'pipe',
       });
@@ -154,19 +202,72 @@ export class TmuxService {
 
       const text = await new Response(proc.stdout).text();
       const lastLines = text.toLowerCase();
+      const lines = text.trim().split('\n');
+      const lastLine = lines[lines.length - 1] || '';
+
+      // Check for active processing patterns FIRST - if found, NOT waiting
+      // These are specific Claude Code spinner patterns with emoji prefix
+      // Processing takes priority over completion (completion may be in scroll buffer)
+      const processingPatterns = [
+        '✽ crunching',
+        '✽ embellishing',
+        '✽ thinking',
+        '✽ working',
+        '✻ thinking',
+        '✻ crunching',
+        '⏳ working',
+        '✽',  // Any spinning indicator
+      ];
+
+      if (processingPatterns.some(pattern => lastLines.includes(pattern))) {
+        return false;  // Currently processing, not waiting
+      }
+
+      // Check for completion patterns - if found, definitely waiting
+      // These indicate Claude finished processing and is waiting for input
+      const completionPatterns = [
+        '✻ worked',
+        '✻ cooked',
+        '✻ crunched',
+        '✻ done',
+      ];
+
+      if (completionPatterns.some(pattern => lastLines.includes(pattern))) {
+        return true;  // Completed, waiting for input
+      }
 
       // Check for common waiting patterns in Claude Code
+      // These patterns are specific to Claude Code UI
       const waitingPatterns = [
         'esc to cancel',
         'tab to amend',
         'accept edits',
         'shift+tab to cycle',
         'waiting for',
-        '? ',  // Selection prompt
-        '> ',  // Input prompt
+        'y/n',
+        'yes/no',
+        'press enter',
+        '(y)',
       ];
 
-      return waitingPatterns.some(pattern => lastLines.includes(pattern));
+      // Check if any specific pattern matches
+      if (waitingPatterns.some(pattern => lastLines.includes(pattern))) {
+        return true;
+      }
+
+      // Check if the last line ends with a prompt indicator
+      // Only consider it waiting if it's at the very end
+      const trimmedLast = lastLine.trim();
+      if (trimmedLast.endsWith('> ') || trimmedLast.endsWith('>')) {
+        return true;
+      }
+
+      // Check for selection prompt (? at end of line with options above)
+      if (trimmedLast.endsWith('?') && lastLines.includes('❯')) {
+        return true;
+      }
+
+      return false;
     } catch {
       return false;
     }

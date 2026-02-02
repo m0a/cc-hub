@@ -88,17 +88,31 @@ sessions.get('/', async (c) => {
       }
     }
 
-    // Combine jsonl-based and terminal-based waiting detection
-    // Either source detecting waiting = waiting for input
+    // Determine if Claude is actively processing or waiting for input
     const isClaudeRunning = s.currentCommand === 'claude';
-    const waitingForInput = isClaudeRunning
-      ? (ccSession?.waitingForInput || s.waitingForInput)
-      : s.waitingForInput;
+    let waitingForInput = false;
+
+    if (isClaudeRunning) {
+      // Check process state (most reliable indicator)
+      const isProcessActive = await tmuxService.isProcessRunning(s.id);
+
+      if (!isProcessActive) {
+        // Process is sleeping (S state with epoll_wait) = definitely waiting for input
+        waitingForInput = true;
+      } else {
+        // Process is running (R state), check multiple indicators
+        // Terminal patterns detect completion (✻ Worked) and prompts (accept edits)
+        // jsonl detects tool-specific waiting (AskUserQuestion, etc.)
+        waitingForInput = s.waitingForInput || ccSession?.waitingForInput || false;
+      }
+    } else {
+      waitingForInput = s.waitingForInput || false;
+    }
 
     // Calculate indicator state
     const indicatorState = getIndicatorState(
       isClaudeRunning,
-      waitingForInput || false,
+      waitingForInput,
       ccSession?.waitingToolName
     );
 

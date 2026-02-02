@@ -8,7 +8,7 @@ interface UseSessionsReturn {
   isLoading: boolean;
   error: string | null;
   fetchSessions: () => Promise<void>;
-  createSession: (name?: string) => Promise<SessionResponse | null>;
+  createSession: (name?: string, workingDir?: string) => Promise<SessionResponse | null>;
   deleteSession: (id: string) => Promise<boolean>;
 }
 
@@ -35,14 +35,14 @@ export function useSessions(): UseSessionsReturn {
     }
   }, []);
 
-  const createSession = useCallback(async (name?: string): Promise<SessionResponse | null> => {
+  const createSession = useCallback(async (name?: string, workingDir?: string): Promise<SessionResponse | null> => {
     setError(null);
 
     try {
       const response = await fetch(`${API_BASE}/api/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, workingDir }),
       });
 
       if (!response.ok) {

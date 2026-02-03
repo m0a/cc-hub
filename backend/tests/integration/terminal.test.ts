@@ -1,20 +1,30 @@
-import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
+import { describe, expect, test, beforeAll, afterAll, afterEach } from 'bun:test';
 import { TmuxService } from '../../src/services/tmux';
-
-const TEST_PREFIX = 'cchub-test-terminal-';
 
 describe('Terminal WebSocket Integration', () => {
   let tmuxService: TmuxService;
+  const testPrefix = `cchub-test-terminal-${Date.now()}-`;
+  const createdSessions: string[] = [];
 
-  beforeEach(() => {
-    tmuxService = new TmuxService(TEST_PREFIX);
+  const uniqueName = (base: string) => `${testPrefix}${base}`;
+
+  beforeAll(() => {
+    tmuxService = new TmuxService();
   });
 
   afterEach(async () => {
-    // Clean up test sessions
+    // Clean up sessions created during each test
+    for (const sessionId of createdSessions) {
+      await tmuxService.killSession(sessionId).catch(() => {});
+    }
+    createdSessions.length = 0;
+  });
+
+  afterAll(async () => {
+    // Final cleanup
     const sessions = await tmuxService.listSessions();
     for (const session of sessions) {
-      if (session.id.startsWith(TEST_PREFIX)) {
+      if (session.id.startsWith('cchub-test-terminal-')) {
         await tmuxService.killSession(session.id).catch(() => {});
       }
     }
@@ -22,14 +32,18 @@ describe('Terminal WebSocket Integration', () => {
 
   describe('Session creation and attachment', () => {
     test('should create a new tmux session for terminal', async () => {
-      const sessionId = await tmuxService.createSession('terminal-test');
+      const name = uniqueName('terminal-test');
+      const sessionId = await tmuxService.createSession(name);
+      createdSessions.push(sessionId);
 
-      expect(sessionId).toContain(TEST_PREFIX);
+      expect(sessionId).toBe(name);
       expect(await tmuxService.sessionExists(sessionId)).toBe(true);
     });
 
     test('should be able to send input to session', async () => {
-      const sessionId = await tmuxService.createSession('input-test');
+      const name = uniqueName('input-test');
+      const sessionId = await tmuxService.createSession(name);
+      createdSessions.push(sessionId);
 
       // Send a command to the session using tmux send-keys
       const proc = Bun.spawn(['tmux', 'send-keys', '-t', sessionId, 'echo hello', 'Enter'], {
@@ -42,7 +56,9 @@ describe('Terminal WebSocket Integration', () => {
     });
 
     test('should capture output from session', async () => {
-      const sessionId = await tmuxService.createSession('output-test');
+      const name = uniqueName('output-test');
+      const sessionId = await tmuxService.createSession(name);
+      createdSessions.push(sessionId);
 
       // Send echo command
       await Bun.spawn(['tmux', 'send-keys', '-t', sessionId, 'echo TEST_OUTPUT_12345', 'Enter'], {
@@ -66,7 +82,9 @@ describe('Terminal WebSocket Integration', () => {
 
   describe('Terminal resize', () => {
     test('should resize terminal window', async () => {
-      const sessionId = await tmuxService.createSession('resize-test');
+      const name = uniqueName('resize-test');
+      const sessionId = await tmuxService.createSession(name);
+      createdSessions.push(sessionId);
 
       // Resize the window
       const proc = Bun.spawn(['tmux', 'resize-window', '-t', sessionId, '-x', '120', '-y', '40'], {

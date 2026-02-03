@@ -15,14 +15,71 @@ Claude Codeセッションをリモート管理するWebベースのターミナ
 - **セッション履歴** - 過去のClaude Codeセッション閲覧・再開
 - **会話ビューア** - Markdownレンダリング、画像表示対応
 
+## インストール
+
+### ワンラインインストール（推奨）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/m0a/cc-hub/main/install.sh | bash
+```
+
+### 手動インストール
+
+1. [Releases](https://github.com/m0a/cc-hub/releases/latest) から対応するバイナリをダウンロード
+   - Linux x64: `cchub-linux-x64`
+   - macOS ARM64: `cchub-macos-arm64`
+
+2. 実行権限を付与して配置
+
+```bash
+chmod +x cchub-linux-x64
+mv cchub-linux-x64 ~/bin/cchub
+```
+
+3. PATHに追加（未設定の場合）
+
+```bash
+echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
 ## 必要環境
 
-- [Tailscale](https://tailscale.com/) - 必須（HTTPS証明書に使用）
-- [tmux](https://github.com/tmux/tmux) 3.0+
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
-- [Bun](https://bun.sh/) 1.0+ - 開発時のみ
+| 依存関係 | 必須 | インストール方法 |
+|---------|-----|----------------|
+| [Tailscale](https://tailscale.com/) | ○ | https://tailscale.com/download |
+| [tmux](https://github.com/tmux/tmux) 3.0+ | ○ | `apt install tmux` / `brew install tmux` |
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | ○ | `npm install -g @anthropic-ai/claude-code` |
 
-## セットアップ
+## クイックスタート
+
+```bash
+# 1. Tailscale証明書生成を許可（初回のみ）
+sudo tailscale set --operator=$USER
+
+# 2. CC Hub起動
+cchub
+# または パスワード付き
+cchub -P mypassword
+
+# 3. ブラウザでアクセス
+#    https://<your-hostname>:5923
+```
+
+### systemdサービスとして登録
+
+```bash
+cchub setup -P mypassword
+```
+
+これにより以下が有効になります：
+- システム起動時に自動起動
+- クラッシュ時の自動再起動
+- `cchub update` による自動更新
+
+## 開発環境セットアップ
+
+開発やソースからビルドする場合は [Bun](https://bun.sh/) 1.0+ が必要です。
 
 ```bash
 # 依存関係のインストール
@@ -34,19 +91,10 @@ bun run dev
 
 ブラウザで http://localhost:5173 を開きます（開発モード）。
 
-## 本番ビルド
+### ソースからビルド
 
 ```bash
-# ビルド
-bun run build
-
-# サーバー起動（フロントエンドを同梱）
-cd backend && bun run start
-```
-
-シングルバイナリとしてビルドする場合：
-
-```bash
+# シングルバイナリとしてビルド
 bun run build:binary
 ./dist/cchub
 ```

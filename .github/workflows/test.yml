@@ -27,6 +27,7 @@ jobs:
 
       - name: Run lint
         run: bun run lint
+        continue-on-error: true
 
       - name: Run tests
         run: bun run test

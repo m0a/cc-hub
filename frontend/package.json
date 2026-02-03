@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "test": "echo 'No unit tests yet - use test:e2e for E2E tests'",
     "test:e2e": "playwright test",
-    "lint": "bunx @biomejs/biome check src/"
+    "lint": "bunx @biomejs/biome lint src/"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

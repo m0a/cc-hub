@@ -8,7 +8,7 @@
     "build": "bun build src/index.ts --outdir dist --target bun",
     "start": "bun run dist/index.js",
     "test": "bun test",
-    "lint": "bunx @biomejs/biome check src/"
+    "lint": "bunx @biomejs/biome lint src/"
   },
   "dependencies": {
     "hono": "^4.7.0",

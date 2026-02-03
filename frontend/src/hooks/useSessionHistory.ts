@@ -41,20 +41,31 @@ export function useSessionHistory(): UseSessionHistoryResult {
   const [error, setError] = useState<string | null>(null);
 
   // Fetch project list (fast)
-  const fetchProjects = useCallback(async () => {
+  const fetchProjects = useCallback(async (silent = false) => {
     try {
-      setIsLoadingProjects(true);
-      setError(null);
+      if (!silent) {
+        setIsLoadingProjects(true);
+        setError(null);
+      }
       const response = await fetch(`${API_BASE}/api/sessions/history/projects`);
       if (!response.ok) {
         throw new Error('Failed to fetch projects');
       }
       const data = await response.json();
-      setProjects(data.projects || []);
+      // Only update state if data has changed to prevent unnecessary re-renders
+      setProjects(prev => {
+        const newJson = JSON.stringify(data.projects || []);
+        const prevJson = JSON.stringify(prev);
+        return newJson === prevJson ? prev : (data.projects || []);
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      if (!silent) {
+        setError(err instanceof Error ? err.message : 'Unknown error');
+      }
     } finally {
-      setIsLoadingProjects(false);
+      if (!silent) {
+        setIsLoadingProjects(false);
+      }
     }
   }, []);
 

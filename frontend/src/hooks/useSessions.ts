@@ -7,7 +7,7 @@ interface UseSessionsReturn {
   sessions: SessionResponse[];
   isLoading: boolean;
   error: string | null;
-  fetchSessions: () => Promise<void>;
+  fetchSessions: (silent?: boolean) => Promise<void>;
   createSession: (name?: string, workingDir?: string) => Promise<SessionResponse | null>;
   deleteSession: (id: string) => Promise<boolean>;
 }
@@ -17,9 +17,12 @@ export function useSessions(): UseSessionsReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchSessions = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+  const fetchSessions = useCallback(async (silent = false) => {
+    // Only show loading state on initial fetch, not on polling
+    if (!silent) {
+      setIsLoading(true);
+      setError(null);
+    }
 
     try {
       const response = await fetch(`${API_BASE}/api/sessions`);
@@ -27,11 +30,20 @@ export function useSessions(): UseSessionsReturn {
         throw new Error('Failed to fetch sessions');
       }
       const data = await response.json();
-      setSessions(data.sessions);
+      // Only update state if data has changed to prevent unnecessary re-renders
+      setSessions(prev => {
+        const newJson = JSON.stringify(data.sessions);
+        const prevJson = JSON.stringify(prev);
+        return newJson === prevJson ? prev : data.sessions;
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      if (!silent) {
+        setError(err instanceof Error ? err.message : 'Unknown error');
+      }
     } finally {
-      setIsLoading(false);
+      if (!silent) {
+        setIsLoading(false);
+      }
     }
   }, []);
 

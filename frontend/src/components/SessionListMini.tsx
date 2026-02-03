@@ -173,9 +173,9 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
   useEffect(() => {
     fetchSessions();
 
-    // Poll every 5 seconds for updates
+    // Poll every 5 seconds for updates (silent to prevent re-renders)
     const interval = setInterval(() => {
-      fetchSessions();
+      fetchSessions(true);
     }, 5000);
 
     return () => clearInterval(interval);

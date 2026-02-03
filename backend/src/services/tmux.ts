@@ -1,3 +1,6 @@
+import * as fs from 'fs';
+import * as path from 'path';
+
 interface TmuxSessionInfo {
   id: string;
   name: string;
@@ -11,7 +14,65 @@ interface TmuxSessionInfo {
   waitingForInput?: boolean;
 }
 
+const CCHUB_TMUX_CONFIG = `# CC Hub tmux configuration
+# Auto-generated - do not edit manually
+
+# Enable mouse support
+set -g mouse on
+
+# Increase scrollback buffer
+set -g history-limit 10000
+
+# Enable clipboard (OSC 52)
+set -g set-clipboard on
+`;
+
 export class TmuxService {
+  private configPath: string;
+  private configEnsured = false;
+
+  constructor() {
+    const configDir = path.join(process.env.HOME || '/tmp', '.config', 'cchub');
+    this.configPath = path.join(configDir, 'tmux.conf');
+  }
+
+  /**
+   * Ensure CC Hub tmux config exists
+   */
+  private async ensureConfig(): Promise<void> {
+    if (this.configEnsured) return;
+
+    const configDir = path.dirname(this.configPath);
+
+    // Create config directory if it doesn't exist
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true });
+    }
+
+    // Create config file if it doesn't exist
+    if (!fs.existsSync(this.configPath)) {
+      fs.writeFileSync(this.configPath, CCHUB_TMUX_CONFIG);
+      console.log(`Created tmux config: ${this.configPath}`);
+    }
+
+    this.configEnsured = true;
+  }
+
+  /**
+   * Apply CC Hub tmux config to the server
+   */
+  private async applyConfig(): Promise<void> {
+    await this.ensureConfig();
+
+    // Source the config file to apply settings
+    const proc = Bun.spawn(['tmux', 'source-file', this.configPath], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+
+    await proc.exited;
+    // Ignore errors (e.g., if no tmux server is running)
+  }
   /**
    * List all tmux sessions with pane info
    */
@@ -277,6 +338,9 @@ export class TmuxService {
    * Create a new tmux session
    */
   async createSession(name: string): Promise<string> {
+    // Ensure config exists before creating session
+    await this.ensureConfig();
+
     const proc = Bun.spawn(['tmux', 'new-session', '-d', '-s', name], {
       stdout: 'pipe',
       stderr: 'pipe',
@@ -287,6 +351,9 @@ export class TmuxService {
       const error = await new Response(proc.stderr).text();
       throw new Error(`Failed to create session: ${error}`);
     }
+
+    // Apply CC Hub config to tmux server
+    await this.applyConfig();
 
     return name;
   }

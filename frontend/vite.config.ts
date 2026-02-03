@@ -4,21 +4,88 @@ import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
+import os from 'os';
 
-// Load TLS certs if available
-const certsDir = path.resolve(__dirname, '../certs');
-const httpsConfig = fs.existsSync(path.join(certsDir, 'cert.pem'))
-  ? {
-      key: fs.readFileSync(path.join(certsDir, 'key.pem')),
-      cert: fs.readFileSync(path.join(certsDir, 'cert.pem')),
+// Get Tailscale certificate for HTTPS
+function getTailscaleCert(): { key: Buffer; cert: Buffer } | undefined {
+  try {
+    // Check if tailscale command exists
+    try {
+      execSync('which tailscale', { stdio: 'pipe' });
+    } catch {
+      console.warn('⚠️  tailscale command not found, running without HTTPS');
+      return undefined;
     }
-  : undefined;
+
+    // Get Tailscale hostname
+    const statusResult = execSync('tailscale status --json', { stdio: 'pipe' });
+    const status = JSON.parse(statusResult.toString());
+    const dnsName = status.Self?.DNSName;
+    if (!dnsName) {
+      console.warn('⚠️  Tailscale DNSName not found, running without HTTPS');
+      return undefined;
+    }
+    const hostname = dnsName.replace(/\.$/, '');
+
+    // Certificate paths (same as backend)
+    const certDir = path.join(os.homedir(), '.tailscale-certs');
+    const certPath = path.join(certDir, `${hostname}.crt`);
+    const keyPath = path.join(certDir, `${hostname}.key`);
+
+    // Check if cert needs to be generated or renewed
+    let needsCert = !fs.existsSync(certPath) || !fs.existsSync(keyPath);
+
+    if (!needsCert) {
+      // Check if cert expires within 7 days
+      const certStat = fs.statSync(certPath);
+      const certAgeDays = (Date.now() - certStat.mtimeMs) / (1000 * 60 * 60 * 24);
+      if (certAgeDays > 83) {
+        needsCert = true;
+      }
+    }
+
+    if (needsCert) {
+      console.log('🔐 Tailscale 証明書を生成中...');
+      fs.mkdirSync(certDir, { recursive: true, mode: 0o700 });
+
+      try {
+        execSync(`tailscale cert --cert-file "${certPath}" --key-file "${keyPath}" "${hostname}"`, {
+          stdio: 'pipe',
+        });
+        console.log(`📜 証明書を生成しました: ${certDir}`);
+      } catch (e: unknown) {
+        const error = e as { stderr?: Buffer };
+        const stderr = error.stderr?.toString() || '';
+        console.error('❌ Tailscale 証明書の生成に失敗しました');
+        if (stderr.includes('Access denied') || stderr.includes('cert access denied')) {
+          console.error('💡 ヒント: sudo tailscale set --operator=$USER を実行してください');
+        }
+        return undefined;
+      }
+    }
+
+    console.log(`🔒 HTTPS: https://${hostname}:5173`);
+    return {
+      key: fs.readFileSync(keyPath),
+      cert: fs.readFileSync(certPath),
+    };
+  } catch (e) {
+    console.warn('⚠️  Failed to setup Tailscale cert:', e);
+    return undefined;
+  }
+}
+
+const httpsConfig = getTailscaleCert();
 
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
+      devOptions: {
+        enabled: false,
+      },
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icon-192.png', 'icon-512.png'],
       manifest: {
@@ -69,6 +136,18 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: true,
     https: httpsConfig,
+    watch: {
+      // Exclude directories that may cause unnecessary reloads
+      // Use absolute paths for parent directory patterns
+      ignored: [
+        '**/node_modules/**',
+        '**/.git/**',
+        path.resolve(__dirname, '../.claude/**'),
+        path.resolve(__dirname, '../.claude-user-prompts/**'),
+        path.resolve(__dirname, '../logs/**'),
+        path.resolve(__dirname, '../backend/**'),
+      ],
+    },
     proxy: {
       '/api': {
         target: 'https://localhost:3000',

@@ -4,7 +4,22 @@ import { copyFile, rename, chmod } from 'node:fs/promises';
 import { VERSION } from '../cli';
 
 const GITHUB_REPO = 'm0a/cc-hub';
-const BINARY_NAME = 'cchub';
+
+function getBinaryName(): string {
+  const platform = process.platform; // 'linux', 'darwin', etc.
+  const arch = process.arch; // 'x64', 'arm64', etc.
+
+  if (platform === 'linux' && arch === 'x64') {
+    return 'cchub-linux-x64';
+  }
+  if (platform === 'darwin' && arch === 'arm64') {
+    return 'cchub-macos-arm64';
+  }
+
+  // Fallback: try platform-arch pattern
+  const platformName = platform === 'darwin' ? 'macos' : platform;
+  return `cchub-${platformName}-${arch}`;
+}
 
 interface GitHubRelease {
   tag_name: string;
@@ -112,10 +127,12 @@ export async function checkAndUpdate(checkOnly: boolean, autoMode: boolean): Pro
     return;
   }
 
-  // Find the binary asset
-  const asset = release.assets.find(a => a.name === BINARY_NAME);
+  // Find the binary asset for current platform
+  const binaryName = getBinaryName();
+  const asset = release.assets.find(a => a.name === binaryName);
   if (!asset) {
-    console.error('❌ バイナリがリリースに見つかりません');
+    console.error(`❌ バイナリがリリースに見つかりません: ${binaryName}`);
+    console.log('利用可能なアセット:', release.assets.map(a => a.name).join(', '));
     return;
   }
 

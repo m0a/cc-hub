@@ -1,6 +1,6 @@
 // CLI argument parser and commands
 
-const VERSION = '0.0.7';
+const VERSION = '0.0.12';
 
 // 開発モード判定（bun run --watch で実行されている場合）
 const isDev = process.argv.some(arg => arg.includes('--watch'));

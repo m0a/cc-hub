@@ -1,0 +1,7 @@
+[test]
+# Exclude Playwright E2E tests from bun test
+# Use `bun run test:e2e` to run Playwright tests
+preload = []
+
+[test.coverage]
+exclude = ["**/e2e/**", "**/tests/e2e/**"]

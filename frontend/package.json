@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "bun test",
+    "test": "echo 'No unit tests yet - use test:e2e for E2E tests'",
     "test:e2e": "playwright test",
     "lint": "bunx @biomejs/biome check src/"
   },

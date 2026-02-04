@@ -697,24 +697,24 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
       <div className="border-t border-gray-700 bg-black/80 shrink-0 mt-auto">
         {/* Action buttons (only for sessions tab) */}
         {activeTab === 'sessions' && (
-          <div className="flex items-center justify-between px-2 py-1 border-b border-gray-700">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700">
             {onBack ? (
               <button
                 onClick={onBack}
-                className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
               </button>
             ) : (
-              <div className="w-6" />
+              <div className="w-9" />
             )}
             <button
               onClick={() => setShowCreateModal(true)}
-              className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+              className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
             </button>
@@ -725,7 +725,7 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
         <div className="flex">
           <button
             onClick={() => setActiveTab('sessions')}
-            className={`flex-1 px-2 py-1.5 text-xs font-medium transition-colors ${
+            className={`flex-1 px-3 py-2.5 text-sm font-medium transition-colors ${
               activeTab === 'sessions'
                 ? 'text-white bg-gray-800 border-t-2 border-blue-500'
                 : 'text-gray-400 hover:text-gray-300'
@@ -735,7 +735,7 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
           </button>
           <button
             onClick={() => setActiveTab('history')}
-            className={`flex-1 px-2 py-1.5 text-xs font-medium transition-colors ${
+            className={`flex-1 px-3 py-2.5 text-sm font-medium transition-colors ${
               activeTab === 'history'
                 ? 'text-white bg-gray-800 border-t-2 border-blue-500'
                 : 'text-gray-400 hover:text-gray-300'
@@ -745,7 +745,7 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
           </button>
           <button
             onClick={() => setActiveTab('dashboard')}
-            className={`flex-1 px-2 py-1.5 text-xs font-medium transition-colors ${
+            className={`flex-1 px-3 py-2.5 text-sm font-medium transition-colors ${
               activeTab === 'dashboard'
                 ? 'text-white bg-gray-800 border-t-2 border-blue-500'
                 : 'text-gray-400 hover:text-gray-300'

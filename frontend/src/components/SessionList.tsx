@@ -681,7 +681,7 @@ export function SessionList({ onSelectSession, onBack, inline = false }: Session
       )}
 
       {/* Bottom bar with tabs */}
-      <div className="border-t border-gray-700 bg-black/80 shrink-0">
+      <div className="border-t border-gray-700 bg-black/80 shrink-0 mt-auto">
         {/* Action buttons (only for sessions tab) */}
         {activeTab === 'sessions' && (
           <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700">

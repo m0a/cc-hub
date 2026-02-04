@@ -497,25 +497,19 @@ function TerminalPane({
               onTouchMove={handleSidebarTouchMove}
               onTouchEnd={handleSidebarTouchEnd}
             >
-              <div className="px-2 py-1 bg-black/30 border-b border-gray-700 text-xs text-white/70 flex items-center justify-between">
+              <div className="px-2 py-1 bg-black/30 border-b border-gray-700 text-xs text-white/70 flex items-center justify-between shrink-0">
                 <span>セッション一覧</span>
                 <span className="text-white/40">{Math.round(sessionListScale * 100)}%</span>
               </div>
-              <div className="flex-1 overflow-auto">
-                <div
-                  style={{
-                    transform: `scale(${sessionListScale})`,
-                    transformOrigin: 'top left',
-                    width: `${100 / sessionListScale}%`,
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <SessionList
+                  onSelectSession={(sess) => {
+                    onSelectSession(sess.id);
+                    // Keep session list open after selection
                   }}
-                >
-                  <SessionList
-                    onSelectSession={(sess) => {
-                      onSelectSession(sess.id);
-                      // Keep session list open after selection
-                    }}
-                  />
-                </div>
+                  inline={true}
+                  contentScale={sessionListScale}
+                />
               </div>
             </div>
           </>

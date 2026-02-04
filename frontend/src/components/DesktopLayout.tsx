@@ -608,16 +608,18 @@ export function DesktopLayout({
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
         <div className="flex items-center justify-between px-3 py-1 bg-black/50 border-b border-gray-700 shrink-0">
-          {/* Left: Menu button */}
-          <button
-            onClick={() => setShowSidePanel(prev => !prev)}
-            className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-            title="サイドパネル (Ctrl+B)"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
+          {/* Left: Menu button (desktop only, tablet uses PaneContainer sidebar) */}
+          {!isTablet && (
+            <button
+              onClick={() => setShowSidePanel(prev => !prev)}
+              className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+              title="サイドパネル (Ctrl+B)"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          )}
 
           {/* Center: Session name */}
           <span className="text-white/70 text-sm truncate max-w-[300px]">

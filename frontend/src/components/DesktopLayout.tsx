@@ -760,6 +760,7 @@ export function DesktopLayout({
                 {sidePanelTab === 'sessions' ? (
                   <SessionList
                     onSelectSession={handleSessionSelect}
+                    inline={true}
                   />
                 ) : (
                   <Dashboard className="h-full" />
@@ -808,6 +809,7 @@ export function DesktopLayout({
               {sidePanelTab === 'sessions' ? (
                 <SessionList
                   onSelectSession={handleSessionSelect}
+                  inline={true}
                 />
               ) : (
                 <Dashboard className="h-full" />

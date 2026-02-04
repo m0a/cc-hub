@@ -51,6 +51,7 @@ function getIndicatorColor(state?: IndicatorState): string {
 interface SessionListProps {
   onSelectSession: (session: SessionResponse) => void;
   onBack?: () => void;
+  inline?: boolean;  // true for side panel, false for fullscreen
 }
 
 // Confirm dialog for delete
@@ -509,7 +510,7 @@ function SessionItem({
   );
 }
 
-export function SessionList({ onSelectSession, onBack }: SessionListProps) {
+export function SessionList({ onSelectSession, onBack, inline = false }: SessionListProps) {
   const {
     sessions,
     isLoading,
@@ -614,16 +615,21 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
     setSessionToDelete(session);
   };
 
+  // Container class: h-full for inline (side panel), h-screen for fullscreen
+  const containerClass = inline
+    ? "h-full flex flex-col bg-gray-900 text-white"
+    : "h-screen flex flex-col bg-gray-900 text-white";
+
   if (isLoading && sessions.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full min-h-screen bg-gray-900">
+      <div className={`flex items-center justify-center bg-gray-900 ${inline ? 'h-full' : 'h-screen'}`}>
         <div className="text-gray-400">Loading sessions...</div>
       </div>
     );
   }
 
   return (
-    <div className="h-full min-h-screen flex flex-col bg-gray-900 text-white">
+    <div className={containerClass}>
       {/* Error message */}
       {error && activeTab === 'sessions' && (
         <div className="p-4 bg-red-900/50 text-red-300 text-sm shrink-0">

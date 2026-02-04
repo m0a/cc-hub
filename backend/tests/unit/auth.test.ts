@@ -4,84 +4,80 @@ import { rm, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const TEST_DATA_DIR = join(import.meta.dir, '.test-data');
+const JWT_SECRET = 'test-jwt-secret';
 
 describe('AuthService', () => {
   let authService: AuthService;
 
   beforeEach(async () => {
     await mkdir(TEST_DATA_DIR, { recursive: true });
-    authService = new AuthService(TEST_DATA_DIR, 'test-jwt-secret');
+    authService = new AuthService(TEST_DATA_DIR, JWT_SECRET);
   });
 
   afterEach(async () => {
     await rm(TEST_DATA_DIR, { recursive: true, force: true });
   });
 
-  describe('register', () => {
-    test('should register a new user and return token', async () => {
-      const result = await authService.register('testuser', 'password123');
+  describe('generateTokenForUser', () => {
+    test('should generate a valid JWT token', async () => {
+      const token = await authService.generateTokenForUser('testuser');
 
-      expect(result.user.username).toBe('testuser');
-      expect(result.user.id).toBeDefined();
-      expect(result.token).toBeDefined();
+      expect(token).toBeDefined();
+      expect(token.split('.').length).toBe(3); // JWT has 3 parts
     });
 
-    test('should reject duplicate username', async () => {
-      await authService.register('testuser', 'password123');
+    test('should generate token with correct payload', async () => {
+      const token = await authService.generateTokenForUser('myuser');
+      const payload = await authService.verifyToken(token);
 
-      await expect(
-        authService.register('testuser', 'differentpass')
-      ).rejects.toThrow('Username already exists');
+      expect(payload.userId).toBe('myuser');
+      expect(payload.username).toBe('myuser');
+      expect(payload.iat).toBeDefined();
+      expect(payload.exp).toBeDefined();
     });
 
-    test('should hash password (not store plaintext)', async () => {
-      await authService.register('testuser', 'password123');
-      const users = await authService.getUsers();
-      const user = users.find((u) => u.username === 'testuser');
+    test('should generate token with 7 day expiry', async () => {
+      const token = await authService.generateTokenForUser('testuser');
+      const payload = await authService.verifyToken(token);
 
-      expect(user?.passwordHash).not.toBe('password123');
-      expect(user?.passwordHash).toContain('$'); // bcrypt format
-    });
-  });
-
-  describe('login', () => {
-    beforeEach(async () => {
-      await authService.register('testuser', 'password123');
-    });
-
-    test('should login with correct credentials', async () => {
-      const result = await authService.login('testuser', 'password123');
-
-      expect(result.user.username).toBe('testuser');
-      expect(result.token).toBeDefined();
-    });
-
-    test('should reject incorrect password', async () => {
-      await expect(
-        authService.login('testuser', 'wrongpassword')
-      ).rejects.toThrow('Invalid credentials');
-    });
-
-    test('should reject non-existent user', async () => {
-      await expect(
-        authService.login('nobody', 'password123')
-      ).rejects.toThrow('Invalid credentials');
+      const expectedExpiry = payload.iat + 7 * 24 * 60 * 60;
+      expect(payload.exp).toBe(expectedExpiry);
     });
   });
 
   describe('verifyToken', () => {
     test('should verify valid token', async () => {
-      const { token, user } = await authService.register('testuser', 'password123');
+      const token = await authService.generateTokenForUser('testuser');
       const payload = await authService.verifyToken(token);
 
-      expect(payload.userId).toBe(user.id);
+      expect(payload.userId).toBe('testuser');
       expect(payload.username).toBe('testuser');
     });
 
-    test('should reject invalid token', async () => {
+    test('should reject invalid token format', async () => {
       await expect(
         authService.verifyToken('invalid-token')
+      ).rejects.toThrow('Invalid token format');
+    });
+
+    test('should reject tampered token', async () => {
+      const token = await authService.generateTokenForUser('testuser');
+      const parts = token.split('.');
+      // Tamper with the payload
+      const tamperedToken = `${parts[0]}.${parts[1]}modified.${parts[2]}`;
+
+      await expect(
+        authService.verifyToken(tamperedToken)
       ).rejects.toThrow();
+    });
+
+    test('should reject token signed with different secret', async () => {
+      const otherService = new AuthService(TEST_DATA_DIR, 'different-secret');
+      const token = await otherService.generateTokenForUser('testuser');
+
+      await expect(
+        authService.verifyToken(token)
+      ).rejects.toThrow('Invalid token signature');
     });
   });
 });

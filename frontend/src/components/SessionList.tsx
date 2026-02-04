@@ -616,14 +616,14 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
 
   if (isLoading && sessions.length === 0) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-900">
+      <div className="flex items-center justify-center h-full min-h-screen bg-gray-900">
         <div className="text-gray-400">Loading sessions...</div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-900 text-white">
+    <div className="h-full min-h-screen flex flex-col bg-gray-900 text-white">
       {/* Error message */}
       {error && activeTab === 'sessions' && (
         <div className="p-4 bg-red-900/50 text-red-300 text-sm shrink-0">

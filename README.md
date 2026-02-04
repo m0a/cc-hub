@@ -240,7 +240,7 @@ bun run lint
 ## 技術スタック
 
 - **Backend**: Bun, Hono, WebSocket
-- **Frontend**: React 19, Vite, Tailwind CSS v4, ghostty-web
+- **Frontend**: React 19, Vite, Tailwind CSS v4, xterm.js
 - **Terminal**: tmux, PTY
 
 ## ライセンス

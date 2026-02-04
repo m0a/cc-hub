@@ -41,36 +41,89 @@ shared/      # Shared types and Zod schemas
 ### Backend Services
 
 - **TmuxService** (`services/tmux.ts`) - Manages tmux sessions, spawns Claude Code processes, handles terminal resize, PTY-based session identification
-- **FileService** (`services/file-service.ts`) - Secure file operations with path traversal prevention
-- **FileChangeTracker** (`services/file-change-tracker.ts`) - Parses Claude Code `.jsonl` logs to track file changes
 - **ClaudeCodeService** (`services/claude-code.ts`) - Monitors Claude Code state from `.jsonl` files, PTY-based session matching
 - **SessionHistoryService** (`services/session-history.ts`) - Reads past Claude Code session history and conversations
+- **PromptHistoryService** (`services/prompt-history.ts`) - Searches prompt history across sessions
+- **FileService** (`services/file-service.ts`) - Secure file operations with path traversal prevention
+- **FileChangeTracker** (`services/file-change-tracker.ts`) - Parses Claude Code `.jsonl` logs to track file changes
 - **AnthropicUsageService** (`services/anthropic-usage.ts`) - Fetches usage limits from Anthropic API
 - **StatsService** (`services/stats-service.ts`) - Reads cached statistics from `~/.claude/stats-cache.json`
 - **UsageTrackerService** (`services/usage-tracker.ts`) - Reads limit tracker data
+- **AuthService** (`services/auth.ts`) - Password-based authentication with session tokens
 
 ### Key API Routes
 
-- `POST /api/sessions` - Create new Claude Code session
-- `GET /api/sessions/:id/terminal` - WebSocket connection to tmux session
-- `POST /api/sessions/:id/resume` - Resume Claude Code session with `claude -r`
-- `GET /api/sessions/history` - Get past Claude Code session history
-- `GET /api/sessions/history/:sessionId/conversation` - Get conversation for a session
-- `POST /api/sessions/history/resume` - Resume session from history
-- `GET /api/files/list` - Directory listing (restricted to session working directory)
-- `GET /api/files/read` - File content (with size limits)
-- `GET /api/files/changes/:sessionWorkingDir` - Claude Code changes from `.jsonl`
-- `GET /api/files/images/:filename` - Serve conversation images
+**Sessions** (`/api/sessions`):
+- `GET /` - List all tmux sessions with Claude Code state
+- `POST /` - Create new Claude Code session
+- `GET /:id` - Get session details
+- `DELETE /:id` - Close session
+- `POST /:id/resume` - Resume Claude Code session with `claude -r`
+- `GET /:id/copy-mode` - Get tmux copy mode selection
+- `GET /clipboard` - Get clipboard content
+- `GET /prompts/search` - Search prompt history
+
+**Session History** (`/api/sessions/history`):
+- `GET /` - Get past Claude Code session history
+- `GET /projects` - List projects with sessions
+- `GET /projects/:dirName` - Get sessions for a project
+- `GET /:sessionId/conversation` - Get conversation for a session
+- `POST /resume` - Resume session from history
+- `POST /metadata` - Update session metadata
+
+**Files** (`/api/files`):
+- `GET /list` - Directory listing
+- `GET /read` - File content (with size limits)
+- `GET /browse` - Browse directory tree
+- `GET /changes/:sessionWorkingDir` - Claude Code changes from `.jsonl`
+- `GET /images/:filename` - Serve conversation images
+- `GET /language` - Detect file language
+- `POST /mkdir` - Create directory
+
+**Other**:
 - `GET /api/dashboard` - Dashboard data (usage limits, statistics, cost estimates)
+- `POST /api/upload/image` - Upload image file
+- `POST /api/auth` - Login
+- `POST /api/auth/logout` - Logout
+- `GET /api/auth/me` - Get current user
+- `POST /api/logs` - Frontend log submission
 
 ### Frontend Components
 
-- **Terminal.tsx** - xterm.js terminal with custom soft keyboard
-- **TabletLayout.tsx** - Split-pane layout for tablets (terminal + session list + keyboard + dashboard)
-- **FileViewer** (`components/files/`) - File browser, code viewer with syntax highlighting, diff viewer
-- **Dashboard** (`components/dashboard/`) - Usage limits, daily charts, model usage, cost estimates
+**Layout**:
+- **DesktopLayout.tsx** - Main layout with split panes, supports desktop and tablet modes (`isTablet` prop)
+- **TabletLayout.tsx** - Alternative tablet-specific layout with built-in keyboard
+- **PaneContainer.tsx** - Tree-based pane system with tabbed content (sessions, dashboard, history, files)
+
+**Terminal**:
+- **Terminal.tsx** - xterm.js terminal with WebGL rendering, fit addon, web links addon
+
+**Session Management**:
+- **SessionList.tsx** - Full session list with tabs (Active/History/Dashboard), pinch-to-zoom support via `contentScale` prop
+- **SessionListMini.tsx** - Compact session list for TabletLayout
 - **SessionHistory.tsx** - Past session browser with project grouping
 - **ConversationViewer.tsx** - Markdown-rendered conversation display with image support
+
+**Keyboard**:
+- **FloatingKeyboard.tsx** - Draggable floating keyboard, minimizable, saves position separately per input mode (keyboard/Japanese)
+- **Keyboard.tsx** - Virtual keyboard component with long-press for symbols
+
+**Files** (`components/files/`):
+- **FileViewer.tsx** - Container with file browser and content viewer
+- **FileBrowser.tsx** - Directory tree navigation
+- **CodeViewer.tsx** - Syntax highlighted code display
+- **DiffViewer.tsx** - Side-by-side diff view for file changes
+- **ImageViewer.tsx** - Image preview with zoom
+- **MarkdownViewer.tsx** - Markdown rendering
+
+**Dashboard** (`components/dashboard/`):
+- **Dashboard.tsx** - Main dashboard container
+- **UsageLimits.tsx** - 5-hour/7-day usage cycle display with progress bars
+- **DailyUsageChart.tsx** - Message and session count bar charts
+- **ModelUsageChart.tsx** - Opus/Sonnet token usage comparison
+- **CostEstimate.tsx** - API cost calculation
+- **HourlyHeatmap.tsx** - Activity heatmap by hour
+- **LimitWarning.tsx** - Usage limit warnings
 
 ### Terminal Communication
 
@@ -110,6 +163,7 @@ cchub --version
 
 - Tailscale must be running (used for HTTPS certificates)
 - Run `sudo tailscale set --operator=$USER` once to allow cert generation
+- macOS: Install Tailscale via `brew install tailscale` (App Store version lacks CLI)
 
 ## Type Sharing
 

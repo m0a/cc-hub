@@ -29,7 +29,7 @@ export function SessionTab({ id, name, state, isActive, onSelect, onClose, onDel
   };
 
   // Long press to delete
-  const handleTouchStart = () => {
+  const startLongPress = () => {
     longPressFiredRef.current = false;
     longPressTimerRef.current = window.setTimeout(() => {
       longPressFiredRef.current = true;
@@ -37,11 +37,25 @@ export function SessionTab({ id, name, state, isActive, onSelect, onClose, onDel
     }, 600);
   };
 
-  const handleTouchEnd = () => {
+  const cancelLongPress = () => {
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
+  };
+
+  const handleTouchStart = () => {
+    startLongPress();
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    // Only handle left click
+    if (e.button !== 0) return;
+    startLongPress();
+  };
+
+  const handleTouchEnd = () => {
+    cancelLongPress();
     // If long press fired, don't trigger select
     if (longPressFiredRef.current) {
       longPressFiredRef.current = false;
@@ -49,11 +63,16 @@ export function SessionTab({ id, name, state, isActive, onSelect, onClose, onDel
     }
   };
 
+  const handleMouseUp = () => {
+    cancelLongPress();
+  };
+
+  const handleMouseLeave = () => {
+    cancelLongPress();
+  };
+
   const handleTouchCancel = () => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
+    cancelLongPress();
     longPressFiredRef.current = false;
   };
 
@@ -70,6 +89,9 @@ export function SessionTab({ id, name, state, isActive, onSelect, onClose, onDel
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchCancel}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
       className={`
         flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors
         border-b-2 min-w-0

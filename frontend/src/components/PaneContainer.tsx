@@ -2,19 +2,9 @@ import { useRef, useCallback, useState, useEffect } from 'react';
 import { TerminalComponent, type TerminalRef } from './Terminal';
 import { ConversationViewer } from './ConversationViewer';
 import { FileViewer } from './files/FileViewer';
-import { SessionList } from './SessionList';
-import { Dashboard } from './dashboard/Dashboard';
-import type { SessionState, ConversationMessage, SessionResponse } from '../../../shared/types';
+import type { SessionState, ConversationMessage } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
-const SESSION_LIST_WIDTH_KEY = 'cchub-session-list-width';
-const DEFAULT_SESSION_LIST_WIDTH = 256; // 256px = w-64
-const MIN_SESSION_LIST_WIDTH = 150;
-const MAX_SESSION_LIST_WIDTH = 500;
-const SESSION_LIST_SCALE_KEY = 'cchub-session-list-scale';
-const DEFAULT_SESSION_LIST_SCALE = 1;
-const MIN_SESSION_LIST_SCALE = 0.5;
-const MAX_SESSION_LIST_SCALE = 2;
 
 // ペインノード型定義
 export type PaneNode =
@@ -146,106 +136,6 @@ function TerminalPane({
   const [isClaudeRunning, setIsClaudeRunning] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [showFileViewer, setShowFileViewer] = useState(false);
-  const [showSessionList, setShowSessionList] = useState(false);
-
-  // Session list sidebar width (resizable by drag)
-  const [sessionListWidth, setSessionListWidth] = useState(() => {
-    try {
-      const saved = localStorage.getItem(SESSION_LIST_WIDTH_KEY);
-      return saved ? parseInt(saved, 10) : DEFAULT_SESSION_LIST_WIDTH;
-    } catch {
-      return DEFAULT_SESSION_LIST_WIDTH;
-    }
-  });
-  const [isDraggingSidebar, setIsDraggingSidebar] = useState(false);
-
-  // Session list scale (pinch zoom)
-  const [sessionListScale, setSessionListScale] = useState(() => {
-    try {
-      const saved = localStorage.getItem(SESSION_LIST_SCALE_KEY);
-      return saved ? parseFloat(saved) : DEFAULT_SESSION_LIST_SCALE;
-    } catch {
-      return DEFAULT_SESSION_LIST_SCALE;
-    }
-  });
-
-  // Save session list width and scale to localStorage
-  useEffect(() => {
-    localStorage.setItem(SESSION_LIST_WIDTH_KEY, String(sessionListWidth));
-  }, [sessionListWidth]);
-
-  useEffect(() => {
-    localStorage.setItem(SESSION_LIST_SCALE_KEY, String(sessionListScale));
-  }, [sessionListScale]);
-
-  // Handle sidebar resize drag
-  useEffect(() => {
-    if (!isDraggingSidebar) return;
-
-    const handleMove = (e: MouseEvent | TouchEvent) => {
-      if (!containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-      // Calculate width from right edge
-      const newWidth = rect.right - clientX;
-      setSessionListWidth(Math.max(MIN_SESSION_LIST_WIDTH, Math.min(MAX_SESSION_LIST_WIDTH, newWidth)));
-    };
-
-    const handleEnd = () => {
-      setIsDraggingSidebar(false);
-    };
-
-    document.addEventListener('mousemove', handleMove);
-    document.addEventListener('mouseup', handleEnd);
-    document.addEventListener('touchmove', handleMove);
-    document.addEventListener('touchend', handleEnd);
-
-    return () => {
-      document.removeEventListener('mousemove', handleMove);
-      document.removeEventListener('mouseup', handleEnd);
-      document.removeEventListener('touchmove', handleMove);
-      document.removeEventListener('touchend', handleEnd);
-    };
-  }, [isDraggingSidebar]);
-
-  const handleSidebarDragStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    e.preventDefault();
-    setIsDraggingSidebar(true);
-  }, []);
-
-  // Pinch gesture for content scale (zoom)
-  const pinchStartRef = useRef<{ distance: number; scale: number } | null>(null);
-
-  const getTouchDistance = (touches: React.TouchList | TouchList): number => {
-    if (touches.length < 2) return 0;
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  };
-
-  const handleSidebarTouchStart = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2) {
-      e.preventDefault();
-      pinchStartRef.current = {
-        distance: getTouchDistance(e.touches),
-        scale: sessionListScale,
-      };
-    }
-  }, [sessionListScale]);
-
-  const handleSidebarTouchMove = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2 && pinchStartRef.current) {
-      e.preventDefault();
-      const currentDistance = getTouchDistance(e.touches);
-      const ratio = currentDistance / pinchStartRef.current.distance;
-      const newScale = pinchStartRef.current.scale * ratio;
-      setSessionListScale(Math.max(MIN_SESSION_LIST_SCALE, Math.min(MAX_SESSION_LIST_SCALE, newScale)));
-    }
-  }, []);
-
-  const handleSidebarTouchEnd = useCallback(() => {
-    pinchStartRef.current = null;
-  }, []);
 
   // Reload terminal by remounting
   const handleReload = useCallback((e: React.MouseEvent) => {
@@ -410,23 +300,6 @@ function TerminalPane({
               </svg>
             </button>
           )}
-          {/* Session list toggle button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowSessionList(!showSessionList);
-            }}
-            className={`p-0.5 transition-colors ${
-              showSessionList
-                ? 'text-blue-400 hover:text-blue-300'
-                : 'text-white/50 hover:text-white/80'
-            }`}
-            title={showSessionList ? 'セッション一覧を閉じる' : 'セッション一覧を表示'}
-          >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-            </svg>
-          </button>
           {/* Close button */}
           <button
             onClick={(e) => { e.stopPropagation(); onClose(); }}
@@ -443,7 +316,7 @@ function TerminalPane({
       {/* Terminal, conversation, or session selector - with optional session list sidebar */}
       <div className="flex-1 min-h-0 flex">
         {/* Main content */}
-        <div className={`${showSessionList ? 'flex-1' : 'w-full'} min-w-0`}>
+        <div className="w-full min-w-0">
           {showConversation && currentCcSessionId ? (
             <ConversationViewer
               title="会話履歴"
@@ -476,44 +349,6 @@ function TerminalPane({
           )}
         </div>
 
-        {/* Session list sidebar */}
-        {showSessionList && (
-          <>
-            {/* Resize handle */}
-            <div
-              onMouseDown={handleSidebarDragStart}
-              onTouchStart={handleSidebarDragStart}
-              className={`w-1.5 h-full cursor-col-resize flex items-center justify-center shrink-0 transition-colors ${
-                isDraggingSidebar ? 'bg-blue-500/50' : 'bg-gray-700 hover:bg-blue-500/30'
-              }`}
-            >
-              <div className="w-0.5 h-8 bg-gray-500 rounded-full" />
-            </div>
-            {/* Sidebar content - pinch to zoom */}
-            <div
-              className="border-l border-gray-700 flex flex-col shrink-0 overflow-hidden"
-              style={{ width: sessionListWidth, touchAction: 'none' }}
-              onTouchStart={handleSidebarTouchStart}
-              onTouchMove={handleSidebarTouchMove}
-              onTouchEnd={handleSidebarTouchEnd}
-            >
-              <div className="px-2 py-1 bg-black/30 border-b border-gray-700 text-xs text-white/70 flex items-center justify-between shrink-0">
-                <span>セッション一覧</span>
-                <span className="text-white/40">{Math.round(sessionListScale * 100)}%</span>
-              </div>
-              <div className="flex-1 min-h-0 overflow-hidden">
-                <SessionList
-                  onSelectSession={(sess) => {
-                    onSelectSession(sess.id);
-                    // Keep session list open after selection
-                  }}
-                  inline={true}
-                  contentScale={sessionListScale}
-                />
-              </div>
-            </div>
-          </>
-        )}
       </div>
 
       {/* File Viewer Modal */}

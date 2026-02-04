@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { authFetch } from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -44,7 +45,7 @@ export function PromptSearch({ onSelectPrompt }: PromptSearchProps) {
         ? `${API_BASE}/api/sessions/prompts/search?q=${encodeURIComponent(query)}&limit=30`
         : `${API_BASE}/api/sessions/prompts/search?limit=30`;
 
-      const response = await fetch(url);
+      const response = await authFetch(url);
       if (response.ok) {
         const data = await response.json();
         setResults(data.prompts || []);

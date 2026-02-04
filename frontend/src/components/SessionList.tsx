@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import type { SessionResponse, IndicatorState, ConversationMessage, FileInfo } from '../../../shared/types';
 import { useSessions } from '../hooks/useSessions';
 import { useSessionHistory } from '../hooks/useSessionHistory';
+import { authFetch } from '../services/api';
 import { Dashboard } from './dashboard/Dashboard';
 import { SessionHistory } from './SessionHistory';
 import { ConversationViewer } from './ConversationViewer';
@@ -13,7 +14,7 @@ async function browseDirectory(path?: string): Promise<{ path: string; files: Fi
   const url = path
     ? `${API_BASE}/api/files/browse?path=${encodeURIComponent(path)}`
     : `${API_BASE}/api/files/browse`;
-  const response = await fetch(url);
+  const response = await authFetch(url);
   if (!response.ok) {
     throw new Error('Failed to browse directory');
   }
@@ -21,7 +22,7 @@ async function browseDirectory(path?: string): Promise<{ path: string; files: Fi
 }
 
 async function createDirectory(path: string): Promise<{ path: string; success: boolean }> {
-  const response = await fetch(`${API_BASE}/api/files/mkdir`, {
+  const response = await authFetch(`${API_BASE}/api/files/mkdir`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path }),
@@ -577,7 +578,7 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
   // Resume a Claude session
   const handleResume = useCallback(async (sessionId: string, ccSessionId?: string) => {
     try {
-      const response = await fetch(`${API_BASE}/api/sessions/${sessionId}/resume`, {
+      const response = await authFetch(`${API_BASE}/api/sessions/${sessionId}/resume`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ccSessionId }),

@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { FileInfo, FileContent, FileChange } from '../../../shared/types';
+import { authFetch } from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -38,7 +39,7 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
         path,
         sessionWorkingDir,
       });
-      const response = await fetch(`${API_BASE}/api/files/list?${params}`);
+      const response = await authFetch(`${API_BASE}/api/files/list?${params}`);
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({ error: 'Unknown error' }));
@@ -70,7 +71,7 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
         params.set('maxSize', maxSize.toString());
       }
 
-      const response = await fetch(`${API_BASE}/api/files/read?${params}`);
+      const response = await authFetch(`${API_BASE}/api/files/read?${params}`);
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({ error: 'Unknown error' }));
@@ -92,7 +93,7 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
     setError(null);
 
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `${API_BASE}/api/files/changes/${encodeURIComponent(sessionWorkingDir)}`
       );
 
@@ -127,7 +128,7 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
 
   const getLanguage = useCallback(async (path: string) => {
     const params = new URLSearchParams({ path });
-    const response = await fetch(`${API_BASE}/api/files/language?${params}`);
+    const response = await authFetch(`${API_BASE}/api/files/language?${params}`);
 
     if (!response.ok) {
       return { language: 'plaintext', isImage: false, isText: true };

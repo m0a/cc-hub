@@ -1,44 +1,40 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
-import { LoginSchema, RegisterSchema } from 'shared';
+import { LoginSchema } from 'shared';
 import { AuthService } from '../services/auth';
 import { getDataDir } from '../utils/storage';
-import { getJwtSecret, authMiddleware } from '../middleware/auth';
+import { getJwtSecret, authMiddleware, isAuthRequired, getServerPassword } from '../middleware/auth';
 
 const auth = new Hono();
 
+// Check if authentication is required
+auth.get('/required', (c) => {
+  return c.json({ required: isAuthRequired() });
+});
+
+// Login with server password
 auth.post(
   '/login',
   zValidator('json', LoginSchema),
   async (c) => {
-    const { username, password } = c.req.valid('json');
-    const authService = new AuthService(getDataDir(), getJwtSecret());
+    const { password } = c.req.valid('json');
+    const serverPassword = getServerPassword();
 
-    try {
-      const result = await authService.login(username, password);
-      return c.json(result);
-    } catch (error) {
-      return c.json({ error: 'Invalid credentials' }, 401);
+    // If no server password is set, reject login (auth not enabled)
+    if (!serverPassword) {
+      return c.json({ error: 'Authentication not enabled' }, 400);
     }
-  }
-);
 
-auth.post(
-  '/register',
-  zValidator('json', RegisterSchema),
-  async (c) => {
-    const { username, password } = c.req.valid('json');
-    const authService = new AuthService(getDataDir(), getJwtSecret());
-
-    try {
-      const result = await authService.register(username, password);
-      return c.json(result, 201);
-    } catch (error) {
-      if (error instanceof Error && error.message === 'Username already exists') {
-        return c.json({ error: 'Username already exists' }, 409);
-      }
-      return c.json({ error: 'Registration failed' }, 500);
+    // Check against server password
+    if (password !== serverPassword) {
+      return c.json({ error: 'Invalid password' }, 401);
     }
+
+    // Generate token
+    const authService = new AuthService(getDataDir(), getJwtSecret());
+    const token = await authService.generateTokenForUser('user');
+
+    return c.json({ token });
   }
 );
 

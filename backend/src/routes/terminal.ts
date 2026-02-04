@@ -1,6 +1,9 @@
 import type { ServerWebSocket } from 'bun';
 import type { Subprocess } from 'bun';
 import { TmuxService } from '../services/tmux';
+import { isAuthRequired, getJwtSecret } from '../middleware/auth';
+import { AuthService } from '../services/auth';
+import { getDataDir } from '../utils/storage';
 
 interface TerminalData {
   sessionId: string;
@@ -175,6 +178,21 @@ export async function handleTerminalUpgrade(
 
   if (!pathMatch) {
     return null;
+  }
+
+  // Check authentication if required
+  if (isAuthRequired()) {
+    const token = url.searchParams.get('token');
+    if (!token) {
+      return new Response('Authentication required', { status: 401 });
+    }
+
+    try {
+      const authService = new AuthService(getDataDir(), getJwtSecret());
+      await authService.verifyToken(token);
+    } catch {
+      return new Response('Invalid or expired token', { status: 401 });
+    }
   }
 
   const sessionId = decodeURIComponent(pathMatch[1]);

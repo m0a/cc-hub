@@ -102,6 +102,24 @@ export class AuthService {
     return `${headerB64}.${payloadB64}.${signature}`;
   }
 
+  // Generate token for a username (used with server password auth)
+  async generateTokenForUser(username: string): Promise<string> {
+    const now = Math.floor(Date.now() / 1000);
+    const payload: JwtPayload = {
+      userId: username,
+      username: username,
+      iat: now,
+      exp: now + 7 * 24 * 60 * 60, // 7 days
+    };
+
+    const header = { alg: 'HS256', typ: 'JWT' };
+    const headerB64 = this.base64UrlEncode(JSON.stringify(header));
+    const payloadB64 = this.base64UrlEncode(JSON.stringify(payload));
+
+    const signature = await this.sign(`${headerB64}.${payloadB64}`);
+    return `${headerB64}.${payloadB64}.${signature}`;
+  }
+
   async verifyToken(token: string): Promise<JwtPayload> {
     const parts = token.split('.');
     if (parts.length !== 3) {

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import type { SessionResponse, IndicatorState, ConversationMessage } from '../../../shared/types';
 import { useSessions } from '../hooks/useSessions';
 import { useSessionHistory } from '../hooks/useSessionHistory';
+import { authFetch } from '../services/api';
 import { SessionHistory } from './SessionHistory';
 import { ConversationViewer } from './ConversationViewer';
 import { PromptSearch } from './PromptSearch';
@@ -192,7 +193,7 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
   // Resume a Claude session
   const handleResume = useCallback(async (sessionId: string, ccSessionId?: string) => {
     try {
-      const response = await fetch(`${API_BASE}/api/sessions/${sessionId}/resume`, {
+      const response = await authFetch(`${API_BASE}/api/sessions/${sessionId}/resume`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ccSessionId }),

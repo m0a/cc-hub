@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { SessionResponse } from '../../../shared/types';
+import { authFetch } from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -25,7 +26,7 @@ export function useSessions(): UseSessionsReturn {
     }
 
     try {
-      const response = await fetch(`${API_BASE}/api/sessions`);
+      const response = await authFetch(`${API_BASE}/api/sessions`);
       if (!response.ok) {
         throw new Error('Failed to fetch sessions');
       }
@@ -51,7 +52,7 @@ export function useSessions(): UseSessionsReturn {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE}/api/sessions`, {
+      const response = await authFetch(`${API_BASE}/api/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, workingDir }),
@@ -74,7 +75,7 @@ export function useSessions(): UseSessionsReturn {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE}/api/sessions/${id}`, {
+      const response = await authFetch(`${API_BASE}/api/sessions/${id}`, {
         method: 'DELETE',
       });
 

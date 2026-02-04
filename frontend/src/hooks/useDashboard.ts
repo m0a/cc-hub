@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { DashboardResponse } from '../../../shared/types';
+import { authFetch } from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -20,7 +21,7 @@ export function useDashboard(refreshInterval: number = 60000): UseDashboardRetur
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE}/api/dashboard`);
+      const response = await authFetch(`${API_BASE}/api/dashboard`);
       if (!response.ok) {
         throw new Error('Failed to fetch dashboard data');
       }

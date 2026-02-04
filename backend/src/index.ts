@@ -10,6 +10,7 @@ import { files } from './routes/files';
 import { dashboard } from './routes/dashboard';
 import { terminalWebSocket, handleTerminalUpgrade } from './routes/terminal';
 import { parseArgs, runCli, VERSION } from './cli';
+import { conditionalAuthMiddleware } from './middleware/auth';
 
 // Parse CLI arguments
 const args = parseArgs(process.argv.slice(2));
@@ -43,8 +44,17 @@ app.use('*', cors({
 // Health check
 app.get('/health', (c) => c.json({ status: 'ok', version: VERSION }));
 
-// API routes
+// Auth routes (no auth required for login/required check)
 app.route('/api/auth', auth);
+
+// Protected API routes (require auth if password is set)
+app.use('/api/logs/*', conditionalAuthMiddleware);
+app.use('/api/sessions/*', conditionalAuthMiddleware);
+app.use('/api/sessions', conditionalAuthMiddleware);
+app.use('/api/upload/*', conditionalAuthMiddleware);
+app.use('/api/files/*', conditionalAuthMiddleware);
+app.use('/api/dashboard', conditionalAuthMiddleware);
+
 app.route('/api/logs', logs);
 app.route('/api/sessions', sessions);
 app.route('/api/upload', upload);
@@ -167,14 +177,12 @@ if (needsCert) {
   console.log(`📜 証明書を生成しました: ${certDir}`);
 }
 
-// Password warning
-if (!args.password) {
-  console.log('⚠️  パスワード未設定: -P オプションで設定を推奨');
-}
-
 // Store password in environment for auth middleware
 if (args.password) {
   process.env.CCHUB_PASSWORD = args.password;
+  console.log('🔒 パスワード認証: 有効');
+} else {
+  console.log('⚠️  パスワード未設定: -P オプションで設定を推奨');
 }
 
 // Start server

@@ -4,6 +4,7 @@ import { SessionList } from './SessionList';
 import { Dashboard } from './dashboard/Dashboard';
 import { FileViewer } from './files/FileViewer';
 import { FloatingKeyboard } from './FloatingKeyboard';
+import { authFetch } from '../services/api';
 import type { TerminalRef } from './Terminal';
 import type { SessionResponse, SessionState } from '../../../shared/types';
 
@@ -345,7 +346,7 @@ export function DesktopLayout({
 
         // Then try tmux buffer
         e.preventDefault();
-        fetch(`${API_BASE}/api/sessions/clipboard`)
+        authFetch(`${API_BASE}/api/sessions/clipboard`)
           .then(res => res.json())
           .then(data => {
             if (data.content) {
@@ -429,7 +430,7 @@ export function DesktopLayout({
           const formData = new FormData();
           formData.append('image', blob, 'clipboard-image.png');
 
-          const response = await fetch(`${API_BASE}/api/upload/image`, {
+          const response = await authFetch(`${API_BASE}/api/upload/image`, {
             method: 'POST',
             body: formData,
           });
@@ -508,7 +509,7 @@ export function DesktopLayout({
       const formData = new FormData();
       formData.append('image', file);
 
-      const response = await fetch(`${API_BASE}/api/upload/image`, {
+      const response = await authFetch(`${API_BASE}/api/upload/image`, {
         method: 'POST',
         body: formData,
       });

@@ -1,25 +1,18 @@
 import { useState, type FormEvent } from 'react';
 
 interface LoginFormProps {
-  onLogin: (username: string, password: string) => Promise<void>;
-  onRegister: (username: string, password: string) => Promise<void>;
+  onLogin: (password: string) => Promise<void>;
   isLoading: boolean;
   error: string | null;
 }
 
-export function LoginForm({ onLogin, onRegister, isLoading, error }: LoginFormProps) {
-  const [username, setUsername] = useState('');
+export function LoginForm({ onLogin, isLoading, error }: LoginFormProps) {
   const [password, setPassword] = useState('');
-  const [isRegistering, setIsRegistering] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     try {
-      if (isRegistering) {
-        await onRegister(username, password);
-      } else {
-        await onLogin(username, password);
-      }
+      await onLogin(password);
     } catch {
       // Error is handled by parent
     }
@@ -34,25 +27,8 @@ export function LoginForm({ onLogin, onRegister, isLoading, error }: LoginFormPr
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="username" className="block text-sm font-medium text-gray-300 mb-1">
-              Username
-            </label>
-            <input
-              type="text"
-              id="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-              minLength={3}
-              maxLength={32}
-              disabled={isLoading}
-            />
-          </div>
-
-          <div>
             <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">
-              Password
+              パスワード
             </label>
             <input
               type="password"
@@ -61,7 +37,7 @@ export function LoginForm({ onLogin, onRegister, isLoading, error }: LoginFormPr
               onChange={(e) => setPassword(e.target.value)}
               className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
-              minLength={8}
+              autoFocus
               disabled={isLoading}
             />
           </div>
@@ -77,17 +53,7 @@ export function LoginForm({ onLogin, onRegister, isLoading, error }: LoginFormPr
             disabled={isLoading}
             className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
           >
-            {isLoading ? 'Processing...' : isRegistering ? 'Register' : 'Login'}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setIsRegistering(!isRegistering)}
-            className="w-full text-sm text-gray-400 hover:text-white transition-colors"
-          >
-            {isRegistering
-              ? 'Already have an account? Login'
-              : "Don't have an account? Register"}
+            {isLoading ? '認証中...' : 'ログイン'}
           </button>
         </form>
       </div>

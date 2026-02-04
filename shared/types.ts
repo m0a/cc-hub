@@ -76,9 +76,9 @@ export interface ErrorResponse {
 // Validation Schemas
 // =============================================================================
 
+// Simple password-only login (for server password auth)
 export const LoginSchema = z.object({
-  username: z.string().min(3).max(32),
-  password: z.string().min(8),
+  password: z.string().min(1),
 });
 
 export const RegisterSchema = z.object({

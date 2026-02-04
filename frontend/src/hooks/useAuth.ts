@@ -1,93 +1,99 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as api from '../services/api';
 
-interface User {
-  id: string;
-  username: string;
-}
-
 interface AuthState {
-  user: User | null;
   token: string | null;
   isLoading: boolean;
   error: string | null;
+  authRequired: boolean | null; // null = checking
 }
 
 const TOKEN_KEY = 'cc-hub-token';
 
 export function useAuth() {
   const [state, setState] = useState<AuthState>({
-    user: null,
     token: null,
     isLoading: true,
     error: null,
+    authRequired: null,
   });
 
-  // Check for existing token on mount
+  // Check if auth is required and validate existing token
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (token) {
-      api
-        .getMe(token)
-        .then((data) => {
+    const checkAuth = async () => {
+      try {
+        const required = await api.isAuthRequired();
+
+        if (!required) {
+          // No auth required
           setState({
-            user: data.user,
-            token,
-            isLoading: false,
-            error: null,
-          });
-        })
-        .catch(() => {
-          localStorage.removeItem(TOKEN_KEY);
-          setState({
-            user: null,
             token: null,
             isLoading: false,
             error: null,
+            authRequired: false,
           });
+          return;
+        }
+
+        // Auth is required, check for existing token
+        const token = localStorage.getItem(TOKEN_KEY);
+        if (token) {
+          try {
+            await api.getMe(token);
+            setState({
+              token,
+              isLoading: false,
+              error: null,
+              authRequired: true,
+            });
+          } catch {
+            // Token invalid
+            localStorage.removeItem(TOKEN_KEY);
+            setState({
+              token: null,
+              isLoading: false,
+              error: null,
+              authRequired: true,
+            });
+          }
+        } else {
+          setState({
+            token: null,
+            isLoading: false,
+            error: null,
+            authRequired: true,
+          });
+        }
+      } catch {
+        // API error, assume no auth required
+        setState({
+          token: null,
+          isLoading: false,
+          error: null,
+          authRequired: false,
         });
-    } else {
-      setState((s) => ({ ...s, isLoading: false }));
-    }
+      }
+    };
+
+    checkAuth();
   }, []);
 
-  const login = useCallback(async (username: string, password: string) => {
+  const login = useCallback(async (password: string) => {
     setState((s) => ({ ...s, isLoading: true, error: null }));
     try {
-      const data = await api.login(username, password);
+      const data = await api.login(password);
       localStorage.setItem(TOKEN_KEY, data.token);
-      setState({
-        user: data.user,
+      setState((s) => ({
+        ...s,
         token: data.token,
         isLoading: false,
         error: null,
-      });
+      }));
     } catch (error) {
       setState((s) => ({
         ...s,
         isLoading: false,
         error: error instanceof Error ? error.message : 'Login failed',
-      }));
-      throw error;
-    }
-  }, []);
-
-  const register = useCallback(async (username: string, password: string) => {
-    setState((s) => ({ ...s, isLoading: true, error: null }));
-    try {
-      const data = await api.register(username, password);
-      localStorage.setItem(TOKEN_KEY, data.token);
-      setState({
-        user: data.user,
-        token: data.token,
-        isLoading: false,
-        error: null,
-      });
-    } catch (error) {
-      setState((s) => ({
-        ...s,
-        isLoading: false,
-        error: error instanceof Error ? error.message : 'Registration failed',
       }));
       throw error;
     }
@@ -103,22 +109,23 @@ export function useAuth() {
       }
     }
     localStorage.removeItem(TOKEN_KEY);
-    setState({
-      user: null,
+    setState((s) => ({
+      ...s,
       token: null,
-      isLoading: false,
       error: null,
-    });
+    }));
   }, [state.token]);
 
+  // Authenticated if: auth not required, or have valid token
+  const isAuthenticated = state.authRequired === false || !!state.token;
+
   return {
-    user: state.user,
     token: state.token,
     isLoading: state.isLoading,
     error: state.error,
-    isAuthenticated: !!state.user,
+    authRequired: state.authRequired,
+    isAuthenticated,
     login,
-    register,
     logout,
   };
 }

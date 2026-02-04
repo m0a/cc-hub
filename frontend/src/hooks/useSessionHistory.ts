@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { HistorySession, ConversationMessage } from '../../../shared/types';
+import { authFetch } from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -47,7 +48,7 @@ export function useSessionHistory(): UseSessionHistoryResult {
         setIsLoadingProjects(true);
         setError(null);
       }
-      const response = await fetch(`${API_BASE}/api/sessions/history/projects`);
+      const response = await authFetch(`${API_BASE}/api/sessions/history/projects`);
       if (!response.ok) {
         throw new Error('Failed to fetch projects');
       }
@@ -79,7 +80,7 @@ export function useSessionHistory(): UseSessionHistoryResult {
     try {
       setLoadingProjects(prev => new Set(prev).add(dirName));
 
-      const response = await fetch(`${API_BASE}/api/sessions/history/projects/${encodeURIComponent(dirName)}`);
+      const response = await authFetch(`${API_BASE}/api/sessions/history/projects/${encodeURIComponent(dirName)}`);
       if (!response.ok) {
         throw new Error('Failed to fetch project sessions');
       }
@@ -112,7 +113,7 @@ export function useSessionHistory(): UseSessionHistoryResult {
 
   const resumeSession = useCallback(async (sessionId: string, projectPath: string) => {
     try {
-      const response = await fetch(`${API_BASE}/api/sessions/history/resume`, {
+      const response = await authFetch(`${API_BASE}/api/sessions/history/resume`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, projectPath }),
@@ -134,7 +135,7 @@ export function useSessionHistory(): UseSessionHistoryResult {
       if (projectDirName) {
         url.searchParams.set('projectDirName', projectDirName);
       }
-      const response = await fetch(url.toString(), {
+      const response = await authFetch(url.toString(), {
         cache: 'no-store',
       });
       if (!response.ok) {

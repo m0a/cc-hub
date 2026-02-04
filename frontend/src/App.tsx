@@ -6,7 +6,10 @@ import { SessionList } from './components/SessionList';
 import { DesktopLayout } from './components/DesktopLayout';
 import { FileViewer } from './components/files/FileViewer';
 import { ConversationViewer } from './components/ConversationViewer';
+import { LoginForm } from './components/LoginForm';
 import { useSessionHistory } from './hooks/useSessionHistory';
+import { useAuth } from './hooks/useAuth';
+import { authFetch } from './services/api';
 import type { SessionResponse, SessionState, ConversationMessage } from '../../shared/types';
 
 // Session info type (simplified from SessionTabs)
@@ -90,6 +93,9 @@ function getSavedOpenSessionIds(): string[] {
 }
 
 export function App() {
+  // Auth state
+  const auth = useAuth();
+
   const [openSessions, setOpenSessions] = useState<OpenSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -172,7 +178,7 @@ export function App() {
     const fetchAndOpenSession = async () => {
       try {
         // Fetch all sessions (including external)
-        const sessionsRes = await fetch(`${API_BASE}/api/sessions`);
+        const sessionsRes = await authFetch(`${API_BASE}/api/sessions`);
         const allSessions: SessionResponse[] = sessionsRes.ok
           ? (await sessionsRes.json()).sessions
           : [];
@@ -315,7 +321,7 @@ export function App() {
     if (!sessionToDelete) return;
 
     try {
-      const response = await fetch(`${API_BASE}/api/sessions/${sessionToDelete.id}`, {
+      const response = await authFetch(`${API_BASE}/api/sessions/${sessionToDelete.id}`, {
         method: 'DELETE',
       });
 
@@ -420,12 +426,23 @@ export function App() {
     };
   }, [showOverlay, showSessionList, isLoading, startOverlayTimer]);
 
-  // Show loading
-  if (isLoading) {
+  // Show loading (including auth check)
+  if (auth.isLoading || isLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-900">
         <div className="text-gray-400">Loading...</div>
       </div>
+    );
+  }
+
+  // Show login form if auth required but not authenticated
+  if (auth.authRequired && !auth.isAuthenticated) {
+    return (
+      <LoginForm
+        onLogin={auth.login}
+        isLoading={auth.isLoading}
+        error={auth.error}
+      />
     );
   }
 

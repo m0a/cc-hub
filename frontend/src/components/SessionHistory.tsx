@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useSessionHistory, ProjectInfo } from '../hooks/useSessionHistory';
+import { authFetch } from '../services/api';
 import type { HistorySession, ConversationMessage, SessionResponse } from '../../../shared/types';
 import { ConversationViewer } from './ConversationViewer';
 
@@ -271,7 +272,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
       if (result) {
         await new Promise(resolve => setTimeout(resolve, 1000));
 
-        const response = await fetch(`${API_BASE}/api/sessions`);
+        const response = await authFetch(`${API_BASE}/api/sessions`);
         let foundSession: SessionResponse | undefined;
         if (response.ok) {
           const data = await response.json();

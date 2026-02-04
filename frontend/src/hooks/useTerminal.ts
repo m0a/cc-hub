@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 
 interface UseTerminalOptions {
   sessionId: string;
+  token?: string | null;
   onData?: (data: Uint8Array) => void;
   onConnect?: () => void;
   onDisconnect?: () => void;
@@ -22,8 +23,13 @@ const getWsBase = () => {
   return import.meta.env.VITE_WS_URL || `${protocol}//${window.location.host}`;
 };
 
+// Get auth token from localStorage
+const getAuthToken = (): string | null => {
+  return localStorage.getItem('cc-hub-token');
+};
+
 export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
-  const { sessionId } = options;
+  const { sessionId, token } = options;
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
@@ -33,12 +39,14 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
   const onConnectRef = useRef(options.onConnect);
   const onDisconnectRef = useRef(options.onDisconnect);
   const onErrorRef = useRef(options.onError);
+  const tokenRef = useRef(token);
 
   // Keep refs updated without triggering re-renders
   onDataRef.current = options.onData;
   onConnectRef.current = options.onConnect;
   onDisconnectRef.current = options.onDisconnect;
   onErrorRef.current = options.onError;
+  tokenRef.current = token;
 
   const connect = useCallback(() => {
     // Don't connect if already connected or connecting
@@ -53,7 +61,12 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
       reconnectTimeoutRef.current = null;
     }
 
-    const wsUrl = `${getWsBase()}/ws/terminal/${encodeURIComponent(sessionId)}`;
+    // Build WebSocket URL with token (from prop or localStorage)
+    let wsUrl = `${getWsBase()}/ws/terminal/${encodeURIComponent(sessionId)}`;
+    const authToken = tokenRef.current || getAuthToken();
+    if (authToken) {
+      wsUrl += `?token=${encodeURIComponent(authToken)}`;
+    }
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
     wsRef.current = ws;

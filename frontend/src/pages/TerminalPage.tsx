@@ -4,6 +4,7 @@ import type { SessionState } from '../../../shared/types';
 
 interface TerminalPageProps {
   sessionId: string;
+  token?: string | null;
   onStateChange?: (state: SessionState) => void;
   overlayContent?: ReactNode;
   onOverlayTap?: () => void;
@@ -12,6 +13,7 @@ interface TerminalPageProps {
 
 export function TerminalPage({
   sessionId,
+  token,
   onStateChange,
   overlayContent,
   onOverlayTap,
@@ -45,6 +47,7 @@ export function TerminalPage({
       <main className="flex-1 relative overflow-hidden min-h-0">
         <TerminalComponent
           sessionId={sessionId}
+          token={token}
           onConnect={handleConnect}
           onDisconnect={handleDisconnect}
           onError={handleError}

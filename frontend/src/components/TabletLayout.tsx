@@ -4,6 +4,7 @@ import { Keyboard } from './Keyboard';
 import { SessionListMini } from './SessionListMini';
 import { FileViewer } from './files/FileViewer';
 import { Dashboard } from './dashboard/Dashboard';
+import { authFetch } from '../services/api';
 import type { SessionResponse, SessionState } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -112,7 +113,7 @@ export function TabletLayout({
   const exitCopyMode = useCallback(async () => {
     if (activeSessionId) {
       try {
-        const res = await fetch(`${API_BASE}/api/sessions/${encodeURIComponent(activeSessionId)}/copy-mode`);
+        const res = await authFetch(`${API_BASE}/api/sessions/${encodeURIComponent(activeSessionId)}/copy-mode`);
         if (res.ok) {
           const data = await res.json();
           if (data.inCopyMode) {
@@ -188,7 +189,7 @@ export function TabletLayout({
       const formData = new FormData();
       formData.append('image', file);
 
-      const response = await fetch(`${API_BASE}/api/upload/image`, {
+      const response = await authFetch(`${API_BASE}/api/upload/image`, {
         method: 'POST',
         body: formData,
       });

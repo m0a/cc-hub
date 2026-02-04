@@ -4,6 +4,7 @@ import { ConversationViewer } from './ConversationViewer';
 import { FileViewer } from './files/FileViewer';
 import { SessionList } from './SessionList';
 import { Dashboard } from './dashboard/Dashboard';
+import { authFetch } from '../services/api';
 import type { SessionState, ConversationMessage, SessionResponse } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -291,7 +292,7 @@ function TerminalPane({
   const fetchSessionInfo = useCallback(async () => {
     if (!sessionId) return null;
     try {
-      const response = await fetch(`${API_BASE}/api/sessions`);
+      const response = await authFetch(`${API_BASE}/api/sessions`);
       if (response.ok) {
         const data = await response.json();
         const freshSession = data.sessions.find((s: ExtendedSession) => s.id === sessionId);
@@ -312,7 +313,7 @@ function TerminalPane({
     const targetCcSessionId = ccId || currentCcSessionId;
     if (!targetCcSessionId) return;
     try {
-      const response = await fetch(`${API_BASE}/api/sessions/history/${targetCcSessionId}/conversation`);
+      const response = await authFetch(`${API_BASE}/api/sessions/history/${targetCcSessionId}/conversation`);
       if (response.ok) {
         const data = await response.json();
         setMessages(data.messages || []);

@@ -6,6 +6,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { useTerminal } from '../hooks/useTerminal';
 import { Keyboard } from './Keyboard';
+import { authFetch } from '../services/api';
 
 const FONT_SIZE_KEY_PREFIX = 'cchub-terminal-font-size-';
 const DEFAULT_FONT_SIZE = 14;
@@ -31,6 +32,7 @@ function saveFontSize(sessionId: string, size: number): void {
 
 interface TerminalProps {
   sessionId: string;
+  token?: string | null;  // Auth token for WebSocket connection
   onConnect?: () => void;
   onDisconnect?: () => void;
   onError?: (error: string) => void;
@@ -51,6 +53,7 @@ export interface TerminalRef {
 
 export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(function TerminalComponent({
   sessionId,
+  token,
   onConnect,
   onDisconnect,
   onError,
@@ -147,6 +150,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
   const { isConnected, connect, send, resize } = useTerminal({
     sessionId,
+    token,
     onData: (data) => {
       terminalRef.current?.write(data);
     },
@@ -517,7 +521,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       if (heightDiff > 100) {
         // Keyboard likely appeared - check if in copy mode and exit
         try {
-          const res = await fetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/copy-mode`);
+          const res = await authFetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/copy-mode`);
           if (res.ok) {
             const data = await res.json();
             if (data.inCopyMode) {
@@ -559,7 +563,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     // Keyboard just appeared - check if in copy mode and exit
     const checkAndExitCopyMode = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/copy-mode`);
+        const res = await authFetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/copy-mode`);
         if (res.ok) {
           const data = await res.json();
           if (data.inCopyMode) {
@@ -606,7 +610,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       const formData = new FormData();
       formData.append('image', file);
 
-      const response = await fetch(`${API_BASE}/api/upload/image`, {
+      const response = await authFetch(`${API_BASE}/api/upload/image`, {
         method: 'POST',
         body: formData,
       });

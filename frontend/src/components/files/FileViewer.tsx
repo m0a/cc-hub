@@ -5,6 +5,7 @@ import { CodeViewer } from './CodeViewer';
 import { ImageViewer } from './ImageViewer';
 import { DiffViewer } from './DiffViewer';
 import { MarkdownViewer } from './MarkdownViewer';
+import { HtmlViewer } from './HtmlViewer';
 import type { FileInfo, FileChange } from '../../../../shared/types';
 
 type ViewMode = 'browser' | 'file' | 'changes' | 'diff';
@@ -136,6 +137,9 @@ const IMAGE_EXTENSIONS = new Set([
 // Markdown extensions
 const MARKDOWN_EXTENSIONS = new Set(['.md', '.mdx', '.markdown']);
 
+// HTML extensions (for preview mode)
+const HTML_EXTENSIONS = new Set(['.html', '.htm']);
+
 function getLanguageFromPath(path: string): string {
   const fileName = path.split('/').pop()?.toLowerCase() || '';
 
@@ -157,6 +161,11 @@ function isImageFile(path: string): boolean {
 function isMarkdownFile(path: string): boolean {
   const ext = path.toLowerCase().match(/\.[^.]+$/)?.[0];
   return ext ? MARKDOWN_EXTENSIONS.has(ext) : false;
+}
+
+function isHtmlFile(path: string): boolean {
+  const ext = path.toLowerCase().match(/\.[^.]+$/)?.[0];
+  return ext ? HTML_EXTENSIONS.has(ext) : false;
 }
 
 function getFileName(path: string): string {
@@ -417,6 +426,11 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                           fileName={getFileName(selectedFile.path)}
                           truncated={selectedFile.truncated}
                         />
+                      ) : isHtmlFile(selectedFile.path) ? (
+                        <HtmlViewer
+                          content={selectedFile.content}
+                          fileName={getFileName(selectedFile.path)}
+                        />
                       ) : (
                         <CodeViewer
                           content={selectedFile.content}
@@ -493,6 +507,11 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                 content={selectedFile.content}
                 fileName={getFileName(selectedFile.path)}
                 truncated={selectedFile.truncated}
+              />
+            ) : isHtmlFile(selectedFile.path) ? (
+              <HtmlViewer
+                content={selectedFile.content}
+                fileName={getFileName(selectedFile.path)}
               />
             ) : (
               <CodeViewer

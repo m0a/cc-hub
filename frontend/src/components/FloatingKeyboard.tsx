@@ -1,8 +1,26 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { Keyboard } from './Keyboard';
 
-const POSITION_KEY = 'cchub-floating-keyboard-position';
+const POSITION_KEY_KEYBOARD = 'cchub-floating-keyboard-position-keyboard';
+const POSITION_KEY_INPUT = 'cchub-floating-keyboard-position-input';
+const POSITION_KEY_OLD = 'cchub-floating-keyboard-position'; // Legacy key for migration
 const MINIMIZED_KEY = 'cchub-floating-keyboard-minimized';
+
+const getPositionKey = (mode: 'keyboard' | 'input') =>
+  mode === 'keyboard' ? POSITION_KEY_KEYBOARD : POSITION_KEY_INPUT;
+
+// Migrate old position to new mode-specific keys
+const migrateOldPosition = () => {
+  try {
+    const oldPosition = localStorage.getItem(POSITION_KEY_OLD);
+    if (oldPosition && !localStorage.getItem(POSITION_KEY_KEYBOARD)) {
+      localStorage.setItem(POSITION_KEY_KEYBOARD, oldPosition);
+      localStorage.setItem(POSITION_KEY_INPUT, oldPosition);
+      localStorage.removeItem(POSITION_KEY_OLD);
+    }
+  } catch {}
+};
+migrateOldPosition();
 
 interface Position {
   x: number;
@@ -30,15 +48,23 @@ export function FloatingKeyboard({
   const [inputValue, setInputValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Position state
-  const [position, setPosition] = useState<Position>(() => {
+  // Helper to get default position
+  const getDefaultPosition = () => ({
+    x: window.innerWidth / 2 - 200,
+    y: window.innerHeight - 300,
+  });
+
+  // Helper to load position for a mode
+  const loadPositionForMode = (mode: 'keyboard' | 'input'): Position => {
     try {
-      const saved = localStorage.getItem(POSITION_KEY);
+      const saved = localStorage.getItem(getPositionKey(mode));
       if (saved) return JSON.parse(saved);
     } catch {}
-    // Default: bottom center
-    return { x: window.innerWidth / 2 - 200, y: window.innerHeight - 300 };
-  });
+    return getDefaultPosition();
+  };
+
+  // Position state
+  const [position, setPosition] = useState<Position>(() => loadPositionForMode('keyboard'));
 
   // Minimized state
   const [minimized, setMinimized] = useState(() => {
@@ -53,10 +79,10 @@ export function FloatingKeyboard({
   const dragOffset = useRef<Position>({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Save position to localStorage
+  // Save position to localStorage (mode-specific)
   useEffect(() => {
-    localStorage.setItem(POSITION_KEY, JSON.stringify(position));
-  }, [position]);
+    localStorage.setItem(getPositionKey(inputMode), JSON.stringify(position));
+  }, [position, inputMode]);
 
   // Save minimized state to localStorage
   useEffect(() => {
@@ -114,16 +140,25 @@ export function FloatingKeyboard({
     };
   }, [isDragging]);
 
-  // Mode switch handler
+  // Mode switch handler (keyboard -> input)
   const handleModeSwitch = useCallback(() => {
+    // Save current position for keyboard mode, then load input mode position
+    localStorage.setItem(getPositionKey('keyboard'), JSON.stringify(position));
+    const newPosition = loadPositionForMode('input');
+    setPosition(newPosition);
     setInputMode('input');
     setTimeout(() => inputRef.current?.focus(), 50);
-  }, []);
+  }, [position]);
 
+  // Mode switch handler (input -> keyboard)
   const handleSwitchToKeyboard = useCallback(() => {
+    // Save current position for input mode, then load keyboard mode position
+    localStorage.setItem(getPositionKey('input'), JSON.stringify(position));
+    const newPosition = loadPositionForMode('keyboard');
+    setPosition(newPosition);
     setInputMode('keyboard');
     setInputValue('');
-  }, []);
+  }, [position]);
 
   // Input key handler
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {

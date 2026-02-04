@@ -58,23 +58,34 @@ function CollapsibleSection({
   );
 }
 
+// Threshold for auto-expanding short content (characters)
+const SHORT_CONTENT_THRESHOLD = 500;
+
+// Check if content is short enough to auto-expand
+function isShortContent(content: string): boolean {
+  return content.length <= SHORT_CONTENT_THRESHOLD;
+}
+
 // Tool use display
 function ToolUseDisplay({ tools }: { tools: ToolUseInfo[] }) {
   return (
     <>
-      {tools.map((tool, idx) => (
-        <CollapsibleSection
-          key={idx}
-          title={`${tool.name}`}
-          icon="🔧"
-          variant="tool"
-          defaultOpen={false}
-        >
-          <pre className="text-green-300 whitespace-pre-wrap break-all">
-            {JSON.stringify(tool.input, null, 2)}
-          </pre>
-        </CollapsibleSection>
-      ))}
+      {tools.map((tool, idx) => {
+        const inputStr = JSON.stringify(tool.input, null, 2);
+        return (
+          <CollapsibleSection
+            key={idx}
+            title={`${tool.name}`}
+            icon="🔧"
+            variant="tool"
+            defaultOpen={isShortContent(inputStr)}
+          >
+            <pre className="text-green-300 whitespace-pre-wrap break-all">
+              {inputStr}
+            </pre>
+          </CollapsibleSection>
+        );
+      })}
     </>
   );
 }
@@ -94,7 +105,7 @@ function ToolResultDisplay({ results }: { results: ToolResultInfo[] }) {
             title={result.toolName ? `${result.toolName} 結果` : 'ツール結果'}
             icon={result.isError ? '❌' : '📋'}
             variant={result.isError ? 'error' : 'result'}
-            defaultOpen={false}
+            defaultOpen={isShortContent(result.output)}
           >
             <pre className={`whitespace-pre-wrap break-all ${result.isError ? 'text-red-300' : 'text-gray-300'}`}>
               {isLong ? (
@@ -134,7 +145,7 @@ function ThinkingDisplay({ thinking }: { thinking: string }) {
       title="思考過程"
       icon="💭"
       variant="thinking"
-      defaultOpen={false}
+      defaultOpen={isShortContent(thinking)}
     >
       <div className="text-purple-200 whitespace-pre-wrap">
         {thinking}

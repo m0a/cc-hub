@@ -47,7 +47,7 @@ source ~/.bashrc
 
 | 依存関係 | 必須 | インストール方法 |
 |---------|-----|----------------|
-| [Tailscale](https://tailscale.com/) | ○ | https://tailscale.com/download |
+| [Tailscale](https://tailscale.com/) | ○ | Linux: https://tailscale.com/download / macOS: `brew install tailscale` |
 | [tmux](https://github.com/tmux/tmux) 3.0+ | ○ | `apt install tmux` / `brew install tmux` |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | ○ | `npm install -g @anthropic-ai/claude-code` |
 
@@ -135,6 +135,8 @@ cchub status
 ```bash
 sudo tailscale set --operator=$USER
 ```
+
+> **macOSの場合**: App Store版ではなく、`brew install tailscale`でインストールしてください。App Store版はCLIコマンドが使えないため、証明書生成が動作しません。
 
 ### tmux設定（オプション）
 

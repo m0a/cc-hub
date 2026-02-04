@@ -56,16 +56,18 @@ export class ClaudeCodeService {
    */
   async getSessionIdFromTty(tty: string): Promise<string | null> {
     try {
-      // Get pts number from tty path (e.g., /dev/pts/10 -> pts/10)
-      const ptsMatch = tty.match(/pts\/\d+$/);
-      if (!ptsMatch) {
-        console.log(`[getSessionIdFromTty] No pts match for tty: ${tty}`);
+      // Get tty name from path
+      // Linux: /dev/pts/10 -> pts/10
+      // macOS: /dev/ttys004 -> ttys004
+      const ttyMatch = tty.match(/(pts\/\d+|ttys\d+)$/);
+      if (!ttyMatch) {
+        console.log(`[getSessionIdFromTty] No tty match for: ${tty}`);
         return null;
       }
-      const pts = ptsMatch[0];
+      const ttyName = ttyMatch[0];
 
-      // Find claude process running on this PTY
-      const proc = Bun.spawn(['ps', '-t', pts, '-o', 'args='], {
+      // Find claude process running on this TTY
+      const proc = Bun.spawn(['ps', '-t', ttyName, '-o', 'args='], {
         stdout: 'pipe',
         stderr: 'pipe',
       });
@@ -73,7 +75,7 @@ export class ClaudeCodeService {
       const text = await new Response(proc.stdout).text();
       const exitCode = await proc.exited;
       if (exitCode !== 0) {
-        console.log(`[getSessionIdFromTty] ps command failed for ${pts}`);
+        console.log(`[getSessionIdFromTty] ps command failed for ${ttyName}`);
         return null;
       }
 
@@ -81,12 +83,12 @@ export class ClaudeCodeService {
       for (const line of text.split('\n')) {
         const match = line.match(/claude\s+-r\s+([a-f0-9-]{36})/i);
         if (match) {
-          console.log(`[getSessionIdFromTty] Found session ID ${match[1]} for ${pts}`);
+          console.log(`[getSessionIdFromTty] Found session ID ${match[1]} for ${ttyName}`);
           return match[1];
         }
       }
 
-      console.log(`[getSessionIdFromTty] No -r flag found for ${pts}`);
+      console.log(`[getSessionIdFromTty] No -r flag found for ${ttyName}`);
       return null;
     } catch (err) {
       console.log(`[getSessionIdFromTty] Error: ${err}`);
@@ -100,13 +102,13 @@ export class ClaudeCodeService {
    */
   async getSessionByTtyStartTime(tty: string, workingDir: string): Promise<ClaudeCodeSession | null> {
     try {
-      // Get pts number from tty path
-      const ptsMatch = tty.match(/pts\/\d+$/);
-      if (!ptsMatch) return null;
-      const pts = ptsMatch[0];
+      // Get tty name from path (Linux: pts/10, macOS: ttys004)
+      const ttyMatch = tty.match(/(pts\/\d+|ttys\d+)$/);
+      if (!ttyMatch) return null;
+      const ttyName = ttyMatch[0];
 
       // Get process start time
-      const proc = Bun.spawn(['ps', '-t', pts, '-o', 'lstart=,args='], {
+      const proc = Bun.spawn(['ps', '-t', ttyName, '-o', 'lstart=,args='], {
         stdout: 'pipe',
         stderr: 'pipe',
       });

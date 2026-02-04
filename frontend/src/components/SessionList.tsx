@@ -493,7 +493,13 @@ function SessionItem({
         )}
         {showConversationButton && (
           <button
-            onClick={handleShowConversation}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              handleShowConversation(e);
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
             className="text-xs text-gray-400 bg-gray-700/50 px-1.5 py-0.5 rounded shrink-0 hover:bg-gray-600/50"
           >
             履歴
@@ -502,6 +508,8 @@ function SessionItem({
         {showResumeButton && (
           <button
             onClick={handleResume}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
             className="text-xs text-blue-400 bg-blue-900/50 px-1.5 py-0.5 rounded shrink-0 hover:bg-blue-800/50"
           >
             再開

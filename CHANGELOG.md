@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.20] - 2026-02-05
+
+### Added
+- **パスワード認証機能**
+  - `-P`オプションでサーバー起動時にパスワード認証を有効化
+  - 全APIエンドポイントに条件付き認証ミドルウェアを適用
+  - WebSocket接続時のトークン認証
+  - フロントエンドにログインフォーム追加
+
+- **HTMLファイルプレビュー**
+  - ファイルビューアでHTMLファイルをiframeでプレビュー表示
+
+- **開発用コマンド**
+  - `bun run dev:auth` - パスワード認証付きで開発環境起動（パスワード: devpass）
+
+### Security
+- JWT認証によるAPIアクセス制御
+- WebSocketトークン検証
+- `authFetch`ヘルパーで認証付きAPI呼び出しを一元化
+
 ## [0.0.19] - 2026-02-04
 
 ### Added

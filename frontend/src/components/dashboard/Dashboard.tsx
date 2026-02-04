@@ -35,6 +35,11 @@ export function Dashboard({ className = '' }: DashboardProps) {
       {data?.hourlyActivity && Object.keys(data.hourlyActivity).length > 0 && (
         <HourlyHeatmap data={data.hourlyActivity} />
       )}
+      {data?.version && (
+        <div className="text-center text-gray-600 text-xs pt-2">
+          CC Hub v{data.version}
+        </div>
+      )}
     </div>
   );
 }

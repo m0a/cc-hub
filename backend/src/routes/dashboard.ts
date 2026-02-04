@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { StatsService } from '../services/stats-service';
 import { AnthropicUsageService } from '../services/anthropic-usage';
+import { VERSION } from '../cli';
 import type { DashboardResponse } from '../../../shared/types';
 
 const statsService = new StatsService();
@@ -24,6 +25,7 @@ dashboard.get('/', async (c) => {
     modelUsage,
     costEstimates: [],
     hourlyActivity,
+    version: VERSION,
   };
 
   return c.json(response);

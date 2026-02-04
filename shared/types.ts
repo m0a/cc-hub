@@ -232,6 +232,7 @@ export interface DashboardResponse {
   modelUsage: ModelUsage[];
   costEstimates: CostEstimate[];
   hourlyActivity?: Record<number, number>; // Phase 3: Hour (0-23) -> session count
+  version?: string; // CC Hub version
 }
 
 export interface ExtendedSessionResponse extends SessionResponse {

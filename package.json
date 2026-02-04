@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "dev": "bun run stop; bun run --filter '*' dev",
+    "dev:auth": "bun run stop; bun run --filter backend dev:auth & bun run --filter frontend dev",
     "dev:backend": "bun run --filter backend dev",
     "dev:frontend": "bun run --filter frontend dev",
     "stop": "pkill -f 'cchub.*(bun|vite|esbuild)' 2>/dev/null || true",

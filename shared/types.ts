@@ -271,10 +271,26 @@ export interface HistorySessionsResponse {
   sessions: HistorySession[];
 }
 
+export interface ToolUseInfo {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+export interface ToolResultInfo {
+  toolUseId: string;
+  toolName?: string;
+  output: string;
+  isError?: boolean;
+}
+
 export interface ConversationMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp?: string;
+  thinking?: string;
+  toolUse?: ToolUseInfo[];
+  toolResult?: ToolResultInfo[];
 }
 
 export interface ConversationResponse {

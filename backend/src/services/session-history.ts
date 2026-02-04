@@ -29,10 +29,26 @@ interface SessionMetadata {
   firstMessageUuid?: string;  // For session matching
 }
 
+export interface ToolUseInfo {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+export interface ToolResultInfo {
+  toolUseId: string;
+  toolName?: string;
+  output: string;
+  isError?: boolean;
+}
+
 export interface ConversationMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp?: string;
+  thinking?: string;
+  toolUse?: ToolUseInfo[];
+  toolResult?: ToolResultInfo[];
 }
 
 export interface ProjectInfo {
@@ -483,6 +499,8 @@ export class SessionHistoryService {
 
   private async parseJsonlFile(filePath: string): Promise<ConversationMessage[]> {
     const messages: ConversationMessage[] = [];
+    // Track tool names by tool_use id for tool_result display
+    const toolNameMap = new Map<string, string>();
 
     try {
       const fileStream = createReadStream(filePath);
@@ -501,60 +519,111 @@ export class SessionHistoryService {
 
           const role = entry.type as 'user' | 'assistant';
           let content = '';
+          let thinking: string | undefined;
+          const toolUse: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
+          const toolResult: Array<{ toolUseId: string; toolName?: string; output: string; isError?: boolean }> = [];
 
-          // Extract text content from message
+          // Extract content from message
           if (typeof entry.message === 'string') {
             content = entry.message;
           } else if (entry.message.content) {
             if (typeof entry.message.content === 'string') {
               content = entry.message.content;
             } else if (Array.isArray(entry.message.content)) {
-              // Handle array of content blocks
-              content = entry.message.content
-                .filter((block: { type: string }) => block.type === 'text')
-                .map((block: { text: string }) => block.text)
-                .join('\n');
+              // Handle array of content blocks - extract all types
+              const textParts: string[] = [];
+              const thinkingParts: string[] = [];
+
+              for (const block of entry.message.content) {
+                if (block.type === 'text') {
+                  textParts.push(block.text);
+                } else if (block.type === 'thinking') {
+                  thinkingParts.push(block.thinking);
+                } else if (block.type === 'tool_use') {
+                  // Store tool name for later reference
+                  toolNameMap.set(block.id, block.name);
+                  toolUse.push({
+                    id: block.id,
+                    name: block.name,
+                    input: block.input || {},
+                  });
+                } else if (block.type === 'tool_result') {
+                  // Extract tool result content
+                  let output = '';
+                  if (typeof block.content === 'string') {
+                    output = block.content;
+                  } else if (Array.isArray(block.content)) {
+                    output = block.content
+                      .filter((c: { type: string }) => c.type === 'text')
+                      .map((c: { text: string }) => c.text)
+                      .join('\n');
+                  }
+                  toolResult.push({
+                    toolUseId: block.tool_use_id,
+                    toolName: toolNameMap.get(block.tool_use_id),
+                    output,
+                    isError: block.is_error,
+                  });
+                }
+              }
+
+              content = textParts.join('\n');
+              if (thinkingParts.length > 0) {
+                thinking = thinkingParts.join('\n\n');
+              }
             } else if (entry.message.content.type === 'text') {
               content = entry.message.content.text;
             } else if (entry.message.content.type === 'tool_use') {
-              // Tool use - show tool name
-              content = `[Tool: ${entry.message.content.name}]`;
+              toolNameMap.set(entry.message.content.id, entry.message.content.name);
+              toolUse.push({
+                id: entry.message.content.id,
+                name: entry.message.content.name,
+                input: entry.message.content.input || {},
+              });
             }
           }
 
-          // Skip empty messages and internal meta messages
-          if (!content) continue;
+          // Skip messages with no meaningful content
+          const hasContent = content || thinking || toolUse.length > 0 || toolResult.length > 0;
+          if (!hasContent) continue;
+
+          // Skip internal meta messages
           if (content.startsWith('<system-reminder>')) continue;
           if (content.startsWith('<local-command-caveat>')) continue;
 
           // Format command-related messages for readability
-          content = content
-            .replace(/<command-name>([^<]*)<\/command-name>/g, '📌 コマンド: $1')
-            .replace(/<command-message>([^<]*)<\/command-message>/g, '$1')
-            .replace(/<command-args>([^<]*)<\/command-args>/g, '')
-            .replace(/<local-command-stdout>([^<]*)<\/local-command-stdout>/g, '💬 $1')
-            .replace(/<task-notification>.*?<status>([^<]*)<\/status>.*?<summary>([^<]*)<\/summary>.*?<\/task-notification>.*/gs, '⚙️ タスク ($1): $2')
-            .replace(/<bash-notification>.*?<status>([^<]*)<\/status>.*?<summary>([^<]*)<\/summary>.*/gs, '🖥️ バックグラウンド ($1): $2')
-            .replace(/<bash-input>([^<]*)<\/bash-input>/g, '⌨️ 入力: $1')
-            // Handle incomplete notification fragments
-            .replace(/<status>([^<]*)<\/status>/g, '[$1]')
-            .replace(/<summary>([^<]*)<\/summary>/g, '$1')
-            .replace(/<task-id>[^<]*<\/task-id>/g, '')
-            .replace(/<output-file>[^<]*<\/output-file>/g, '')
-            .replace(/<shell-id>[^<]*<\/shell-id>/g, '')
-            // Remove terminal escape sequences
-            .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
-            .replace(/\[\?[0-9]+[hl]/g, '');
+          if (content) {
+            content = content
+              .replace(/<command-name>([^<]*)<\/command-name>/g, '📌 コマンド: $1')
+              .replace(/<command-message>([^<]*)<\/command-message>/g, '$1')
+              .replace(/<command-args>([^<]*)<\/command-args>/g, '')
+              .replace(/<local-command-stdout>([^<]*)<\/local-command-stdout>/g, '💬 $1')
+              .replace(/<task-notification>.*?<status>([^<]*)<\/status>.*?<summary>([^<]*)<\/summary>.*?<\/task-notification>.*/gs, '⚙️ タスク ($1): $2')
+              .replace(/<bash-notification>.*?<status>([^<]*)<\/status>.*?<summary>([^<]*)<\/summary>.*/gs, '🖥️ バックグラウンド ($1): $2')
+              .replace(/<bash-input>([^<]*)<\/bash-input>/g, '⌨️ 入力: $1')
+              // Handle incomplete notification fragments
+              .replace(/<status>([^<]*)<\/status>/g, '[$1]')
+              .replace(/<summary>([^<]*)<\/summary>/g, '$1')
+              .replace(/<task-id>[^<]*<\/task-id>/g, '')
+              .replace(/<output-file>[^<]*<\/output-file>/g, '')
+              .replace(/<shell-id>[^<]*<\/shell-id>/g, '')
+              // Remove terminal escape sequences
+              .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
+              .replace(/\[\?[0-9]+[hl]/g, '');
 
-          // Clean up long system prompts
-          if (content.length > 2000) {
-            content = content.substring(0, 500) + '\n...(truncated)...';
+            // Clean up long content
+            if (content.length > 5000) {
+              content = content.substring(0, 2000) + '\n...(truncated)...';
+            }
           }
 
           messages.push({
             role,
             content,
             timestamp: entry.timestamp,
+            thinking,
+            toolUse: toolUse.length > 0 ? toolUse : undefined,
+            toolResult: toolResult.length > 0 ? toolResult : undefined,
           });
         } catch {
           // Skip invalid lines

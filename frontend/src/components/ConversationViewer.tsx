@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { ConversationMessage } from '../../../shared/types';
+import type { ConversationMessage, ToolUseInfo, ToolResultInfo } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -10,6 +10,136 @@ function processImageReferences(content: string): string {
   return content.replace(
     /\[Image: source: \/tmp\/cchub-images\/([^\]]+)\]/g,
     (_, filename) => `![Screenshot](${API_BASE}/api/files/images/${filename})`
+  );
+}
+
+// Collapsible section component
+function CollapsibleSection({
+  title,
+  icon,
+  defaultOpen = false,
+  children,
+  variant = 'default',
+}: {
+  title: string;
+  icon: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+  variant?: 'default' | 'thinking' | 'tool' | 'result' | 'error';
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  const variantStyles = {
+    default: 'bg-gray-700/50 border-gray-600',
+    thinking: 'bg-purple-900/30 border-purple-600',
+    tool: 'bg-blue-900/30 border-blue-600',
+    result: 'bg-green-900/30 border-green-600',
+    error: 'bg-red-900/30 border-red-600',
+  };
+
+  return (
+    <div className={`my-2 border rounded ${variantStyles[variant]}`}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center gap-2 p-2 text-xs text-gray-300 hover:bg-gray-700/50"
+      >
+        <span className="transform transition-transform" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+          ▶
+        </span>
+        <span>{icon}</span>
+        <span className="flex-1 text-left truncate">{title}</span>
+      </button>
+      {isOpen && (
+        <div className="p-2 border-t border-gray-600 text-xs overflow-x-auto">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Tool use display
+function ToolUseDisplay({ tools }: { tools: ToolUseInfo[] }) {
+  return (
+    <>
+      {tools.map((tool, idx) => (
+        <CollapsibleSection
+          key={idx}
+          title={`${tool.name}`}
+          icon="🔧"
+          variant="tool"
+          defaultOpen={false}
+        >
+          <pre className="text-green-300 whitespace-pre-wrap break-all">
+            {JSON.stringify(tool.input, null, 2)}
+          </pre>
+        </CollapsibleSection>
+      ))}
+    </>
+  );
+}
+
+// Tool result display
+function ToolResultDisplay({ results }: { results: ToolResultInfo[] }) {
+  return (
+    <>
+      {results.map((result, idx) => {
+        const maxPreview = 500;
+        const isLong = result.output.length > maxPreview;
+        const preview = isLong ? result.output.substring(0, maxPreview) + '...' : result.output;
+
+        return (
+          <CollapsibleSection
+            key={idx}
+            title={result.toolName ? `${result.toolName} 結果` : 'ツール結果'}
+            icon={result.isError ? '❌' : '📋'}
+            variant={result.isError ? 'error' : 'result'}
+            defaultOpen={false}
+          >
+            <pre className={`whitespace-pre-wrap break-all ${result.isError ? 'text-red-300' : 'text-gray-300'}`}>
+              {isLong ? (
+                <ExpandableText text={result.output} preview={preview} />
+              ) : (
+                result.output || '(出力なし)'
+              )}
+            </pre>
+          </CollapsibleSection>
+        );
+      })}
+    </>
+  );
+}
+
+// Expandable text for long outputs
+function ExpandableText({ text, preview }: { text: string; preview: string }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <>
+      {expanded ? text : preview}
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="ml-2 text-blue-400 hover:underline"
+      >
+        {expanded ? '折りたたむ' : 'すべて表示'}
+      </button>
+    </>
+  );
+}
+
+// Thinking display
+function ThinkingDisplay({ thinking }: { thinking: string }) {
+  return (
+    <CollapsibleSection
+      title="思考過程"
+      icon="💭"
+      variant="thinking"
+      defaultOpen={false}
+    >
+      <div className="text-purple-200 whitespace-pre-wrap">
+        {thinking}
+      </div>
+    </CollapsibleSection>
   );
 }
 
@@ -26,6 +156,60 @@ interface ConversationViewerProps {
   onRefresh?: () => void;  // Callback to refresh conversation
   inline?: boolean;  // If true, render inline instead of fullscreen modal
 }
+
+// Markdown components configuration
+const markdownComponents = {
+  pre: ({ children }: { children?: React.ReactNode }) => (
+    <pre className="bg-gray-900 p-2 rounded overflow-x-auto my-2 text-xs">
+      {children}
+    </pre>
+  ),
+  code: ({ children, className }: { children?: React.ReactNode; className?: string }) => {
+    const isBlock = className?.includes('language-');
+    return isBlock ? (
+      <code className="text-green-300">{children}</code>
+    ) : (
+      <code className="bg-gray-700 px-1 rounded text-blue-300">{children}</code>
+    );
+  },
+  p: ({ children }: { children?: React.ReactNode }) => <p className="my-1">{children}</p>,
+  ul: ({ children }: { children?: React.ReactNode }) => <ul className="list-disc ml-4 my-1">{children}</ul>,
+  ol: ({ children }: { children?: React.ReactNode }) => <ol className="list-decimal ml-4 my-1">{children}</ol>,
+  li: ({ children }: { children?: React.ReactNode }) => <li className="my-0.5">{children}</li>,
+  h1: ({ children }: { children?: React.ReactNode }) => <h1 className="text-lg font-bold my-2">{children}</h1>,
+  h2: ({ children }: { children?: React.ReactNode }) => <h2 className="text-base font-bold my-2">{children}</h2>,
+  h3: ({ children }: { children?: React.ReactNode }) => <h3 className="text-sm font-bold my-1">{children}</h3>,
+  strong: ({ children }: { children?: React.ReactNode }) => <strong className="font-bold text-white">{children}</strong>,
+  a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
+    <a href={href} className="text-blue-400 underline" target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  ),
+  blockquote: ({ children }: { children?: React.ReactNode }) => (
+    <blockquote className="border-l-2 border-gray-500 pl-2 my-2 text-gray-400">
+      {children}
+    </blockquote>
+  ),
+  table: ({ children }: { children?: React.ReactNode }) => (
+    <div className="overflow-x-auto my-2">
+      <table className="min-w-full text-xs border border-gray-600">{children}</table>
+    </div>
+  ),
+  th: ({ children }: { children?: React.ReactNode }) => (
+    <th className="border border-gray-600 px-2 py-1 bg-gray-700">{children}</th>
+  ),
+  td: ({ children }: { children?: React.ReactNode }) => (
+    <td className="border border-gray-600 px-2 py-1">{children}</td>
+  ),
+  img: ({ src, alt }: { src?: string; alt?: string }) => (
+    <img
+      src={src}
+      alt={alt || 'Screenshot'}
+      className="max-w-full h-auto rounded my-2 border border-gray-600"
+      loading="lazy"
+    />
+  ),
+};
 
 export function ConversationViewer({
   title,
@@ -98,65 +282,31 @@ export function ConversationViewer({
                 <div className="text-xs text-gray-400 mb-1">
                   {msg.role === 'user' ? 'You' : 'Claude'}
                 </div>
-                <div className="text-sm text-gray-200 markdown-content">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      pre: ({ children }) => (
-                        <pre className="bg-gray-900 p-2 rounded overflow-x-auto my-2 text-xs">
-                          {children}
-                        </pre>
-                      ),
-                      code: ({ children, className }) => {
-                        const isBlock = className?.includes('language-');
-                        return isBlock ? (
-                          <code className="text-green-300">{children}</code>
-                        ) : (
-                          <code className="bg-gray-700 px-1 rounded text-blue-300">{children}</code>
-                        );
-                      },
-                      p: ({ children }) => <p className="my-1">{children}</p>,
-                      ul: ({ children }) => <ul className="list-disc ml-4 my-1">{children}</ul>,
-                      ol: ({ children }) => <ol className="list-decimal ml-4 my-1">{children}</ol>,
-                      li: ({ children }) => <li className="my-0.5">{children}</li>,
-                      h1: ({ children }) => <h1 className="text-lg font-bold my-2">{children}</h1>,
-                      h2: ({ children }) => <h2 className="text-base font-bold my-2">{children}</h2>,
-                      h3: ({ children }) => <h3 className="text-sm font-bold my-1">{children}</h3>,
-                      strong: ({ children }) => <strong className="font-bold text-white">{children}</strong>,
-                      a: ({ href, children }) => (
-                        <a href={href} className="text-blue-400 underline" target="_blank" rel="noopener noreferrer">
-                          {children}
-                        </a>
-                      ),
-                      blockquote: ({ children }) => (
-                        <blockquote className="border-l-2 border-gray-500 pl-2 my-2 text-gray-400">
-                          {children}
-                        </blockquote>
-                      ),
-                      table: ({ children }) => (
-                        <div className="overflow-x-auto my-2">
-                          <table className="min-w-full text-xs border border-gray-600">{children}</table>
-                        </div>
-                      ),
-                      th: ({ children }) => (
-                        <th className="border border-gray-600 px-2 py-1 bg-gray-700">{children}</th>
-                      ),
-                      td: ({ children }) => (
-                        <td className="border border-gray-600 px-2 py-1">{children}</td>
-                      ),
-                      img: ({ src, alt }) => (
-                        <img
-                          src={src}
-                          alt={alt || 'Screenshot'}
-                          className="max-w-full h-auto rounded my-2 border border-gray-600"
-                          loading="lazy"
-                        />
-                      ),
-                    }}
-                  >
-                    {processImageReferences(msg.content)}
-                  </ReactMarkdown>
-                </div>
+
+                {/* Thinking block (Claude only) */}
+                {msg.thinking && <ThinkingDisplay thinking={msg.thinking} />}
+
+                {/* Main text content */}
+                {msg.content && (
+                  <div className="text-sm text-gray-200 markdown-content">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={markdownComponents}
+                    >
+                      {processImageReferences(msg.content)}
+                    </ReactMarkdown>
+                  </div>
+                )}
+
+                {/* Tool use (Claude only) */}
+                {msg.toolUse && msg.toolUse.length > 0 && (
+                  <ToolUseDisplay tools={msg.toolUse} />
+                )}
+
+                {/* Tool result (User messages contain tool results) */}
+                {msg.toolResult && msg.toolResult.length > 0 && (
+                  <ToolResultDisplay results={msg.toolResult} />
+                )}
               </div>
             ))}
             <div ref={messagesEndRef} />

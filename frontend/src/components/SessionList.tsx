@@ -500,7 +500,7 @@ function SessionItem({
             }}
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
-            className="text-xs text-gray-400 bg-gray-700/50 px-1.5 py-0.5 rounded shrink-0 hover:bg-gray-600/50"
+            className="text-xs text-gray-300 bg-gray-600/70 px-2 py-0.5 rounded shrink-0 hover:bg-gray-500/70"
           >
             履歴
           </button>

@@ -270,45 +270,56 @@ export function ConversationViewer({
           </div>
         ) : (
           <>
-            {messages.map((msg, index) => (
-              <div
-                key={index}
-                className={`${
-                  msg.role === 'user'
-                    ? 'ml-8 bg-blue-900/30 border-l-2 border-blue-500'
-                    : 'mr-8 bg-gray-800 border-l-2 border-gray-600'
-                } p-2 rounded`}
-              >
-                <div className="text-xs text-gray-400 mb-1">
-                  {msg.role === 'user' ? 'You' : 'Claude'}
-                </div>
+            {messages.map((msg, index) => {
+              // Determine if this is a tool-result-only message (system response)
+              const isToolResultOnly = msg.role === 'user' &&
+                msg.toolResult && msg.toolResult.length > 0 &&
+                !msg.content;
 
-                {/* Thinking block (Claude only) */}
-                {msg.thinking && <ThinkingDisplay thinking={msg.thinking} />}
+              // Get display role and style
+              const displayRole = isToolResultOnly ? 'System' : (msg.role === 'user' ? 'You' : 'Claude');
+              const containerStyle = isToolResultOnly
+                ? 'mr-8 bg-gray-700/50 border-l-2 border-gray-500'  // System style (similar to Claude)
+                : msg.role === 'user'
+                  ? 'ml-8 bg-blue-900/30 border-l-2 border-blue-500'
+                  : 'mr-8 bg-gray-800 border-l-2 border-gray-600';
 
-                {/* Main text content */}
-                {msg.content && (
-                  <div className="text-sm text-gray-200 markdown-content">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={markdownComponents}
-                    >
-                      {processImageReferences(msg.content)}
-                    </ReactMarkdown>
+              return (
+                <div
+                  key={index}
+                  className={`${containerStyle} p-2 rounded`}
+                >
+                  <div className="text-xs text-gray-400 mb-1">
+                    {displayRole}
                   </div>
-                )}
 
-                {/* Tool use (Claude only) */}
-                {msg.toolUse && msg.toolUse.length > 0 && (
-                  <ToolUseDisplay tools={msg.toolUse} />
-                )}
+                  {/* Thinking block (Claude only) */}
+                  {msg.thinking && <ThinkingDisplay thinking={msg.thinking} />}
 
-                {/* Tool result (User messages contain tool results) */}
-                {msg.toolResult && msg.toolResult.length > 0 && (
-                  <ToolResultDisplay results={msg.toolResult} />
-                )}
-              </div>
-            ))}
+                  {/* Main text content */}
+                  {msg.content && (
+                    <div className="text-sm text-gray-200 markdown-content">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={markdownComponents}
+                      >
+                        {processImageReferences(msg.content)}
+                      </ReactMarkdown>
+                    </div>
+                  )}
+
+                  {/* Tool use (Claude only) */}
+                  {msg.toolUse && msg.toolUse.length > 0 && (
+                    <ToolUseDisplay tools={msg.toolUse} />
+                  )}
+
+                  {/* Tool result (displayed as System when no user text) */}
+                  {msg.toolResult && msg.toolResult.length > 0 && (
+                    <ToolResultDisplay results={msg.toolResult} />
+                  )}
+                </div>
+              );
+            })}
             <div ref={messagesEndRef} />
           </>
         )}

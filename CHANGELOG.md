@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.19] - 2026-02-04
+
+### Added
+- **PC版長押し削除対応**
+  - デスクトップブラウザでセッション一覧の長押し削除が動作
+  - `onMouseDown`/`onMouseUp`/`onMouseLeave`イベントを追加
+
+### Changed
+- **Claude Code検出の改善**
+  - macOSとLinux両方で動作するTTYプロセスチェック方式を採用
+  - `ps -t`コマンドで`claude`プロセスを直接確認
+  - `pane_current_command`フォールバックを削除
+
+### Fixed
+- 未定義変数`pts`を`ttyName`に修正（セッションマッチングが失敗していた問題）
+
+### UI
+- PC版のアイコンボタンサイズを拡大（w-3 h-3 → w-4 h-4）
+- ボタンのイベント伝播を修正
+
+## [0.0.18] - 2026-02-04
+
+### Added
+- **ダッシュボードにバージョン表示**
+  - CC Hubバージョンを画面下部に表示
+
+### Changed
+- **バージョン管理の改善**
+  - package.jsonを正とするバージョン管理に変更
+  - ハードコードされたVERSION定数を削除
+
+### UI
+- モバイル版の下部ナビゲーションバーの高さを増加（タッチターゲット改善）
+
 ## [0.0.4] - 2026-02-01
 
 ### Added

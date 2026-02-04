@@ -160,13 +160,8 @@ export class TmuxService {
       // Merge all info into sessions
       return sessions.map((session) => {
         const info = paneInfo.get(session.id);
-        // Claude Code detection:
-        // 1. Check if 'claude' process exists on the TTY (most reliable, works on macOS)
-        // 2. Command is 'claude' (Linux pane_current_command)
-        // TODO: Verify if TTY process check works on Linux too, then we can remove the pane_current_command fallback
-        const claudeOnThisTty = claudeOnTty.get(session.id) || false;
-        const isClaude = info?.command === 'claude';
-        const isClaudeRunning = claudeOnThisTty || isClaude;
+        // Claude Code detection: Check if 'claude' process exists on the TTY
+        const isClaudeRunning = claudeOnTty.get(session.id) || false;
         const currentCommand = isClaudeRunning ? 'claude' : info?.command;
         return {
           ...session,

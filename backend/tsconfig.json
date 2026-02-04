@@ -9,6 +9,7 @@
     "declaration": true,
     "outDir": "dist",
     "types": ["bun-types"],
+    "resolveJsonModule": true,
     "paths": {
       "shared": ["../shared/types.ts"]
     }

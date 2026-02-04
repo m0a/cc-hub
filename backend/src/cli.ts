@@ -1,6 +1,7 @@
 // CLI argument parser and commands
+import pkg from '../../package.json';
 
-const VERSION = '0.0.17';
+const VERSION = pkg.version;
 
 // 開発モード判定（bun run --watch で実行されている場合）
 const isDev = process.argv.some(arg => arg.includes('--watch'));

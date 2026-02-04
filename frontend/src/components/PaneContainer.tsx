@@ -71,6 +71,7 @@ export function PaneContainer({
         sessions={sessions}
         terminalRefs={terminalRefs}
         globalReloadKey={globalReloadKey}
+        isTablet={isTablet}
       />
     );
   }
@@ -108,6 +109,7 @@ export function PaneContainer({
       sessions={sessions}
       terminalRefs={terminalRefs}
       globalReloadKey={globalReloadKey}
+      isTablet={isTablet}
     />
   );
 }
@@ -123,6 +125,7 @@ interface TerminalPaneProps {
   sessions: ExtendedSession[];
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
   globalReloadKey?: number;
+  isTablet?: boolean;
 }
 
 function TerminalPane({
@@ -136,6 +139,7 @@ function TerminalPane({
   sessions,
   terminalRefs,
   globalReloadKey = 0,
+  isTablet = false,
 }: TerminalPaneProps) {
   const terminalRef = useRef<TerminalRef>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -346,27 +350,33 @@ function TerminalPane({
   return (
     <div
       ref={containerRef}
-      className={`h-full flex flex-col bg-gray-900 ${isActive ? 'ring-2 ring-blue-500' : ''}`}
+      className={`h-full flex flex-col bg-gray-900 relative ${isActive ? 'ring-2 ring-blue-500' : ''}`}
       onClick={onFocus}
     >
-      {/* Pane header */}
-      <div className="flex items-center justify-between px-2 py-1 bg-black/50 border-b border-gray-700 shrink-0 text-xs">
-        <span className="text-white/70 truncate flex-1">
-          {showConversation ? '会話履歴' : (session?.name || 'セッション未選択')}
-        </span>
-        <div className="flex items-center gap-1">
+      {/* Pane header - overlay on tablet, normal on desktop */}
+      <div className={`flex items-center px-2 py-1 text-xs ${
+        isTablet
+          ? 'absolute top-0 right-0 z-50 justify-end pointer-events-auto bg-black/60 backdrop-blur-sm rounded-bl-lg'
+          : 'justify-between bg-black/50 border-b border-gray-700 shrink-0'
+      }`}>
+        {!isTablet && (
+          <span className="text-white/70 truncate flex-1">
+            {showConversation ? '会話履歴' : (session?.name || 'セッション未選択')}
+          </span>
+        )}
+        <div className={`flex items-center ${isTablet ? 'gap-2' : 'gap-1'}`}>
           {/* Conversation toggle button - show for Claude sessions */}
           {(hasCcSessionId || session?.currentCommand === 'claude') && (
             <button
               onClick={handleToggleConversation}
-              className={`p-0.5 transition-colors ${
+              className={`${isTablet ? 'p-1.5' : 'p-0.5'} transition-colors ${
                 showConversation
                   ? 'text-blue-400 hover:text-blue-300'
                   : 'text-white/50 hover:text-white/80'
               }`}
               title={showConversation ? 'ターミナルに戻る' : '会話履歴を表示'}
             >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={isTablet ? 'w-5 h-5' : 'w-3 h-3'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
               </svg>
             </button>
@@ -375,10 +385,10 @@ function TerminalPane({
           {session?.currentPath && !showConversation && (
             <button
               onClick={handleOpenFileViewer}
-              className="p-0.5 text-white/50 hover:text-white/80 transition-colors"
+              className={`${isTablet ? 'p-1.5' : 'p-0.5'} text-white/50 hover:text-white/80 transition-colors`}
               title="ファイルブラウザ"
             >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={isTablet ? 'w-5 h-5' : 'w-3 h-3'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
               </svg>
             </button>
@@ -387,26 +397,11 @@ function TerminalPane({
           {sessionId && !showConversation && (
             <button
               onClick={handleReload}
-              className="p-0.5 text-white/50 hover:text-white/80 transition-colors"
+              className={`${isTablet ? 'p-1.5' : 'p-0.5'} text-white/50 hover:text-white/80 transition-colors`}
               title="リロード"
             >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={isTablet ? 'w-5 h-5' : 'w-3 h-3'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            </button>
-          )}
-          {/* Session change button */}
-          {sessionId && !showConversation && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelectSession();
-              }}
-              className="p-0.5 text-white/50 hover:text-white/80 transition-colors"
-              title="セッション変更"
-            >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
               </svg>
             </button>
           )}
@@ -416,24 +411,24 @@ function TerminalPane({
               e.stopPropagation();
               setShowSessionList(!showSessionList);
             }}
-            className={`p-0.5 transition-colors ${
+            className={`${isTablet ? 'p-1.5' : 'p-0.5'} transition-colors ${
               showSessionList
                 ? 'text-blue-400 hover:text-blue-300'
                 : 'text-white/50 hover:text-white/80'
             }`}
             title={showSessionList ? 'セッション一覧を閉じる' : 'セッション一覧を表示'}
           >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className={isTablet ? 'w-5 h-5' : 'w-3 h-3'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
             </svg>
           </button>
           {/* Close button */}
           <button
             onClick={(e) => { e.stopPropagation(); onClose(); }}
-            className="p-0.5 text-white/50 hover:text-red-400 transition-colors"
+            className={`${isTablet ? 'p-1.5' : 'p-0.5'} text-white/50 hover:text-red-400 transition-colors`}
             title="ペインを閉じる"
           >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className={isTablet ? 'w-5 h-5' : 'w-3 h-3'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -497,25 +492,19 @@ function TerminalPane({
               onTouchMove={handleSidebarTouchMove}
               onTouchEnd={handleSidebarTouchEnd}
             >
-              <div className="px-2 py-1 bg-black/30 border-b border-gray-700 text-xs text-white/70 flex items-center justify-between">
+              <div className={`px-2 py-1 bg-black/30 border-b border-gray-700 text-xs text-white/70 flex items-center justify-between shrink-0 ${isTablet ? 'mt-10' : ''}`}>
                 <span>セッション一覧</span>
                 <span className="text-white/40">{Math.round(sessionListScale * 100)}%</span>
               </div>
-              <div className="flex-1 overflow-auto">
-                <div
-                  style={{
-                    transform: `scale(${sessionListScale})`,
-                    transformOrigin: 'top left',
-                    width: `${100 / sessionListScale}%`,
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <SessionList
+                  onSelectSession={(sess) => {
+                    onSelectSession(sess.id);
+                    // Keep session list open after selection
                   }}
-                >
-                  <SessionList
-                    onSelectSession={(sess) => {
-                      onSelectSession(sess.id);
-                      // Keep session list open after selection
-                    }}
-                  />
-                </div>
+                  inline={true}
+                  contentScale={sessionListScale}
+                />
               </div>
             </div>
           </>

@@ -51,6 +51,8 @@ function getIndicatorColor(state?: IndicatorState): string {
 interface SessionListProps {
   onSelectSession: (session: SessionResponse) => void;
   onBack?: () => void;
+  inline?: boolean;  // true for side panel, false for fullscreen
+  contentScale?: number;  // Scale factor for content (tabs remain fixed)
 }
 
 // Confirm dialog for delete
@@ -509,7 +511,7 @@ function SessionItem({
   );
 }
 
-export function SessionList({ onSelectSession, onBack }: SessionListProps) {
+export function SessionList({ onSelectSession, onBack, inline = false, contentScale }: SessionListProps) {
   const {
     sessions,
     isLoading,
@@ -614,16 +616,21 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
     setSessionToDelete(session);
   };
 
+  // Container class: h-full for inline (side panel), h-screen for fullscreen
+  const containerClass = inline
+    ? "h-full flex flex-col bg-gray-900 text-white overflow-hidden"
+    : "h-screen flex flex-col bg-gray-900 text-white";
+
   if (isLoading && sessions.length === 0) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-900">
+      <div className={`flex items-center justify-center bg-gray-900 ${inline ? 'h-full' : 'h-screen'}`}>
         <div className="text-gray-400">Loading sessions...</div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-900 text-white">
+    <div className={containerClass}>
       {/* Error message */}
       {error && activeTab === 'sessions' && (
         <div className="p-4 bg-red-900/50 text-red-300 text-sm shrink-0">
@@ -631,67 +638,83 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
         </div>
       )}
 
-      {/* Tab content */}
-      {activeTab === 'sessions' && (
-        <div className="flex-1 overflow-y-auto p-4">
-          {sessions.length === 0 ? (
-            <div className="text-center text-gray-500 py-8">
-              セッションがありません。新規作成してください。
+      {/* Tab content - with optional scaling */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <div
+          className="h-full"
+          style={contentScale ? {
+            transform: `scale(${contentScale})`,
+            transformOrigin: 'top left',
+            width: `${100 / contentScale}%`,
+            height: `${100 / contentScale}%`,
+          } : undefined}
+        >
+          {activeTab === 'sessions' && (
+            <div className="h-full overflow-y-auto p-4">
+              {sessions.length === 0 ? (
+                <div className="text-center text-gray-500 py-8">
+                  セッションがありません。新規作成してください。
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {sessions.map((session) => (
+                    <SessionItem
+                      key={session.id}
+                      session={session}
+                      onSelect={onSelectSession}
+                      onDelete={handleDeleteRequest}
+                      onResume={handleResume}
+                      onShowConversation={handleShowConversation}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="space-y-2">
-              {sessions.map((session) => (
-                <SessionItem
-                  key={session.id}
-                  session={session}
-                  onSelect={onSelectSession}
-                  onDelete={handleDeleteRequest}
-                  onResume={handleResume}
-                  onShowConversation={handleShowConversation}
-                />
-              ))}
+          )}
+
+          {activeTab === 'history' && (
+            <div className="h-full overflow-hidden">
+              <SessionHistory
+                onSelectSession={onSelectSession}
+                onSessionResumed={() => {
+                  fetchSessions();
+                  setActiveTab('sessions');
+                }}
+                activeSessions={sessions}
+              />
+            </div>
+          )}
+
+          {activeTab === 'dashboard' && (
+            <div className="h-full overflow-y-auto">
+              <Dashboard className="h-full" />
             </div>
           )}
         </div>
-      )}
-
-      {activeTab === 'history' && (
-        <SessionHistory
-          onSelectSession={onSelectSession}
-          onSessionResumed={() => {
-            fetchSessions();
-            setActiveTab('sessions');
-          }}
-          activeSessions={sessions}
-        />
-      )}
-
-      {activeTab === 'dashboard' && (
-        <Dashboard className="flex-1" />
-      )}
+      </div>
 
       {/* Bottom bar with tabs */}
-      <div className="border-t border-gray-700 bg-black/80 shrink-0">
+      <div className="border-t border-gray-700 bg-black/80 shrink-0 mt-auto">
         {/* Action buttons (only for sessions tab) */}
         {activeTab === 'sessions' && (
-          <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700">
+          <div className="flex items-center justify-between px-2 py-1 border-b border-gray-700">
             {onBack ? (
               <button
                 onClick={onBack}
-                className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
               </button>
             ) : (
-              <div className="w-9" />
+              <div className="w-6" />
             )}
             <button
               onClick={() => setShowCreateModal(true)}
-              className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+              className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
             </button>
@@ -702,7 +725,7 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
         <div className="flex">
           <button
             onClick={() => setActiveTab('sessions')}
-            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+            className={`flex-1 px-2 py-1.5 text-xs font-medium transition-colors ${
               activeTab === 'sessions'
                 ? 'text-white bg-gray-800 border-t-2 border-blue-500'
                 : 'text-gray-400 hover:text-gray-300'
@@ -712,7 +735,7 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
           </button>
           <button
             onClick={() => setActiveTab('history')}
-            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+            className={`flex-1 px-2 py-1.5 text-xs font-medium transition-colors ${
               activeTab === 'history'
                 ? 'text-white bg-gray-800 border-t-2 border-blue-500'
                 : 'text-gray-400 hover:text-gray-300'
@@ -722,7 +745,7 @@ export function SessionList({ onSelectSession, onBack }: SessionListProps) {
           </button>
           <button
             onClick={() => setActiveTab('dashboard')}
-            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+            className={`flex-1 px-2 py-1.5 text-xs font-medium transition-colors ${
               activeTab === 'dashboard'
                 ? 'text-white bg-gray-800 border-t-2 border-blue-500'
                 : 'text-gray-400 hover:text-gray-300'

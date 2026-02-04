@@ -135,9 +135,10 @@ export class TmuxService {
           });
       }
 
-      // Get preview and waiting status for each session
+      // Get preview, waiting status, and check for claude process on each TTY
       const previews = new Map<string, string>();
       const waitingStatus = new Map<string, boolean>();
+      const claudeOnTty = new Map<string, boolean>();
       await Promise.all(
         sessions.map(async (session) => {
           const preview = await this.capturePreview(session.id);
@@ -146,15 +147,30 @@ export class TmuxService {
           }
           const waiting = await this.isWaitingForInput(session.id);
           waitingStatus.set(session.id, waiting);
+
+          // Check if claude process is running on this TTY
+          const info = paneInfo.get(session.id);
+          if (info?.tty) {
+            const hasClaude = await this.isClaudeRunningOnTty(info.tty);
+            claudeOnTty.set(session.id, hasClaude);
+          }
         })
       );
 
       // Merge all info into sessions
       return sessions.map((session) => {
         const info = paneInfo.get(session.id);
+        // Claude Code detection:
+        // 1. Check if 'claude' process exists on the TTY (most reliable, works on macOS)
+        // 2. Command is 'claude' (Linux pane_current_command)
+        // TODO: Verify if TTY process check works on Linux too, then we can remove the pane_current_command fallback
+        const claudeOnThisTty = claudeOnTty.get(session.id) || false;
+        const isClaude = info?.command === 'claude';
+        const isClaudeRunning = claudeOnThisTty || isClaude;
+        const currentCommand = isClaudeRunning ? 'claude' : info?.command;
         return {
           ...session,
-          currentCommand: info?.command,
+          currentCommand,
           currentPath: info?.path,
           paneTitle: info?.title,
           paneTty: info?.tty,
@@ -164,6 +180,33 @@ export class TmuxService {
       });
     } catch {
       return [];
+    }
+  }
+
+  /**
+   * Check if 'claude' process is running on a given TTY
+   * This is the most reliable way to detect Claude Code on macOS
+   * where pane_current_command returns version number instead of 'claude'
+   */
+  async isClaudeRunningOnTty(tty: string): Promise<boolean> {
+    try {
+      // Extract tty name (e.g., /dev/ttys004 -> ttys004)
+      const ttyName = tty.replace('/dev/', '');
+      const proc = Bun.spawn(['ps', '-t', ttyName, '-o', 'comm='], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) {
+        return false;
+      }
+
+      const output = await new Response(proc.stdout).text();
+      // Check if any process is named 'claude'
+      return output.split('\n').some(line => line.trim() === 'claude');
+    } catch {
+      return false;
     }
   }
 

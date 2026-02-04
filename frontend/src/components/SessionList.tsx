@@ -353,16 +353,32 @@ function SessionItem({
   const longPressTimerRef = useRef<number | null>(null);
   const longPressFiredRef = useRef(false);
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    console.log('[SessionItem] Touch start:', session.name);
+  const startLongPress = () => {
     longPressFiredRef.current = false;
     longPressTimerRef.current = window.setTimeout(() => {
       console.log('[SessionItem] Long press fired:', session.name);
       longPressFiredRef.current = true;
-      // Prevent browser context menu by stopping event propagation
-      e.preventDefault();
       onDelete(session);
     }, 600);
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleTouchStart = () => {
+    console.log('[SessionItem] Touch start:', session.name);
+    startLongPress();
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    // Only handle left click
+    if (e.button !== 0) return;
+    console.log('[SessionItem] Mouse down:', session.name);
+    startLongPress();
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -371,26 +387,26 @@ function SessionItem({
   };
 
   const handleTouchEnd = () => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
+    cancelLongPress();
+  };
+
+  const handleMouseUp = () => {
+    cancelLongPress();
+  };
+
+  const handleMouseLeave = () => {
+    // Cancel long press when mouse leaves the element
+    cancelLongPress();
   };
 
   const handleTouchMove = () => {
     // Cancel long press when touch moves (scrolling)
-    if (longPressTimerRef.current) {
-      console.log('[SessionItem] Touch move - canceling long press');
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
+    console.log('[SessionItem] Touch move - canceling long press');
+    cancelLongPress();
   };
 
   const handleTouchCancel = () => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
+    cancelLongPress();
     longPressFiredRef.current = false;
   };
 
@@ -455,6 +471,9 @@ function SessionItem({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchCancel}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
       onContextMenu={handleContextMenu}
       style={{ touchAction: 'pan-y', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
       className={`p-3 rounded cursor-pointer transition-colors select-none ${
@@ -474,8 +493,14 @@ function SessionItem({
         )}
         {showConversationButton && (
           <button
-            onClick={handleShowConversation}
-            className="text-xs text-gray-400 bg-gray-700/50 px-1.5 py-0.5 rounded shrink-0 hover:bg-gray-600/50"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              handleShowConversation(e);
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            className="text-xs text-gray-300 bg-gray-600/70 px-2 py-0.5 rounded shrink-0 hover:bg-gray-500/70"
           >
             履歴
           </button>
@@ -483,6 +508,8 @@ function SessionItem({
         {showResumeButton && (
           <button
             onClick={handleResume}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
             className="text-xs text-blue-400 bg-blue-900/50 px-1.5 py-0.5 rounded shrink-0 hover:bg-blue-800/50"
           >
             再開

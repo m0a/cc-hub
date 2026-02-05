@@ -89,6 +89,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const sendRef = useRef<(data: string) => void>(() => {});
   const resizeRef = useRef<(cols: number, rows: number) => void>(() => {});
   const closeInputBarRef = useRef<() => void>(() => {});
+  const showKeyboardRef = useRef<() => void>(() => {});
   const selectionRef = useRef<string>('');
   const [isInitialized, setIsInitialized] = useState(false);
   const [inputMode, setInputMode] = useState<'hidden' | 'shortcuts' | 'input'>('hidden');
@@ -271,6 +272,13 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
     term.open(container);
 
+    // Prevent OS keyboard on touch devices by modifying xterm's internal textarea
+    const xtermTextarea = container.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement;
+    if (xtermTextarea) {
+      xtermTextarea.setAttribute('inputmode', 'none');
+      xtermTextarea.setAttribute('readonly', 'readonly');
+    }
+
     // Load WebGL addon for GPU-accelerated rendering
     try {
       const webglAddon = new WebglAddon();
@@ -391,6 +399,11 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     let initialPinchDistance: number | null = null;
     let initialFontSizeOnPinch: number = initialFontSize;
 
+    // Long press detection
+    let longPressTimer: number | null = null;
+    let longPressTriggered = false;
+    const LONG_PRESS_DURATION = 400; // ms
+
     const getPinchDistance = (touches: TouchList): number => {
       const dx = touches[0].clientX - touches[1].clientX;
       const dy = touches[0].clientY - touches[1].clientY;
@@ -399,7 +412,11 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
     const handleTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 2) {
-        // Pinch start
+        // Pinch start - cancel long press
+        if (longPressTimer) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
         initialPinchDistance = getPinchDistance(e.touches);
         initialFontSizeOnPinch = term.options.fontSize || initialFontSize;
         touchMoved = true; // Prevent keyboard popup
@@ -407,11 +424,26 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         // Scroll start
         touchStartY = e.touches[0].clientY;
         touchMoved = false;
+        longPressTriggered = false;
         accumulatedDelta = 0;
+
+        // Start long press timer
+        longPressTimer = window.setTimeout(() => {
+          longPressTriggered = true;
+          touchMoved = true; // Prevent tap action
+          // Show custom keyboard on long press
+          showKeyboardRef.current();
+        }, LONG_PRESS_DURATION);
       }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
+      // Cancel long press on move
+      if (longPressTimer && !longPressTriggered) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+
       // Pinch zoom (2 fingers)
       if (e.touches.length === 2 && initialPinchDistance !== null) {
         e.preventDefault();
@@ -468,6 +500,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     };
 
     const handleTouchEnd = () => {
+      // Cancel long press timer
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+
       // Cancel pending scroll
       if (scrollRafId !== null) {
         cancelAnimationFrame(scrollRafId);
@@ -482,29 +520,39 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         initialPinchDistance = null;
       }
 
-      // Only focus if it was a tap (no movement)
-      if (!touchMoved) {
-        // Focus hidden input to trigger soft keyboard on mobile
-        if (inputRef.current) {
-          inputRef.current.focus();
-        }
+      // Only show keyboard if it was a tap (no movement, no long press)
+      if (!touchMoved && !longPressTriggered) {
+        // Show custom keyboard on tap
+        showKeyboardRef.current();
       }
+
       touchStartY = null;
       touchMoved = false;
+      longPressTriggered = false;
       accumulatedDelta = 0;
+    };
+
+    // Prevent context menu on long press
+    const handleContextMenu = (e: Event) => {
+      e.preventDefault();
     };
 
     if (container) {
       container.addEventListener('touchstart', handleTouchStart, { passive: true });
       container.addEventListener('touchmove', handleTouchMove, { passive: false });
       container.addEventListener('touchend', handleTouchEnd);
+      container.addEventListener('contextmenu', handleContextMenu);
     }
 
     return () => {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+      }
       if (container) {
         container.removeEventListener('touchstart', handleTouchStart);
         container.removeEventListener('touchmove', handleTouchMove);
         container.removeEventListener('touchend', handleTouchEnd);
+        container.removeEventListener('contextmenu', handleContextMenu);
       }
       if (resizeTimeout) {
         clearTimeout(resizeTimeout);
@@ -776,6 +824,15 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   // Update ref for use in touch handlers
   closeInputBarRef.current = handleCloseInputBar;
 
+  // Show keyboard function for touch handlers
+  const handleShowKeyboard = useCallback(() => {
+    setInputMode('shortcuts');
+    setShowHint(true);
+    if (hintTimeoutRef.current) clearTimeout(hintTimeoutRef.current);
+    hintTimeoutRef.current = window.setTimeout(() => setShowHint(false), 5000);
+  }, []);
+  showKeyboardRef.current = handleShowKeyboard;
+
   // Swipe handling for input bar
   const inputBarSwipeRef = useRef<{ startX: number; startY: number } | null>(null);
 
@@ -855,6 +912,11 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         <div
           ref={containerRef}
           className="absolute inset-0 p-1"
+          style={{
+            WebkitTouchCallout: 'none',
+            WebkitUserSelect: 'none',
+            touchAction: 'pan-y pinch-zoom',
+          }}
         />
         {/* Touch overlay for scrolling - always pointer-events-none, touch handled via JS on container */}
         <div

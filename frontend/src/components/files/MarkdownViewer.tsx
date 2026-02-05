@@ -119,7 +119,7 @@ export function MarkdownViewer({
           </div>
         )}
 
-        <div ref={containerRef} className="flex-1 overflow-auto touch-pan-y">
+        <div ref={containerRef} className="flex-1 overflow-auto touch-pan-y select-text" style={{ WebkitUserSelect: 'text', userSelect: 'text' }}>
           <pre
             className="whitespace-pre-wrap break-all p-3"
             style={{ fontSize: `${fontSize}px`, lineHeight: `${fontSize * 1.5}px` }}
@@ -163,8 +163,8 @@ export function MarkdownViewer({
 
       <div
         ref={containerRef}
-        className="flex-1 overflow-auto touch-pan-y p-4 markdown-content"
-        style={{ fontSize: `${fontSize}px` }}
+        className="flex-1 overflow-auto touch-pan-y p-4 markdown-content select-text"
+        style={{ fontSize: `${fontSize}px`, WebkitUserSelect: 'text', userSelect: 'text' }}
       >
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}

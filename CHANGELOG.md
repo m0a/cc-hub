@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.25] - 2026-02-05
+
+### Added
+- **CLI国際化対応**: バックエンド/CLIメッセージの日本語・英語対応
+  - 環境変数 `LANG`/`LC_ALL`/`LC_MESSAGES` から言語を自動検出
+  - 日本語ロケール (`ja_*`) → 日本語出力、それ以外 → 英語出力
+  - シングルバイナリ対応のため翻訳データを埋め込み
+
+### Changed
+- CLAUDE.md に国際化（i18n）セクションを追加
+
+## [0.0.24] - 2026-02-05
+
+### Added
+- **フロントエンド国際化対応**: react-i18nextによる完全なi18n対応
+  - 全UIコンポーネントの日本語・英語翻訳
+  - i18next-browser-languagedetectorによるブラウザ言語自動検出
+  - 言語切替ボタン（EN/JA）をUIに追加
+  - 設定は localStorage (`cchub-language`) に保存
+  - 翻訳ファイル: `frontend/src/i18n/locales/{en,ja}.json`
+
+### Changed
+- ダッシュボードのステータスメッセージをフロントエンドで生成（翻訳対応）
+- 全コンポーネントのハードコードされた日本語を翻訳キーに置換
+
 ## [0.0.23] - 2026-02-05
 
 ### Added

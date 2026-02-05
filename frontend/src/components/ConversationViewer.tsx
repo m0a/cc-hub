@@ -13,6 +13,11 @@ function processImageReferences(content: string): string {
   );
 }
 
+// Check if a message is a system-generated summary (context continuation)
+function isSystemSummary(content: string): boolean {
+  return content.startsWith('This session is being continued from a previous conversation that ran out of context');
+}
+
 // Collapsible section component
 function CollapsibleSection({
   title,
@@ -287,13 +292,27 @@ export function ConversationViewer({
                 msg.toolResult && msg.toolResult.length > 0 &&
                 !msg.content;
 
+              // Determine if this is a system-generated summary (context continuation)
+              const isSummaryMessage = msg.role === 'user' &&
+                msg.content && isSystemSummary(msg.content);
+
               // Get display role and style
-              const displayRole = isToolResultOnly ? 'System' : (msg.role === 'user' ? 'You' : 'Claude');
-              const containerStyle = isToolResultOnly
-                ? 'mr-8 bg-gray-700/50 border-l-2 border-gray-500'  // System style (similar to Claude)
-                : msg.role === 'user'
-                  ? 'ml-8 bg-blue-900/30 border-l-2 border-blue-500'
-                  : 'mr-8 bg-gray-800 border-l-2 border-gray-600';
+              let displayRole: string;
+              let containerStyle: string;
+
+              if (isSummaryMessage) {
+                displayRole = 'System (Summary)';
+                containerStyle = 'mx-4 bg-amber-900/20 border-l-2 border-amber-500';
+              } else if (isToolResultOnly) {
+                displayRole = 'System';
+                containerStyle = 'mr-8 bg-gray-700/50 border-l-2 border-gray-500';
+              } else if (msg.role === 'user') {
+                displayRole = 'You';
+                containerStyle = 'ml-8 bg-blue-900/30 border-l-2 border-blue-500';
+              } else {
+                displayRole = 'Claude';
+                containerStyle = 'mr-8 bg-gray-800 border-l-2 border-gray-600';
+              }
 
               return (
                 <div

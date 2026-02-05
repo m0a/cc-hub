@@ -47,6 +47,43 @@ app.get('/health', (c) => c.json({ status: 'ok', version: VERSION }));
 // Auth routes (no auth required for login/required check)
 app.route('/api/auth', auth);
 
+// Public images route (no auth required - images are user-uploaded screenshots)
+const IMAGES_DIR = '/tmp/cchub-images';
+app.get('/api/images/:filename', async (c) => {
+  const { readFile } = await import('node:fs/promises');
+  const { join, basename } = await import('node:path');
+
+  const filename = c.req.param('filename');
+
+  // Security: only allow alphanumeric, dash, dot for filename
+  if (!filename || !/^[\w\-.]+\.(png|jpg|jpeg|gif|webp)$/i.test(filename)) {
+    return c.json({ error: 'Invalid filename' }, 400);
+  }
+
+  const filePath = join(IMAGES_DIR, basename(filename));
+
+  try {
+    const data = await readFile(filePath);
+    const ext = filename.split('.').pop()?.toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      png: 'image/png',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      gif: 'image/gif',
+      webp: 'image/webp',
+    };
+
+    return new Response(data, {
+      headers: {
+        'Content-Type': mimeTypes[ext || 'png'] || 'application/octet-stream',
+        'Cache-Control': 'public, max-age=86400',
+      },
+    });
+  } catch {
+    return c.json({ error: 'Image not found' }, 404);
+  }
+});
+
 // Protected API routes (require auth if password is set)
 app.use('/api/logs/*', conditionalAuthMiddleware);
 app.use('/api/sessions/*', conditionalAuthMiddleware);

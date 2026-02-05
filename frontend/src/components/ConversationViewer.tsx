@@ -9,7 +9,7 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
 function processImageReferences(content: string): string {
   return content.replace(
     /\[Image: source: \/tmp\/cchub-images\/([^\]]+)\]/g,
-    (_, filename) => `![Screenshot](${API_BASE}/api/files/images/${filename})`
+    (_, filename) => `![Screenshot](${API_BASE}/api/images/${filename})`
   );
 }
 

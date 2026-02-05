@@ -757,4 +757,89 @@ export class SessionHistoryService {
     }
   }
 
+  /**
+   * Search sessions with streaming results (generator)
+   * Yields results as they are found for incremental display
+   */
+  async *searchSessionsStream(query: string, limit: number = 50): AsyncGenerator<HistorySession> {
+    if (!query || query.trim().length === 0) {
+      return;
+    }
+
+    const normalizedQuery = query.toLowerCase().trim();
+    let count = 0;
+
+    try {
+      const projectDirs = await readdir(this.projectsDir);
+
+      // Sort by modification time (process newest first)
+      const dirStats = await Promise.all(
+        projectDirs.map(async (dir) => {
+          try {
+            const dirPath = join(this.projectsDir, dir);
+            const dirStat = await stat(dirPath);
+            return { dir, mtime: dirStat.mtime.getTime(), isDir: dirStat.isDirectory() };
+          } catch {
+            return { dir, mtime: 0, isDir: false };
+          }
+        })
+      );
+
+      dirStats.sort((a, b) => b.mtime - a.mtime);
+
+      for (const { dir, isDir } of dirStats) {
+        if (!isDir || count >= limit) continue;
+
+        const projectDir = join(this.projectsDir, dir);
+
+        try {
+          const files = await readdir(projectDir);
+          const jsonlFiles = files.filter(f => f.endsWith('.jsonl'));
+
+          // Get file stats and sort by modification time
+          const fileStats = await Promise.all(
+            jsonlFiles.map(async (file) => {
+              try {
+                const filePath = join(projectDir, file);
+                const fileStat = await stat(filePath);
+                return { file, mtime: fileStat.mtime.getTime() };
+              } catch {
+                return { file, mtime: 0 };
+              }
+            })
+          );
+
+          fileStats.sort((a, b) => b.mtime - a.mtime);
+
+          for (const { file } of fileStats) {
+            if (count >= limit) break;
+
+            const jsonlPath = join(projectDir, file);
+            const basicInfo = await this.scanJsonlForBasicInfo(jsonlPath);
+
+            if (basicInfo && basicInfo.lastPrompt) {
+              const projectName = basicInfo.projectPath.replace(/^\/home\/[^/]+\//, '~/');
+              const searchText = `${projectName} ${basicInfo.lastPrompt}`.toLowerCase();
+
+              if (searchText.includes(normalizedQuery)) {
+                count++;
+                yield {
+                  sessionId: basicInfo.sessionId,
+                  projectPath: basicInfo.projectPath,
+                  projectName,
+                  firstPrompt: basicInfo.lastPrompt,
+                  modified: basicInfo.modified,
+                };
+              }
+            }
+          }
+        } catch {
+          // Skip directories that can't be read
+        }
+      }
+    } catch {
+      // Error reading projects directory
+    }
+  }
+
 }

@@ -206,6 +206,44 @@ sessions.get('/history/search', async (c) => {
   return c.json({ sessions });
 });
 
+// GET /sessions/history/search/stream - Streaming search with SSE
+sessions.get('/history/search/stream', async (c) => {
+  const query = c.req.query('q') || '';
+  const limit = parseInt(c.req.query('limit') || '50', 10);
+
+  // Set up SSE headers
+  c.header('Content-Type', 'text/event-stream');
+  c.header('Cache-Control', 'no-cache');
+  c.header('Connection', 'keep-alive');
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const encoder = new TextEncoder();
+
+      try {
+        for await (const session of sessionHistoryService.searchSessionsStream(query, limit)) {
+          const data = `data: ${JSON.stringify(session)}\n\n`;
+          controller.enqueue(encoder.encode(data));
+        }
+        // Send done event
+        controller.enqueue(encoder.encode('event: done\ndata: {}\n\n'));
+      } catch (error) {
+        controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ error: 'Search failed' })}\n\n`));
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  });
+});
+
 // GET /sessions/history/projects/:dirName - Get sessions for a specific project
 sessions.get('/history/projects/:dirName', async (c) => {
   const dirName = c.req.param('dirName');

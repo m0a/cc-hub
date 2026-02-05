@@ -161,7 +161,7 @@ export function useSessionHistory(): UseSessionHistoryResult {
     }
   }, []);
 
-  // Search sessions
+  // Search sessions with streaming (incremental results)
   const searchSessions = useCallback(async (query: string) => {
     setSearchQuery(query);
     if (!query.trim()) {
@@ -169,18 +169,40 @@ export function useSessionHistory(): UseSessionHistoryResult {
       return;
     }
 
+    setIsSearching(true);
+    setSearchResults([]); // Clear previous results
+
     try {
-      setIsSearching(true);
-      const response = await authFetch(`${API_BASE}/api/sessions/history/search?q=${encodeURIComponent(query)}`);
-      if (!response.ok) {
-        throw new Error('Failed to search sessions');
-      }
-      const data = await response.json();
-      setSearchResults(data.sessions || []);
+      // Use EventSource for SSE streaming
+      const url = `${API_BASE}/api/sessions/history/search/stream?q=${encodeURIComponent(query)}`;
+      const eventSource = new EventSource(url);
+
+      eventSource.onmessage = (event) => {
+        try {
+          const session = JSON.parse(event.data) as HistorySession;
+          setSearchResults(prev => [...prev, session]);
+        } catch {
+          // Ignore parse errors
+        }
+      };
+
+      eventSource.addEventListener('done', () => {
+        setIsSearching(false);
+        eventSource.close();
+      });
+
+      eventSource.addEventListener('error', () => {
+        setIsSearching(false);
+        eventSource.close();
+      });
+
+      eventSource.onerror = () => {
+        setIsSearching(false);
+        eventSource.close();
+      };
     } catch (err) {
       console.error('Failed to search sessions:', err);
       setSearchResults([]);
-    } finally {
       setIsSearching(false);
     }
   }, []);

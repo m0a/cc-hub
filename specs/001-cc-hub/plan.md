@@ -1,6 +1,6 @@
 # Implementation Plan: CC Hub
 
-**Branch**: `001-cc-hub` | **Date**: 2026-01-24 | **Spec**: [spec.md](./spec.md)
+**Branch**: `main` | **Date**: 2026-01-24 | **Spec**: [spec.md](./spec.md)
 **Input**: Feature specification from `/specs/001-cc-hub/spec.md`
 
 ## Summary

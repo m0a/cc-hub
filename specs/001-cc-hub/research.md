@@ -1,7 +1,7 @@
 # Research: CC Hub
 
 **Date**: 2026-01-24
-**Branch**: `001-cc-hub`
+**Branch**: `main`
 
 ## 1. ターミナルUI: ghostty-web
 

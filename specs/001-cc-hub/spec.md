@@ -1,6 +1,6 @@
 # Feature Specification: CC Hub
 
-**Feature Branch**: `001-cc-hub`
+**Feature Branch**: `main`
 **Created**: 2026-01-24
 **Status**: Draft
 **Input**: Web-based Claude Code multi-session management hub with terminal access from any device

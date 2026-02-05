@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { TerminalPage } from './pages/TerminalPage';
 import { SessionList } from './components/SessionList';
 // TabletLayout is deprecated - now using DesktopLayout with isTablet prop
@@ -95,6 +96,7 @@ function getSavedOpenSessionIds(): string[] {
 }
 
 export function App() {
+  const { t } = useTranslation();
   // Auth state
   const auth = useAuth();
 
@@ -569,7 +571,7 @@ export function App() {
             setShowOverlay(false);
           }}
           className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-          title="セッション一覧"
+          title={t('session.list')}
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />

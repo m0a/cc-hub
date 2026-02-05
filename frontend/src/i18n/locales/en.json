@@ -18,6 +18,9 @@
   },
   "session": {
     "title": "Sessions",
+    "list": "Session List",
+    "showList": "Show session list",
+    "hideList": "Hide session list",
     "newSession": "New Session",
     "activeSessions": "Active",
     "noSessions": "No sessions",
@@ -93,10 +96,12 @@
     "preview": "Preview",
     "source": "Source",
     "resetFontSize": "Reset font size",
-    "fileTooLarge": "File is too large, showing partial content"
+    "fileTooLarge": "File is too large, showing partial content",
+    "reload": "Reload"
   },
   "conversation": {
     "title": "Conversation",
+    "history": "Conversation History",
     "you": "You",
     "claude": "Claude",
     "system": "System",
@@ -107,7 +112,9 @@
     "noOutput": "(no output)",
     "noMessages": "No messages",
     "showAll": "Show all",
-    "collapse": "Collapse"
+    "collapse": "Collapse",
+    "backToTerminal": "Back to terminal",
+    "showHistory": "Show conversation history"
   },
   "keyboard": {
     "title": "Keyboard",
@@ -126,7 +133,25 @@
     "login": "Login",
     "logout": "Logout",
     "invalidPassword": "Invalid password",
-    "required": "Authentication required"
+    "required": "Authentication required",
+    "authenticating": "Authenticating..."
+  },
+  "pane": {
+    "selectSession": "Please select a session",
+    "noSession": "No session selected",
+    "closeTab": "Close tab"
+  },
+  "url": {
+    "noUrls": "No URLs found",
+    "copy": "Copy",
+    "open": "Open",
+    "prev": "Prev",
+    "next": "Next"
+  },
+  "prompt": {
+    "searchPlaceholder": "Search prompts...",
+    "searchHint": "Enter search words or search with empty to show recent prompts",
+    "noResults": "No results"
   },
   "time": {
     "now": "now",

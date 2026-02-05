@@ -18,6 +18,9 @@
   },
   "session": {
     "title": "セッション",
+    "list": "セッション一覧",
+    "showList": "セッション一覧を表示",
+    "hideList": "セッション一覧を閉じる",
     "newSession": "新規セッション",
     "activeSessions": "アクティブ",
     "noSessions": "セッションがありません",
@@ -93,10 +96,12 @@
     "preview": "プレビュー",
     "source": "ソース",
     "resetFontSize": "フォントサイズをリセット",
-    "fileTooLarge": "ファイルが大きすぎるため一部のみ表示しています"
+    "fileTooLarge": "ファイルが大きすぎるため一部のみ表示しています",
+    "reload": "リロード"
   },
   "conversation": {
     "title": "会話",
+    "history": "会話履歴",
     "you": "You",
     "claude": "Claude",
     "system": "System",
@@ -107,7 +112,9 @@
     "noOutput": "(出力なし)",
     "noMessages": "メッセージがありません",
     "showAll": "すべて表示",
-    "collapse": "折りたたむ"
+    "collapse": "折りたたむ",
+    "backToTerminal": "ターミナルに戻る",
+    "showHistory": "会話履歴を表示"
   },
   "keyboard": {
     "title": "キーボード",
@@ -126,7 +133,25 @@
     "login": "ログイン",
     "logout": "ログアウト",
     "invalidPassword": "パスワードが正しくありません",
-    "required": "認証が必要です"
+    "required": "認証が必要です",
+    "authenticating": "認証中..."
+  },
+  "pane": {
+    "selectSession": "セッションを選択してください",
+    "noSession": "セッション未選択",
+    "closeTab": "タブを閉じる"
+  },
+  "url": {
+    "noUrls": "URLが見つかりません",
+    "copy": "コピー",
+    "open": "開く",
+    "prev": "前へ",
+    "next": "次へ"
+  },
+  "prompt": {
+    "searchPlaceholder": "プロンプトを検索...",
+    "searchHint": "検索ワードを入力するか、空欄で検索して最近のプロンプトを表示",
+    "noResults": "結果なし"
   },
   "time": {
     "now": "今",

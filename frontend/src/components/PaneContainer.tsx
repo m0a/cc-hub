@@ -1,4 +1,5 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { TerminalComponent, type TerminalRef } from './Terminal';
 import { ConversationViewer } from './ConversationViewer';
 import { FileViewer } from './files/FileViewer';
@@ -143,6 +144,7 @@ function TerminalPane({
   globalReloadKey = 0,
   isTablet = false,
 }: TerminalPaneProps) {
+  const { t } = useTranslation();
   const terminalRef = useRef<TerminalRef>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [showConversation, setShowConversation] = useState(false);
@@ -363,7 +365,7 @@ function TerminalPane({
       }`}>
         {!isTablet && (
           <span className="text-white/70 truncate flex-1">
-            {showConversation ? '会話履歴' : (session?.name || 'セッション未選択')}
+            {showConversation ? t('conversation.history') : (session?.name || t('pane.noSession'))}
           </span>
         )}
         <div className={`flex items-center ${isTablet ? 'gap-2' : 'gap-1.5'}`}>
@@ -376,7 +378,7 @@ function TerminalPane({
                   ? 'text-blue-400 hover:text-blue-300'
                   : 'text-white/50 hover:text-white/80'
               }`}
-              title={showConversation ? 'ターミナルに戻る' : '会話履歴を表示'}
+              title={showConversation ? t('conversation.backToTerminal') : t('conversation.showHistory')}
             >
               <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
@@ -388,7 +390,7 @@ function TerminalPane({
             <button
               onClick={handleOpenFileViewer}
               className={`${isTablet ? 'p-1.5' : 'p-1'} text-white/50 hover:text-white/80 transition-colors`}
-              title="ファイルブラウザ"
+              title={t('files.title')}
             >
               <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
@@ -400,7 +402,7 @@ function TerminalPane({
             <button
               onClick={handleReload}
               className={`${isTablet ? 'p-1.5' : 'p-1'} text-white/50 hover:text-white/80 transition-colors`}
-              title="リロード"
+              title={t('files.reload')}
             >
               <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -418,7 +420,7 @@ function TerminalPane({
                 ? 'text-blue-400 hover:text-blue-300'
                 : 'text-white/50 hover:text-white/80'
             }`}
-            title={showSessionList ? 'セッション一覧を閉じる' : 'セッション一覧を表示'}
+            title={showSessionList ? t('session.hideList') : t('session.showList')}
           >
             <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
@@ -428,7 +430,7 @@ function TerminalPane({
           <button
             onClick={(e) => { e.stopPropagation(); onClose(); }}
             className={`${isTablet ? 'p-1.5' : 'p-1'} text-white/50 hover:text-red-400 transition-colors`}
-            title="ペインを閉じる"
+            title={t('common.close')}
           >
             <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -496,7 +498,7 @@ function TerminalPane({
               onTouchEnd={handleSidebarTouchEnd}
             >
               <div className={`px-2 py-1 bg-black/30 border-b border-gray-700 text-xs text-white/70 flex items-center justify-between shrink-0 ${isTablet ? 'mt-10' : ''}`}>
-                <span>セッション一覧</span>
+                <span>{t('session.list')}</span>
                 <span className="text-white/40">{Math.round(sessionListScale * 100)}%</span>
               </div>
               <div className="flex-1 min-h-0 overflow-hidden">
@@ -531,9 +533,10 @@ interface SessionSelectorProps {
 }
 
 function SessionSelector({ sessions, onSelect }: SessionSelectorProps) {
+  const { t } = useTranslation();
   return (
     <div className="h-full flex flex-col items-center justify-center bg-gray-900 p-4">
-      <p className="text-gray-400 mb-4">セッションを選択してください</p>
+      <p className="text-gray-400 mb-4">{t('pane.selectSession')}</p>
       <div className="max-h-64 overflow-y-auto w-full max-w-xs space-y-2">
         {sessions.map((session) => (
           <button
@@ -550,7 +553,7 @@ function SessionSelector({ sessions, onSelect }: SessionSelectorProps) {
           </button>
         ))}
         {sessions.length === 0 && (
-          <p className="text-gray-500 text-sm text-center">セッションがありません</p>
+          <p className="text-gray-500 text-sm text-center">{t('session.noSessions')}</p>
         )}
       </div>
     </div>

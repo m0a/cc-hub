@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { SessionTab } from './SessionTab';
 import type { SessionState } from '../../../shared/types';
 
@@ -26,13 +27,14 @@ export function SessionTabs({
   onNewSession,
   onShowSessionList,
 }: SessionTabsProps) {
+  const { t } = useTranslation();
   return (
     <div className="flex items-center bg-gray-900 border-b border-gray-700 overflow-x-auto">
       {/* Session list button */}
       <button
         onClick={onShowSessionList}
         className="px-3 py-2 text-gray-400 hover:text-white hover:bg-gray-800 transition-colors shrink-0"
-        title="セッション一覧"
+        title={t('session.list')}
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />

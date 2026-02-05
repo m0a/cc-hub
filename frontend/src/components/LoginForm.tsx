@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface LoginFormProps {
   onLogin: (password: string) => Promise<void>;
@@ -7,6 +8,7 @@ interface LoginFormProps {
 }
 
 export function LoginForm({ onLogin, isLoading, error }: LoginFormProps) {
+  const { t } = useTranslation();
   const [password, setPassword] = useState('');
 
   const handleSubmit = async (e: FormEvent) => {
@@ -28,7 +30,7 @@ export function LoginForm({ onLogin, isLoading, error }: LoginFormProps) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">
-              パスワード
+              {t('auth.password')}
             </label>
             <input
               type="password"
@@ -53,7 +55,7 @@ export function LoginForm({ onLogin, isLoading, error }: LoginFormProps) {
             disabled={isLoading}
             className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
           >
-            {isLoading ? '認証中...' : 'ログイン'}
+            {isLoading ? t('auth.authenticating') : t('auth.login')}
           </button>
         </form>
       </div>

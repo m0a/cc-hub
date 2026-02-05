@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useFileViewer } from '../../hooks/useFileViewer';
 import { FileBrowser } from './FileBrowser';
 import { CodeViewer } from './CodeViewer';
@@ -173,6 +174,7 @@ function getFileName(path: string): string {
 }
 
 export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileViewerProps) {
+  const { t } = useTranslation();
   const {
     currentPath,
     files,
@@ -351,7 +353,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
         <div className="bg-gray-900 w-full h-full lg:w-[95%] lg:h-[90%] lg:max-w-6xl lg:rounded-lg lg:shadow-2xl overflow-hidden flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 bg-gray-800">
-            <h2 className="text-sm font-medium">ファイルブラウザ</h2>
+            <h2 className="text-sm font-medium">{t('files.title')}</h2>
 
             <div className="flex items-center gap-2">
               {/* Tab buttons */}
@@ -362,7 +364,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                     listMode === 'browser' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
                   }`}
                 >
-                  ブラウザ
+                  {t('files.browser')}
                 </button>
                 <button
                   onClick={handleShowChanges}
@@ -370,7 +372,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                     listMode === 'changes' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
                   }`}
                 >
-                  変更
+                  {t('files.changes')}
                 </button>
               </div>
 
@@ -379,7 +381,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                 <button
                   onClick={() => setShowHidden(!showHidden)}
                   className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600' : 'hover:bg-gray-700'}`}
-                  title="隠しファイルを表示"
+                  title={t('files.showHidden')}
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -458,7 +460,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                         onClick={handleOpenFileFromDiff}
                         className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded transition-colors"
                       >
-                        ファイルを開く
+                        {t('files.openFile')}
                       </button>
                     )}
                   </div>
@@ -509,7 +511,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                     <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    <div>ファイルを選択してください</div>
+                    <div>{t('files.selectFile')}</div>
                   </div>
                 </div>
               )}
@@ -605,11 +607,11 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
               </button>
             )}
             <h2 className="text-sm font-medium">
-              {viewMode === 'browser' ? 'ファイルブラウザ'
-                : viewMode === 'changes' ? '変更ファイル'
+              {viewMode === 'browser' ? t('files.title')
+                : viewMode === 'changes' ? t('files.changedFiles')
                 : viewMode === 'diff' && selectedChange ? getFileName(selectedChange.path)
                 : selectedFile ? getFileName(selectedFile.path)
-                : 'ファイル'}
+                : t('files.file')}
             </h2>
           </div>
 
@@ -622,7 +624,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                   viewMode === 'browser' || viewMode === 'file' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
                 }`}
               >
-                ブラウザ
+                {t('files.browser')}
               </button>
               <button
                 onClick={handleShowChanges}
@@ -630,7 +632,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                   viewMode === 'changes' || viewMode === 'diff' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
                 }`}
               >
-                変更
+                {t('files.changes')}
               </button>
             </div>
 
@@ -639,7 +641,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
               <button
                 onClick={() => setShowHidden(!showHidden)}
                 className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600' : 'hover:bg-gray-700'}`}
-                title="隠しファイルを表示"
+                title={t('files.showHidden')}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -676,10 +678,12 @@ function ChangesView({
   onSelectChange: (change: FileChange) => void;
   selectedPath?: string;
 }) {
+  const { t } = useTranslation();
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-gray-500">読み込み中...</div>
+        <div className="text-gray-500">{t('common.loading')}</div>
       </div>
     );
   }
@@ -690,7 +694,7 @@ function ChangesView({
         <svg className="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
-        <div>変更されたファイルはありません</div>
+        <div>{t('files.noChanges')}</div>
       </div>
     );
   }
@@ -716,7 +720,7 @@ function ChangesView({
               </div>
             </div>
             <div className="text-xs text-gray-500 shrink-0">
-              {change.toolName === 'Write' ? '作成' : '編集'}
+              {change.toolName === 'Write' ? t('files.created') : t('files.edited')}
             </div>
           </div>
         ))}

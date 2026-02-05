@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ConversationMessage, ToolUseInfo, ToolResultInfo } from '../../../shared/types';
@@ -97,6 +98,7 @@ function ToolUseDisplay({ tools }: { tools: ToolUseInfo[] }) {
 
 // Tool result display
 function ToolResultDisplay({ results }: { results: ToolResultInfo[] }) {
+  const { t } = useTranslation();
   return (
     <>
       {results.map((result, idx) => {
@@ -107,7 +109,7 @@ function ToolResultDisplay({ results }: { results: ToolResultInfo[] }) {
         return (
           <CollapsibleSection
             key={idx}
-            title={result.toolName ? `${result.toolName} 結果` : 'ツール結果'}
+            title={result.toolName ? `${result.toolName} ${t('conversation.toolResult')}` : t('conversation.toolResult')}
             icon={result.isError ? '❌' : '📋'}
             variant={result.isError ? 'error' : 'result'}
             defaultOpen={isShortContent(result.output)}
@@ -116,7 +118,7 @@ function ToolResultDisplay({ results }: { results: ToolResultInfo[] }) {
               {isLong ? (
                 <ExpandableText text={result.output} preview={preview} />
               ) : (
-                result.output || '(出力なし)'
+                result.output || t('conversation.noOutput')
               )}
             </pre>
           </CollapsibleSection>
@@ -128,6 +130,7 @@ function ToolResultDisplay({ results }: { results: ToolResultInfo[] }) {
 
 // Expandable text for long outputs
 function ExpandableText({ text, preview }: { text: string; preview: string }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -137,7 +140,7 @@ function ExpandableText({ text, preview }: { text: string; preview: string }) {
         onClick={() => setExpanded(!expanded)}
         className="ml-2 text-blue-400 hover:underline"
       >
-        {expanded ? '折りたたむ' : 'すべて表示'}
+        {expanded ? t('conversation.collapse') : t('conversation.showAll')}
       </button>
     </>
   );
@@ -145,9 +148,10 @@ function ExpandableText({ text, preview }: { text: string; preview: string }) {
 
 // Thinking display
 function ThinkingDisplay({ thinking }: { thinking: string }) {
+  const { t } = useTranslation();
   return (
     <CollapsibleSection
-      title="思考過程"
+      title={t('conversation.thinking')}
       icon="💭"
       variant="thinking"
       defaultOpen={isShortContent(thinking)}
@@ -240,6 +244,7 @@ export function ConversationViewer({
   onRefresh,
   inline = false,
 }: ConversationViewerProps) {
+  const { t } = useTranslation();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [prevMessageCount, setPrevMessageCount] = useState(0);
 
@@ -278,11 +283,11 @@ export function ConversationViewer({
       <div className="flex-1 overflow-y-auto p-3 space-y-3 select-text" style={{ WebkitUserSelect: 'text', userSelect: 'text' }}>
         {isLoading ? (
           <div className="text-center text-gray-500 py-8">
-            読み込み中...
+            {t('common.loading')}
           </div>
         ) : messages.length === 0 ? (
           <div className="text-center text-gray-500 py-8">
-            メッセージがありません
+            {t('conversation.noMessages')}
           </div>
         ) : (
           <>
@@ -301,16 +306,16 @@ export function ConversationViewer({
               let containerStyle: string;
 
               if (isSummaryMessage) {
-                displayRole = 'System (Summary)';
+                displayRole = t('conversation.systemSummary');
                 containerStyle = 'mx-4 bg-amber-900/20 border-l-2 border-amber-500';
               } else if (isToolResultOnly) {
-                displayRole = 'System';
+                displayRole = t('conversation.system');
                 containerStyle = 'mr-8 bg-gray-700/50 border-l-2 border-gray-500';
               } else if (msg.role === 'user') {
-                displayRole = 'You';
+                displayRole = t('conversation.you');
                 containerStyle = 'ml-8 bg-blue-900/30 border-l-2 border-blue-500';
               } else {
-                displayRole = 'Claude';
+                displayRole = t('conversation.claude');
                 containerStyle = 'mr-8 bg-gray-800 border-l-2 border-gray-600';
               }
 
@@ -378,7 +383,7 @@ export function ConversationViewer({
               disabled={isResuming}
               className="ml-2 px-3 py-1 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white rounded shrink-0"
             >
-              {isResuming ? '再開中...' : '再開'}
+              {isResuming ? t('session.resuming') : t('session.resume')}
             </button>
           )}
         </div>

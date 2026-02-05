@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { UsageLimits as UsageLimitsType } from '../../../../shared/types';
 
 interface UsageLimitsProps {
@@ -7,13 +8,11 @@ interface UsageLimitsProps {
 function ProgressBar({
   label,
   utilization,
-  timeRemaining,
   status,
   statusMessage,
 }: {
   label: string;
   utilization: number;
-  timeRemaining: string;
   status: 'safe' | 'warning' | 'danger' | 'exceeded';
   statusMessage: string;
 }) {
@@ -56,33 +55,53 @@ function ProgressBar({
   );
 }
 
+// Generate translated status message based on status
+function getStatusMessage(
+  t: (key: string, options?: Record<string, unknown>) => string,
+  status: 'safe' | 'warning' | 'danger' | 'exceeded' | undefined,
+  timeRemaining: string,
+  estimatedHitTime?: string
+): string {
+  switch (status) {
+    case 'exceeded':
+      return t('dashboard.statusExceeded');
+    case 'danger':
+      return t('dashboard.statusDanger', { time: estimatedHitTime || timeRemaining });
+    case 'warning':
+      return t('dashboard.statusWarning', { time: timeRemaining });
+    default:
+      // For 'safe' status, check utilization to decide between safe and normal
+      return t('dashboard.statusSafe', { time: timeRemaining });
+  }
+}
+
 export function UsageLimits({ data }: UsageLimitsProps) {
+  const { t } = useTranslation();
+
   if (!data) {
     return (
       <div className="p-3 bg-gray-800 rounded-lg">
-        <div className="text-gray-500 text-xs">Usage data unavailable</div>
+        <div className="text-gray-500 text-xs">{t('dashboard.usageDataUnavailable')}</div>
       </div>
     );
   }
 
   return (
     <div className="p-3 bg-gray-800 rounded-lg">
-      <div className="text-sm font-medium text-white mb-3">Usage Limits</div>
+      <div className="text-sm font-medium text-white mb-3">{t('dashboard.usageLimits')}</div>
 
       <ProgressBar
-        label="5-Hour Cycle"
+        label={t('dashboard.fiveHourCycle')}
         utilization={data.fiveHour.utilization}
-        timeRemaining={data.fiveHour.timeRemaining}
         status={data.fiveHour.status || 'safe'}
-        statusMessage={data.fiveHour.statusMessage || `リセットまで${data.fiveHour.timeRemaining}`}
+        statusMessage={getStatusMessage(t, data.fiveHour.status, data.fiveHour.timeRemaining)}
       />
 
       <ProgressBar
-        label="7-Day Cycle"
+        label={t('dashboard.sevenDayCycle')}
         utilization={data.sevenDay.utilization}
-        timeRemaining={data.sevenDay.timeRemaining}
         status={data.sevenDay.status || 'safe'}
-        statusMessage={data.sevenDay.statusMessage || `リセットまで${data.sevenDay.timeRemaining}`}
+        statusMessage={getStatusMessage(t, data.sevenDay.status, data.sevenDay.timeRemaining)}
       />
     </div>
   );

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { SessionResponse, IndicatorState, ConversationMessage } from '../../../shared/types';
 import { useSessions } from '../hooks/useSessions';
 import { useSessionHistory } from '../hooks/useSessionHistory';
@@ -44,6 +45,7 @@ function SessionMiniItem({
   onResume?: (sessionId: string, ccSessionId?: string) => void;
   onShowConversation?: (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => void;
 }) {
+  const { t } = useTranslation();
   // Get extra session info
   const extSession = session as SessionResponse & {
     currentCommand?: string;
@@ -64,11 +66,11 @@ function SessionMiniItem({
   const isClaudeRunning = extSession.currentCommand === 'claude';
   const indicatorState = extSession.indicatorState || (isClaudeRunning ? 'processing' : 'completed');
   const isWaiting = extSession.waitingForInput;
-  const waitingLabel = extSession.waitingToolName === 'AskUserQuestion' ? '質問'
-    : extSession.waitingToolName === 'EnterPlanMode' ? '計画'
-    : extSession.waitingToolName === 'ExitPlanMode' ? '計画'
-    : extSession.waitingToolName ? '許可'
-    : '入力';
+  const waitingLabel = extSession.waitingToolName === 'AskUserQuestion' ? t('session.waitingQuestionShort')
+    : extSession.waitingToolName === 'EnterPlanMode' ? t('session.waitingPlanShort')
+    : extSession.waitingToolName === 'ExitPlanMode' ? t('session.waitingPlanShort')
+    : extSession.waitingToolName ? t('session.waitingPermissionShort')
+    : t('session.waitingInputShort');
 
   // Use pane title if cc is running and title exists, otherwise use session name
   const displayTitle = isClaudeRunning && extSession.paneTitle
@@ -118,18 +120,18 @@ function SessionMiniItem({
           <button
             onClick={handleShowConversation}
             className="text-[10px] text-gray-400 bg-gray-700/50 px-1 rounded shrink-0 hover:bg-gray-600/50"
-            title="View conversation history"
+            title={t('session.history')}
           >
-            履歴
+            {t('session.history')}
           </button>
         )}
         {showResumeButton && (
           <button
             onClick={handleResume}
             className="text-[10px] text-blue-400 bg-blue-900/50 px-1 rounded shrink-0 hover:bg-blue-800/50"
-            title="Resume Claude session"
+            title={t('session.resume')}
           >
-            再開
+            {t('session.resume')}
           </button>
         )}
       </div>
@@ -156,6 +158,7 @@ function SessionMiniItem({
 type TabType = 'sessions' | 'history' | 'search';
 
 export function SessionListMini({ onSelectSession, activeSessionId, onCreateSession }: SessionListMiniProps) {
+  const { t } = useTranslation();
   const { sessions, fetchSessions } = useSessions();
   const { fetchConversation } = useSessionHistory();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -258,7 +261,7 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
               activeTab === 'sessions' ? 'text-white' : 'text-gray-500 hover:text-gray-300'
             }`}
           >
-            セッション
+            {t('session.title')}
           </button>
           <button
             onClick={() => setActiveTab('history')}
@@ -266,7 +269,7 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
               activeTab === 'history' ? 'text-white' : 'text-gray-500 hover:text-gray-300'
             }`}
           >
-            履歴
+            {t('history.title')}
           </button>
           <button
             onClick={() => setActiveTab('search')}
@@ -274,7 +277,7 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
               activeTab === 'search' ? 'text-white' : 'text-gray-500 hover:text-gray-300'
             }`}
           >
-            検索
+            {t('common.search')}
           </button>
         </div>
         {activeTab === 'sessions' && onCreateSession && (
@@ -282,7 +285,7 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
             onClick={onCreateSession}
             className="text-xs text-blue-400 hover:text-blue-300 px-1"
           >
-            + 新規
+            + {t('common.new')}
           </button>
         )}
       </div>
@@ -292,7 +295,7 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
         <div ref={containerRef} className="flex-1 overflow-y-auto">
           {sessions.length === 0 ? (
             <div className="text-center text-gray-500 text-xs py-4">
-              セッションなし
+              {t('session.noSessions')}
             </div>
           ) : (
             sessions.map((session) => (

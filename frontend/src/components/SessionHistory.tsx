@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSessionHistory, ProjectInfo } from '../hooks/useSessionHistory';
 import { authFetch } from '../services/api';
 import type { HistorySession, ConversationMessage, SessionResponse } from '../../../shared/types';
@@ -15,7 +16,7 @@ interface SessionHistoryProps {
   activeSessions?: ActiveSession[];
 }
 
-function formatRelativeTime(isoDate: string): string {
+function formatRelativeTime(isoDate: string, t: (key: string, options?: Record<string, unknown>) => string, locale: string): string {
   const date = new Date(isoDate);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -23,19 +24,20 @@ function formatRelativeTime(isoDate: string): string {
   const diffHours = Math.floor(diffMins / 60);
   const diffDays = Math.floor(diffHours / 24);
 
-  if (diffMins < 1) return '今';
-  if (diffMins < 60) return `${diffMins}分前`;
-  if (diffHours < 24) return `${diffHours}時間前`;
-  if (diffDays < 7) return `${diffDays}日前`;
-  return date.toLocaleDateString('ja-JP');
+  if (diffMins < 1) return t('time.now');
+  if (diffMins < 60) return t('time.minutesAgo', { count: diffMins });
+  if (diffHours < 24) return t('time.hoursAgo', { count: diffHours });
+  if (diffDays < 7) return t('time.daysAgo', { count: diffDays });
+  const dateLocale = locale === 'ja' ? 'ja-JP' : 'en-US';
+  return date.toLocaleDateString(dateLocale);
 }
 
-function formatDuration(minutes?: number): string | null {
+function formatDuration(minutes: number | undefined, t: (key: string, options?: Record<string, unknown>) => string): string | null {
   if (!minutes || minutes <= 0) return null;
-  if (minutes < 60) return `${minutes}分`;
+  if (minutes < 60) return t('time.minutes', { count: minutes });
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
-  return mins > 0 ? `${hours}時間${mins}分` : `${hours}時間`;
+  return mins > 0 ? t('time.hoursMinutes', { hours, minutes: mins }) : t('time.hours', { count: hours });
 }
 
 function HistoryItem({
@@ -53,12 +55,13 @@ function HistoryItem({
   isResuming: boolean;
   isActive: boolean;
 }) {
+  const { t, i18n } = useTranslation();
   const displayText = session.firstPrompt || session.summary || 'No description';
   const truncatedText = displayText.length > 60
     ? displayText.substring(0, 60) + '...'
     : displayText;
 
-  const duration = formatDuration(session.durationMinutes);
+  const duration = formatDuration(session.durationMinutes, t);
   const messageCount = session.messageCount;
   const gitBranch = session.gitBranch;
 
@@ -73,7 +76,7 @@ function HistoryItem({
             {truncatedText}
           </div>
           <div className="flex flex-wrap items-center gap-2 mt-1 text-[10px] text-gray-500">
-            <span>{formatRelativeTime(session.modified)}</span>
+            <span>{formatRelativeTime(session.modified, t, i18n.language)}</span>
             {duration && (
               <span className="text-gray-400">
                 <svg className="w-3 h-3 inline mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -108,7 +111,7 @@ function HistoryItem({
             }}
             className="shrink-0 px-2 py-1 text-xs bg-green-600 hover:bg-green-500 text-white rounded transition-colors"
           >
-            移動
+            {t('session.navigate')}
           </button>
         ) : (
           <button
@@ -119,7 +122,7 @@ function HistoryItem({
             disabled={isResuming}
             className="shrink-0 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white rounded transition-colors"
           >
-            {isResuming ? '...' : '再開'}
+            {isResuming ? '...' : t('session.resume')}
           </button>
         )}
       </div>
@@ -148,6 +151,7 @@ function ProjectGroupItem({
   resumingId: string | null;
   activeCcSessionIds: Set<string>;
 }) {
+  const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
 
   const handleToggle = () => {
@@ -182,14 +186,14 @@ function ProjectGroupItem({
           </div>
         </div>
         <span className="text-xs text-gray-500 shrink-0">
-          {project.sessionCount}件
+          {project.sessionCount}
         </span>
       </button>
 
       {isExpanded && (
         <div className="bg-gray-900/50">
           {isLoading ? (
-            <div className="px-3 py-2 text-xs text-gray-500">読み込み中...</div>
+            <div className="px-3 py-2 text-xs text-gray-500">{t('common.loading')}</div>
           ) : sessions && sessions.length > 0 ? (
             sessions.map((session) => (
               <HistoryItem
@@ -203,7 +207,7 @@ function ProjectGroupItem({
               />
             ))
           ) : (
-            <div className="px-3 py-2 text-xs text-gray-500">セッションがありません</div>
+            <div className="px-3 py-2 text-xs text-gray-500">{t('history.noSessionsInProject')}</div>
           )}
         </div>
       )}
@@ -214,6 +218,7 @@ function ProjectGroupItem({
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export function SessionHistory({ onSessionResumed, onSelectSession, activeSessions = [] }: SessionHistoryProps) {
+  const { t } = useTranslation();
   const {
     projects,
     isLoadingProjects,
@@ -328,7 +333,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
   if (isLoadingProjects) {
     return (
       <div className="p-4 text-center text-gray-500 text-sm">
-        履歴を読み込み中...
+        {t('history.loadingHistory')}
       </div>
     );
   }
@@ -336,7 +341,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
   if (error) {
     return (
       <div className="p-4 text-center text-red-400 text-sm">
-        エラー: {error}
+        {t('common.error')}: {error}
       </div>
     );
   }
@@ -374,7 +379,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
   if (projects.length === 0 && !searchQuery) {
     return (
       <div className="p-4 text-center text-gray-500 text-sm">
-        過去のセッションはありません
+        {t('history.noSessions')}
       </div>
     );
   }
@@ -388,7 +393,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
             type="text"
             value={searchInput}
             onChange={handleSearchInput}
-            placeholder="履歴を検索..."
+            placeholder={t('history.searchPlaceholder')}
             className="w-full px-3 py-1.5 pl-8 text-sm bg-gray-800 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-gray-200 placeholder-gray-500"
           />
           <svg
@@ -419,9 +424,9 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
           <div>
             <div className="px-3 py-2 text-xs text-gray-400 border-b border-gray-700">
               {isSearching ? (
-                '検索中...'
+                t('history.searching')
               ) : (
-                `「${searchQuery}」の検索結果: ${searchResults.length}件`
+                t('history.searchResults', { query: searchQuery, count: searchResults.length })
               )}
             </div>
             {searchResults.map((session) => (
@@ -437,7 +442,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
             ))}
             {!isSearching && searchResults.length === 0 && (
               <div className="p-4 text-center text-gray-500 text-sm">
-                検索結果がありません
+                {t('history.noSearchResults')}
               </div>
             )}
           </div>

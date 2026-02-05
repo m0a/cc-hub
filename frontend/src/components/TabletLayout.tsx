@@ -1,4 +1,5 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { TerminalComponent, type TerminalRef } from './Terminal';
 import { Keyboard } from './Keyboard';
 import { SessionListMini } from './SessionListMini';
@@ -36,6 +37,7 @@ export function TabletLayout({
   onShowSessionList,
   onReload,
 }: TabletLayoutProps) {
+  const { t } = useTranslation();
   const terminalRef = useRef<TerminalRef>(null);
   const [inputMode, setInputMode] = useState<'keyboard' | 'input'>('keyboard');
   const [inputValue, setInputValue] = useState('');
@@ -246,7 +248,7 @@ export function TabletLayout({
           <button
             onClick={onShowSessionList}
             className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-            title="セッション一覧"
+            title={t('session.list')}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />

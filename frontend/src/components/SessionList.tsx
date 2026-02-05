@@ -1,18 +1,19 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { SessionResponse, IndicatorState, ConversationMessage, FileInfo, SessionTheme } from '../../../shared/types';
 import { useSessions } from '../hooks/useSessions';
 
 // Theme color mapping
-const THEME_COLORS: Record<SessionTheme, { border: string; bg: string; label: string }> = {
-  red: { border: 'border-red-500', bg: 'bg-red-500', label: '赤' },
-  orange: { border: 'border-orange-500', bg: 'bg-orange-500', label: 'オレンジ' },
-  amber: { border: 'border-amber-500', bg: 'bg-amber-500', label: '黄' },
-  green: { border: 'border-green-500', bg: 'bg-green-500', label: '緑' },
-  teal: { border: 'border-teal-500', bg: 'bg-teal-500', label: 'ティール' },
-  blue: { border: 'border-blue-500', bg: 'bg-blue-500', label: '青' },
-  indigo: { border: 'border-indigo-500', bg: 'bg-indigo-500', label: 'インディゴ' },
-  purple: { border: 'border-purple-500', bg: 'bg-purple-500', label: '紫' },
-  pink: { border: 'border-pink-500', bg: 'bg-pink-500', label: 'ピンク' },
+const THEME_COLORS: Record<SessionTheme, { border: string; bg: string }> = {
+  red: { border: 'border-red-500', bg: 'bg-red-500' },
+  orange: { border: 'border-orange-500', bg: 'bg-orange-500' },
+  amber: { border: 'border-amber-500', bg: 'bg-amber-500' },
+  green: { border: 'border-green-500', bg: 'bg-green-500' },
+  teal: { border: 'border-teal-500', bg: 'bg-teal-500' },
+  blue: { border: 'border-blue-500', bg: 'bg-blue-500' },
+  indigo: { border: 'border-indigo-500', bg: 'bg-indigo-500' },
+  purple: { border: 'border-purple-500', bg: 'bg-purple-500' },
+  pink: { border: 'border-pink-500', bg: 'bg-pink-500' },
 };
 
 const THEME_OPTIONS: (SessionTheme | null)[] = [null, 'red', 'orange', 'amber', 'green', 'teal', 'blue', 'indigo', 'purple', 'pink'];
@@ -83,31 +84,32 @@ function SessionMenuDialog({
   onDelete: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   if (showDeleteConfirm) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
         <div className="bg-gray-800 rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
-          <h3 className="text-lg font-bold text-white mb-2">セッションを削除</h3>
+          <h3 className="text-lg font-bold text-white mb-2">{t('session.deleteSession')}</h3>
           <p className="text-gray-300 mb-4">
-            <span className="font-medium text-white">{session.name}</span> を削除しますか？
+            {t('session.deleteConfirm', { name: session.name })}
           </p>
           <p className="text-sm text-red-400 mb-6">
-            この操作は取り消せません。
+            {t('session.deleteWarning')}
           </p>
           <div className="flex gap-3 justify-end">
             <button
               onClick={() => setShowDeleteConfirm(false)}
               className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded font-medium transition-colors"
             >
-              キャンセル
+              {t('common.cancel')}
             </button>
             <button
               onClick={onDelete}
               className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded font-medium transition-colors"
             >
-              削除
+              {t('common.delete')}
             </button>
           </div>
         </div>
@@ -116,6 +118,10 @@ function SessionMenuDialog({
   }
 
   const extSession = session as SessionResponse & { theme?: SessionTheme };
+  const getThemeLabel = (theme: SessionTheme | null) => {
+    if (theme === null) return t('common.none');
+    return t(`theme.${theme}`);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={onCancel}>
@@ -124,7 +130,7 @@ function SessionMenuDialog({
 
         {/* Color picker */}
         <div className="mb-4">
-          <p className="text-sm text-gray-400 mb-2">テーマカラー</p>
+          <p className="text-sm text-gray-400 mb-2">{t('session.colorTheme')}</p>
           <div className="flex flex-wrap gap-2">
             {THEME_OPTIONS.map((theme) => (
               <button
@@ -139,7 +145,7 @@ function SessionMenuDialog({
                     ? 'ring-2 ring-white ring-offset-2 ring-offset-gray-800'
                     : 'hover:scale-110'
                 }`}
-                title={theme === null ? 'なし' : THEME_COLORS[theme].label}
+                title={getThemeLabel(theme)}
               />
             ))}
           </div>
@@ -151,13 +157,13 @@ function SessionMenuDialog({
             onClick={() => setShowDeleteConfirm(true)}
             className="px-4 py-2 bg-red-600/30 hover:bg-red-600/50 text-red-400 rounded font-medium transition-colors"
           >
-            削除
+            {t('common.delete')}
           </button>
           <button
             onClick={onCancel}
             className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded font-medium transition-colors"
           >
-            閉じる
+            {t('common.close')}
           </button>
         </div>
       </div>
@@ -173,6 +179,7 @@ function CreateSessionModal({
   onConfirm: (name: string, workingDir?: string) => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation();
   const [name, setName] = useState('');
   const [nameManuallyEdited, setNameManuallyEdited] = useState(false);
   const [currentPath, setCurrentPath] = useState<string>('');
@@ -262,15 +269,15 @@ function CreateSessionModal({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-4 bg-black/70">
       <div className="bg-gray-800 rounded-lg p-4 max-w-md w-full mx-4 shadow-xl max-h-[70vh] flex flex-col">
-        <h3 className="text-lg font-bold text-white mb-3">新規セッション</h3>
+        <h3 className="text-lg font-bold text-white mb-3">{t('session.newSession')}</h3>
 
         {/* Session name input */}
         <div className="mb-3">
-          <label className="text-xs text-gray-400 mb-1 block">セッション名</label>
+          <label className="text-xs text-gray-400 mb-1 block">{t('session.sessionName')}</label>
           <input
             ref={inputRef}
             type="text"
-            placeholder="空欄で自動生成"
+            placeholder={t('session.sessionNamePlaceholder')}
             value={name}
             onChange={handleNameChange}
             onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
@@ -281,7 +288,7 @@ function CreateSessionModal({
         {/* Directory picker */}
         <div className="flex-1 min-h-0 flex flex-col">
           <div className="flex items-center justify-between mb-2">
-            <label className="text-xs text-gray-400">作業ディレクトリ</label>
+            <label className="text-xs text-gray-400">{t('session.workingDirectory')}</label>
             <button
               onClick={() => setShowNewFolderInput(true)}
               className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
@@ -290,7 +297,7 @@ function CreateSessionModal({
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
-              新規フォルダ
+              {t('session.newFolder')}
             </button>
           </div>
 
@@ -305,7 +312,7 @@ function CreateSessionModal({
               <input
                 ref={newFolderInputRef}
                 type="text"
-                placeholder="フォルダ名"
+                placeholder={t('session.folderName')}
                 value={newFolderName}
                 onChange={(e) => setNewFolderName(e.target.value)}
                 onKeyDown={(e) => {
@@ -323,7 +330,7 @@ function CreateSessionModal({
                 disabled={creatingFolder || !newFolderName.trim()}
                 className="px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 rounded text-sm transition-colors"
               >
-                {creatingFolder ? '...' : '作成'}
+                {creatingFolder ? '...' : t('common.create')}
               </button>
               <button
                 onClick={() => {
@@ -345,7 +352,7 @@ function CreateSessionModal({
           {/* Directory list */}
           <div className="flex-1 overflow-y-auto bg-gray-900 rounded border border-gray-700">
             {isLoading ? (
-              <div className="p-4 text-center text-gray-500 text-sm">読み込み中...</div>
+              <div className="p-4 text-center text-gray-500 text-sm">{t('common.loading')}</div>
             ) : (
               <div className="divide-y divide-gray-800">
                 {/* Parent directory */}
@@ -379,7 +386,7 @@ function CreateSessionModal({
 
                 {directories.length === 0 && !parentPath && (
                   <div className="p-4 text-center text-gray-500 text-sm">
-                    サブディレクトリがありません
+                    {t('session.noSubdirectories')}
                   </div>
                 )}
               </div>
@@ -393,13 +400,13 @@ function CreateSessionModal({
             onClick={onCancel}
             className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded font-medium transition-colors text-sm"
           >
-            キャンセル
+            {t('common.cancel')}
           </button>
           <button
             onClick={handleSubmit}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded font-medium transition-colors text-sm"
           >
-            作成
+            {t('common.create')}
           </button>
         </div>
       </div>
@@ -421,6 +428,7 @@ function SessionItem({
   onResume?: (sessionId: string, ccSessionId?: string) => void;
   onShowConversation?: (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const longPressTimerRef = useRef<number | null>(null);
   const longPressFiredRef = useRef(false);
 
@@ -505,11 +513,11 @@ function SessionItem({
   const themeColor = extSession.theme ? THEME_COLORS[extSession.theme] : null;
   const indicatorState = extSession.indicatorState || (isClaudeRunning ? 'processing' : 'completed');
   const isWaiting = extSession.waitingForInput;
-  const waitingLabel = extSession.waitingToolName === 'AskUserQuestion' ? '質問待ち'
-    : extSession.waitingToolName === 'EnterPlanMode' ? '計画承認待ち'
-    : extSession.waitingToolName === 'ExitPlanMode' ? '計画承認待ち'
-    : extSession.waitingToolName ? '許可待ち'
-    : '入力待ち';
+  const waitingLabel = extSession.waitingToolName === 'AskUserQuestion' ? t('session.waitingQuestion')
+    : extSession.waitingToolName === 'EnterPlanMode' ? t('session.waitingPlan')
+    : extSession.waitingToolName === 'ExitPlanMode' ? t('session.waitingPlan')
+    : extSession.waitingToolName ? t('session.waitingPermission')
+    : t('session.waitingInput');
   const shortPath = extSession.currentPath?.replace(/^\/home\/[^/]+\//, '~/') || '';
 
   // Use pane title if cc is running and title exists, otherwise use session name
@@ -573,7 +581,7 @@ function SessionItem({
           <span className="text-xs text-yellow-400 bg-yellow-900/50 px-1.5 py-0.5 rounded shrink-0 animate-pulse">{waitingLabel}</span>
         )}
         {isClaudeRunning && !isWaiting && (
-          <span className="text-xs text-green-400 bg-green-900/50 px-1.5 py-0.5 rounded shrink-0 animate-pulse">処理中</span>
+          <span className="text-xs text-green-400 bg-green-900/50 px-1.5 py-0.5 rounded shrink-0 animate-pulse">{t('session.processing')}</span>
         )}
         {showConversationButton && (
           <button
@@ -586,7 +594,7 @@ function SessionItem({
             onTouchStart={(e) => e.stopPropagation()}
             className="text-xs text-gray-300 bg-gray-600/70 px-2 py-0.5 rounded shrink-0 hover:bg-gray-500/70"
           >
-            履歴
+            {t('session.history')}
           </button>
         )}
         {showResumeButton && (
@@ -596,7 +604,7 @@ function SessionItem({
             onTouchStart={(e) => e.stopPropagation()}
             className="text-xs text-blue-400 bg-blue-900/50 px-1.5 py-0.5 rounded shrink-0 hover:bg-blue-800/50"
           >
-            再開
+            {t('session.resume')}
           </button>
         )}
       </div>
@@ -615,7 +623,7 @@ function SessionItem({
           {session.name}
         </div>
         <div className="text-xs text-gray-600">
-          長押しで削除
+          {t('session.longPressHint')}
         </div>
       </div>
     </div>
@@ -623,6 +631,7 @@ function SessionItem({
 }
 
 export function SessionList({ onSelectSession, onBack, inline = false, contentScale }: SessionListProps) {
+  const { t } = useTranslation();
   const {
     sessions,
     isLoading,
@@ -745,7 +754,7 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
   if (isLoading && sessions.length === 0) {
     return (
       <div className={`flex items-center justify-center bg-gray-900 ${inline ? 'h-full' : 'h-screen'}`}>
-        <div className="text-gray-400">Loading sessions...</div>
+        <div className="text-gray-400">{t('common.loading')}</div>
       </div>
     );
   }
@@ -774,7 +783,7 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
             <div className="h-full overflow-y-auto p-4">
               {sessions.length === 0 ? (
                 <div className="text-center text-gray-500 py-8">
-                  セッションがありません。新規作成してください。
+                  {t('session.noSessions')} {t('session.noSessionsHint')}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -852,7 +861,7 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
                 : 'text-gray-400 hover:text-gray-300'
             }`}
           >
-            セッション
+            {t('session.title')}
           </button>
           <button
             onClick={() => setActiveTab('history')}
@@ -862,7 +871,7 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
                 : 'text-gray-400 hover:text-gray-300'
             }`}
           >
-            履歴
+            {t('history.title')}
           </button>
           <button
             onClick={() => setActiveTab('dashboard')}
@@ -872,7 +881,7 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
                 : 'text-gray-400 hover:text-gray-300'
             }`}
           >
-            Dashboard
+            {t('dashboard.title')}
           </button>
         </div>
       </div>

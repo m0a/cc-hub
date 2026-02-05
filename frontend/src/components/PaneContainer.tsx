@@ -5,7 +5,7 @@ import { FileViewer } from './files/FileViewer';
 import { SessionList } from './SessionList';
 import { Dashboard } from './dashboard/Dashboard';
 import { authFetch } from '../services/api';
-import type { SessionState, ConversationMessage, SessionResponse } from '../../../shared/types';
+import type { SessionState, ConversationMessage, SessionResponse, SessionTheme } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const SESSION_LIST_WIDTH_KEY = 'cchub-session-list-width';
@@ -30,6 +30,7 @@ interface ExtendedSession {
   currentPath?: string;
   ccSessionId?: string;
   currentCommand?: string;
+  theme?: SessionTheme;
 }
 
 interface PaneContainerProps {
@@ -352,7 +353,7 @@ function TerminalPane({
     <div
       ref={containerRef}
       className={`h-full flex flex-col bg-gray-900 relative ${isActive ? 'ring-2 ring-blue-500' : ''}`}
-      onClick={onFocus}
+      onMouseDown={onFocus}
     >
       {/* Pane header - overlay on tablet, normal on desktop */}
       <div className={`flex items-center px-2 py-1 text-xs ${
@@ -460,6 +461,7 @@ function TerminalPane({
               hideKeyboard={true}
               onConnect={handleConnect}
               onDisconnect={handleDisconnect}
+              theme={session?.theme}
             />
           ) : (
             <SessionSelector

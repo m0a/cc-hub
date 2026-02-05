@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { CreateSessionSchema, type IndicatorState } from '../../../shared/types';
+import { CreateSessionSchema, type IndicatorState, type SessionTheme } from '../../../shared/types';
 import { TmuxService } from '../services/tmux';
 import { ClaudeCodeService } from '../services/claude-code';
 import { SessionHistoryService } from '../services/session-history';
 import { PromptHistoryService } from '../services/prompt-history';
+import { getAllSessionThemes, setSessionTheme } from '../services/session-themes';
 
 const tmuxService = new TmuxService();
 const claudeCodeService = new ClaudeCodeService();
@@ -38,6 +39,7 @@ const ResumeSessionSchema = z.object({
 // GET /sessions - List all tmux sessions
 sessions.get('/', async (c) => {
   const tmuxSessions = await tmuxService.listSessions();
+  const sessionThemes = await getAllSessionThemes();
 
   // Get Claude Code session IDs from PTY for each tmux session running claude
   const sessionIdByTmuxId = new Map<string, string>();
@@ -146,6 +148,7 @@ sessions.get('/', async (c) => {
       gitBranch: includeClaudeInfo ? ccSession?.gitBranch : undefined,
       durationMinutes: includeClaudeInfo ? durationMinutes : undefined,
       firstMessageId: includeClaudeInfo ? ccSession?.firstMessageId : undefined,
+      theme: sessionThemes[s.id],
     };
   }));
 
@@ -387,6 +390,33 @@ sessions.post('/:id/resume', async (c) => {
     return c.json({ success: true, command });
   } catch (error) {
     return c.json({ error: 'Failed to resume session' }, 500);
+  }
+});
+
+// PUT /sessions/:id/theme - Update session theme color
+const UpdateThemeSchema = z.object({
+  theme: z.enum(['red', 'orange', 'amber', 'green', 'teal', 'blue', 'indigo', 'purple', 'pink']).nullable(),
+});
+
+sessions.put('/:id/theme', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = UpdateThemeSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid theme' }, 400);
+  }
+
+  const exists = await tmuxService.sessionExists(id);
+  if (!exists) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+
+  try {
+    await setSessionTheme(id, parsed.data.theme);
+    return c.json({ success: true, theme: parsed.data.theme });
+  } catch (error) {
+    return c.json({ error: 'Failed to update theme' }, 500);
   }
 });
 

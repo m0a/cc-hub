@@ -1,6 +1,21 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import type { SessionResponse, IndicatorState, ConversationMessage, FileInfo } from '../../../shared/types';
+import type { SessionResponse, IndicatorState, ConversationMessage, FileInfo, SessionTheme } from '../../../shared/types';
 import { useSessions } from '../hooks/useSessions';
+
+// Theme color mapping
+const THEME_COLORS: Record<SessionTheme, { border: string; bg: string; label: string }> = {
+  red: { border: 'border-red-500', bg: 'bg-red-500', label: '赤' },
+  orange: { border: 'border-orange-500', bg: 'bg-orange-500', label: 'オレンジ' },
+  amber: { border: 'border-amber-500', bg: 'bg-amber-500', label: '黄' },
+  green: { border: 'border-green-500', bg: 'bg-green-500', label: '緑' },
+  teal: { border: 'border-teal-500', bg: 'bg-teal-500', label: 'ティール' },
+  blue: { border: 'border-blue-500', bg: 'bg-blue-500', label: '青' },
+  indigo: { border: 'border-indigo-500', bg: 'bg-indigo-500', label: 'インディゴ' },
+  purple: { border: 'border-purple-500', bg: 'bg-purple-500', label: '紫' },
+  pink: { border: 'border-pink-500', bg: 'bg-pink-500', label: 'ピンク' },
+};
+
+const THEME_OPTIONS: (SessionTheme | null)[] = [null, 'red', 'orange', 'amber', 'green', 'teal', 'blue', 'indigo', 'purple', 'pink'];
 import { useSessionHistory } from '../hooks/useSessionHistory';
 import { authFetch } from '../services/api';
 import { Dashboard } from './dashboard/Dashboard';
@@ -56,38 +71,93 @@ interface SessionListProps {
   contentScale?: number;  // Scale factor for content (tabs remain fixed)
 }
 
-// Confirm dialog for delete
-function ConfirmDialog({
+// Session menu dialog (color change + delete)
+function SessionMenuDialog({
   session,
-  onConfirm,
+  onChangeTheme,
+  onDelete,
   onCancel,
 }: {
   session: SessionResponse;
-  onConfirm: () => void;
+  onChangeTheme: (theme: SessionTheme | null) => void;
+  onDelete: () => void;
   onCancel: () => void;
 }) {
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  if (showDeleteConfirm) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+        <div className="bg-gray-800 rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
+          <h3 className="text-lg font-bold text-white mb-2">セッションを削除</h3>
+          <p className="text-gray-300 mb-4">
+            <span className="font-medium text-white">{session.name}</span> を削除しますか？
+          </p>
+          <p className="text-sm text-red-400 mb-6">
+            この操作は取り消せません。
+          </p>
+          <div className="flex gap-3 justify-end">
+            <button
+              onClick={() => setShowDeleteConfirm(false)}
+              className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded font-medium transition-colors"
+            >
+              キャンセル
+            </button>
+            <button
+              onClick={onDelete}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded font-medium transition-colors"
+            >
+              削除
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const extSession = session as SessionResponse & { theme?: SessionTheme };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="bg-gray-800 rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
-        <h3 className="text-lg font-bold text-white mb-2">セッションを削除</h3>
-        <p className="text-gray-300 mb-4">
-          <span className="font-medium text-white">{session.name}</span> を削除しますか？
-        </p>
-        <p className="text-sm text-red-400 mb-6">
-          この操作は取り消せません。
-        </p>
-        <div className="flex gap-3 justify-end">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={onCancel}>
+      <div className="bg-gray-800 rounded-lg p-4 max-w-sm w-full mx-4 shadow-xl" onClick={e => e.stopPropagation()}>
+        <h3 className="text-lg font-bold text-white mb-3">{session.name}</h3>
+
+        {/* Color picker */}
+        <div className="mb-4">
+          <p className="text-sm text-gray-400 mb-2">テーマカラー</p>
+          <div className="flex flex-wrap gap-2">
+            {THEME_OPTIONS.map((theme) => (
+              <button
+                key={theme ?? 'none'}
+                onClick={() => onChangeTheme(theme)}
+                className={`w-8 h-8 rounded-full border-2 transition-all ${
+                  theme === null
+                    ? 'bg-gray-600 border-gray-500'
+                    : THEME_COLORS[theme].bg + ' border-transparent'
+                } ${
+                  extSession.theme === theme || (extSession.theme === undefined && theme === null)
+                    ? 'ring-2 ring-white ring-offset-2 ring-offset-gray-800'
+                    : 'hover:scale-110'
+                }`}
+                title={theme === null ? 'なし' : THEME_COLORS[theme].label}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-3 justify-between pt-3 border-t border-gray-700">
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="px-4 py-2 bg-red-600/30 hover:bg-red-600/50 text-red-400 rounded font-medium transition-colors"
+          >
+            削除
+          </button>
           <button
             onClick={onCancel}
             className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded font-medium transition-colors"
           >
-            キャンセル
-          </button>
-          <button
-            onClick={onConfirm}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded font-medium transition-colors"
-          >
-            削除
+            閉じる
           </button>
         </div>
       </div>
@@ -337,17 +407,17 @@ function CreateSessionModal({
   );
 }
 
-// Session item with long press to delete
+// Session item with long press to show menu
 function SessionItem({
   session,
   onSelect,
-  onDelete,
+  onShowMenu,
   onResume,
   onShowConversation,
 }: {
   session: SessionResponse;
   onSelect: (session: SessionResponse) => void;
-  onDelete: (session: SessionResponse) => void;
+  onShowMenu: (session: SessionResponse) => void;
   onResume?: (sessionId: string, ccSessionId?: string) => void;
   onShowConversation?: (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => void;
 }) {
@@ -359,7 +429,7 @@ function SessionItem({
     longPressTimerRef.current = window.setTimeout(() => {
       console.log('[SessionItem] Long press fired:', session.name);
       longPressFiredRef.current = true;
-      onDelete(session);
+      onShowMenu(session);
     }, 600);
   };
 
@@ -429,8 +499,10 @@ function SessionItem({
     waitingToolName?: string;
     indicatorState?: IndicatorState;
     ccSessionId?: string;
+    theme?: SessionTheme;
   };
   const isClaudeRunning = extSession.currentCommand === 'claude';
+  const themeColor = extSession.theme ? THEME_COLORS[extSession.theme] : null;
   const indicatorState = extSession.indicatorState || (isClaudeRunning ? 'processing' : 'completed');
   const isWaiting = extSession.waitingForInput;
   const waitingLabel = extSession.waitingToolName === 'AskUserQuestion' ? '質問待ち'
@@ -465,6 +537,17 @@ function SessionItem({
     }
   };
 
+  // Determine border class based on theme or claude running state
+  const getBorderClass = () => {
+    if (themeColor) {
+      return `border-l-2 ${themeColor.border}`;
+    }
+    if (isClaudeRunning) {
+      return 'border-l-2 border-green-500';
+    }
+    return '';
+  };
+
   return (
     <div
       onClick={handleClick}
@@ -479,8 +562,8 @@ function SessionItem({
       style={{ touchAction: 'pan-y', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
       className={`p-3 rounded cursor-pointer transition-colors select-none ${
         isClaudeRunning
-          ? 'bg-gray-800 hover:bg-gray-700 active:bg-gray-600 border-l-2 border-green-500'
-          : 'bg-gray-800/60 hover:bg-gray-700/70 active:bg-gray-600/70'
+          ? `bg-gray-800 hover:bg-gray-700 active:bg-gray-600 ${getBorderClass()}`
+          : `bg-gray-800/60 hover:bg-gray-700/70 active:bg-gray-600/70 ${getBorderClass()}`
       }`}
     >
       <div className="flex items-center gap-2">
@@ -547,10 +630,11 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
     fetchSessions,
     createSession,
     deleteSession,
+    updateSessionTheme,
   } = useSessions();
   const { fetchConversation } = useSessionHistory();
 
-  const [sessionToDelete, setSessionToDelete] = useState<SessionResponse | null>(null);
+  const [sessionForMenu, setSessionForMenu] = useState<SessionResponse | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'sessions' | 'history' | 'dashboard'>('sessions');
 
@@ -629,19 +713,28 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
     }
   };
 
-  const handleConfirmDelete = async () => {
-    if (sessionToDelete) {
-      await deleteSession(sessionToDelete.id);
-      setSessionToDelete(null);
+  const handleMenuDelete = async () => {
+    if (sessionForMenu) {
+      await deleteSession(sessionForMenu.id);
+      setSessionForMenu(null);
     }
   };
 
-  const handleCancelDelete = () => {
-    setSessionToDelete(null);
+  const handleMenuChangeTheme = async (theme: SessionTheme | null) => {
+    if (sessionForMenu) {
+      await updateSessionTheme(sessionForMenu.id, theme);
+      // 色変更後にセッション情報を再取得
+      await fetchSessions(true);
+      setSessionForMenu(null);
+    }
   };
 
-  const handleDeleteRequest = (session: SessionResponse) => {
-    setSessionToDelete(session);
+  const handleMenuClose = () => {
+    setSessionForMenu(null);
+  };
+
+  const handleShowMenu = (session: SessionResponse) => {
+    setSessionForMenu(session);
   };
 
   // Container class: h-full for inline (side panel), h-screen for fullscreen
@@ -690,7 +783,7 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
                       key={session.id}
                       session={session}
                       onSelect={onSelectSession}
-                      onDelete={handleDeleteRequest}
+                      onShowMenu={handleShowMenu}
                       onResume={handleResume}
                       onShowConversation={handleShowConversation}
                     />
@@ -784,12 +877,13 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
         </div>
       </div>
 
-      {/* Confirm delete dialog */}
-      {sessionToDelete && (
-        <ConfirmDialog
-          session={sessionToDelete}
-          onConfirm={handleConfirmDelete}
-          onCancel={handleCancelDelete}
+      {/* Session menu dialog */}
+      {sessionForMenu && (
+        <SessionMenuDialog
+          session={sessionForMenu}
+          onChangeTheme={handleMenuChangeTheme}
+          onDelete={handleMenuDelete}
+          onCancel={handleMenuClose}
         />
       )}
 

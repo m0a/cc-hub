@@ -5,8 +5,9 @@ import { Dashboard } from './dashboard/Dashboard';
 import { FileViewer } from './files/FileViewer';
 import { FloatingKeyboard } from './FloatingKeyboard';
 import { authFetch } from '../services/api';
+import { useSessions } from '../hooks/useSessions';
 import type { TerminalRef } from './Terminal';
-import type { SessionResponse, SessionState } from '../../../shared/types';
+import type { SessionResponse, SessionState, SessionTheme } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const DESKTOP_STATE_KEY = 'cchub-desktop-state';
@@ -17,6 +18,7 @@ interface OpenSession {
   state: SessionState;
   currentPath?: string;
   ccSessionId?: string;
+  theme?: SessionTheme;
 }
 
 interface DesktopState {
@@ -202,7 +204,7 @@ function updateSessionId(root: PaneNode, paneId: string, sessionId: string): Pan
 const KEYBOARD_VISIBLE_KEY = 'cchub-floating-keyboard-visible';
 
 export function DesktopLayout({
-  sessions,
+  sessions: propSessions,
   activeSessionId,
   onSelectSession,
   onSessionStateChange,
@@ -212,6 +214,35 @@ export function DesktopLayout({
 }: DesktopLayoutProps) {
   const terminalRefs = useRef<Map<string, TerminalRef | null>>(new Map());
   const activePaneRef = useRef<string>('');
+
+  // Get latest session info (including theme) from API
+  const { sessions: apiSessions, fetchSessions } = useSessions();
+
+  // Fetch sessions on mount and periodically
+  useEffect(() => {
+    fetchSessions();
+    const interval = setInterval(() => fetchSessions(true), 5000);
+    return () => clearInterval(interval);
+  }, [fetchSessions]);
+
+  // Merge prop sessions with API sessions to get latest theme info
+  // propSessionsにないセッションもapiSessionsから追加する（分割ペイン用）
+  const sessions = apiSessions.length > 0
+    ? apiSessions.map(apiSession => {
+        const propSession = propSessions.find(p => p.id === apiSession.id);
+        return propSession
+          ? { ...propSession, theme: apiSession.theme }
+          : {
+              id: apiSession.id,
+              name: apiSession.name,
+              state: apiSession.state,
+              currentPath: (apiSession as any).currentPath,
+              ccSessionId: (apiSession as any).ccSessionId,
+              currentCommand: (apiSession as any).currentCommand,
+              theme: apiSession.theme,
+            };
+      })
+    : propSessions;
   const [showSidePanel, setShowSidePanel] = useState(false);
   const [sidePanelTab, setSidePanelTab] = useState<'sessions' | 'dashboard'>('sessions');
   const [showFileViewer, setShowFileViewer] = useState(false);

@@ -9,8 +9,9 @@ import { ConversationViewer } from './components/ConversationViewer';
 import { LoginForm } from './components/LoginForm';
 import { useSessionHistory } from './hooks/useSessionHistory';
 import { useAuth } from './hooks/useAuth';
+import { useSessions } from './hooks/useSessions';
 import { authFetch } from './services/api';
-import type { SessionResponse, SessionState, ConversationMessage } from '../../shared/types';
+import type { SessionResponse, SessionState, ConversationMessage, SessionTheme } from '../../shared/types';
 
 // Session info type (simplified from SessionTabs)
 interface OpenSession {
@@ -20,6 +21,7 @@ interface OpenSession {
   currentPath?: string;
   ccSessionId?: string;
   currentCommand?: string;
+  theme?: SessionTheme;
 }
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -111,6 +113,9 @@ export function App() {
   const [conversation, setConversation] = useState<ConversationMessage[]>([]);
   const [loadingConversation, setLoadingConversation] = useState(false);
 
+  // Session API state (for theme updates in mobile view)
+  const { sessions: apiSessions, fetchSessions: fetchApiSessions } = useSessions();
+
   // Device type detection
   // - desktop: PC (非タッチデバイス) → ソフトキーボード不要
   // - tablet: タッチデバイスで width >= 640px && height >= 500px
@@ -142,6 +147,26 @@ export function App() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Periodically fetch sessions for mobile view (to get theme updates)
+  useEffect(() => {
+    if (deviceType !== 'mobile') return;
+    fetchApiSessions();
+    const interval = setInterval(() => fetchApiSessions(true), 5000);
+    return () => clearInterval(interval);
+  }, [deviceType, fetchApiSessions]);
+
+  // Update openSessions theme from API (for mobile view)
+  useEffect(() => {
+    if (deviceType !== 'mobile' || apiSessions.length === 0) return;
+    setOpenSessions(prev => prev.map(session => {
+      const apiSession = apiSessions.find(s => s.id === session.id);
+      if (apiSession && apiSession.theme !== session.theme) {
+        return { ...session, theme: apiSession.theme };
+      }
+      return session;
+    }));
+  }, [deviceType, apiSessions]);
 
   // Handle browser back navigation - return to terminal from overlays
   useEffect(() => {
@@ -196,7 +221,7 @@ export function App() {
             const normalizedId = id.startsWith('ext:') ? id.slice(4) : id;
             const session = allSessions.find(s => s.id === normalizedId);
             if (session) {
-              const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string };
+              const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string; theme?: SessionTheme };
               sessionsToOpen.push({
                 id: session.id,
                 name: session.name,
@@ -204,6 +229,7 @@ export function App() {
                 currentPath: extSession.currentPath,
                 ccSessionId: extSession.ccSessionId,
                 currentCommand: extSession.currentCommand,
+                theme: extSession.theme,
               });
             }
           }
@@ -224,7 +250,7 @@ export function App() {
             setActiveSessionId(activeId);
           } else if (allSessions.length > 0) {
             // No valid saved sessions, open most recent
-            const mostRecent = allSessions[0] as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string };
+            const mostRecent = allSessions[0] as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string; theme?: SessionTheme };
             setOpenSessions([{
               id: mostRecent.id,
               name: mostRecent.name,
@@ -232,6 +258,7 @@ export function App() {
               currentPath: mostRecent.currentPath,
               ccSessionId: mostRecent.ccSessionId,
               currentCommand: mostRecent.currentCommand,
+              theme: mostRecent.theme,
             }]);
             setActiveSessionId(mostRecent.id);
           } else {
@@ -239,7 +266,7 @@ export function App() {
           }
         } else if (allSessions.length > 0) {
           // No saved sessions, open most recent
-          const mostRecent = allSessions[0] as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string };
+          const mostRecent = allSessions[0] as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string; theme?: SessionTheme };
           setOpenSessions([{
             id: mostRecent.id,
             name: mostRecent.name,
@@ -247,6 +274,7 @@ export function App() {
             currentPath: mostRecent.currentPath,
             ccSessionId: mostRecent.ccSessionId,
             currentCommand: mostRecent.currentCommand,
+            theme: mostRecent.theme,
           }]);
           setActiveSessionId(mostRecent.id);
         } else {
@@ -284,7 +312,7 @@ export function App() {
       setActiveSessionId(session.id);
     } else {
       // Add to open sessions
-      const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string };
+      const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string; theme?: SessionTheme };
       setOpenSessions(prev => [...prev, {
         id: extSession.id,
         name: extSession.name,
@@ -292,6 +320,7 @@ export function App() {
         currentPath: extSession.currentPath,
         ccSessionId: extSession.ccSessionId,
         currentCommand: extSession.currentCommand,
+        theme: extSession.theme,
       }]);
       setActiveSessionId(session.id);
     }
@@ -563,6 +592,7 @@ export function App() {
             overlayContent={overlayBar}
             onOverlayTap={handleShowOverlay}
             showOverlay={showOverlay}
+            theme={activeSession.theme}
           />
         </div>
       )}

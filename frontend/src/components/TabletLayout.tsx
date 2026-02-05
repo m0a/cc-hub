@@ -5,7 +5,7 @@ import { SessionListMini } from './SessionListMini';
 import { FileViewer } from './files/FileViewer';
 import { Dashboard } from './dashboard/Dashboard';
 import { authFetch } from '../services/api';
-import type { SessionResponse, SessionState } from '../../../shared/types';
+import type { SessionResponse, SessionState, SessionTheme } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const SPLIT_RATIO_KEY = 'cchub-tablet-split-ratio';
@@ -16,6 +16,7 @@ interface OpenSession {
   name: string;
   state: SessionState;
   currentPath?: string;
+  theme?: SessionTheme;
 }
 
 interface TabletLayoutProps {
@@ -284,6 +285,7 @@ export function TabletLayout({
               hideKeyboard={true}
               onConnect={handleConnect}
               onDisconnect={handleDisconnect}
+              theme={activeSession?.theme}
             />
           )}
         </div>

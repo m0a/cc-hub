@@ -23,6 +23,13 @@ interface UseSessionHistoryResult {
   fetchProjectSessions: (dirName: string, forceRefresh?: boolean) => Promise<void>;
   refreshAllLoadedProjects: () => Promise<void>;
 
+  // Search
+  searchResults: HistorySession[];
+  isSearching: boolean;
+  searchQuery: string;
+  searchSessions: (query: string) => Promise<void>;
+  clearSearch: () => void;
+
   // Legacy: all sessions (for backward compatibility)
   sessions: HistorySession[];
   isLoading: boolean;
@@ -40,6 +47,11 @@ export function useSessionHistory(): UseSessionHistoryResult {
   const [sessionsByProject, setSessionsByProject] = useState<Map<string, HistorySession[]>>(new Map());
   const [loadingProjects, setLoadingProjects] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+
+  // Search state
+  const [searchResults, setSearchResults] = useState<HistorySession[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch project list (fast)
   const fetchProjects = useCallback(async (silent = false) => {
@@ -149,6 +161,36 @@ export function useSessionHistory(): UseSessionHistoryResult {
     }
   }, []);
 
+  // Search sessions
+  const searchSessions = useCallback(async (query: string) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    try {
+      setIsSearching(true);
+      const response = await authFetch(`${API_BASE}/api/sessions/history/search?q=${encodeURIComponent(query)}`);
+      if (!response.ok) {
+        throw new Error('Failed to search sessions');
+      }
+      const data = await response.json();
+      setSearchResults(data.sessions || []);
+    } catch (err) {
+      console.error('Failed to search sessions:', err);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
+  // Clear search
+  const clearSearch = useCallback(() => {
+    setSearchQuery('');
+    setSearchResults([]);
+  }, []);
+
   // Initial load: projects only
   useEffect(() => {
     fetchProjects();
@@ -165,6 +207,11 @@ export function useSessionHistory(): UseSessionHistoryResult {
     loadingProjects,
     fetchProjectSessions,
     refreshAllLoadedProjects,
+    searchResults,
+    isSearching,
+    searchQuery,
+    searchSessions,
+    clearSearch,
     sessions,
     isLoading,
     error,

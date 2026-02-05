@@ -198,6 +198,14 @@ sessions.get('/history/projects', async (c) => {
   return c.json({ projects });
 });
 
+// GET /sessions/history/search - Search sessions across all projects
+sessions.get('/history/search', async (c) => {
+  const query = c.req.query('q') || '';
+  const limit = parseInt(c.req.query('limit') || '50', 10);
+  const sessions = await sessionHistoryService.searchSessions(query, limit);
+  return c.json({ sessions });
+});
+
 // GET /sessions/history/projects/:dirName - Get sessions for a specific project
 sessions.get('/history/projects/:dirName', async (c) => {
   const dirName = c.req.param('dirName');

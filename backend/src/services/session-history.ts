@@ -697,4 +697,64 @@ export class SessionHistoryService {
     }
   }
 
+  /**
+   * Search sessions across all projects
+   */
+  async searchSessions(query: string, limit: number = 50): Promise<HistorySession[]> {
+    if (!query || query.trim().length === 0) {
+      return [];
+    }
+
+    const normalizedQuery = query.toLowerCase().trim();
+    const results: HistorySession[] = [];
+
+    try {
+      const projectDirs = await readdir(this.projectsDir);
+
+      await Promise.all(projectDirs.map(async (dir) => {
+        const projectDir = join(this.projectsDir, dir);
+
+        try {
+          const dirStat = await stat(projectDir);
+          if (!dirStat.isDirectory()) return;
+
+          const files = await readdir(projectDir);
+          const jsonlFiles = files.filter(f => f.endsWith('.jsonl'));
+
+          for (const file of jsonlFiles) {
+            if (results.length >= limit) break;
+
+            const jsonlPath = join(projectDir, file);
+            const basicInfo = await this.scanJsonlForBasicInfo(jsonlPath);
+
+            if (basicInfo && basicInfo.lastPrompt) {
+              // Search in project name and first prompt
+              const projectName = basicInfo.projectPath.replace(/^\/home\/[^/]+\//, '~/');
+              const searchText = `${projectName} ${basicInfo.lastPrompt}`.toLowerCase();
+
+              if (searchText.includes(normalizedQuery)) {
+                results.push({
+                  sessionId: basicInfo.sessionId,
+                  projectPath: basicInfo.projectPath,
+                  projectName,
+                  firstPrompt: basicInfo.lastPrompt,
+                  modified: basicInfo.modified,
+                });
+              }
+            }
+          }
+        } catch {
+          // Skip directories that can't be read
+        }
+      }));
+
+      // Sort by modified date (newest first)
+      results.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
+
+      return results.slice(0, limit);
+    } catch {
+      return [];
+    }
+  }
+
 }

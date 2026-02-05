@@ -221,10 +221,17 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
     loadingProjects,
     fetchProjectSessions,
     refreshAllLoadedProjects,
+    searchResults,
+    isSearching,
+    searchQuery,
+    searchSessions,
+    clearSearch,
     resumeSession,
     fetchConversation,
     error,
   } = useSessionHistory();
+
+  const [searchInput, setSearchInput] = useState('');
 
   const [resumingId, setResumingId] = useState<string | null>(null);
   const [selectedSession, setSelectedSession] = useState<HistorySession | null>(null);
@@ -334,7 +341,37 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
     );
   }
 
-  if (projects.length === 0) {
+  // Handle search input
+  const handleSearchInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchInput(e.target.value);
+  };
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchInput.trim()) {
+      searchSessions(searchInput.trim());
+    }
+  };
+
+  const handleClearSearch = () => {
+    setSearchInput('');
+    clearSearch();
+  };
+
+  // Handle tap on search result
+  const handleSearchResultTap = async (session: HistorySession) => {
+    setSelectedSession(session);
+    setLoadingConversation(true);
+    setConversation([]);
+    try {
+      const messages = await fetchConversation(session.sessionId);
+      setConversation(messages);
+    } finally {
+      setLoadingConversation(false);
+    }
+  };
+
+  if (projects.length === 0 && !searchQuery) {
     return (
       <div className="p-4 text-center text-gray-500 text-sm">
         過去のセッションはありません
@@ -344,21 +381,83 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto">
-        {projects.map((project) => (
-          <ProjectGroupItem
-            key={project.dirName}
-            project={project}
-            sessions={sessionsByProject.get(project.dirName)}
-            isLoading={loadingProjects.has(project.dirName)}
-            onExpand={() => fetchProjectSessions(project.dirName)}
-            onTap={handleTap}
-            onResume={handleResume}
-            onNavigate={handleNavigate}
-            resumingId={resumingId}
-            activeCcSessionIds={activeCcSessionIds}
+      {/* Search input */}
+      <form onSubmit={handleSearchSubmit} className="p-2 border-b border-gray-700">
+        <div className="relative">
+          <input
+            type="text"
+            value={searchInput}
+            onChange={handleSearchInput}
+            placeholder="履歴を検索..."
+            className="w-full px-3 py-1.5 pl-8 text-sm bg-gray-800 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-gray-200 placeholder-gray-500"
           />
-        ))}
+          <svg
+            className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          {(searchInput || searchQuery) && (
+            <button
+              type="button"
+              onClick={handleClearSearch}
+              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-300"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+      </form>
+
+      <div className="flex-1 overflow-y-auto">
+        {/* Search results */}
+        {searchQuery ? (
+          <div>
+            <div className="px-3 py-2 text-xs text-gray-400 border-b border-gray-700">
+              {isSearching ? (
+                '検索中...'
+              ) : (
+                `「${searchQuery}」の検索結果: ${searchResults.length}件`
+              )}
+            </div>
+            {searchResults.map((session) => (
+              <HistoryItem
+                key={session.sessionId}
+                session={session}
+                onTap={() => handleSearchResultTap(session)}
+                onResume={() => handleResume(session)}
+                onNavigate={() => handleNavigate(session)}
+                isResuming={resumingId === session.sessionId}
+                isActive={activeCcSessionIds.has(session.sessionId)}
+              />
+            ))}
+            {!isSearching && searchResults.length === 0 && (
+              <div className="p-4 text-center text-gray-500 text-sm">
+                検索結果がありません
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Project list */
+          projects.map((project) => (
+            <ProjectGroupItem
+              key={project.dirName}
+              project={project}
+              sessions={sessionsByProject.get(project.dirName)}
+              isLoading={loadingProjects.has(project.dirName)}
+              onExpand={() => fetchProjectSessions(project.dirName)}
+              onTap={handleTap}
+              onResume={handleResume}
+              onNavigate={handleNavigate}
+              resumingId={resumingId}
+              activeCcSessionIds={activeCcSessionIds}
+            />
+          ))
+        )}
       </div>
 
       {selectedSession && (

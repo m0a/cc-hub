@@ -1,12 +1,23 @@
+import { useMemo, useEffect } from 'react';
+
 interface HtmlViewerProps {
   content: string;
   fileName: string;
 }
 
 export function HtmlViewer({ content, fileName }: HtmlViewerProps) {
-  // Create blob URL for iframe
-  const blob = new Blob([content], { type: 'text/html' });
-  const blobUrl = URL.createObjectURL(blob);
+  // Create blob URL for iframe (memoized to prevent reload on re-render)
+  const blobUrl = useMemo(() => {
+    const blob = new Blob([content], { type: 'text/html' });
+    return URL.createObjectURL(blob);
+  }, [content]);
+
+  // Cleanup blob URL on unmount or content change
+  useEffect(() => {
+    return () => {
+      URL.revokeObjectURL(blobUrl);
+    };
+  }, [blobUrl]);
 
   return (
     <div className="h-full flex flex-col">

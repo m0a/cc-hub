@@ -176,7 +176,6 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
   const {
     currentPath,
     files,
-    parentPath,
     selectedFile,
     changes,
     isLoading,
@@ -184,8 +183,6 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
     listDirectory,
     readFile,
     getChanges,
-    navigateTo,
-    navigateUp,
     clearSelectedFile,
   } = useFileViewer(sessionWorkingDir);
 
@@ -371,10 +368,8 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                 <FileBrowser
                   files={files}
                   currentPath={currentPath}
-                  parentPath={parentPath}
+                  sessionWorkingDir={sessionWorkingDir}
                   isLoading={isLoading}
-                  onNavigate={navigateTo}
-                  onNavigateUp={navigateUp}
                   onSelectFile={handleSelectFile}
                   showHidden={showHidden}
                 />
@@ -485,10 +480,8 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
             <FileBrowser
               files={files}
               currentPath={currentPath}
-              parentPath={parentPath}
+              sessionWorkingDir={sessionWorkingDir}
               isLoading={isLoading}
-              onNavigate={navigateTo}
-              onNavigateUp={navigateUp}
               onSelectFile={handleSelectFile}
               showHidden={showHidden}
             />

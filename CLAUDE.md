@@ -165,6 +165,32 @@ cchub --version
 - Run `sudo tailscale set --operator=$USER` once to allow cert generation
 - macOS: Install Tailscale via `brew install tailscale` (App Store version lacks CLI)
 
+## Internationalization (i18n)
+
+CC Hub supports English and Japanese. Language is automatically detected.
+
+### Frontend (Web UI)
+
+Uses `react-i18next` with browser language detection:
+- Translation files: `frontend/src/i18n/locales/{en,ja}.json`
+- Language switcher in UI (EN/JA button)
+- Preference saved to `localStorage` (`cchub-language`)
+
+### Backend (CLI)
+
+Uses custom i18n module with embedded translations:
+- Module: `backend/src/i18n/index.ts`
+- Language detected from environment variables: `LANG`, `LC_ALL`, `LC_MESSAGES`
+- Japanese locale (`ja_*`) → Japanese, otherwise English
+
+```bash
+# Run CLI in Japanese
+LANG=ja_JP.UTF-8 cchub --help
+
+# Run CLI in English
+LANG=en_US.UTF-8 cchub --help
+```
+
 ## Type Sharing
 
 Types are defined in `shared/types.ts` with Zod schemas for validation. Import from `../../../shared/types` in both backend and frontend.

@@ -7,6 +7,21 @@ import '@xterm/xterm/css/xterm.css';
 import { useTerminal } from '../hooks/useTerminal';
 import { Keyboard } from './Keyboard';
 import { authFetch } from '../services/api';
+import type { SessionTheme } from '../../../shared/types';
+
+// Terminal theme colors based on session theme
+const TERMINAL_THEMES: Record<SessionTheme | 'default', { background: string; accent: string }> = {
+  default: { background: '#1a1a1a', accent: '#1a1a1a' },
+  red: { background: '#1f1215', accent: '#7f1d1d' },
+  orange: { background: '#1f1610', accent: '#7c2d12' },
+  amber: { background: '#1f1a0f', accent: '#78350f' },
+  green: { background: '#0f1f14', accent: '#14532d' },
+  teal: { background: '#0f1f1d', accent: '#134e4a' },
+  blue: { background: '#0f1521', accent: '#1e3a5f' },
+  indigo: { background: '#13111f', accent: '#312e81' },
+  purple: { background: '#18101f', accent: '#4c1d95' },
+  pink: { background: '#1f1018', accent: '#831843' },
+};
 
 const FONT_SIZE_KEY_PREFIX = 'cchub-terminal-font-size-';
 const DEFAULT_FONT_SIZE = 14;
@@ -41,6 +56,7 @@ interface TerminalProps {
   overlayContent?: React.ReactNode;  // Custom overlay content (rendered above keyboard)
   onOverlayTap?: () => void;  // Called when tap area is touched
   showOverlay?: boolean;  // Control overlay visibility
+  theme?: SessionTheme;  // Session theme color
 }
 
 // Ref interface for external keyboard input
@@ -62,6 +78,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   overlayContent,
   onOverlayTap,
   showOverlay = true,
+  theme: sessionTheme,
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -220,6 +237,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
     // High-performance terminal configuration
     const initialFontSize = loadFontSize(sessionId);
+    const themeColors = TERMINAL_THEMES[sessionTheme || 'default'];
     const term = new Terminal({
       fontSize: initialFontSize,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
@@ -240,10 +258,10 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       convertEol: false,
       ignoreBracketedPasteMode: false,
       theme: {
-        background: '#1a1a1a',
+        background: themeColors.background,
         foreground: '#efefef',
         cursor: '#efefef',
-        cursorAccent: '#1a1a1a',
+        cursorAccent: themeColors.background,
         selectionBackground: 'rgba(255, 255, 255, 0.3)',
       },
     });
@@ -362,8 +380,8 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       term.focus();
     }
 
-    // Touch handling on overlay - scroll (1 finger) and pinch zoom (2 fingers)
-    const overlay = overlayRef.current;
+    // Touch handling on container - scroll (1 finger) and pinch zoom (2 fingers)
+    // Using container instead of overlay to allow mouse events to reach xterm directly
     let touchStartY: number | null = null;
     let touchMoved = false;
     let accumulatedDelta = 0;
@@ -476,17 +494,17 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       accumulatedDelta = 0;
     };
 
-    if (overlay) {
-      overlay.addEventListener('touchstart', handleTouchStart, { passive: true });
-      overlay.addEventListener('touchmove', handleTouchMove, { passive: false });
-      overlay.addEventListener('touchend', handleTouchEnd);
+    if (container) {
+      container.addEventListener('touchstart', handleTouchStart, { passive: true });
+      container.addEventListener('touchmove', handleTouchMove, { passive: false });
+      container.addEventListener('touchend', handleTouchEnd);
     }
 
     return () => {
-      if (overlay) {
-        overlay.removeEventListener('touchstart', handleTouchStart);
-        overlay.removeEventListener('touchmove', handleTouchMove);
-        overlay.removeEventListener('touchend', handleTouchEnd);
+      if (container) {
+        container.removeEventListener('touchstart', handleTouchStart);
+        container.removeEventListener('touchmove', handleTouchMove);
+        container.removeEventListener('touchend', handleTouchEnd);
       }
       if (resizeTimeout) {
         clearTimeout(resizeTimeout);
@@ -596,6 +614,35 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       }
     };
   }, [fontSize, isInitialized]);
+
+  // Update terminal theme when session theme changes
+  useEffect(() => {
+    const term = terminalRef.current;
+    const container = containerRef.current;
+    if (!term || !container) return;
+
+    const themeColors = TERMINAL_THEMES[sessionTheme || 'default'];
+
+    // Update xterm theme
+    term.options.theme = {
+      ...term.options.theme,
+      background: themeColors.background,
+      cursorAccent: themeColors.background,
+    };
+
+    // Also update the viewport background directly for WebGL renderer
+    const viewport = container.querySelector('.xterm-viewport') as HTMLElement;
+    if (viewport) {
+      viewport.style.backgroundColor = themeColors.background;
+    }
+    const screen = container.querySelector('.xterm-screen') as HTMLElement;
+    if (screen) {
+      screen.style.backgroundColor = themeColors.background;
+    }
+
+    // Force refresh to apply theme
+    term.refresh(0, term.rows - 1);
+  }, [sessionTheme]);
 
   // Handle file selection for image upload
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -788,26 +835,31 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   };
 
   // Calculate container height based on visual viewport (for mobile keyboard)
-  const containerStyle = keyboardOffset > 0
-    ? { height: `calc(100% - ${keyboardOffset}px)` }
-    : undefined;
+  const themeColors = TERMINAL_THEMES[sessionTheme || 'default'];
+  const containerStyle: React.CSSProperties = {
+    ...(keyboardOffset > 0 ? { height: `calc(100% - ${keyboardOffset}px)` } : {}),
+    backgroundColor: themeColors.background,
+  };
 
   return (
     <div
-      className="h-full w-full bg-[#1a1a1a] flex flex-col overflow-hidden"
+      className="h-full w-full flex flex-col overflow-hidden"
       style={containerStyle}
     >
       {/* Terminal area - shrinks when input bar is shown */}
-      <div className="flex-1 relative min-h-0">
+      <div
+        className="flex-1 relative min-h-0"
+        onMouseUp={(e) => e.stopPropagation()}
+      >
         {/* Terminal container */}
         <div
           ref={containerRef}
           className="absolute inset-0 p-1"
         />
-        {/* Touch overlay for scrolling (disabled on PC to allow terminal focus) */}
+        {/* Touch overlay for scrolling - always pointer-events-none, touch handled via JS on container */}
         <div
           ref={overlayRef}
-          className={`absolute inset-0 z-10 ${isTouchDevice ? '' : 'pointer-events-none'}`}
+          className="absolute inset-0 z-10 pointer-events-none"
           style={{ touchAction: 'none' }}
         />
         {(!isInitialized || !isConnected) && (

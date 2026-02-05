@@ -1,6 +1,6 @@
 import { useState, useCallback, type ReactNode } from 'react';
 import { TerminalComponent } from '../components/Terminal';
-import type { SessionState } from '../../../shared/types';
+import type { SessionState, SessionTheme } from '../../../shared/types';
 
 interface TerminalPageProps {
   sessionId: string;
@@ -9,6 +9,7 @@ interface TerminalPageProps {
   overlayContent?: ReactNode;
   onOverlayTap?: () => void;
   showOverlay?: boolean;
+  theme?: SessionTheme;
 }
 
 export function TerminalPage({
@@ -18,6 +19,7 @@ export function TerminalPage({
   overlayContent,
   onOverlayTap,
   showOverlay,
+  theme,
 }: TerminalPageProps) {
   const [error, setError] = useState<string | null>(null);
 
@@ -54,6 +56,7 @@ export function TerminalPage({
           overlayContent={overlayContent}
           onOverlayTap={onOverlayTap}
           showOverlay={showOverlay}
+          theme={theme}
         />
       </main>
     </div>

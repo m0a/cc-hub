@@ -54,6 +54,9 @@ export interface AuthResponse {
   };
 }
 
+// Session theme colors
+export type SessionTheme = 'red' | 'orange' | 'amber' | 'green' | 'teal' | 'blue' | 'indigo' | 'purple' | 'pink';
+
 export interface SessionResponse {
   id: string;
   name: string;
@@ -61,6 +64,7 @@ export interface SessionResponse {
   lastAccessedAt: string;
   state: SessionState;
   isExternal?: boolean;
+  theme?: SessionTheme;
 }
 
 export interface SessionListResponse {

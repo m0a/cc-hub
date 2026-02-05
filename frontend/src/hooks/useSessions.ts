@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import type { SessionResponse } from '../../../shared/types';
+import type { SessionResponse, SessionTheme } from '../../../shared/types';
 import { authFetch } from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -11,6 +11,7 @@ interface UseSessionsReturn {
   fetchSessions: (silent?: boolean) => Promise<void>;
   createSession: (name?: string, workingDir?: string) => Promise<SessionResponse | null>;
   deleteSession: (id: string) => Promise<boolean>;
+  updateSessionTheme: (id: string, theme: SessionTheme | null) => Promise<boolean>;
 }
 
 export function useSessions(): UseSessionsReturn {
@@ -91,6 +92,29 @@ export function useSessions(): UseSessionsReturn {
     }
   }, []);
 
+  const updateSessionTheme = useCallback(async (id: string, theme: SessionTheme | null): Promise<boolean> => {
+    setError(null);
+
+    try {
+      const response = await authFetch(`${API_BASE}/api/sessions/${id}/theme`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theme }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update session theme');
+      }
+
+      // Update local state
+      setSessions(prev => prev.map(s => s.id === id ? { ...s, theme: theme ?? undefined } : s));
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+      return false;
+    }
+  }, []);
+
   return {
     sessions,
     isLoading,
@@ -98,5 +122,6 @@ export function useSessions(): UseSessionsReturn {
     fetchSessions,
     createSession,
     deleteSession,
+    updateSessionTheme,
   };
 }

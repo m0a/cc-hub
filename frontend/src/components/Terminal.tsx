@@ -12,15 +12,15 @@ import type { SessionTheme } from '../../../shared/types';
 // Terminal theme colors based on session theme
 const TERMINAL_THEMES: Record<SessionTheme | 'default', { background: string; accent: string }> = {
   default: { background: '#1a1a1a', accent: '#1a1a1a' },
-  red: { background: '#1f1215', accent: '#7f1d1d' },
-  orange: { background: '#1f1610', accent: '#7c2d12' },
-  amber: { background: '#1f1a0f', accent: '#78350f' },
-  green: { background: '#0f1f14', accent: '#14532d' },
-  teal: { background: '#0f1f1d', accent: '#134e4a' },
-  blue: { background: '#0f1521', accent: '#1e3a5f' },
-  indigo: { background: '#13111f', accent: '#312e81' },
-  purple: { background: '#18101f', accent: '#4c1d95' },
-  pink: { background: '#1f1018', accent: '#831843' },
+  red: { background: '#3d1a1f', accent: '#7f1d1d' },
+  orange: { background: '#3d2415', accent: '#7c2d12' },
+  amber: { background: '#3d3012', accent: '#78350f' },
+  green: { background: '#153d20', accent: '#14532d' },
+  teal: { background: '#153d35', accent: '#134e4a' },
+  blue: { background: '#15253d', accent: '#1e3a5f' },
+  indigo: { background: '#221c3d', accent: '#312e81' },
+  purple: { background: '#2d1a3d', accent: '#4c1d95' },
+  pink: { background: '#3d1a2d', accent: '#831843' },
 };
 
 const FONT_SIZE_KEY_PREFIX = 'cchub-terminal-font-size-';

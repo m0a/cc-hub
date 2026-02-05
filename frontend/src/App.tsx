@@ -9,6 +9,7 @@ import { ConversationViewer } from './components/ConversationViewer';
 import { LoginForm } from './components/LoginForm';
 import { useSessionHistory } from './hooks/useSessionHistory';
 import { useAuth } from './hooks/useAuth';
+import { useSessions } from './hooks/useSessions';
 import { authFetch } from './services/api';
 import type { SessionResponse, SessionState, ConversationMessage, SessionTheme } from '../../shared/types';
 
@@ -112,6 +113,9 @@ export function App() {
   const [conversation, setConversation] = useState<ConversationMessage[]>([]);
   const [loadingConversation, setLoadingConversation] = useState(false);
 
+  // Session API state (for theme updates in mobile view)
+  const { sessions: apiSessions, fetchSessions: fetchApiSessions } = useSessions();
+
   // Device type detection
   // - desktop: PC (非タッチデバイス) → ソフトキーボード不要
   // - tablet: タッチデバイスで width >= 640px && height >= 500px
@@ -143,6 +147,26 @@ export function App() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Periodically fetch sessions for mobile view (to get theme updates)
+  useEffect(() => {
+    if (deviceType !== 'mobile') return;
+    fetchApiSessions();
+    const interval = setInterval(() => fetchApiSessions(true), 5000);
+    return () => clearInterval(interval);
+  }, [deviceType, fetchApiSessions]);
+
+  // Update openSessions theme from API (for mobile view)
+  useEffect(() => {
+    if (deviceType !== 'mobile' || apiSessions.length === 0) return;
+    setOpenSessions(prev => prev.map(session => {
+      const apiSession = apiSessions.find(s => s.id === session.id);
+      if (apiSession && apiSession.theme !== session.theme) {
+        return { ...session, theme: apiSession.theme };
+      }
+      return session;
+    }));
+  }, [deviceType, apiSessions]);
 
   // Handle browser back navigation - return to terminal from overlays
   useEffect(() => {

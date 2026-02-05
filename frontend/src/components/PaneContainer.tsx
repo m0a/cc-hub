@@ -391,6 +391,7 @@ function TerminalPane({
               onClick={handleOpenFileViewer}
               className={`${isTablet ? 'p-1.5' : 'p-1'} text-white/50 hover:text-white/80 transition-colors`}
               title={t('files.title')}
+              data-onboarding="file-browser"
             >
               <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
@@ -421,6 +422,7 @@ function TerminalPane({
                 : 'text-white/50 hover:text-white/80'
             }`}
             title={showSessionList ? t('session.hideList') : t('session.showList')}
+            data-onboarding="session-list"
           >
             <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />

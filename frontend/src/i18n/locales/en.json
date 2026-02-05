@@ -182,5 +182,20 @@
     "indigo": "Indigo",
     "purple": "Purple",
     "pink": "Pink"
+  },
+  "onboarding": {
+    "skip": "Skip",
+    "next": "Next",
+    "start": "Get Started",
+    "step1Title": "Terminal",
+    "step1Description": "Control Claude Code sessions remotely. Access anytime from your tablet or smartphone.",
+    "step2Title": "Session Management",
+    "step2Description": "Manage multiple Claude Code sessions simultaneously. Tap the button on the right or swipe right to view the session list.",
+    "step3Title": "Dashboard",
+    "step3Description": "Monitor usage limits, activity statistics, and cost estimates in real-time.",
+    "step4Title": "File Browser",
+    "step4Description": "Review files modified by Claude Code. View diffs and previews to understand changes.",
+    "step5Title": "Keyboard",
+    "step5Description": "Tap the keyboard button at the bottom to show the soft keyboard. Japanese input is also supported."
   }
 }

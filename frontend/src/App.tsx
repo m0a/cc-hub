@@ -8,6 +8,7 @@ import { DesktopLayout } from './components/DesktopLayout';
 import { FileViewer } from './components/files/FileViewer';
 import { ConversationViewer } from './components/ConversationViewer';
 import { LoginForm } from './components/LoginForm';
+import { Onboarding, useOnboarding } from './components/Onboarding';
 import { useSessionHistory } from './hooks/useSessionHistory';
 import { useAuth } from './hooks/useAuth';
 import { useSessions } from './hooks/useSessions';
@@ -99,6 +100,8 @@ export function App() {
   const { t } = useTranslation();
   // Auth state
   const auth = useAuth();
+  // Onboarding state
+  const { showOnboarding, completeOnboarding } = useOnboarding();
 
   const [openSessions, setOpenSessions] = useState<OpenSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -477,8 +480,8 @@ export function App() {
     );
   }
 
-  // Show session list
-  if (showSessionList) {
+  // Show session list (only when not in onboarding)
+  if (showSessionList && !showOnboarding) {
     return (
       <SessionList
         onSelectSession={handleSelectSession}
@@ -490,29 +493,35 @@ export function App() {
   // Desktop layout: PC向け分割ペインレイアウト
   if (deviceType === 'desktop') {
     return (
-      <DesktopLayout
-        sessions={openSessions}
-        activeSessionId={activeSessionId}
-        onSelectSession={handleSelectSession}
-        onSessionStateChange={updateSessionState}
-        onShowSessionList={handleShowSessionList}
-        onReload={handleReload}
-      />
+      <>
+        <DesktopLayout
+          sessions={openSessions}
+          activeSessionId={activeSessionId}
+          onSelectSession={handleSelectSession}
+          onSessionStateChange={updateSessionState}
+          onShowSessionList={handleShowSessionList}
+          onReload={handleReload}
+        />
+        {showOnboarding && <Onboarding onComplete={completeOnboarding} />}
+      </>
     );
   }
 
   // Tablet layout: use DesktopLayout with floating keyboard
   if (deviceType === 'tablet') {
     return (
-      <DesktopLayout
-        sessions={openSessions}
-        activeSessionId={activeSessionId}
-        onSelectSession={handleSelectSession}
-        onSessionStateChange={updateSessionState}
-        onShowSessionList={handleShowSessionList}
-        onReload={handleReload}
-        isTablet={true}
-      />
+      <>
+        <DesktopLayout
+          sessions={openSessions}
+          activeSessionId={activeSessionId}
+          onSelectSession={handleSelectSession}
+          onSessionStateChange={updateSessionState}
+          onShowSessionList={handleShowSessionList}
+          onReload={handleReload}
+          isTablet={true}
+        />
+        {showOnboarding && <Onboarding onComplete={completeOnboarding} />}
+      </>
     );
   }
 
@@ -629,6 +638,9 @@ export function App() {
           onRefresh={handleRefreshConversation}
         />
       )}
+
+      {/* Onboarding overlay */}
+      {showOnboarding && <Onboarding onComplete={completeOnboarding} />}
     </div>
   );
 }

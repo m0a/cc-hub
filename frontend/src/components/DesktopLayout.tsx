@@ -646,6 +646,7 @@ export function DesktopLayout({
               onClick={() => setShowSidePanel(prev => !prev)}
               className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
               title="サイドパネル (Ctrl+B)"
+              data-onboarding="session-list"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -704,6 +705,7 @@ export function DesktopLayout({
                     : 'text-white/70 hover:text-white hover:bg-white/10'
                 }`}
                 title={showKeyboard ? 'キーボードを隠す' : 'キーボードを表示'}
+                data-onboarding="conversation"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                   <rect x="2" y="6" width="20" height="12" rx="2" />
@@ -719,7 +721,7 @@ export function DesktopLayout({
         </div>
 
         {/* Pane container */}
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0" data-onboarding="terminal">
           <PaneContainer
             node={desktopState.root}
             activePane={desktopState.activePane}
@@ -766,6 +768,7 @@ export function DesktopLayout({
                       ? 'text-white bg-gray-800'
                       : 'text-gray-400 hover:text-gray-300'
                   }`}
+                  data-onboarding="dashboard"
                 >
                   Dashboard
                 </button>
@@ -814,6 +817,7 @@ export function DesktopLayout({
                     ? 'text-white bg-gray-800'
                     : 'text-gray-400 hover:text-gray-300'
                 }`}
+                data-onboarding="dashboard"
               >
                 Dashboard
               </button>

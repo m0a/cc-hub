@@ -182,5 +182,20 @@
     "indigo": "インディゴ",
     "purple": "紫",
     "pink": "ピンク"
+  },
+  "onboarding": {
+    "skip": "スキップ",
+    "next": "次へ",
+    "start": "始める",
+    "step1Title": "ターミナル",
+    "step1Description": "Claude Codeのセッションをリモートで操作できます。タブレットやスマホからいつでもアクセス可能です。",
+    "step2Title": "セッション管理",
+    "step2Description": "複数のClaude Codeセッションを同時に管理。右端のボタンまたは右スワイプでセッション一覧を表示します。",
+    "step3Title": "ダッシュボード",
+    "step3Description": "使用量リミット、アクティビティ統計、コスト推定をリアルタイムで確認できます。",
+    "step4Title": "ファイルブラウザ",
+    "step4Description": "Claude Codeが変更したファイルを確認。差分表示やプレビュー機能で変更内容を把握できます。",
+    "step5Title": "キーボード",
+    "step5Description": "画面下部のキーボードボタンでソフトキーボードを表示。日本語入力にも対応しています。"
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useFileViewer } from '../../hooks/useFileViewer';
 import { FileBrowser } from './FileBrowser';
 import { CodeViewer } from './CodeViewer';
@@ -194,10 +194,57 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
   // Detect wide screen for two-pane layout
   const [isWideScreen, setIsWideScreen] = useState(() => window.innerWidth >= 768);
 
+  // Resizable left pane
+  const [leftPaneWidth, setLeftPaneWidth] = useState(300);
+  const isResizing = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const handleResize = () => setIsWideScreen(window.innerWidth >= 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Handle pane resize
+  const handleResizeStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    isResizing.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  useEffect(() => {
+    const handleResizeMove = (e: MouseEvent | TouchEvent) => {
+      if (!isResizing.current || !containerRef.current) return;
+
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+      const newWidth = clientX - containerRect.left;
+
+      // Clamp between min and max
+      const clampedWidth = Math.max(200, Math.min(newWidth, containerRect.width - 300));
+      setLeftPaneWidth(clampedWidth);
+    };
+
+    const handleResizeEnd = () => {
+      if (isResizing.current) {
+        isResizing.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    };
+
+    document.addEventListener('mousemove', handleResizeMove);
+    document.addEventListener('mouseup', handleResizeEnd);
+    document.addEventListener('touchmove', handleResizeMove);
+    document.addEventListener('touchend', handleResizeEnd);
+
+    return () => {
+      document.removeEventListener('mousemove', handleResizeMove);
+      document.removeEventListener('mouseup', handleResizeEnd);
+      document.removeEventListener('touchmove', handleResizeMove);
+      document.removeEventListener('touchend', handleResizeEnd);
+    };
   }, []);
 
   // Initialize
@@ -361,9 +408,12 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
           )}
 
           {/* Two-pane content */}
-          <div className="flex-1 flex overflow-hidden">
+          <div ref={containerRef} className="flex-1 flex overflow-hidden">
             {/* Left pane: File list or Changes */}
-            <div className="w-1/3 min-w-[250px] max-w-[400px] border-r border-gray-700 overflow-hidden flex flex-col">
+            <div
+              className="overflow-hidden flex flex-col shrink-0"
+              style={{ width: leftPaneWidth }}
+            >
               {listMode === 'browser' ? (
                 <FileBrowser
                   files={files}
@@ -382,6 +432,13 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                 />
               )}
             </div>
+
+            {/* Resize handle */}
+            <div
+              className="w-1 bg-gray-700 hover:bg-blue-500 cursor-col-resize transition-colors shrink-0 touch-none"
+              onMouseDown={handleResizeStart}
+              onTouchStart={handleResizeStart}
+            />
 
             {/* Right pane: Content */}
             <div className="flex-1 overflow-hidden flex flex-col">

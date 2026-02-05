@@ -3,6 +3,7 @@
 import { mkdir, writeFile, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { t } from '../i18n';
 
 const SERVICE_TEMPLATE = `[Unit]
 Description=CC Hub - Claude Code Session Manager
@@ -94,9 +95,9 @@ export async function setupSystemd(port: number, password?: string): Promise<voi
   // Enable and start service
   const enableResult = Bun.spawnSync(['systemctl', '--user', 'enable', '--now', 'cchub']);
   if (enableResult.exitCode === 0) {
-    console.log('✅ サービスを有効化・起動しました');
+    console.log(`✅ ${t('setup.serviceEnabled')}`);
   } else {
-    console.error('⚠️  サービスの有効化に失敗しました');
+    console.error('⚠️  Failed to enable service');
     console.error(enableResult.stderr.toString());
   }
 
@@ -109,29 +110,29 @@ export async function setupSystemd(port: number, password?: string): Promise<voi
   }
 
   console.log('');
-  console.log('📋 操作コマンド:');
-  console.log('  systemctl --user status cchub    # 状態確認');
-  console.log('  systemctl --user restart cchub   # 再起動');
-  console.log('  systemctl --user stop cchub      # 停止');
-  console.log('  journalctl --user -u cchub -f    # ログ確認');
+  console.log(`📋 ${t('setup.commands')}`);
+  console.log('  systemctl --user status cchub    # Status');
+  console.log(`  ${t('setup.cmdRestart')}`);
+  console.log(`  ${t('setup.cmdStop')}`);
+  console.log(`  ${t('setup.cmdLogs')}`);
   console.log('');
 
   // Enable linger for boot-time startup
   const lingerResult = Bun.spawnSync(['loginctl', 'show-user', process.env.USER || '', '--property=Linger']);
   const lingerOutput = lingerResult.stdout.toString();
   if (!lingerOutput.includes('Linger=yes')) {
-    console.log('🔄 PC起動時の自動起動を有効化中...');
+    console.log(`🔄 ${t('setup.enablingAutostart')}`);
     const enableResult = Bun.spawnSync(['loginctl', 'enable-linger', process.env.USER || '']);
     if (enableResult.exitCode === 0) {
-      console.log('✅ PC起動時の自動起動を有効化しました');
+      console.log(`✅ ${t('setup.autostartEnabled')}`);
     } else {
-      console.log('⚠️  自動起動の有効化に失敗しました。手動で実行してください:');
-      console.log(`   loginctl enable-linger ${process.env.USER}`);
+      console.log(`⚠️  ${t('setup.autostartFailed')}`);
+      console.log(`   ${t('setup.autostartCommand')}`);
     }
     console.log('');
   }
 
   if (!password) {
-    console.log('⚠️  パスワード未設定: ~/.config/cchub/env を編集してください');
+    console.log(`⚠️  ${t('setup.passwordNotSetEnv')}`);
   }
 }

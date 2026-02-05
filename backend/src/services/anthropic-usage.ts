@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { t } from '../i18n';
 
 interface UsageResponse {
   five_hour: {
@@ -103,38 +104,38 @@ export class AnthropicUsageService {
   private calculateStatus(
     utilization: number,
     estimatedHitTime: string | undefined,
-    timeRemaining: string
+    _timeRemaining: string
   ): { status: 'safe' | 'warning' | 'danger' | 'exceeded'; statusMessage: string } {
     if (utilization >= 100) {
-      return { status: 'exceeded', statusMessage: 'リミット到達中' };
+      return { status: 'exceeded', statusMessage: t('usage.limitReached') };
     }
 
     if (estimatedHitTime) {
       // Will hit limit before reset
       return {
         status: 'danger',
-        statusMessage: `このペースで${estimatedHitTime}後にリミット到達`,
+        statusMessage: t('usage.willHitLimit', { time: estimatedHitTime }),
       };
     }
 
-    // Won't hit limit before reset
+    // Won't hit limit before reset - frontend will generate its own message
     if (utilization >= 75) {
       return {
         status: 'warning',
-        statusMessage: `余裕あり（リセットまで${timeRemaining}）`,
+        statusMessage: '',
       };
     }
 
     if (utilization >= 50) {
       return {
         status: 'safe',
-        statusMessage: `順調（リセットまで${timeRemaining}）`,
+        statusMessage: '',
       };
     }
 
     return {
       status: 'safe',
-      statusMessage: `余裕十分（リセットまで${timeRemaining}）`,
+      statusMessage: '',
     };
   }
 

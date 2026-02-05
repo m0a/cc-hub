@@ -2,6 +2,7 @@
 
 import { copyFile, rename, chmod } from 'node:fs/promises';
 import { VERSION } from '../cli';
+import { t } from '../i18n';
 
 const GITHUB_REPO = 'm0a/cc-hub';
 
@@ -50,7 +51,7 @@ async function getLatestRelease(): Promise<GitHubRelease | null> {
 
     return await response.json();
   } catch (error) {
-    console.error('❌ GitHub APIへの接続に失敗しました');
+    console.error(`❌ ${t('update.githubConnectionFailed')}`);
     return null;
   }
 }
@@ -168,9 +169,9 @@ export async function checkAndUpdate(checkOnly: boolean, autoMode: boolean): Pro
   // Restart service if running via systemd
   const restartResult = Bun.spawnSync(['systemctl', '--user', 'restart', 'cchub']);
   if (restartResult.exitCode === 0) {
-    console.log('🔄 サービスを再起動しました');
+    console.log(`🔄 ${t('update.serviceRestarted')}`);
   } else {
-    console.log('ℹ️  手動で再起動してください: systemctl --user restart cchub');
+    console.log(`ℹ️  ${t('update.manualRestartRequired')}`);
   }
 
   console.log('');

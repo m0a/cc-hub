@@ -11,6 +11,7 @@ import { dashboard } from './routes/dashboard';
 import { terminalWebSocket, handleTerminalUpgrade } from './routes/terminal';
 import { parseArgs, runCli, VERSION } from './cli';
 import { conditionalAuthMiddleware } from './middleware/auth';
+import { t } from './i18n';
 
 // Parse CLI arguments
 const args = parseArgs(process.argv.slice(2));
@@ -143,16 +144,16 @@ const path = await import('node:path');
 // Check if tailscale command exists
 const whichResult = Bun.spawnSync(['which', 'tailscale']);
 if (whichResult.exitCode !== 0) {
-  console.error('❌ エラー: tailscale コマンドが見つかりません');
-  console.error('   インストール: https://tailscale.com/download');
+  console.error(`❌ ${t('server.tailscaleNotFound')}`);
+  console.error('   Install: https://tailscale.com/download');
   process.exit(1);
 }
 
 // Get Tailscale hostname
 const statusResult = Bun.spawnSync(['tailscale', 'status', '--json']);
 if (statusResult.exitCode !== 0) {
-  console.error('❌ エラー: Tailscale の状態を取得できません');
-  console.error('   Tailscale が起動しているか確認してください');
+  console.error(`❌ ${t('server.tailscaleNotRunning')}`);
+  console.error(`   ${t('server.tailscaleCheckRunning')}`);
   process.exit(1);
 }
 
@@ -166,7 +167,7 @@ try {
   // Remove trailing dot if present
   tailscaleHostname = dnsName.replace(/\.$/, '');
 } catch (e) {
-  console.error('❌ エラー: Tailscale のステータスを解析できません');
+  console.error(`❌ ${t('server.tailscaleParseError')}`);
   process.exit(1);
 }
 
@@ -202,24 +203,24 @@ if (needsCert) {
 
   if (certResult.exitCode !== 0) {
     const stderr = certResult.stderr.toString();
-    console.error('❌ エラー: Tailscale 証明書の生成に失敗しました');
+    console.error(`❌ ${t('server.tailscaleCertError')}`);
     console.error(stderr);
     if (stderr.includes('Access denied') || stderr.includes('cert access denied')) {
       console.error('');
-      console.error('💡 ヒント: 以下のコマンドを一度実行してください:');
+      console.error('💡 Hint: Run this command once:');
       console.error('   sudo tailscale set --operator=$USER');
     }
     process.exit(1);
   }
-  console.log(`📜 証明書を生成しました: ${certDir}`);
+  console.log(`📜 Certificate generated: ${certDir}`);
 }
 
 // Store password in environment for auth middleware
 if (args.password) {
   process.env.CCHUB_PASSWORD = args.password;
-  console.log('🔒 パスワード認証: 有効');
+  console.log(`🔒 ${t('server.passwordEnabled')}`);
 } else {
-  console.log('⚠️  パスワード未設定: -P オプションで設定を推奨');
+  console.log(`⚠️  ${t('server.passwordNotSet')}`);
 }
 
 // Start server
@@ -228,7 +229,7 @@ const host = args.host;
 
 console.log(`🚀 CC Hub v${VERSION}`);
 console.log(`   URL: https://${tailscaleHostname}:${port}`);
-console.log(`   静的ファイル: ${EMBEDDED_MODE ? '(埋め込み)' : staticRoot}`);
+console.log(`   Static: ${EMBEDDED_MODE ? '(embedded)' : staticRoot}`);
 
 export default {
   port,

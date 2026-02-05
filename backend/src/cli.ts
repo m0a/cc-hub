@@ -1,9 +1,10 @@
 // CLI argument parser and commands
 import pkg from '../../package.json';
+import { t } from './i18n';
 
 const VERSION = pkg.version;
 
-// 開発モード判定（bun run --watch で実行されている場合）
+// Development mode detection (running with bun run --watch)
 const isDev = process.argv.some(arg => arg.includes('--watch'));
 const DEFAULT_PORT = isDev ? 3000 : 5923;
 
@@ -18,32 +19,28 @@ interface CliOptions {
 
 function printHelp(): void {
   console.log(`
-CC Hub v${VERSION} - Claude Code セッションマネージャー
+CC Hub v${VERSION} - Claude Code Session Manager
 
-使い方:
-  cchub [オプション]           サーバー起動
-  cchub setup [オプション]     systemdサービス登録
-  cchub update [オプション]    更新確認・適用
-  cchub status                 サービス状態確認
+${t('cli.usage')}
+  ${t('cli.serverStart')}
+  cchub setup [options]     systemd service setup
+  cchub update [options]    Check and apply updates
+  cchub status              Show service status
 
-オプション:
-  -p, --port <port>      ポート番号 (デフォルト: 本番5923/開発3000)
-  -H, --host <host>      バインドアドレス (デフォルト: 0.0.0.0)
-  -P, --password <pass>  認証パスワード
+${t('cli.options')}
+  ${t('cli.optionPort')}
+  ${t('cli.optionHost')}
+  ${t('cli.optionPassword')}
 
-updateオプション:
-  --check                確認のみ（更新しない）
-  --auto                 自動更新モード（timerから使用）
+update options:
+  --check                Check only (no update)
+  --auto                 Auto-update mode (for timer)
 
-その他:
-  -h, --help             このヘルプを表示
-  -v, --version          バージョンを表示
-
-例:
-  cchub                      サーバー起動（本番: 5923）
-  cchub -p 8080 -P secret    ポート8080、パスワード付きで起動
-  cchub setup -P secret      systemdに登録
-  cchub update               最新版に更新
+${t('cli.examples')}
+  ${t('cli.exampleStart')}
+  ${t('cli.exampleWithPort')}
+  cchub setup -P secret      Setup systemd service
+  cchub update               Update to latest
 `);
 }
 
@@ -85,7 +82,7 @@ export function parseArgs(args: string[]): CliOptions {
         i++;
         options.port = parseInt(args[i], 10);
         if (Number.isNaN(options.port) || options.port < 1 || options.port > 65535) {
-          console.error('❌ エラー: 無効なポート番号');
+          console.error(`❌ ${t('cli.errorInvalidPort')}`);
           process.exit(1);
         }
         break;
@@ -94,7 +91,7 @@ export function parseArgs(args: string[]): CliOptions {
         i++;
         options.host = args[i];
         if (!options.host) {
-          console.error('❌ エラー: ホストが指定されていません');
+          console.error(`❌ ${t('cli.errorNoHost')}`);
           process.exit(1);
         }
         break;
@@ -103,7 +100,7 @@ export function parseArgs(args: string[]): CliOptions {
         i++;
         options.password = args[i];
         if (!options.password) {
-          console.error('❌ エラー: パスワードが指定されていません');
+          console.error(`❌ ${t('cli.errorNoPassword')}`);
           process.exit(1);
         }
         break;
@@ -115,8 +112,8 @@ export function parseArgs(args: string[]): CliOptions {
         break;
       default:
         if (arg.startsWith('-')) {
-          console.error(`❌ エラー: 不明なオプション: ${arg}`);
-          console.error('ヘルプ: cchub --help');
+          console.error(`❌ ${t('cli.errorUnknownOption', { option: arg })}`);
+          console.error('Help: cchub --help');
           process.exit(1);
         }
     }

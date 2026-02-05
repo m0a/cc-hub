@@ -1,6 +1,7 @@
 // cchub status command - show systemd service status
 
 import { VERSION } from '../cli';
+import { t } from '../i18n';
 
 export async function showStatus(): Promise<void> {
   console.log(`CC Hub v${VERSION}`);
@@ -13,20 +14,20 @@ export async function showStatus(): Promise<void> {
   });
 
   if (serviceResult.exitCode === 0) {
-    console.log('📦 サービス状態:');
+    console.log('📦 Service status:');
     console.log(serviceResult.stdout.toString());
   } else if (serviceResult.exitCode === 3) {
     // Service exists but not running
-    console.log('📦 サービス状態: 停止中');
+    console.log('📦 Service status: Stopped');
     console.log('');
-    console.log('起動するには: systemctl --user start cchub');
+    console.log(t('status.startCommand'));
   } else if (serviceResult.exitCode === 4) {
     // Service not found
-    console.log('📦 サービス状態: 未登録');
+    console.log('📦 Service status: Not registered');
     console.log('');
-    console.log('セットアップするには: cchub setup');
+    console.log('To setup: cchub setup');
   } else {
-    console.log('📦 サービス状態: 不明');
+    console.log('📦 Service status: Unknown');
     console.log(serviceResult.stderr.toString());
   }
 
@@ -39,7 +40,7 @@ export async function showStatus(): Promise<void> {
   });
 
   const timerActive = timerResult.stdout.toString().trim() === 'active';
-  console.log(`🔄 自動更新: ${timerActive ? '有効' : '無効'}`);
+  console.log(`🔄 Auto-update: ${timerActive ? 'Enabled' : 'Disabled'}`);
 
   // Show next update check time
   if (timerActive) {
@@ -54,7 +55,7 @@ export async function showStatus(): Promise<void> {
       const usec = parseInt(match[1], 10);
       if (!isNaN(usec)) {
         const date = new Date(usec / 1000);
-        console.log(`   次回チェック: ${date.toLocaleString('ja-JP')}`);
+        console.log(`   Next check: ${date.toLocaleString()}`);
       }
     }
   }
@@ -70,13 +71,13 @@ export async function showStatus(): Promise<void> {
   if (tailscaleResult.exitCode === 0) {
     try {
       const status = JSON.parse(tailscaleResult.stdout.toString());
-      const hostname = status.Self?.DNSName?.replace(/\.$/, '') || '不明';
-      console.log(`🔗 Tailscale: 接続中`);
-      console.log(`   ホスト名: ${hostname}`);
+      const hostname = status.Self?.DNSName?.replace(/\.$/, '') || 'unknown';
+      console.log(`🔗 ${t('status.tailscaleConnected')}`);
+      console.log(`   Hostname: ${hostname}`);
     } catch {
-      console.log('🔗 Tailscale: 状態不明');
+      console.log('🔗 Tailscale: Unknown');
     }
   } else {
-    console.log('🔗 Tailscale: 未接続');
+    console.log(`🔗 ${t('status.tailscaleDisconnected')}`);
   }
 }

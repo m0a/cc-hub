@@ -122,6 +122,49 @@ export class SessionHistoryService {
   }
 
   /**
+   * Search for a query string within all user messages in a session file
+   * Returns the matching message snippet if found, otherwise null
+   */
+  private async searchInSessionFile(filePath: string, query: string): Promise<string | null> {
+    try {
+      const fileContent = await readFile(filePath, 'utf-8');
+      const lines = fileContent.split('\n');
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const entry = JSON.parse(line);
+          if (entry.type === 'user' && entry.message?.content) {
+            let content = entry.message.content;
+            // Handle array content (tool results, etc.)
+            if (Array.isArray(content)) {
+              content = content
+                .filter((c: { type: string }) => c.type === 'text')
+                .map((c: { text: string }) => c.text)
+                .join(' ');
+            }
+            if (typeof content === 'string' && content.toLowerCase().includes(query)) {
+              // Return a snippet of the matching content
+              const idx = content.toLowerCase().indexOf(query);
+              const start = Math.max(0, idx - 20);
+              const end = Math.min(content.length, idx + query.length + 60);
+              let snippet = content.substring(start, end).replace(/\n/g, ' ').trim();
+              if (start > 0) snippet = '...' + snippet;
+              if (end < content.length) snippet = snippet + '...';
+              return snippet;
+            }
+          }
+        } catch {
+          // Skip invalid lines
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Scan a JSONL file to extract basic session info
    * Simplified: reads header for IDs, tail for last prompt
    */
@@ -817,17 +860,27 @@ export class SessionHistoryService {
             const jsonlPath = join(projectDir, file);
             const basicInfo = await this.scanJsonlForBasicInfo(jsonlPath);
 
-            if (basicInfo && basicInfo.lastPrompt) {
+            if (basicInfo) {
               const projectName = basicInfo.projectPath.replace(/^\/home\/[^/]+\//, '~/');
-              const searchText = `${projectName} ${basicInfo.lastPrompt}`.toLowerCase();
 
-              if (searchText.includes(normalizedQuery)) {
+              // Quick search: check project name and last prompt first
+              const quickSearchText = `${projectName} ${basicInfo.lastPrompt || ''}`.toLowerCase();
+              let matchSnippet: string | null = null;
+
+              if (quickSearchText.includes(normalizedQuery)) {
+                matchSnippet = basicInfo.lastPrompt || projectName;
+              } else {
+                // Full-text search: search through all user messages
+                matchSnippet = await this.searchInSessionFile(jsonlPath, normalizedQuery);
+              }
+
+              if (matchSnippet) {
                 count++;
                 yield {
                   sessionId: basicInfo.sessionId,
                   projectPath: basicInfo.projectPath,
                   projectName,
-                  firstPrompt: basicInfo.lastPrompt,
+                  firstPrompt: matchSnippet,
                   modified: basicInfo.modified,
                 };
               }

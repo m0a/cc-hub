@@ -1,267 +1,245 @@
 # CC Hub
 
-Claude Codeセッションをリモート管理するWebベースのターミナルマネージャー。タブレットやスマートフォンからClaude Codeを操作できます。
+[日本語](README.ja.md) | English
 
-## 機能
+A web-based terminal manager for remotely managing Claude Code sessions. Control Claude Code from your tablet or smartphone.
 
-- **マルチセッション管理** - 複数のClaude Codeセッションを同時に実行・切り替え
-- **セッション色テーマ** - セッションごとに色を設定して視覚的に区別
-- **タブレット最適化UI** - 分割レイアウト、フローティングキーボード、ピンチズーム
-- **モバイル対応** - タップ/長押しでカスタムキーボード表示、OSキーボード不要
-- **ファイルビューア** - シンタックスハイライト付きコード表示、画像・HTMLプレビュー
-- **変更追跡** - Claude Codeによるファイル編集の差分表示
-- **Tailscale連携** - Tailscale証明書による安全なHTTPS接続
-- **パスワード認証** - `-P`オプションでアクセス制限
-- **自動更新** - GitHub Releasesからの自動アップデート
-- **systemd連携** - サービス登録・自動再起動
-- **ダッシュボード** - 使用量リミット表示、日別統計、コスト推定
-- **セッション履歴** - 過去のClaude Codeセッション閲覧・再開
-- **会話ビューア** - Markdownレンダリング、画像表示、システムサマリー区別表示
+## Features
 
-## インストール
+- **Multi-session Management** - Run and switch between multiple Claude Code sessions
+- **Session Color Themes** - Assign colors to sessions for visual distinction
+- **Tablet-optimized UI** - Split layout, floating keyboard, pinch-to-zoom
+- **Mobile Support** - Tap/long-press for custom keyboard, no OS keyboard needed
+- **File Viewer** - Syntax-highlighted code, image and HTML preview
+- **Change Tracking** - View file diffs from Claude Code edits
+- **Tailscale Integration** - Secure HTTPS via Tailscale certificates
+- **Password Authentication** - Access control with `-P` option
+- **Auto-update** - Automatic updates from GitHub Releases
+- **systemd Integration** - Service registration with auto-restart
+- **Dashboard** - Usage limits, daily statistics, cost estimates
+- **Session History** - Browse and resume past Claude Code sessions
+- **Conversation Viewer** - Markdown rendering, image display, system summary distinction
 
-### ワンラインインストール（推奨）
+## Installation
+
+### One-line Install (Recommended)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/m0a/cc-hub/main/install.sh | bash
 ```
 
-### 手動インストール
+### Manual Installation
 
-1. [Releases](https://github.com/m0a/cc-hub/releases/latest) から対応するバイナリをダウンロード
+1. Download the appropriate binary from [Releases](https://github.com/m0a/cc-hub/releases/latest)
    - Linux x64: `cchub-linux-x64`
    - macOS ARM64: `cchub-macos-arm64`
 
-2. 実行権限を付与して配置
+2. Make executable and place in PATH
 
 ```bash
 chmod +x cchub-linux-x64
 mv cchub-linux-x64 ~/bin/cchub
 ```
 
-3. PATHに追加（未設定の場合）
+3. Add to PATH (if not already configured)
 
 ```bash
 echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-## 必要環境
+## Requirements
 
-| 依存関係 | 必須 | インストール方法 |
-|---------|-----|----------------|
-| [Tailscale](https://tailscale.com/) | ○ | Linux: https://tailscale.com/download / macOS: `brew install tailscale` |
-| [tmux](https://github.com/tmux/tmux) 3.0+ | ○ | `apt install tmux` / `brew install tmux` |
-| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | ○ | `npm install -g @anthropic-ai/claude-code` |
+| Dependency | Required | Installation |
+|------------|----------|--------------|
+| [Tailscale](https://tailscale.com/) | Yes | Linux: https://tailscale.com/download / macOS: `brew install tailscale` |
+| [tmux](https://github.com/tmux/tmux) 3.0+ | Yes | `apt install tmux` / `brew install tmux` |
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | Yes | `npm install -g @anthropic-ai/claude-code` |
 
-## クイックスタート
+## Quick Start
 
 ```bash
-# 1. Tailscale証明書生成を許可（初回のみ）
+# 1. Allow Tailscale certificate generation (first time only)
 sudo tailscale set --operator=$USER
 
-# 2. CC Hub起動
+# 2. Start CC Hub
 cchub
-# または パスワード付き
+# Or with password
 cchub -P mypassword
 
-# 3. ブラウザでアクセス
+# 3. Access in browser
 #    https://<your-hostname>:5923
 ```
 
-### systemdサービスとして登録
+### Register as systemd Service
 
 ```bash
 cchub setup -P mypassword
 ```
 
-これにより以下が有効になります：
-- システム起動時に自動起動
-- クラッシュ時の自動再起動
-- `cchub update` による自動更新
+This enables:
+- Auto-start on system boot
+- Auto-restart on crash
+- Auto-update via `cchub update`
 
-## 開発環境セットアップ
+## Development Setup
 
-開発やソースからビルドする場合は [Bun](https://bun.sh/) 1.0+ が必要です。
+For development or building from source, [Bun](https://bun.sh/) 1.0+ is required.
 
 ```bash
-# 依存関係のインストール
+# Install dependencies
 bun install
 
-# 開発サーバー起動
+# Start development server
 bun run dev
 ```
 
-ブラウザで http://localhost:5173 を開きます（開発モード）。
+Open http://localhost:5173 in browser (development mode).
 
-### ソースからビルド
+### Build from Source
 
 ```bash
-# シングルバイナリとしてビルド
+# Build as single binary
 bun run build:binary
 ./dist/cchub
 ```
 
-## コマンド
+## Commands
 
 ```bash
-# サーバー起動
-cchub                        # ポート5923で起動
-cchub -p 8080                # ポート指定
-cchub -P mypassword          # パスワード付きで起動
+# Start server
+cchub                        # Start on port 5923
+cchub -p 8080                # Specify port
+cchub -P mypassword          # Start with password
 
-# systemdサービス登録（自動再起動・自動更新）
+# Register systemd service (auto-restart, auto-update)
 cchub setup -P mypassword
 
-# 更新
-cchub update                 # 最新版に更新
-cchub update --check         # 更新確認のみ
+# Update
+cchub update                 # Update to latest
+cchub update --check         # Check for updates only
 
-# 状態確認
+# Status
 cchub status
 ```
 
-### オプション
+### Options
 
-| オプション | 説明 | デフォルト |
-|-----------|------|-----------|
-| `-p, --port` | ポート番号 | 5923 |
-| `-H, --host` | バインドアドレス | 0.0.0.0 |
-| `-P, --password` | 認証パスワード | なし |
-| `-h, --help` | ヘルプ表示 | - |
-| `-v, --version` | バージョン表示 | - |
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-p, --port` | Port number | 5923 |
+| `-H, --host` | Bind address | 0.0.0.0 |
+| `-P, --password` | Auth password | none |
+| `-h, --help` | Show help | - |
+| `-v, --version` | Show version | - |
 
-### Tailscale設定
+### Tailscale Configuration
 
-初回のみ証明書生成を許可する設定が必要です：
+First-time setup requires allowing certificate generation:
 
 ```bash
 sudo tailscale set --operator=$USER
 ```
 
-> **macOSの場合**: App Store版ではなく、`brew install tailscale`でインストールしてください。App Store版はCLIコマンドが使えないため、証明書生成が動作しません。
+> **macOS**: Install via `brew install tailscale`, not the App Store version. The App Store version lacks CLI commands needed for certificate generation.
 
-### tmux設定（オプション）
+### tmux Configuration (Optional)
 
-CC Hubはデフォルトのtmux設定で動作しますが、以下の設定を推奨します：
+CC Hub works with default tmux settings, but these are recommended:
 
 ```bash
 # ~/.tmux.conf
-set -g mouse on              # マウス操作を有効化
-set -g history-limit 10000   # スクロールバック履歴を増やす
+set -g mouse on              # Enable mouse support
+set -g history-limit 10000   # Increase scrollback history
 ```
 
-### 新環境へのデプロイ
+## Usage
+
+1. Open CC Hub in browser
+2. Create a Claude Code session with "New Session"
+3. Operate Claude Code in the terminal
+4. Open file viewer with the file icon
+
+### Session Color Themes
+
+Assign colors to sessions for visual distinction:
+
+1. **Long-press** a session in the session list
+2. Color selection menu appears
+3. Choose from 9 colors (red, orange, amber, green, teal, blue, indigo, purple, pink) + none
+4. Terminal background changes to selected color
+
+Settings are saved to `~/.cchub/session-themes.json` and persist across restarts.
+
+### Tablet Mode
+
+Automatically switches to tablet layout when screen width ≥ 640px and height ≥ 500px:
+- Left: Terminal (pinch-to-zoom supported)
+- Top right: Session list / Dashboard / History (tab switching)
+- Bottom right: Floating keyboard
+
+**Pinch Zoom**: Pinch with two fingers on the terminal to zoom. UI controls are not affected by zoom.
+
+### Keyboard Features
+
+**Mobile (Smartphone)**:
+- **Tap** or **long-press** terminal to show custom keyboard
+- OS standard keyboard does not appear
+- Scroll to dismiss keyboard
+
+**Floating Keyboard (Tablet)**:
+- Drag header to move position
+- Minimize button for compact view
+- Position saved separately for Japanese and keyboard modes
+
+**Key Operations**:
+- **Long-press** - Symbol input on number keys (1→!, 2→@, etc.)
+- **あ** - Switch to Japanese input mode (uses OS standard IME)
+- **ABC** - Return to keyboard mode
+- **📁** - Image upload (inserts path into terminal)
+- **🔗** - Show URL list from terminal
+
+### Dashboard
+
+View the following in the "Dashboard" tab:
+
+- **Usage Limits** - 5-hour/7-day cycle usage rate, time until reset
+- **Limit Prediction** - Estimated time to reach limit at current pace
+- **Daily Statistics** - Message and session count graphs
+- **Model Usage** - Opus/Sonnet token usage comparison
+- **Cost Estimate** - Estimated API costs
+
+### Session History
+
+Browse past Claude Code sessions in the "History" tab:
+
+- Grouped by project
+- View conversation content (Markdown supported)
+- Resume sessions (continues with `claude -r`)
+- Full-text search across all user messages
+
+## Development
 
 ```bash
-# 1. 依存関係のインストール
-sudo apt install tmux        # Ubuntu/Debian
-# または
-brew install tmux            # macOS
-
-# 2. Tailscale設定（初回のみ）
-sudo tailscale set --operator=$USER
-
-# 3. CC Hub起動
-./cchub
-# または
-./cchub -P mypassword        # パスワード付き
-
-# 4. systemdサービスとして登録（オプション）
-./cchub setup -P mypassword
-```
-
-サービス登録すると以下の機能が有効になります：
-- システム起動時に自動起動
-- クラッシュ時の自動再起動
-- `cchub update` で自動更新
-
-## 使い方
-
-1. ブラウザでCC Hubを開く
-2. 「新規セッション」でClaude Codeセッションを作成
-3. ターミナルでClaude Codeを操作
-4. ファイルアイコンでファイルビューアを開く
-
-### セッション色テーマ
-
-セッションに色を設定して視覚的に区別できます：
-
-1. セッション一覧でセッションを**長押し**
-2. 色選択メニューが表示される
-3. 9色（red, orange, amber, green, teal, blue, indigo, purple, pink）+ なしから選択
-4. ターミナル背景色が選択した色に変化
-
-設定は `~/.cchub/session-themes.json` に保存され、再起動後も維持されます。
-
-### タブレットモード
-
-画面幅640px以上、高さ500px以上で自動的にタブレットレイアウトに切り替わります：
-- 左: ターミナル（ピンチズームで拡大縮小可能）
-- 右上: セッション一覧 / ダッシュボード / 履歴（タブ切り替え）
-- 右下: フローティングキーボード
-
-**ピンチズーム**: ターミナル部分を2本指でピンチすると拡大縮小できます。UIコントロールはズームの影響を受けません。
-
-### キーボード機能
-
-**モバイル（スマートフォン）**:
-- ターミナルを**タップ**または**長押し**でカスタムキーボードを表示
-- OSの標準キーボードは起動しません
-- スクロールでキーボードを閉じる
-
-**フローティングキーボード（タブレット）**:
-- ヘッダーをドラッグして位置を移動
-- 最小化ボタンでコンパクト表示
-- 日本語モードとキーボードモードで位置を別々に記憶
-
-**キー操作**:
-- **長押し** - 数字キーで記号入力（1→!, 2→@など）
-- **あ** - 日本語入力モードに切り替え（OS標準IMEを使用）
-- **ABC** - キーボードモードに戻る
-- **📁** - 画像アップロード（パスをターミナルに挿入）
-- **🔗** - ターミナル内のURL一覧を表示
-
-### ダッシュボード
-
-「Dashboard」タブで以下の情報を確認できます：
-
-- **使用量リミット** - 5時間/7日サイクルの使用率、リセットまでの時間
-- **リミット到達予測** - 現在のペースでリミットに到達する時間の予測
-- **日別統計** - メッセージ数・セッション数の推移グラフ
-- **モデル使用量** - Opus/Sonnetのトークン使用量比較
-- **コスト推定** - API使用料金の概算
-
-### セッション履歴
-
-「履歴」タブで過去のClaude Codeセッションを閲覧できます：
-
-- プロジェクト別にグループ化
-- 会話内容の表示（Markdown対応）
-- セッションの再開（`claude -r`で続きから）
-
-## 開発
-
-```bash
-# フロントエンドのみ
+# Frontend only
 bun run dev:frontend
 
-# バックエンドのみ
+# Backend only
 bun run dev:backend
 
-# テスト
+# Test
 bun run test
 
-# リント
+# Lint
 bun run lint
 ```
 
-## 技術スタック
+## Tech Stack
 
 - **Backend**: Bun, Hono, WebSocket
 - **Frontend**: React 19, Vite, Tailwind CSS v4, xterm.js
 - **Terminal**: tmux, PTY
 
-## ライセンス
+## License
 
 MIT

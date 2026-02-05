@@ -80,7 +80,17 @@
     "fiveHourCycle": "5時間サイクル",
     "sevenDayCycle": "7日間サイクル",
     "today": "今日",
-    "resetInTime": "リセットまで{{time}}"
+    "resetInTime": "リセットまで{{time}}",
+    "statusExceeded": "リミット到達中",
+    "statusDanger": "このペースで{{time}}後にリミット到達",
+    "statusWarning": "余裕あり（リセットまで{{time}}）",
+    "statusNormal": "順調（リセットまで{{time}}）",
+    "statusSafe": "余裕十分（リセットまで{{time}}）",
+    "hourlyActivity": "時間帯別アクティビティ",
+    "timeBlock0_6": "0-6時",
+    "timeBlock6_12": "6-12時",
+    "timeBlock12_18": "12-18時",
+    "timeBlock18_24": "18-24時"
   },
   "files": {
     "title": "ファイルブラウザ",

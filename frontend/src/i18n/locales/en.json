@@ -80,7 +80,17 @@
     "fiveHourCycle": "5-Hour Cycle",
     "sevenDayCycle": "7-Day Cycle",
     "today": "Today",
-    "resetInTime": "Reset in {{time}}"
+    "resetInTime": "Reset in {{time}}",
+    "statusExceeded": "Limit reached",
+    "statusDanger": "Will hit limit in {{time}} at this pace",
+    "statusWarning": "Some margin (reset in {{time}})",
+    "statusNormal": "On track (reset in {{time}})",
+    "statusSafe": "Plenty of margin (reset in {{time}})",
+    "hourlyActivity": "Hourly Activity",
+    "timeBlock0_6": "0-6h",
+    "timeBlock6_12": "6-12h",
+    "timeBlock12_18": "12-18h",
+    "timeBlock18_24": "18-24h"
   },
   "files": {
     "title": "File Browser",

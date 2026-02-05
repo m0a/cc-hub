@@ -273,10 +273,15 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     term.open(container);
 
     // Prevent OS keyboard on touch devices by modifying xterm's internal textarea
-    const xtermTextarea = container.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement;
-    if (xtermTextarea) {
-      xtermTextarea.setAttribute('inputmode', 'none');
-      xtermTextarea.setAttribute('readonly', 'readonly');
+    // Only apply on touch devices to preserve Japanese IME input on desktop
+    const isCoarseTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0)
+      && window.matchMedia('(pointer: coarse)').matches;
+    if (isCoarseTouchDevice) {
+      const xtermTextarea = container.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement;
+      if (xtermTextarea) {
+        xtermTextarea.setAttribute('inputmode', 'none');
+        xtermTextarea.setAttribute('readonly', 'readonly');
+      }
     }
 
     // Load WebGL addon for GPU-accelerated rendering

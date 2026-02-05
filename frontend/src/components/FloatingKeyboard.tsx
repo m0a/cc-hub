@@ -198,7 +198,7 @@ export function FloatingKeyboard({
     return (
       <div
         ref={containerRef}
-        className="fixed z-50"
+        className="fixed z-40"
         style={{ left: position.x, top: position.y }}
       >
         <div
@@ -235,7 +235,7 @@ export function FloatingKeyboard({
   return (
     <div
       ref={containerRef}
-      className="fixed z-50 bg-gray-900 border border-gray-700 rounded-lg shadow-2xl overflow-hidden"
+      className="fixed z-40 bg-gray-900 border border-gray-700 rounded-lg shadow-2xl overflow-hidden"
       style={{ left: position.x, top: position.y, width: 420 }}
     >
       {/* Header - drag handle */}

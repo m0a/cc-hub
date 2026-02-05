@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { initRemoteLogger } from './utils/remoteLogger';
+import './i18n';
 import './index.css';
 
 // Initialize remote logging first

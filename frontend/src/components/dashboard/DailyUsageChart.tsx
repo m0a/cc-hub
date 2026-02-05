@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { DailyActivity } from '../../../../shared/types';
 
 interface DailyUsageChartProps {
@@ -5,10 +6,12 @@ interface DailyUsageChartProps {
 }
 
 export function DailyUsageChart({ data }: DailyUsageChartProps) {
+  const { t, i18n } = useTranslation();
+
   if (data.length === 0) {
     return (
       <div className="p-3 bg-gray-800 rounded-lg">
-        <div className="text-gray-500 text-xs">No activity data</div>
+        <div className="text-gray-500 text-xs">{t('dashboard.noActivityData')}</div>
       </div>
     );
   }
@@ -16,10 +19,11 @@ export function DailyUsageChart({ data }: DailyUsageChartProps) {
   // Get last 7 days for display
   const recentData = data.slice(-7);
   const maxMessages = Math.max(...recentData.map(d => d.messageCount), 1);
+  const locale = i18n.language === 'ja' ? 'ja' : 'en';
 
   return (
     <div className="p-3 bg-gray-800 rounded-lg">
-      <div className="text-sm font-medium text-white mb-2">Daily Activity</div>
+      <div className="text-sm font-medium text-white mb-2">{t('dashboard.dailyStats')}</div>
       <div className="flex items-end gap-1" style={{ height: '64px' }}>
         {recentData.map((day) => {
           const heightPx = Math.round((day.messageCount / maxMessages) * 64);
@@ -37,7 +41,7 @@ export function DailyUsageChart({ data }: DailyUsageChartProps) {
       <div className="flex gap-1 mt-1">
         {recentData.map((day) => {
           const date = new Date(day.date);
-          const dayLabel = date.toLocaleDateString('ja', { weekday: 'narrow' });
+          const dayLabel = date.toLocaleDateString(locale, { weekday: 'narrow' });
           return (
             <div key={day.date} className="flex-1 text-center">
               <span className="text-[10px] text-gray-500">{dayLabel}</span>
@@ -46,7 +50,7 @@ export function DailyUsageChart({ data }: DailyUsageChartProps) {
         })}
       </div>
       <div className="mt-2 text-xs text-gray-400 text-center">
-        Today: {recentData[recentData.length - 1]?.messageCount || 0} messages
+        {t('dashboard.today')}: {recentData[recentData.length - 1]?.messageCount || 0} {t('dashboard.messages')}
       </div>
     </div>
   );

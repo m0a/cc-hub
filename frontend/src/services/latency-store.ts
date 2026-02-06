@@ -12,6 +12,10 @@ export interface LatencyState {
 }
 
 const MAX_HISTORY = 30;
+// Consider WS "connected" if a pong was received within this window
+const WS_CONNECTED_THRESHOLD_MS = 20_000;
+
+let lastWsPongAt = 0;
 
 let state: LatencyState = {
   wsLatency: null,
@@ -21,11 +25,9 @@ let state: LatencyState = {
   wsConnected: false,
 };
 
-let wsConnectionCount = 0;
 const listeners = new Set<() => void>();
 
 function notify() {
-  // Create new reference so useSyncExternalStore detects changes
   state = { ...state };
   for (const listener of listeners) {
     listener();
@@ -33,7 +35,9 @@ function notify() {
 }
 
 export function reportWsLatency(rttMs: number): void {
+  lastWsPongAt = Date.now();
   state.wsLatency = rttMs;
+  state.wsConnected = true;
   state.wsHistory = [...state.wsHistory, { timestamp: Date.now(), value: rttMs }].slice(-MAX_HISTORY);
   notify();
 }
@@ -44,20 +48,12 @@ export function reportApiLatency(rttMs: number): void {
   notify();
 }
 
-export function setWsConnected(connected: boolean): void {
-  if (connected) {
-    wsConnectionCount++;
-  } else {
-    wsConnectionCount = Math.max(0, wsConnectionCount - 1);
-  }
-  const newConnected = wsConnectionCount > 0;
-  if (state.wsConnected !== newConnected) {
-    state.wsConnected = newConnected;
-    notify();
-  }
-}
-
 export function getLatencyState(): LatencyState {
+  // Derive wsConnected from last pong timestamp
+  const connected = (Date.now() - lastWsPongAt) < WS_CONNECTED_THRESHOLD_MS;
+  if (state.wsConnected !== connected) {
+    state = { ...state, wsConnected: connected };
+  }
   return state;
 }
 

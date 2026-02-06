@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { reportWsLatency, setWsConnected } from '../services/latency-store';
+import { reportWsLatency } from '../services/latency-store';
 
 interface UseTerminalOptions {
   sessionId: string;
@@ -76,7 +76,6 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
 
     ws.onopen = () => {
       setIsConnected(true);
-      setWsConnected(true);
       onConnectRef.current?.();
 
       // Start periodic ping for latency measurement
@@ -108,7 +107,6 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
 
     ws.onclose = (event) => {
       setIsConnected(false);
-      setWsConnected(false);
       wsRef.current = null;
       if (pingIntervalRef.current) {
         clearInterval(pingIntervalRef.current);

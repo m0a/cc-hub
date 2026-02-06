@@ -4,6 +4,7 @@ import { SessionList } from './SessionList';
 import { Dashboard } from './dashboard/Dashboard';
 import { FileViewer } from './files/FileViewer';
 import { FloatingKeyboard } from './FloatingKeyboard';
+import { Onboarding } from './Onboarding';
 import { authFetch } from '../services/api';
 import { useSessions } from '../hooks/useSessions';
 import type { TerminalRef } from './Terminal';
@@ -34,6 +35,9 @@ interface DesktopLayoutProps {
   onShowSessionList: () => void;
   onReload: () => void;
   isTablet?: boolean;
+  showSessionListOnboarding?: boolean;
+  onCompleteSessionListOnboarding?: () => void;
+  keyboardControlRef?: React.RefObject<{ open: () => void; close: () => void } | null>;
 }
 
 // Generate unique ID
@@ -211,6 +215,9 @@ export function DesktopLayout({
   onShowSessionList,
   onReload,
   isTablet = false,
+  showSessionListOnboarding = false,
+  onCompleteSessionListOnboarding,
+  keyboardControlRef,
 }: DesktopLayoutProps) {
   const terminalRefs = useRef<Map<string, TerminalRef | null>>(new Map());
   const activePaneRef = useRef<string>('');
@@ -263,9 +270,29 @@ export function DesktopLayout({
   const [urlPage, setUrlPage] = useState(0);
   const URL_PAGE_SIZE = 5;
 
-  // Handle global reload (browser reload)
+  // Keyboard elevation for onboarding (raises z-index above overlay)
+  const [keyboardElevated, setKeyboardElevated] = useState(false);
+
+  // Register keyboard control for onboarding
+  useEffect(() => {
+    if (keyboardControlRef && isTablet) {
+      keyboardControlRef.current = {
+        open: () => { setShowKeyboard(true); setKeyboardElevated(true); },
+        close: () => { setShowKeyboard(false); setKeyboardElevated(false); },
+      };
+    }
+    return () => {
+      if (keyboardControlRef) {
+        keyboardControlRef.current = null;
+      }
+    };
+  }, [keyboardControlRef, isTablet]);
+
+  // Refresh all terminal panes (force tmux redraw without page reload)
   const handleGlobalReload = useCallback(() => {
-    window.location.reload();
+    terminalRefs.current.forEach((ref) => {
+      ref?.refreshTerminal();
+    });
   }, []);
 
   // Keep onReload reference for compatibility
@@ -646,6 +673,7 @@ export function DesktopLayout({
               onClick={() => setShowSidePanel(prev => !prev)}
               className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
               title="サイドパネル (Ctrl+B)"
+              data-onboarding="session-list"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -661,26 +689,28 @@ export function DesktopLayout({
           {/* Right: Action buttons */}
           <div className="flex items-center gap-1">
             {/* Split buttons */}
-            <button
-              onClick={() => handleSplit('horizontal')}
-              className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-              title="縦分割 (Ctrl+D)"
-            >
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <line x1="12" y1="3" x2="12" y2="21" />
-              </svg>
-            </button>
-            <button
-              onClick={() => handleSplit('vertical')}
-              className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-              title="横分割 (Ctrl+Shift+D)"
-            >
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <line x1="3" y1="12" x2="21" y2="12" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-1" data-onboarding="split-pane">
+              <button
+                onClick={() => handleSplit('horizontal')}
+                className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                title="縦分割 (Ctrl+D)"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <line x1="12" y1="3" x2="12" y2="21" />
+                </svg>
+              </button>
+              <button
+                onClick={() => handleSplit('vertical')}
+                className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                title="横分割 (Ctrl+Shift+D)"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                </svg>
+              </button>
+            </div>
 
 
             {/* Reload all panes */}
@@ -688,6 +718,7 @@ export function DesktopLayout({
               onClick={handleGlobalReload}
               className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
               title="全ペインをリロード"
+              data-onboarding="reload"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -704,6 +735,7 @@ export function DesktopLayout({
                     : 'text-white/70 hover:text-white hover:bg-white/10'
                 }`}
                 title={showKeyboard ? 'キーボードを隠す' : 'キーボードを表示'}
+                data-onboarding="keyboard"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                   <rect x="2" y="6" width="20" height="12" rx="2" />
@@ -719,7 +751,7 @@ export function DesktopLayout({
         </div>
 
         {/* Pane container */}
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0" data-onboarding="terminal">
           <PaneContainer
             node={desktopState.root}
             activePane={desktopState.activePane}
@@ -731,6 +763,8 @@ export function DesktopLayout({
             sessions={sessions}
             terminalRefs={terminalRefs}
             isTablet={isTablet}
+            showSessionListOnboarding={showSessionListOnboarding}
+            onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
           />
         </div>
       </div>
@@ -766,6 +800,7 @@ export function DesktopLayout({
                       ? 'text-white bg-gray-800'
                       : 'text-gray-400 hover:text-gray-300'
                   }`}
+                  data-onboarding="dashboard"
                 >
                   Dashboard
                 </button>
@@ -785,6 +820,7 @@ export function DesktopLayout({
                   <SessionList
                     onSelectSession={handleSessionSelect}
                     inline={true}
+                    isOnboarding={showSessionListOnboarding}
                   />
                 ) : (
                   <Dashboard className="h-full" />
@@ -814,6 +850,7 @@ export function DesktopLayout({
                     ? 'text-white bg-gray-800'
                     : 'text-gray-400 hover:text-gray-300'
                 }`}
+                data-onboarding="dashboard"
               >
                 Dashboard
               </button>
@@ -834,6 +871,7 @@ export function DesktopLayout({
                 <SessionList
                   onSelectSession={handleSessionSelect}
                   inline={true}
+                  isOnboarding={showSessionListOnboarding}
                 />
               ) : (
                 <Dashboard className="h-full" />
@@ -870,6 +908,7 @@ export function DesktopLayout({
             onFilePicker={handleFilePicker}
             onUrlExtract={handleUrlExtract}
             isUploading={isUploading}
+            elevated={keyboardElevated}
           />
         </>
       )}
@@ -940,6 +979,11 @@ export function DesktopLayout({
           </div>
         );
       })()}
+
+      {/* Session list onboarding (for first-time users) */}
+      {showSessionListOnboarding && showSidePanel && sidePanelTab === 'sessions' && onCompleteSessionListOnboarding && (
+        <Onboarding type="sessionList" onComplete={onCompleteSessionListOnboarding} />
+      )}
     </div>
   );
 }

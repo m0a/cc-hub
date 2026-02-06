@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.27] - 2026-02-07
+
+### Performance
+
+- **Sessions API レイテンシ 48.6%削減** (70.84ms → 36.39ms)
+  - `capture-pane`の重複呼び出しを統合（2回→1回/セッション）
+  - `ps`コマンドをバッチ化（N回→1回で全TTYのClaude検出・プロセス状態チェック）
+  - `listSessions` 2秒TTLキャッシュ追加
+  - TTY→SessionIDマッピング 10秒TTLキャッシュ追加
+  - フロントエンド`useSessions`のfetchリクエスト重複排除
+
+- **ターミナルWebSocketホットパス最適化**
+  - デバッグhexログを除去（毎キーストロークで`Array.from`+`map`+`join`+`console.log`が走っていた）
+  - PTY切断時に30秒の猶予期間を追加（タブレットのスリープ復帰時に即座再接続）
+
+### Added
+
+- **ターミナルレイテンシベンチマークスイート** (`backend/tests/benchmark/`)
+  - Single char echo RTT、コマンド実行RTT、スループット、Sessions APIの4メトリクス計測
+  - p95/p99パーセンタイル統計
+
 ## [0.0.26] - 2026-02-06
 
 ### Added

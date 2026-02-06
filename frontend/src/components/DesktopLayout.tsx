@@ -638,85 +638,29 @@ export function DesktopLayout({
     <div className="h-screen flex bg-gray-900">
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
-        <div className="flex items-center justify-between px-3 py-1 bg-black/50 border-b border-gray-700 shrink-0">
-          {/* Left: Menu button (desktop only, tablet uses PaneContainer sidebar) */}
-          {!isTablet && (
+        {/* Header - tablet only for keyboard toggle */}
+        {isTablet && (
+          <div className="flex items-center justify-end px-3 py-1 bg-black/50 border-b border-gray-700 shrink-0">
             <button
-              onClick={() => setShowSidePanel(prev => !prev)}
-              className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-              title="サイドパネル (Ctrl+B)"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-          )}
-
-          {/* Center: Session name */}
-          <span className="text-white/70 text-sm truncate max-w-[300px]">
-            {activeSession?.name || 'CC Hub - Desktop'}
-          </span>
-
-          {/* Right: Action buttons */}
-          <div className="flex items-center gap-1">
-            {/* Split buttons */}
-            <button
-              onClick={() => handleSplit('horizontal')}
-              className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-              title="縦分割 (Ctrl+D)"
+              onClick={() => setShowKeyboard(prev => !prev)}
+              className={`p-1 rounded transition-colors ${
+                showKeyboard
+                  ? 'text-green-400 bg-green-500/20 hover:bg-green-500/30'
+                  : 'text-white/70 hover:text-white hover:bg-white/10'
+              }`}
+              title={showKeyboard ? 'キーボードを隠す' : 'キーボードを表示'}
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <line x1="12" y1="3" x2="12" y2="21" />
+                <rect x="2" y="6" width="20" height="12" rx="2" />
+                <line x1="6" y1="10" x2="6" y2="10" strokeLinecap="round" />
+                <line x1="10" y1="10" x2="10" y2="10" strokeLinecap="round" />
+                <line x1="14" y1="10" x2="14" y2="10" strokeLinecap="round" />
+                <line x1="18" y1="10" x2="18" y2="10" strokeLinecap="round" />
+                <line x1="6" y1="14" x2="18" y2="14" />
               </svg>
             </button>
-            <button
-              onClick={() => handleSplit('vertical')}
-              className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-              title="横分割 (Ctrl+Shift+D)"
-            >
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <line x1="3" y1="12" x2="21" y2="12" />
-              </svg>
-            </button>
-
-
-            {/* Reload all panes */}
-            <button
-              onClick={handleGlobalReload}
-              className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-              title="全ペインをリロード"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            </button>
-
-            {/* Keyboard toggle (tablet only) */}
-            {isTablet && (
-              <button
-                onClick={() => setShowKeyboard(prev => !prev)}
-                className={`p-1 rounded transition-colors ${
-                  showKeyboard
-                    ? 'text-green-400 bg-green-500/20 hover:bg-green-500/30'
-                    : 'text-white/70 hover:text-white hover:bg-white/10'
-                }`}
-                title={showKeyboard ? 'キーボードを隠す' : 'キーボードを表示'}
-              >
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <rect x="2" y="6" width="20" height="12" rx="2" />
-                  <line x1="6" y1="10" x2="6" y2="10" strokeLinecap="round" />
-                  <line x1="10" y1="10" x2="10" y2="10" strokeLinecap="round" />
-                  <line x1="14" y1="10" x2="14" y2="10" strokeLinecap="round" />
-                  <line x1="18" y1="10" x2="18" y2="10" strokeLinecap="round" />
-                  <line x1="6" y1="14" x2="18" y2="14" />
-                </svg>
-              </button>
-            )}
           </div>
-        </div>
+        )}
 
         {/* Pane container */}
         <div className="flex-1 min-h-0">
@@ -728,6 +672,7 @@ export function DesktopLayout({
             onSessionStateChange={onSessionStateChange}
             onSplitRatioChange={handleSplitRatioChange}
             onClosePane={handleClosePane}
+            onSplit={handleSplit}
             sessions={sessions}
             terminalRefs={terminalRefs}
             isTablet={isTablet}

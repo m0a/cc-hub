@@ -42,6 +42,7 @@ interface PaneContainerProps {
   onSessionStateChange: (sessionId: string, state: SessionState) => void;
   onSplitRatioChange: (nodeId: string, ratio: number[]) => void;
   onClosePane: (paneId: string) => void;
+  onSplit?: (direction: 'horizontal' | 'vertical') => void;
   sessions: ExtendedSession[];
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
   isTablet?: boolean;
@@ -56,6 +57,7 @@ export function PaneContainer({
   onSessionStateChange,
   onSplitRatioChange,
   onClosePane,
+  onSplit,
   sessions,
   terminalRefs,
   isTablet = false,
@@ -71,6 +73,7 @@ export function PaneContainer({
         onSelectSession={(sessionId) => onSelectSession(node.id, sessionId)}
         onSessionStateChange={onSessionStateChange}
         onClose={() => onClosePane(node.id)}
+        onSplit={onSplit}
         sessions={sessions}
         terminalRefs={terminalRefs}
         globalReloadKey={globalReloadKey}
@@ -89,6 +92,7 @@ export function PaneContainer({
         onSessionStateChange={onSessionStateChange}
         onSplitRatioChange={onSplitRatioChange}
         onClosePane={onClosePane}
+        onSplit={onSplit}
         sessions={sessions}
         terminalRefs={terminalRefs}
         isTablet={isTablet}
@@ -109,6 +113,7 @@ export function PaneContainer({
       onSelectSession={(sessionId) => onSelectSession(legacyNode.id, sessionId)}
       onSessionStateChange={onSessionStateChange}
       onClose={() => onClosePane(legacyNode.id)}
+      onSplit={onSplit}
       sessions={sessions}
       terminalRefs={terminalRefs}
       globalReloadKey={globalReloadKey}
@@ -125,6 +130,7 @@ interface TerminalPaneProps {
   onSelectSession: (sessionId?: string) => void;
   onSessionStateChange: (sessionId: string, state: SessionState) => void;
   onClose: () => void;
+  onSplit?: (direction: 'horizontal' | 'vertical') => void;
   sessions: ExtendedSession[];
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
   globalReloadKey?: number;
@@ -139,6 +145,7 @@ function TerminalPane({
   onSelectSession,
   onSessionStateChange,
   onClose,
+  onSplit,
   sessions,
   terminalRefs,
   globalReloadKey = 0,
@@ -409,6 +416,31 @@ function TerminalPane({
               </svg>
             </button>
           )}
+          {/* Split buttons - desktop only */}
+          {!isTablet && onSplit && (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); onSplit('horizontal'); }}
+                className="p-1 text-white/50 hover:text-white/80 transition-colors"
+                title="縦分割 (Ctrl+D)"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <line x1="12" y1="3" x2="12" y2="21" />
+                </svg>
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onSplit('vertical'); }}
+                className="p-1 text-white/50 hover:text-white/80 transition-colors"
+                title="横分割 (Ctrl+Shift+D)"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                </svg>
+              </button>
+            </>
+          )}
           {/* Session list toggle button */}
           <button
             onClick={(e) => {
@@ -568,6 +600,7 @@ interface SplitContainerProps {
   onSessionStateChange: (sessionId: string, state: SessionState) => void;
   onSplitRatioChange: (nodeId: string, ratio: number[]) => void;
   onClosePane: (paneId: string) => void;
+  onSplit?: (direction: 'horizontal' | 'vertical') => void;
   sessions: ExtendedSession[];
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
   isTablet?: boolean;
@@ -582,6 +615,7 @@ function SplitContainer({
   onSessionStateChange,
   onSplitRatioChange,
   onClosePane,
+  onSplit,
   sessions,
   terminalRefs,
   isTablet = false,
@@ -674,6 +708,7 @@ function SplitContainer({
           onSessionStateChange={onSessionStateChange}
           onSplitRatioChange={onSplitRatioChange}
           onClosePane={onClosePane}
+          onSplit={onSplit}
           sessions={sessions}
           terminalRefs={terminalRefs}
           isTablet={isTablet}

@@ -53,9 +53,6 @@ export function setWsConnected(connected: boolean): void {
   const newConnected = wsConnectionCount > 0;
   if (state.wsConnected !== newConnected) {
     state.wsConnected = newConnected;
-    if (!newConnected) {
-      state.wsLatency = null;
-    }
     notify();
   }
 }

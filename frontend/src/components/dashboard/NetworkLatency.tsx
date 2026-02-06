@@ -47,14 +47,19 @@ interface LatencyRowProps {
   value: number | null;
   history: LatencyDataPoint[];
   naText: string;
+  stale?: boolean;
 }
 
-function LatencyRow({ label, value, history, naText }: LatencyRowProps) {
+function LatencyRow({ label, value, history, naText, stale }: LatencyRowProps) {
+  const valueColor = value !== null
+    ? (stale ? 'text-gray-500' : getLatencyColor(value))
+    : 'text-gray-600';
+
   return (
-    <div className="flex items-center gap-2">
-      <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${getDotColor(value)}`} />
+    <div className={`flex items-center gap-2 ${stale ? 'opacity-60' : ''}`}>
+      <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${stale ? 'bg-gray-600' : getDotColor(value)}`} />
       <span className="text-[11px] text-gray-400 w-16 shrink-0">{label}</span>
-      <span className={`text-[11px] w-12 shrink-0 text-right tabular-nums ${value !== null ? getLatencyColor(value) : 'text-gray-600'}`}>
+      <span className={`text-[11px] w-12 shrink-0 text-right tabular-nums ${valueColor}`}>
         {value !== null ? `${value}ms` : naText}
       </span>
       <Sparkline data={history} />
@@ -64,7 +69,7 @@ function LatencyRow({ label, value, history, naText }: LatencyRowProps) {
 
 export function NetworkLatency({ className = '' }: { className?: string }) {
   const { t } = useTranslation();
-  const { wsLatency, apiLatency, wsHistory, apiHistory } = useNetworkLatency();
+  const { wsLatency, apiLatency, wsHistory, apiHistory, wsConnected } = useNetworkLatency();
 
   return (
     <div className={`bg-gray-800/50 rounded-lg p-3 ${className}`}>
@@ -75,6 +80,7 @@ export function NetworkLatency({ className = '' }: { className?: string }) {
           value={wsLatency}
           history={wsHistory}
           naText={t('dashboard.latencyNA')}
+          stale={!wsConnected && wsLatency !== null}
         />
         <LatencyRow
           label={t('dashboard.api')}

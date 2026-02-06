@@ -31,6 +31,10 @@ export class TmuxService {
   private configPath: string;
   private configEnsured = false;
 
+  // Cache for listSessions to avoid redundant subprocess spawns from concurrent polling
+  private listSessionsCache: { data: TmuxSessionInfo[]; timestamp: number } | null = null;
+  private static readonly LIST_SESSIONS_CACHE_TTL = 2000; // 2 seconds
+
   constructor() {
     const configDir = path.join(process.env.HOME || '/tmp', '.config', 'cchub');
     this.configPath = path.join(configDir, 'tmux.conf');
@@ -77,6 +81,11 @@ export class TmuxService {
    * List all tmux sessions with pane info
    */
   async listSessions(): Promise<TmuxSessionInfo[]> {
+    // Return cached result if still fresh
+    if (this.listSessionsCache && Date.now() - this.listSessionsCache.timestamp < TmuxService.LIST_SESSIONS_CACHE_TTL) {
+      return this.listSessionsCache.data;
+    }
+
     try {
       // Get session info
       const sessionsProc = Bun.spawn(['tmux', 'list-sessions', '-F', '#{session_name}:#{session_created}:#{session_attached}'], {
@@ -135,30 +144,45 @@ export class TmuxService {
           });
       }
 
-      // Get preview, waiting status, and check for claude process on each TTY
+      // Batch check: which TTYs have claude running (single ps call for all TTYs)
+      const allTtys = new Set<string>();
+      for (const [, info] of paneInfo) {
+        if (info.tty) allTtys.add(info.tty.replace('/dev/', ''));
+      }
+      const claudeOnTtySet = await this.batchCheckClaudeOnTtys([...allTtys]);
+
+      // Get preview + waiting status (single capture-pane call per session)
       const previews = new Map<string, string>();
       const waitingStatus = new Map<string, boolean>();
       const claudeOnTty = new Map<string, boolean>();
       await Promise.all(
         sessions.map(async (session) => {
-          const preview = await this.capturePreview(session.id);
-          if (preview) {
-            previews.set(session.id, preview);
+          // Single capture-pane call for both preview and waiting detection
+          const capturedText = await this.capturePane(session.id, 15);
+          if (capturedText) {
+            const previewLines = capturedText
+              .split('\n')
+              .map(line => line.trim())
+              .filter(line => line.length > 0)
+              .slice(-3)
+              .join(' ')
+              .slice(0, 100);
+            if (previewLines) {
+              previews.set(session.id, previewLines);
+            }
+            waitingStatus.set(session.id, this.parseWaitingStatus(capturedText));
           }
-          const waiting = await this.isWaitingForInput(session.id);
-          waitingStatus.set(session.id, waiting);
 
-          // Check if claude process is running on this TTY
+          // Use batch result for claude detection
           const info = paneInfo.get(session.id);
           if (info?.tty) {
-            const hasClaude = await this.isClaudeRunningOnTty(info.tty);
-            claudeOnTty.set(session.id, hasClaude);
+            claudeOnTty.set(session.id, claudeOnTtySet.has(info.tty.replace('/dev/', '')));
           }
         })
       );
 
       // Merge all info into sessions
-      return sessions.map((session) => {
+      const result = sessions.map((session) => {
         const info = paneInfo.get(session.id);
         // Claude Code detection: Check if 'claude' process exists on the TTY
         const isClaudeRunning = claudeOnTty.get(session.id) || false;
@@ -173,9 +197,46 @@ export class TmuxService {
           waitingForInput: waitingStatus.get(session.id),
         };
       });
+
+      // Cache the result
+      this.listSessionsCache = { data: result, timestamp: Date.now() };
+      return result;
     } catch {
       return [];
     }
+  }
+
+  /**
+   * Batch check which TTYs have 'claude' process running (single ps call)
+   * Returns a Set of tty names that have claude running
+   */
+  async batchCheckClaudeOnTtys(ttyNames: string[]): Promise<Set<string>> {
+    const result = new Set<string>();
+    if (ttyNames.length === 0) return result;
+
+    try {
+      // Single ps call: get TTY and command for all processes
+      const proc = Bun.spawn(['ps', '-eo', 'tty,comm', '--no-headers'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const output = await new Response(proc.stdout).text();
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) return result;
+
+      // Build a set of TTYs that have claude
+      const ttySet = new Set(ttyNames);
+      for (const line of output.split('\n')) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length >= 2 && parts[1] === 'claude' && ttySet.has(parts[0])) {
+          result.add(parts[0]);
+        }
+      }
+    } catch {
+      // Fall back silently
+    }
+    return result;
   }
 
   /**
@@ -185,30 +246,18 @@ export class TmuxService {
    */
   async isClaudeRunningOnTty(tty: string): Promise<boolean> {
     try {
-      // Extract tty name (e.g., /dev/ttys004 -> ttys004)
       const ttyName = tty.replace('/dev/', '');
-      const proc = Bun.spawn(['ps', '-t', ttyName, '-o', 'comm='], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) {
-        return false;
-      }
-
-      const output = await new Response(proc.stdout).text();
-      // Check if any process is named 'claude'
-      return output.split('\n').some(line => line.trim() === 'claude');
+      const result = await this.batchCheckClaudeOnTtys([ttyName]);
+      return result.has(ttyName);
     } catch {
       return false;
     }
   }
 
   /**
-   * Capture a short preview of recent pane output
+   * Capture pane output (raw text) - used as a shared primitive for preview + waiting detection
    */
-  async capturePreview(sessionId: string, lines: number = 5): Promise<string | null> {
+  async capturePane(sessionId: string, lines: number = 15): Promise<string | null> {
     try {
       const proc = Bun.spawn(['tmux', 'capture-pane', '-t', sessionId, '-p', '-S', `-${lines}`], {
         stdout: 'pipe',
@@ -220,20 +269,69 @@ export class TmuxService {
         return null;
       }
 
-      const text = await new Response(proc.stdout).text();
-      // Clean up: trim, remove empty lines, take last meaningful lines
-      const cleanedLines = text
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0)
-        .slice(-3)  // Take last 3 non-empty lines
-        .join(' ')
-        .slice(0, 100);  // Limit to 100 chars
-
-      return cleanedLines || null;
+      return await new Response(proc.stdout).text();
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Capture a short preview of recent pane output
+   */
+  async capturePreview(sessionId: string, lines: number = 5): Promise<string | null> {
+    const text = await this.capturePane(sessionId, lines);
+    if (!text) return null;
+
+    const cleanedLines = text
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .slice(-3)
+      .join(' ')
+      .slice(0, 100);
+
+    return cleanedLines || null;
+  }
+
+  /**
+   * Batch check if Claude processes are actively running on given TTYs (single ps call)
+   * Returns a Map of tty name → isActivelyRunning
+   */
+  async batchCheckProcessRunning(ttyNames: string[]): Promise<Map<string, boolean>> {
+    const result = new Map<string, boolean>();
+    if (ttyNames.length === 0) return result;
+
+    // Initialize all as false
+    for (const tty of ttyNames) result.set(tty, false);
+
+    try {
+      // Single ps call: get TTY, state, wchan, and command for all processes
+      const proc = Bun.spawn(['ps', '-eo', 'tty,stat,wchan:20,comm', '--no-headers'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const output = await new Response(proc.stdout).text();
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) return result;
+
+      const ttySet = new Set(ttyNames);
+      for (const line of output.split('\n')) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length < 4) continue;
+        const [tty, stat, wchan, comm] = parts;
+        if (comm !== 'claude' || !ttySet.has(tty)) continue;
+
+        if (stat.startsWith('R')) {
+          result.set(tty, true); // Actively running
+        } else if (stat.startsWith('S') && (wchan === 'do_epo' || wchan === 'ep_poll' || wchan === 'poll_s')) {
+          result.set(tty, false); // Sleeping (waiting for input)
+        }
+      }
+    } catch {
+      // Fall back silently
+    }
+    return result;
   }
 
   /**
@@ -251,37 +349,55 @@ export class TmuxService {
       if (!tty) return false;
 
       const pts = tty.replace('/dev/', '');
-
-      // Get process state
-      const psProc = Bun.spawn(['ps', '-t', pts, '-o', 'stat,wchan,comm'], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      const psOutput = await new Response(psProc.stdout).text();
-
-      // Find claude process line
-      for (const line of psOutput.split('\n')) {
-        if (line.includes('claude')) {
-          const parts = line.trim().split(/\s+/);
-          if (parts.length >= 2) {
-            const stat = parts[0];
-            const wchan = parts[1];
-
-            // R = Running (processing)
-            // S with do_epo/ep_poll = epoll_wait (waiting for input)
-            if (stat.startsWith('R')) {
-              return true;  // Actively running
-            }
-            if (stat.startsWith('S') && (wchan === 'do_epo' || wchan === 'ep_poll' || wchan === 'poll_s')) {
-              return false;  // Sleeping in event loop (waiting for input)
-            }
-          }
-        }
-      }
-      return false;
+      const result = await this.batchCheckProcessRunning([pts]);
+      return result.get(pts) || false;
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Parse waiting status from captured pane text (no subprocess spawn)
+   */
+  parseWaitingStatus(text: string): boolean {
+    const lastLines = text.toLowerCase();
+    const lines = text.trim().split('\n');
+    const lastLine = lines[lines.length - 1] || '';
+
+    // Check for active processing patterns FIRST
+    const processingPatterns = [
+      '✽ crunching', '✽ embellishing', '✽ thinking', '✽ working',
+      '✻ thinking', '✻ crunching', '⏳ working', '✽',
+    ];
+    if (processingPatterns.some(pattern => lastLines.includes(pattern))) {
+      return false;
+    }
+
+    // Check for completion patterns
+    const completionPatterns = ['✻ worked', '✻ cooked', '✻ crunched', '✻ done'];
+    if (completionPatterns.some(pattern => lastLines.includes(pattern))) {
+      return true;
+    }
+
+    // Check for common waiting patterns
+    const waitingPatterns = [
+      'esc to cancel', 'tab to amend', 'accept edits', 'shift+tab to cycle',
+      'waiting for', 'y/n', 'yes/no', 'press enter', '(y)',
+    ];
+    if (waitingPatterns.some(pattern => lastLines.includes(pattern))) {
+      return true;
+    }
+
+    // Check prompt indicators
+    const trimmedLast = lastLine.trim();
+    if (trimmedLast.endsWith('> ') || trimmedLast.endsWith('>')) {
+      return true;
+    }
+    if (trimmedLast.endsWith('?') && lastLines.includes('❯')) {
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -289,84 +405,9 @@ export class TmuxService {
    */
   async isWaitingForInput(sessionId: string): Promise<boolean> {
     try {
-      const proc = Bun.spawn(['tmux', 'capture-pane', '-t', sessionId, '-p', '-S', '-15'], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) {
-        return false;
-      }
-
-      const text = await new Response(proc.stdout).text();
-      const lastLines = text.toLowerCase();
-      const lines = text.trim().split('\n');
-      const lastLine = lines[lines.length - 1] || '';
-
-      // Check for active processing patterns FIRST - if found, NOT waiting
-      // These are specific Claude Code spinner patterns with emoji prefix
-      // Processing takes priority over completion (completion may be in scroll buffer)
-      const processingPatterns = [
-        '✽ crunching',
-        '✽ embellishing',
-        '✽ thinking',
-        '✽ working',
-        '✻ thinking',
-        '✻ crunching',
-        '⏳ working',
-        '✽',  // Any spinning indicator
-      ];
-
-      if (processingPatterns.some(pattern => lastLines.includes(pattern))) {
-        return false;  // Currently processing, not waiting
-      }
-
-      // Check for completion patterns - if found, definitely waiting
-      // These indicate Claude finished processing and is waiting for input
-      const completionPatterns = [
-        '✻ worked',
-        '✻ cooked',
-        '✻ crunched',
-        '✻ done',
-      ];
-
-      if (completionPatterns.some(pattern => lastLines.includes(pattern))) {
-        return true;  // Completed, waiting for input
-      }
-
-      // Check for common waiting patterns in Claude Code
-      // These patterns are specific to Claude Code UI
-      const waitingPatterns = [
-        'esc to cancel',
-        'tab to amend',
-        'accept edits',
-        'shift+tab to cycle',
-        'waiting for',
-        'y/n',
-        'yes/no',
-        'press enter',
-        '(y)',
-      ];
-
-      // Check if any specific pattern matches
-      if (waitingPatterns.some(pattern => lastLines.includes(pattern))) {
-        return true;
-      }
-
-      // Check if the last line ends with a prompt indicator
-      // Only consider it waiting if it's at the very end
-      const trimmedLast = lastLine.trim();
-      if (trimmedLast.endsWith('> ') || trimmedLast.endsWith('>')) {
-        return true;
-      }
-
-      // Check for selection prompt (? at end of line with options above)
-      if (trimmedLast.endsWith('?') && lastLines.includes('❯')) {
-        return true;
-      }
-
-      return false;
+      const text = await this.capturePane(sessionId, 15);
+      if (!text) return false;
+      return this.parseWaitingStatus(text);
     } catch {
       return false;
     }
@@ -375,7 +416,13 @@ export class TmuxService {
   /**
    * Create a new tmux session
    */
+  /** Invalidate the listSessions cache */
+  invalidateCache(): void {
+    this.listSessionsCache = null;
+  }
+
   async createSession(name: string): Promise<string> {
+    this.invalidateCache();
     // Ensure config exists before creating session
     await this.ensureConfig();
 
@@ -400,6 +447,7 @@ export class TmuxService {
    * Kill a tmux session
    */
   async killSession(sessionId: string): Promise<void> {
+    this.invalidateCache();
     const proc = Bun.spawn(['tmux', 'kill-session', '-t', sessionId], {
       stdout: 'pipe',
       stderr: 'pipe',

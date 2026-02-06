@@ -33,5 +33,8 @@ coverage/
 playwright-report/
 test-results/
 
+# Benchmark results
+backend/tests/benchmark/results/
+
 # CC Hub data (local development)
 # Note: Production data is in ~/.cc-hub/

@@ -38,6 +38,10 @@ interface SessionsIndex {
 export class ClaudeCodeService {
   private claudeDir: string;
 
+  // Cache for TTY → SessionID mappings (avoids ps subprocess per session)
+  private ttySessionCache = new Map<string, { sessionId: string | null; timestamp: number }>();
+  private static readonly TTY_SESSION_CACHE_TTL = 10_000; // 10 seconds
+
   constructor() {
     this.claudeDir = join(homedir(), '.claude', 'projects');
   }
@@ -56,15 +60,15 @@ export class ClaudeCodeService {
    */
   async getSessionIdFromTty(tty: string): Promise<string | null> {
     try {
-      // Get tty name from path
-      // Linux: /dev/pts/10 -> pts/10
-      // macOS: /dev/ttys004 -> ttys004
       const ttyMatch = tty.match(/(pts\/\d+|ttys\d+)$/);
-      if (!ttyMatch) {
-        console.log(`[getSessionIdFromTty] No tty match for: ${tty}`);
-        return null;
-      }
+      if (!ttyMatch) return null;
       const ttyName = ttyMatch[0];
+
+      // Check cache first
+      const cached = this.ttySessionCache.get(ttyName);
+      if (cached && Date.now() - cached.timestamp < ClaudeCodeService.TTY_SESSION_CACHE_TTL) {
+        return cached.sessionId;
+      }
 
       // Find claude process running on this TTY
       const proc = Bun.spawn(['ps', '-t', ttyName, '-o', 'args='], {
@@ -75,7 +79,7 @@ export class ClaudeCodeService {
       const text = await new Response(proc.stdout).text();
       const exitCode = await proc.exited;
       if (exitCode !== 0) {
-        console.log(`[getSessionIdFromTty] ps command failed for ${ttyName}`);
+        this.ttySessionCache.set(ttyName, { sessionId: null, timestamp: Date.now() });
         return null;
       }
 
@@ -83,15 +87,14 @@ export class ClaudeCodeService {
       for (const line of text.split('\n')) {
         const match = line.match(/claude\s+-r\s+([a-f0-9-]{36})/i);
         if (match) {
-          console.log(`[getSessionIdFromTty] Found session ID ${match[1]} for ${ttyName}`);
+          this.ttySessionCache.set(ttyName, { sessionId: match[1], timestamp: Date.now() });
           return match[1];
         }
       }
 
-      console.log(`[getSessionIdFromTty] No -r flag found for ${ttyName}`);
+      this.ttySessionCache.set(ttyName, { sessionId: null, timestamp: Date.now() });
       return null;
-    } catch (err) {
-      console.log(`[getSessionIdFromTty] Error: ${err}`);
+    } catch {
       return null;
     }
   }

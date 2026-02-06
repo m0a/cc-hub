@@ -62,27 +62,27 @@ sessions.get('/', async (c) => {
   // Also get sessions by path for fallback (when session ID not found from PTY)
   const ccSessionsByPath = await claudeCodeService.getSessionsForPaths(claudePaths);
 
+  // Batch check process state for all Claude sessions (single ps call instead of N)
+  const claudeTtys = tmuxSessions
+    .filter(s => s.currentCommand === 'claude' && s.paneTty)
+    .map(s => s.paneTty!.replace('/dev/', ''));
+  const processRunningByTty = await tmuxService.batchCheckProcessRunning(claudeTtys);
+
   const sessions = await Promise.all(tmuxSessions.map(async (s) => {
     let ccSession: Awaited<ReturnType<typeof claudeCodeService.getSessionForPath>> | undefined;
 
     if (s.currentCommand === 'claude' && s.currentPath) {
-      // Get the command-line session ID (from -r flag)
       const ptySessionId = sessionIdByTmuxId.get(s.id);
 
       if (ptySessionId) {
-        // PTY session ID is the most reliable - use it first
         ccSession = await claudeCodeService.getSessionById(ptySessionId, s.currentPath);
       }
 
       if (!ccSession && s.paneTty) {
-        // Try to find session by process start time (for sessions without -r flag)
         ccSession = await claudeCodeService.getSessionByTtyStartTime(s.paneTty, s.currentPath);
       }
 
-      // Only use path-based fallback if we have a PTY session ID (resumed with -r flag)
-      // For new sessions without -r, don't show unrelated session info
       if (!ccSession && ptySessionId) {
-        // Last fallback to path-based lookup (only for resumed sessions)
         const pathSession = ccSessionsByPath.get(s.currentPath);
         if (pathSession) {
           ccSession = pathSession;
@@ -95,16 +95,13 @@ sessions.get('/', async (c) => {
     let waitingForInput = false;
 
     if (isClaudeRunning) {
-      // Check process state (most reliable indicator)
-      const isProcessActive = await tmuxService.isProcessRunning(s.id);
+      // Use batch result instead of per-session subprocess
+      const ttyName = s.paneTty?.replace('/dev/', '');
+      const isProcessActive = ttyName ? (processRunningByTty.get(ttyName) || false) : false;
 
       if (!isProcessActive) {
-        // Process is sleeping (S state with epoll_wait) = definitely waiting for input
         waitingForInput = true;
       } else {
-        // Process is running (R state), check multiple indicators
-        // Terminal patterns detect completion (✻ Worked) and prompts (accept edits)
-        // jsonl detects tool-specific waiting (AskUserQuestion, etc.)
         waitingForInput = s.waitingForInput || ccSession?.waitingForInput || false;
       }
     } else {

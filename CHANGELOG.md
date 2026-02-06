@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.28] - 2026-02-07
+
+### Added
+
+- **ネットワーク遅延モニター** - ダッシュボードにリアルタイム遅延表示カードを追加
+  - WebSocket ping/pong（10秒間隔）とAPI ping（30秒間隔）の2種類を計測
+  - CSSベースのスパークラインで過去30データポイントの履歴を可視化
+  - 色分け表示: 緑(<50ms), 黄(50-150ms), 赤(>150ms)
+  - WS切断時は最後の計測値を薄く表示（20秒以内のpong受信で接続判定）
+
 ## [0.0.27] - 2026-02-07
 
 ### Performance

@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { reportWsLatency } from '../services/latency-store';
 
 interface UseTerminalOptions {
   sessionId: string;
@@ -34,6 +35,7 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  const pingIntervalRef = useRef<number | null>(null);
 
   // Use refs for callbacks to avoid re-creating connect function
   const onDataRef = useRef(options.onData);
@@ -75,6 +77,14 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
     ws.onopen = () => {
       setIsConnected(true);
       onConnectRef.current?.();
+
+      // Start periodic ping for latency measurement
+      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = window.setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+        }
+      }, 10_000);
     };
 
     ws.onmessage = (event) => {
@@ -83,7 +93,10 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
       } else if (typeof event.data === 'string') {
         try {
           const message = JSON.parse(event.data);
-          if (message.type === 'error') {
+          if (message.type === 'pong' && typeof message.timestamp === 'number') {
+            const rtt = Date.now() - message.timestamp;
+            reportWsLatency(rtt);
+          } else if (message.type === 'error') {
             onErrorRef.current?.(message.message);
           }
         } catch {
@@ -95,6 +108,10 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
     ws.onclose = (event) => {
       setIsConnected(false);
       wsRef.current = null;
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+        pingIntervalRef.current = null;
+      }
       onDisconnectRef.current?.();
 
       // Auto-reconnect after 2 seconds if not intentionally closed
@@ -147,6 +164,9 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+      }
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }

@@ -90,7 +90,11 @@
     "timeBlock0_6": "0-6h",
     "timeBlock6_12": "6-12h",
     "timeBlock12_18": "12-18h",
-    "timeBlock18_24": "18-24h"
+    "timeBlock18_24": "18-24h",
+    "networkLatency": "Network Latency",
+    "websocket": "WebSocket",
+    "api": "API",
+    "latencyNA": "N/A"
   },
   "files": {
     "title": "File Browser",

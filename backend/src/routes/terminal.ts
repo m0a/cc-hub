@@ -123,8 +123,20 @@ export const terminalWebSocket = {
   async message(ws: ServerWebSocket<TerminalData>, message: string | Buffer) {
     const { process, sessionId } = ws.data;
 
+    // Handle ping/pong before terminal check (ping doesn't need PTY)
+    if (typeof message === 'string' && message.startsWith('{')) {
+      try {
+        const data = JSON.parse(message);
+        if (data.type === 'ping' && typeof data.timestamp === 'number') {
+          ws.send(JSON.stringify({ type: 'pong', timestamp: data.timestamp }));
+          return;
+        }
+      } catch {
+        // Not valid JSON, continue
+      }
+    }
+
     if (!process?.terminal) {
-      console.log(`[${sessionId}] No terminal process`);
       return;
     }
 

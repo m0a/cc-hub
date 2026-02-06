@@ -4,6 +4,44 @@ import { authFetch } from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+// Module-level request deduplication: all useSessions instances share the same in-flight request
+let pendingFetch: Promise<SessionResponse[]> | null = null;
+let cachedSessions: { data: SessionResponse[]; timestamp: number } | null = null;
+const FETCH_CACHE_TTL = 2000; // 2 seconds - matches backend cache TTL
+
+async function fetchSessionsShared(): Promise<SessionResponse[]> {
+  // Return cached data if still fresh
+  if (cachedSessions && Date.now() - cachedSessions.timestamp < FETCH_CACHE_TTL) {
+    return cachedSessions.data;
+  }
+
+  // Deduplicate concurrent requests
+  if (pendingFetch) {
+    return pendingFetch;
+  }
+
+  pendingFetch = (async () => {
+    try {
+      const response = await authFetch(`${API_BASE}/api/sessions`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch sessions');
+      }
+      const data = await response.json();
+      cachedSessions = { data: data.sessions, timestamp: Date.now() };
+      return data.sessions as SessionResponse[];
+    } finally {
+      pendingFetch = null;
+    }
+  })();
+
+  return pendingFetch;
+}
+
+/** Invalidate the shared sessions cache (call after create/delete) */
+function invalidateSessionsCache() {
+  cachedSessions = null;
+}
+
 interface UseSessionsReturn {
   sessions: SessionResponse[];
   isLoading: boolean;
@@ -27,16 +65,12 @@ export function useSessions(): UseSessionsReturn {
     }
 
     try {
-      const response = await authFetch(`${API_BASE}/api/sessions`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch sessions');
-      }
-      const data = await response.json();
+      const newSessions = await fetchSessionsShared();
       // Only update state if data has changed to prevent unnecessary re-renders
       setSessions(prev => {
-        const newJson = JSON.stringify(data.sessions);
+        const newJson = JSON.stringify(newSessions);
         const prevJson = JSON.stringify(prev);
-        return newJson === prevJson ? prev : data.sessions;
+        return newJson === prevJson ? prev : newSessions;
       });
     } catch (err) {
       if (!silent) {
@@ -51,6 +85,7 @@ export function useSessions(): UseSessionsReturn {
 
   const createSession = useCallback(async (name?: string, workingDir?: string): Promise<SessionResponse | null> => {
     setError(null);
+    invalidateSessionsCache();
 
     try {
       const response = await authFetch(`${API_BASE}/api/sessions`, {
@@ -74,6 +109,7 @@ export function useSessions(): UseSessionsReturn {
 
   const deleteSession = useCallback(async (id: string): Promise<boolean> => {
     setError(null);
+    invalidateSessionsCache();
 
     try {
       const response = await authFetch(`${API_BASE}/api/sessions/${id}`, {

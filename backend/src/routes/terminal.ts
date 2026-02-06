@@ -19,10 +19,21 @@ const activeConnections = new Map<string, Set<ServerWebSocket<TerminalData>>>();
 // Map to track PTY process per session (only one per session)
 const sessionProcesses = new Map<string, Subprocess>();
 
+// Grace period timers for PTY cleanup (keep PTY alive after last client disconnects)
+const ptyGraceTimers = new Map<string, Timer>();
+const PTY_GRACE_PERIOD_MS = 30_000; // 30 seconds
+
 export const terminalWebSocket = {
   async open(ws: ServerWebSocket<TerminalData>) {
     const { sessionId } = ws.data;
     console.log(`Terminal WebSocket opened for session: ${sessionId}`);
+
+    // Cancel any pending PTY cleanup grace timer (client reconnected in time)
+    const graceTimer = ptyGraceTimers.get(sessionId);
+    if (graceTimer) {
+      clearTimeout(graceTimer);
+      ptyGraceTimers.delete(sessionId);
+    }
 
     // Add to active connections
     if (!activeConnections.has(sessionId)) {
@@ -119,8 +130,6 @@ export const terminalWebSocket = {
 
     // Handle binary data (terminal input)
     if (message instanceof Buffer || message instanceof Uint8Array) {
-      const hex = Array.from(new Uint8Array(message)).map(b => b.toString(16).padStart(2, '0')).join(' ');
-      console.log(`[${sessionId}] Binary input: ${hex}`);
       process.terminal.write(message);
       return;
     }
@@ -131,7 +140,6 @@ export const terminalWebSocket = {
         const data = JSON.parse(message);
         if (data.type === 'resize' && typeof data.cols === 'number' && typeof data.rows === 'number') {
           process.terminal.resize(data.cols, data.rows);
-          console.log(`[${sessionId}] Resized to ${data.cols}x${data.rows}`);
           return;
         }
         if (data.type === 'refresh') {
@@ -142,7 +150,6 @@ export const terminalWebSocket = {
               stderr: 'ignore',
             });
             await proc.exited;
-            console.log(`[${sessionId}] Refreshed tmux client`);
           } catch (error) {
             console.error(`[${sessionId}] Failed to refresh:`, error);
           }
@@ -154,8 +161,6 @@ export const terminalWebSocket = {
     }
 
     // String input - send directly to terminal
-    const hex = Array.from(new TextEncoder().encode(message)).map(b => b.toString(16).padStart(2, '0')).join(' ');
-    console.log(`[${sessionId}] String input: "${message}" (${hex})`);
     process.terminal.write(message);
   },
 
@@ -170,12 +175,23 @@ export const terminalWebSocket = {
       if (connections.size === 0) {
         activeConnections.delete(sessionId);
 
-        // Kill the PTY process when no clients are connected
+        // Start grace period before killing PTY (allows fast reconnection)
         const proc = sessionProcesses.get(sessionId);
-        if (proc) {
-          proc.kill();
-          sessionProcesses.delete(sessionId);
-          console.log(`PTY process killed for session: ${sessionId}`);
+        if (proc && !proc.killed) {
+          console.log(`PTY grace period started for session: ${sessionId} (${PTY_GRACE_PERIOD_MS / 1000}s)`);
+          const timer = setTimeout(() => {
+            ptyGraceTimers.delete(sessionId);
+            // Only kill if still no clients connected
+            if (!activeConnections.has(sessionId) || activeConnections.get(sessionId)!.size === 0) {
+              const currentProc = sessionProcesses.get(sessionId);
+              if (currentProc && !currentProc.killed) {
+                currentProc.kill();
+                sessionProcesses.delete(sessionId);
+                console.log(`PTY process killed after grace period for session: ${sessionId}`);
+              }
+            }
+          }, PTY_GRACE_PERIOD_MS);
+          ptyGraceTimers.set(sessionId, timer);
         }
       }
     }

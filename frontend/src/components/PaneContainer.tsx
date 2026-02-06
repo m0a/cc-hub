@@ -219,6 +219,7 @@ function TerminalPane({
     if (!isDraggingSidebar) return;
 
     const handleMove = (e: MouseEvent | TouchEvent) => {
+      e.preventDefault();
       if (!containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
       const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
@@ -233,7 +234,7 @@ function TerminalPane({
 
     document.addEventListener('mousemove', handleMove);
     document.addEventListener('mouseup', handleEnd);
-    document.addEventListener('touchmove', handleMove);
+    document.addEventListener('touchmove', handleMove, { passive: false });
     document.addEventListener('touchend', handleEnd);
 
     return () => {
@@ -511,7 +512,7 @@ function TerminalPane({
       </div>
 
       {/* Terminal, conversation, or session selector - with optional session list sidebar */}
-      <div className="flex-1 min-h-0 flex">
+      <div className="flex-1 min-h-0 flex relative">
         {/* Main content */}
         <div className={`${showSessionList ? 'flex-1' : 'w-full'} min-w-0`}>
           {showConversation && currentCcSessionId ? (
@@ -547,44 +548,45 @@ function TerminalPane({
           )}
         </div>
 
+        {/* Resize handle - absolute, overlaying the border between terminal and sidebar */}
+        {showSessionList && (
+          <div
+            onMouseDown={handleSidebarDragStart}
+            onTouchStart={handleSidebarDragStart}
+            className={`absolute top-0 h-full cursor-col-resize z-10 flex items-center justify-center ${
+              isDraggingSidebar ? 'bg-blue-500/20' : ''
+            }`}
+            style={{ width: isTablet ? 24 : 12, right: sessionListWidth - 8 - (isTablet ? 12 : 6), touchAction: 'none' }}
+          >
+            <div className={`w-0.5 h-8 rounded-full transition-colors ${isDraggingSidebar ? 'bg-blue-400' : 'bg-gray-500'}`} />
+          </div>
+        )}
+
         {/* Session list sidebar */}
         {showSessionList && (
-          <>
-            {/* Resize handle */}
-            <div
-              onMouseDown={handleSidebarDragStart}
-              onTouchStart={handleSidebarDragStart}
-              className={`w-1.5 h-full cursor-col-resize flex items-center justify-center shrink-0 transition-colors ${
-                isDraggingSidebar ? 'bg-blue-500/50' : 'bg-gray-700 hover:bg-blue-500/30'
-              }`}
-            >
-              <div className="w-0.5 h-8 bg-gray-500 rounded-full" />
+          <div
+            className="flex flex-col shrink-0 overflow-hidden bg-gray-900 -ml-2 border-l border-gray-700"
+            style={{ width: sessionListWidth, touchAction: 'none' }}
+            onTouchStart={handleSidebarTouchStart}
+            onTouchMove={handleSidebarTouchMove}
+            onTouchEnd={handleSidebarTouchEnd}
+          >
+            <div className={`px-2 py-1 bg-black/30 border-b border-gray-700 text-xs text-white/70 flex items-center justify-between shrink-0 ${isTablet ? 'mt-10' : ''}`}>
+              <span>{t('session.list')}</span>
+              <span className="text-white/40">{Math.round(sessionListScale * 100)}%</span>
             </div>
-            {/* Sidebar content - pinch to zoom */}
-            <div
-              className="border-l border-gray-700 flex flex-col shrink-0 overflow-hidden"
-              style={{ width: sessionListWidth, touchAction: 'none' }}
-              onTouchStart={handleSidebarTouchStart}
-              onTouchMove={handleSidebarTouchMove}
-              onTouchEnd={handleSidebarTouchEnd}
-            >
-              <div className={`px-2 py-1 bg-black/30 border-b border-gray-700 text-xs text-white/70 flex items-center justify-between shrink-0 ${isTablet ? 'mt-10' : ''}`}>
-                <span>{t('session.list')}</span>
-                <span className="text-white/40">{Math.round(sessionListScale * 100)}%</span>
-              </div>
-              <div className="flex-1 min-h-0 overflow-hidden">
-                <SessionList
-                  onSelectSession={(sess) => {
-                    onSelectSession(sess.id);
-                    // Keep session list open after selection
-                  }}
-                  inline={true}
-                  contentScale={sessionListScale}
-                  isOnboarding={showSessionListOnboarding}
-                />
-              </div>
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <SessionList
+                onSelectSession={(sess) => {
+                  onSelectSession(sess.id);
+                  // Keep session list open after selection
+                }}
+                inline={true}
+                contentScale={sessionListScale}
+                isOnboarding={showSessionListOnboarding}
+              />
             </div>
-          </>
+          </div>
         )}
       </div>
 

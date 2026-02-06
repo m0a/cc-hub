@@ -592,9 +592,7 @@ export function App() {
         <DesktopLayout
           sessions={openSessions}
           activeSessionId={activeSessionId}
-          onSelectSession={handleSelectSession}
           onSessionStateChange={updateSessionState}
-          onShowSessionList={handleShowSessionList}
           onReload={handleReload}
           showSessionListOnboarding={showSessionListOnboarding}
           onCompleteSessionListOnboarding={completeSessionListOnboarding}
@@ -611,9 +609,7 @@ export function App() {
         <DesktopLayout
           sessions={openSessions}
           activeSessionId={activeSessionId}
-          onSelectSession={handleSelectSession}
           onSessionStateChange={updateSessionState}
-          onShowSessionList={handleShowSessionList}
           onReload={handleReload}
           isTablet={true}
           showSessionListOnboarding={showSessionListOnboarding}

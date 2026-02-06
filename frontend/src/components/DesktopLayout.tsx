@@ -450,9 +450,17 @@ export function DesktopLayout({
 
   // Handle paste (text or image)
   const handlePaste = useCallback(async () => {
+    const pasteText = async (text: string) => {
+      if (text) {
+        const ref = terminalRefs.current?.get(activePaneRef.current);
+        ref?.sendInput(text);
+      }
+    };
+
     try {
       // Try to read clipboard items (for images)
       const items = await navigator.clipboard.read();
+      let handled = false;
       for (const item of items) {
         // Check for image
         const imageType = item.types.find(t => t.startsWith('image/'));
@@ -480,21 +488,21 @@ export function DesktopLayout({
         if (item.types.includes('text/plain')) {
           const blob = await item.getType('text/plain');
           const text = await blob.text();
-          if (text) {
-            const ref = terminalRefs.current?.get(activePaneRef.current);
-            ref?.sendInput(text);
-          }
-          return;
+          await pasteText(text);
+          handled = true;
+          break;
         }
+      }
+      // If no items were handled, try readText as fallback
+      if (!handled) {
+        const text = await navigator.clipboard.readText();
+        await pasteText(text);
       }
     } catch {
       // Fallback to readText for browsers that don't support clipboard.read()
       try {
         const text = await navigator.clipboard.readText();
-        if (text) {
-          const ref = terminalRefs.current?.get(activePaneRef.current);
-          ref?.sendInput(text);
-        }
+        await pasteText(text);
       } catch (err) {
         console.error('Clipboard read failed:', err);
       }

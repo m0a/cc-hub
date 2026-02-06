@@ -181,7 +181,7 @@ function ProjectGroupItem({
           />
         </svg>
         <div className="flex-1 min-w-0">
-          <div className="text-sm text-gray-200 truncate">
+          <div className="text-sm text-gray-200 break-all">
             {project.projectName}
           </div>
         </div>

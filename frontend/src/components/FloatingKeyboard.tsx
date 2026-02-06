@@ -34,6 +34,7 @@ interface FloatingKeyboardProps {
   onFilePicker?: () => void;
   onUrlExtract?: () => void;
   isUploading?: boolean;
+  elevated?: boolean; // Raise z-index above onboarding overlay
 }
 
 export function FloatingKeyboard({
@@ -43,6 +44,7 @@ export function FloatingKeyboard({
   onFilePicker,
   onUrlExtract,
   isUploading = false,
+  elevated = false,
 }: FloatingKeyboardProps) {
   const [inputMode, setInputMode] = useState<'keyboard' | 'input'>('keyboard');
   const [inputValue, setInputValue] = useState('');
@@ -198,7 +200,7 @@ export function FloatingKeyboard({
     return (
       <div
         ref={containerRef}
-        className="fixed z-40"
+        className={`fixed ${elevated ? 'z-[10002]' : 'z-40'}`}
         style={{ left: position.x, top: position.y }}
       >
         <div
@@ -235,7 +237,7 @@ export function FloatingKeyboard({
   return (
     <div
       ref={containerRef}
-      className="fixed z-40 bg-gray-900 border border-gray-700 rounded-lg shadow-2xl overflow-hidden"
+      className={`fixed ${elevated ? 'z-[10002]' : 'z-40'} bg-gray-900 border border-gray-700 rounded-lg shadow-2xl overflow-hidden`}
       style={{ left: position.x, top: position.y, width: 420 }}
     >
       {/* Header - drag handle */}

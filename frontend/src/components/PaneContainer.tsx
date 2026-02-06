@@ -4,9 +4,9 @@ import { TerminalComponent, type TerminalRef } from './Terminal';
 import { ConversationViewer } from './ConversationViewer';
 import { FileViewer } from './files/FileViewer';
 import { SessionList } from './SessionList';
-import { Dashboard } from './dashboard/Dashboard';
+import { Onboarding } from './Onboarding';
 import { authFetch } from '../services/api';
-import type { SessionState, ConversationMessage, SessionResponse, SessionTheme } from '../../../shared/types';
+import type { SessionState, ConversationMessage, SessionTheme } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const SESSION_LIST_WIDTH_KEY = 'cchub-session-list-width';
@@ -46,6 +46,8 @@ interface PaneContainerProps {
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
   isTablet?: boolean;
   globalReloadKey?: number;
+  showSessionListOnboarding?: boolean;
+  onCompleteSessionListOnboarding?: () => void;
 }
 
 export function PaneContainer({
@@ -60,6 +62,8 @@ export function PaneContainer({
   terminalRefs,
   isTablet = false,
   globalReloadKey = 0,
+  showSessionListOnboarding = false,
+  onCompleteSessionListOnboarding,
 }: PaneContainerProps) {
   if (node.type === 'terminal') {
     return (
@@ -75,6 +79,8 @@ export function PaneContainer({
         terminalRefs={terminalRefs}
         globalReloadKey={globalReloadKey}
         isTablet={isTablet}
+        showSessionListOnboarding={showSessionListOnboarding}
+        onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
       />
     );
   }
@@ -93,6 +99,8 @@ export function PaneContainer({
         terminalRefs={terminalRefs}
         isTablet={isTablet}
         globalReloadKey={globalReloadKey}
+        showSessionListOnboarding={showSessionListOnboarding}
+        onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
       />
     );
   }
@@ -113,6 +121,8 @@ export function PaneContainer({
       terminalRefs={terminalRefs}
       globalReloadKey={globalReloadKey}
       isTablet={isTablet}
+      showSessionListOnboarding={showSessionListOnboarding}
+      onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
     />
   );
 }
@@ -129,6 +139,8 @@ interface TerminalPaneProps {
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
   globalReloadKey?: number;
   isTablet?: boolean;
+  showSessionListOnboarding?: boolean;
+  onCompleteSessionListOnboarding?: () => void;
 }
 
 function TerminalPane({
@@ -143,6 +155,8 @@ function TerminalPane({
   terminalRefs,
   globalReloadKey = 0,
   isTablet = false,
+  showSessionListOnboarding = false,
+  onCompleteSessionListOnboarding,
 }: TerminalPaneProps) {
   const { t } = useTranslation();
   const terminalRef = useRef<TerminalRef>(null);
@@ -255,10 +269,15 @@ function TerminalPane({
     pinchStartRef.current = null;
   }, []);
 
-  // Reload terminal by remounting
+  // Refresh terminal display (force tmux redraw without remounting)
   const handleReload = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    setReloadKey(prev => prev + 1);
+    if (terminalRef.current?.refreshTerminal) {
+      terminalRef.current.refreshTerminal();
+    } else {
+      // Fallback: remount terminal
+      setReloadKey(prev => prev + 1);
+    }
   }, []);
 
   // Open file viewer
@@ -511,6 +530,7 @@ function TerminalPane({
                   }}
                   inline={true}
                   contentScale={sessionListScale}
+                  isOnboarding={showSessionListOnboarding}
                 />
               </div>
             </div>
@@ -524,6 +544,11 @@ function TerminalPane({
           sessionWorkingDir={session.currentPath}
           onClose={() => setShowFileViewer(false)}
         />
+      )}
+
+      {/* Session list onboarding (for first-time users) */}
+      {showSessionListOnboarding && showSessionList && onCompleteSessionListOnboarding && (
+        <Onboarding type="sessionList" onComplete={onCompleteSessionListOnboarding} />
       )}
     </div>
   );
@@ -574,6 +599,8 @@ interface SplitContainerProps {
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
   isTablet?: boolean;
   globalReloadKey?: number;
+  showSessionListOnboarding?: boolean;
+  onCompleteSessionListOnboarding?: () => void;
 }
 
 function SplitContainer({
@@ -588,6 +615,8 @@ function SplitContainer({
   terminalRefs,
   isTablet = false,
   globalReloadKey = 0,
+  showSessionListOnboarding = false,
+  onCompleteSessionListOnboarding,
 }: SplitContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState<number | null>(null);
@@ -680,6 +709,8 @@ function SplitContainer({
           terminalRefs={terminalRefs}
           isTablet={isTablet}
           globalReloadKey={globalReloadKey}
+          showSessionListOnboarding={showSessionListOnboarding}
+          onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
         />
       </div>
     );

@@ -65,6 +65,9 @@ export interface TerminalRef {
   focus: () => void;
   extractUrls: () => string[];
   getSelection: () => string;
+  refreshTerminal: () => void;
+  showKeyboard: () => void;
+  hideKeyboard: () => void;
 }
 
 export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(function TerminalComponent({
@@ -88,6 +91,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const fitAddonRef = useRef<FitAddon | null>(null);
   const sendRef = useRef<(data: string) => void>(() => {});
   const resizeRef = useRef<(cols: number, rows: number) => void>(() => {});
+  const refreshRef = useRef<() => void>(() => {});
   const closeInputBarRef = useRef<() => void>(() => {});
   const showKeyboardRef = useRef<() => void>(() => {});
   const selectionRef = useRef<string>('');
@@ -166,7 +170,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     setShowPositionToggle(true);
   };
 
-  const { isConnected, connect, send, resize } = useTerminal({
+  const { isConnected, connect, send, resize, refresh } = useTerminal({
     sessionId,
     token,
     onData: (data) => {
@@ -181,13 +185,24 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   useEffect(() => {
     sendRef.current = send;
     resizeRef.current = resize;
-  }, [send, resize]);
+    refreshRef.current = refresh;
+  }, [send, resize, refresh]);
 
-  // Expose sendInput, focus, extractUrls, and getSelection for external keyboard
+  // Expose sendInput, focus, extractUrls, getSelection, and refreshTerminal for external use
   useImperativeHandle(ref, () => ({
     sendInput: (char: string) => sendRef.current(char),
     focus: () => terminalRef.current?.focus(),
     getSelection: () => selectionRef.current,
+    refreshTerminal: () => {
+      // Fit terminal and force tmux to redraw
+      const fit = fitAddonRef.current;
+      const term = terminalRef.current;
+      if (fit && term) {
+        fit.fit();
+        resizeRef.current(term.cols, term.rows);
+        setTimeout(() => refreshRef.current(), 100);
+      }
+    },
     extractUrls: () => {
       const term = terminalRef.current;
       if (!term) return [];
@@ -209,6 +224,8 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
       return [...new Set(urls)].reverse();
     },
+    showKeyboard: () => showKeyboardRef.current(),
+    hideKeyboard: () => closeInputBarRef.current(),
   }), []);
 
   // Fit and resize terminal
@@ -226,7 +243,11 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     if (isConnected) {
       onReadyRef.current?.(send);
       // Send initial resize after connection with small delay for layout
-      setTimeout(fitTerminal, 100);
+      setTimeout(() => {
+        fitTerminal();
+        // Force tmux to redraw after resize to prevent display corruption
+        setTimeout(() => refreshRef.current(), 100);
+      }, 100);
     }
   }, [isConnected, send]);
 
@@ -488,16 +509,17 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         if (scrollRafId === null) {
           scrollRafId = requestAnimationFrame(() => {
             scrollRafId = null;
-            const lines = Math.round(accumulatedDelta / 30);
+            const lines = Math.round(accumulatedDelta / 20);
             if (lines !== 0) {
-              accumulatedDelta = accumulatedDelta % 30; // Keep remainder
+              accumulatedDelta = accumulatedDelta % 20; // Keep remainder
 
-              // Scroll xterm
-              term.scrollLines(lines);
-
-              // Send single SGR mouse wheel event for tmux
+              // Send SGR mouse wheel events to tmux (one per line for natural scrolling)
+              // tmux handles scrollback via copy-mode when mouse is on
               const button = lines > 0 ? 65 : 64;
-              sendRef.current(`\x1b[<${button};1;1M`);
+              const count = Math.min(Math.abs(lines), 10); // Cap to prevent event flooding
+              for (let i = 0; i < count; i++) {
+                sendRef.current(`\x1b[<${button};1;1M`);
+              }
             }
           });
         }
@@ -920,7 +942,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           style={{
             WebkitTouchCallout: 'none',
             WebkitUserSelect: 'none',
-            touchAction: 'pan-y pinch-zoom',
+            touchAction: 'none',
           }}
         />
         {/* Touch overlay for scrolling - always pointer-events-none, touch handled via JS on container */}
@@ -1134,7 +1156,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                 tabIndex={-1}
                 ref={inputRef}
               />
-              <div className={isTablet ? 'w-1/3 max-w-sm' : 'w-full'}>
+              <div className={isTablet ? 'w-1/3 max-w-sm' : 'w-full'} data-onboarding="keyboard">
                 <Keyboard
                   onSend={(char) => sendRef.current(char)}
                   onFilePicker={handleOpenFilePicker}
@@ -1221,6 +1243,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
               }}
               className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors mr-2"
               title="キーボード表示"
+              data-onboarding="keyboard"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                 <rect x="2" y="6" width="20" height="12" rx="2" />

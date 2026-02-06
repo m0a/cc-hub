@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { TerminalPage } from './pages/TerminalPage';
+import type { TerminalRef } from './components/Terminal';
 import { SessionList } from './components/SessionList';
 // TabletLayout is deprecated - now using DesktopLayout with isTablet prop
 // import { TabletLayout } from './components/TabletLayout';
@@ -101,7 +102,51 @@ export function App() {
   // Auth state
   const auth = useAuth();
   // Onboarding state
-  const { showOnboarding, completeOnboarding } = useOnboarding();
+  const {
+    showOnboarding,
+    completeOnboarding,
+    showSessionListOnboarding,
+    completeSessionListOnboarding,
+  } = useOnboarding();
+
+  // Terminal ref for mobile view refresh
+  const mobileTerminalRef = useRef<TerminalRef>(null);
+
+  // Keyboard control ref for onboarding (tablet: FloatingKeyboard via DesktopLayout)
+  const keyboardControlRef = useRef<{ open: () => void; close: () => void } | null>(null);
+  const keyboardOpenedByOnboarding = useRef(false);
+
+  // Tablet: control FloatingKeyboard via ref
+  const handleTabletStepAction = useCallback((action: string) => {
+    if (action === 'open-keyboard') {
+      keyboardControlRef.current?.open();
+      keyboardOpenedByOnboarding.current = true;
+    } else if (action === 'close-keyboard') {
+      keyboardControlRef.current?.close();
+      keyboardOpenedByOnboarding.current = false;
+    } else if (action === 'cleanup') {
+      if (keyboardOpenedByOnboarding.current) {
+        keyboardControlRef.current?.close();
+        keyboardOpenedByOnboarding.current = false;
+      }
+    }
+  }, []);
+
+  // Mobile: control Terminal's built-in keyboard via ref
+  const handleMobileStepAction = useCallback((action: string) => {
+    if (action === 'open-keyboard') {
+      mobileTerminalRef.current?.showKeyboard();
+      keyboardOpenedByOnboarding.current = true;
+    } else if (action === 'close-keyboard') {
+      mobileTerminalRef.current?.hideKeyboard();
+      keyboardOpenedByOnboarding.current = false;
+    } else if (action === 'cleanup') {
+      if (keyboardOpenedByOnboarding.current) {
+        mobileTerminalRef.current?.hideKeyboard();
+        keyboardOpenedByOnboarding.current = false;
+      }
+    }
+  }, []);
 
   const [openSessions, setOpenSessions] = useState<OpenSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -145,6 +190,11 @@ export function App() {
   };
 
   const [deviceType, setDeviceType] = useState<DeviceType>(checkDeviceType);
+
+  // Both tablet and mobile need keyboard control during onboarding
+  const onboardingStepAction = deviceType === 'tablet' ? handleTabletStepAction
+    : deviceType === 'mobile' ? handleMobileStepAction
+    : undefined;
 
   // Update device type on resize
   useEffect(() => {
@@ -202,6 +252,33 @@ export function App() {
       window.history.pushState({ view: 'overlay' }, '', window.location.href);
     }
   }, [showSessionList, showFileViewer, showConversation]);
+
+  // Create initial session for first-time users
+  const createInitialSession = async (): Promise<OpenSession | null> => {
+    try {
+      const response = await authFetch(`${API_BASE}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Welcome' }),  // Will use home directory by default
+      });
+      if (response.ok) {
+        const session = await response.json();
+        const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string; theme?: SessionTheme };
+        return {
+          id: session.id,
+          name: session.name,
+          state: session.state,
+          currentPath: extSession.currentPath,
+          ccSessionId: extSession.ccSessionId,
+          currentCommand: extSession.currentCommand,
+          theme: extSession.theme,
+        };
+      }
+    } catch (err) {
+      console.error('Failed to create initial session:', err);
+    }
+    return null;
+  };
 
   // On mount, fetch sessions and restore from localStorage
   useEffect(() => {
@@ -267,7 +344,14 @@ export function App() {
             }]);
             setActiveSessionId(mostRecent.id);
           } else {
-            setShowSessionList(true);
+            // No sessions at all - create initial session for first-time users
+            const initialSession = await createInitialSession();
+            if (initialSession) {
+              setOpenSessions([initialSession]);
+              setActiveSessionId(initialSession.id);
+            } else {
+              setShowSessionList(true);
+            }
           }
         } else if (allSessions.length > 0) {
           // No saved sessions, open most recent
@@ -283,7 +367,14 @@ export function App() {
           }]);
           setActiveSessionId(mostRecent.id);
         } else {
-          setShowSessionList(true);
+          // No sessions at all - create initial session for first-time users
+          const initialSession = await createInitialSession();
+          if (initialSession) {
+            setOpenSessions([initialSession]);
+            setActiveSessionId(initialSession.id);
+          } else {
+            setShowSessionList(true);
+          }
         }
       } catch {
         setShowSessionList(true);
@@ -391,14 +482,12 @@ export function App() {
     );
   }, []);
 
-  // Reload current session (must be before early returns)
+  // Refresh current terminal display (must be before early returns)
   const handleReload = useCallback(() => {
-    if (activeSessionId) {
-      const currentId = activeSessionId;
-      setActiveSessionId(null);
-      setTimeout(() => setActiveSessionId(currentId), 50);
+    if (mobileTerminalRef.current?.refreshTerminal) {
+      mobileTerminalRef.current.refreshTerminal();
     }
-  }, [activeSessionId]);
+  }, []);
 
   // Show conversation history for current session
   const handleShowConversation = useCallback(async () => {
@@ -480,13 +569,19 @@ export function App() {
     );
   }
 
-  // Show session list (only when not in onboarding)
-  if (showSessionList && !showOnboarding) {
+  // Show session list
+  if (showSessionList) {
     return (
-      <SessionList
-        onSelectSession={handleSelectSession}
-        onBack={openSessions.length > 0 ? handleBackFromList : undefined}
-      />
+      <>
+        <SessionList
+          onSelectSession={handleSelectSession}
+          onBack={openSessions.length > 0 ? handleBackFromList : undefined}
+          isOnboarding={showSessionListOnboarding}
+        />
+        {showSessionListOnboarding && (
+          <Onboarding type="sessionList" onComplete={completeSessionListOnboarding} />
+        )}
+      </>
     );
   }
 
@@ -501,6 +596,8 @@ export function App() {
           onSessionStateChange={updateSessionState}
           onShowSessionList={handleShowSessionList}
           onReload={handleReload}
+          showSessionListOnboarding={showSessionListOnboarding}
+          onCompleteSessionListOnboarding={completeSessionListOnboarding}
         />
         {showOnboarding && <Onboarding onComplete={completeOnboarding} />}
       </>
@@ -519,8 +616,11 @@ export function App() {
           onShowSessionList={handleShowSessionList}
           onReload={handleReload}
           isTablet={true}
+          showSessionListOnboarding={showSessionListOnboarding}
+          onCompleteSessionListOnboarding={completeSessionListOnboarding}
+          keyboardControlRef={keyboardControlRef}
         />
-        {showOnboarding && <Onboarding onComplete={completeOnboarding} />}
+        {showOnboarding && <Onboarding onComplete={completeOnboarding} onStepAction={onboardingStepAction} />}
       </>
     );
   }
@@ -546,6 +646,7 @@ export function App() {
           onClick={handleReload}
           className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
           title="リロード"
+          data-onboarding="reload"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -556,6 +657,7 @@ export function App() {
             onClick={handleShowConversation}
             className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
             title="会話履歴"
+            data-onboarding="conversation"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
@@ -569,6 +671,7 @@ export function App() {
           }}
           className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
           title="ファイルブラウザ"
+          data-onboarding="file-browser"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
@@ -581,6 +684,7 @@ export function App() {
           }}
           className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
           title={t('session.list')}
+          data-onboarding="session-list"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -594,9 +698,10 @@ export function App() {
   return (
     <div className="h-screen flex flex-col bg-gray-900 relative">
       {/* Terminal - full screen */}
-      {activeSession && (
-        <div className="flex-1 flex flex-col min-h-0">
+      {activeSession ? (
+        <div className="flex-1 flex flex-col min-h-0" data-onboarding="terminal">
           <TerminalPage
+            ref={mobileTerminalRef}
             key={activeSessionId}
             sessionId={activeSession.id}
             onStateChange={(state) => updateSessionState(activeSession.id, state)}
@@ -605,6 +710,17 @@ export function App() {
             showOverlay={showOverlay}
             theme={activeSession.theme}
           />
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col items-center justify-center" data-onboarding="terminal">
+          <p className="text-gray-500">{t('pane.selectSession')}</p>
+          <button
+            onClick={handleShowSessionList}
+            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded"
+            data-onboarding="session-list"
+          >
+            {t('session.list')}
+          </button>
         </div>
       )}
 
@@ -640,7 +756,7 @@ export function App() {
       )}
 
       {/* Onboarding overlay */}
-      {showOnboarding && <Onboarding onComplete={completeOnboarding} />}
+      {showOnboarding && <Onboarding onComplete={completeOnboarding} onStepAction={onboardingStepAction} />}
     </div>
   );
 }

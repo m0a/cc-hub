@@ -1,5 +1,5 @@
-import { useState, useCallback, type ReactNode } from 'react';
-import { TerminalComponent } from '../components/Terminal';
+import { useState, useCallback, forwardRef, type ReactNode } from 'react';
+import { TerminalComponent, type TerminalRef } from '../components/Terminal';
 import type { SessionState, SessionTheme } from '../../../shared/types';
 
 interface TerminalPageProps {
@@ -12,7 +12,7 @@ interface TerminalPageProps {
   theme?: SessionTheme;
 }
 
-export function TerminalPage({
+export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function TerminalPage({
   sessionId,
   token,
   onStateChange,
@@ -20,7 +20,7 @@ export function TerminalPage({
   onOverlayTap,
   showOverlay,
   theme,
-}: TerminalPageProps) {
+}, ref) {
   const [error, setError] = useState<string | null>(null);
 
   const handleConnect = useCallback(() => {
@@ -48,6 +48,7 @@ export function TerminalPage({
       {/* Terminal - full screen */}
       <main className="flex-1 relative overflow-hidden min-h-0">
         <TerminalComponent
+          ref={ref}
           sessionId={sessionId}
           token={token}
           onConnect={handleConnect}
@@ -61,4 +62,4 @@ export function TerminalPage({
       </main>
     </div>
   );
-}
+});

@@ -15,6 +15,7 @@ interface UseTerminalReturn {
   disconnect: () => void;
   send: (data: string | Uint8Array) => void;
   resize: (cols: number, rows: number) => void;
+  refresh: () => void;
 }
 
 // Use same origin WebSocket (works with Vite proxy)
@@ -136,6 +137,13 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
     }
   }, []);
 
+  const refresh = useCallback(() => {
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'refresh' }));
+    }
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -155,5 +163,6 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
     disconnect,
     send,
     resize,
+    refresh,
   };
 }

@@ -371,11 +371,19 @@ export function Keyboard({
           disabled
           className={`${compact ? 'py-1.5 text-xs' : 'py-2 text-sm'} font-medium select-none border border-gray-700 rounded m-0.5 text-center bg-gray-600 text-gray-400`}
           style={{ flex: width, minWidth: 0 }}
+          data-onboarding="image-upload"
         >
           ⏳
         </button>
       );
     }
+
+    // Add data-onboarding attributes for special buttons
+    const getOnboardingAttr = () => {
+      if (keyDef.key === 'FILE_PICKER') return 'image-upload';
+      if (keyDef.key === 'URL_EXTRACT') return 'url-extract';
+      return undefined;
+    };
 
     return (
       <button
@@ -383,6 +391,7 @@ export function Keyboard({
         onContextMenu={(e) => e.preventDefault()}
         className={`${compact ? 'py-1.5 text-xs' : 'py-2 text-sm'} font-medium select-none border border-gray-700 rounded m-0.5 text-center text-white ${getBgColor()}`}
         style={{ flex: width, minWidth: 0 }}
+        data-onboarding={getOnboardingAttr()}
       >
         {keyDef.label}
       </button>

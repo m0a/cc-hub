@@ -1,7 +1,10 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { PaneContainer, type PaneNode } from './PaneContainer';
+import { SessionList } from './SessionList';
+import { Dashboard } from './dashboard/Dashboard';
 import { FileViewer } from './files/FileViewer';
 import { FloatingKeyboard } from './FloatingKeyboard';
+import { Onboarding } from './Onboarding';
 import { authFetch } from '../services/api';
 import { useSessions } from '../hooks/useSessions';
 import type { TerminalRef } from './Terminal';
@@ -32,6 +35,9 @@ interface DesktopLayoutProps {
   onShowSessionList: () => void;
   onReload: () => void;
   isTablet?: boolean;
+  showSessionListOnboarding?: boolean;
+  onCompleteSessionListOnboarding?: () => void;
+  keyboardControlRef?: React.RefObject<{ open: () => void; close: () => void } | null>;
 }
 
 // Generate unique ID
@@ -209,6 +215,9 @@ export function DesktopLayout({
   onShowSessionList,
   onReload,
   isTablet = false,
+  showSessionListOnboarding = false,
+  onCompleteSessionListOnboarding,
+  keyboardControlRef,
 }: DesktopLayoutProps) {
   const terminalRefs = useRef<Map<string, TerminalRef | null>>(new Map());
   const sessionListToggleRefs = useRef<Map<string, () => void>>(new Map());
@@ -242,7 +251,11 @@ export function DesktopLayout({
             };
       })
     : propSessions;
+  // Side panel state (tablet only)
+  const [showSidePanel, setShowSidePanel] = useState(false);
+  const [sidePanelTab, setSidePanelTab] = useState<'sessions' | 'dashboard'>('sessions');
   const [showFileViewer, setShowFileViewer] = useState(false);
+  const [pendingSessionPane, setPendingSessionPane] = useState<string | null>(null);
 
   // Floating keyboard state (for tablet mode)
   const [showKeyboard, setShowKeyboard] = useState(() => {
@@ -259,9 +272,29 @@ export function DesktopLayout({
   const [urlPage, setUrlPage] = useState(0);
   const URL_PAGE_SIZE = 5;
 
-  // Handle global reload (browser reload)
+  // Keyboard elevation for onboarding (raises z-index above overlay)
+  const [keyboardElevated, setKeyboardElevated] = useState(false);
+
+  // Register keyboard control for onboarding
+  useEffect(() => {
+    if (keyboardControlRef && isTablet) {
+      keyboardControlRef.current = {
+        open: () => { setShowKeyboard(true); setKeyboardElevated(true); },
+        close: () => { setShowKeyboard(false); setKeyboardElevated(false); },
+      };
+    }
+    return () => {
+      if (keyboardControlRef) {
+        keyboardControlRef.current = null;
+      }
+    };
+  }, [keyboardControlRef, isTablet]);
+
+  // Refresh all terminal panes (force tmux redraw without page reload)
   const handleGlobalReload = useCallback(() => {
-    window.location.reload();
+    terminalRefs.current.forEach((ref) => {
+      ref?.refreshTerminal();
+    });
   }, []);
 
   // Keep onReload reference for compatibility
@@ -631,30 +664,88 @@ export function DesktopLayout({
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header - tablet only for keyboard toggle */}
         {isTablet && (
-          <div className="flex items-center justify-end px-3 py-1 bg-black/50 border-b border-gray-700 shrink-0">
+          <div className="flex items-center justify-between px-3 py-1 bg-black/50 border-b border-gray-700 shrink-0">
+            {/* Left: Session list toggle */}
             <button
-              onClick={() => setShowKeyboard(prev => !prev)}
-              className={`p-1 rounded transition-colors ${
-                showKeyboard
-                  ? 'text-green-400 bg-green-500/20 hover:bg-green-500/30'
-                  : 'text-white/70 hover:text-white hover:bg-white/10'
-              }`}
-              title={showKeyboard ? 'キーボードを隠す' : 'キーボードを表示'}
+              onClick={() => setShowSidePanel(prev => !prev)}
+              className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+              title="サイドパネル (Ctrl+B)"
+              data-onboarding="session-list"
             >
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <rect x="2" y="6" width="20" height="12" rx="2" />
-                <line x1="6" y1="10" x2="6" y2="10" strokeLinecap="round" />
-                <line x1="10" y1="10" x2="10" y2="10" strokeLinecap="round" />
-                <line x1="14" y1="10" x2="14" y2="10" strokeLinecap="round" />
-                <line x1="18" y1="10" x2="18" y2="10" strokeLinecap="round" />
-                <line x1="6" y1="14" x2="18" y2="14" />
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
+
+            {/* Center: Session name */}
+            <span className="text-white/70 text-sm truncate max-w-[300px]">
+              {activeSession?.name || 'CC Hub - Desktop'}
+            </span>
+
+            {/* Right: Action buttons */}
+            <div className="flex items-center gap-1">
+              {/* Split buttons */}
+              <div className="flex items-center gap-1" data-onboarding="split-pane">
+                <button
+                  onClick={() => handleSplit('horizontal')}
+                  className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                  title="縦分割 (Ctrl+D)"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <line x1="12" y1="3" x2="12" y2="21" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => handleSplit('vertical')}
+                  className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                  title="横分割 (Ctrl+Shift+D)"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Reload all panes */}
+              <button
+                onClick={handleGlobalReload}
+                className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                title="全ペインをリロード"
+                data-onboarding="reload"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+
+              {/* Keyboard toggle */}
+              <button
+                onClick={() => setShowKeyboard(prev => !prev)}
+                className={`p-1 rounded transition-colors ${
+                  showKeyboard
+                    ? 'text-green-400 bg-green-500/20 hover:bg-green-500/30'
+                    : 'text-white/70 hover:text-white hover:bg-white/10'
+                }`}
+                title={showKeyboard ? 'キーボードを隠す' : 'キーボードを表示'}
+                data-onboarding="keyboard"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <rect x="2" y="6" width="20" height="12" rx="2" />
+                  <line x1="6" y1="10" x2="6" y2="10" strokeLinecap="round" />
+                  <line x1="10" y1="10" x2="10" y2="10" strokeLinecap="round" />
+                  <line x1="14" y1="10" x2="14" y2="10" strokeLinecap="round" />
+                  <line x1="18" y1="10" x2="18" y2="10" strokeLinecap="round" />
+                  <line x1="6" y1="14" x2="18" y2="14" />
+                </svg>
+              </button>
+            </div>
           </div>
         )}
 
         {/* Pane container */}
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0" data-onboarding="terminal">
           <PaneContainer
             node={desktopState.root}
             activePane={desktopState.activePane}
@@ -668,9 +759,70 @@ export function DesktopLayout({
             terminalRefs={terminalRefs}
             sessionListToggleRefs={sessionListToggleRefs}
             isTablet={isTablet}
+            showSessionListOnboarding={showSessionListOnboarding}
+            onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
           />
         </div>
       </div>
+
+      {/* Side panel - tablet only (overlay) */}
+      {isTablet && showSidePanel && (
+        <div className="fixed inset-0 z-40">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setShowSidePanel(false)}
+          />
+          {/* Panel */}
+          <div className="absolute right-0 top-0 bottom-0 w-80 bg-gray-900 shadow-xl flex flex-col">
+            {/* Tab header */}
+            <div className="flex items-center border-b border-gray-700 shrink-0">
+              <button
+                onClick={() => setSidePanelTab('sessions')}
+                className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                  sidePanelTab === 'sessions'
+                    ? 'text-white bg-gray-800'
+                    : 'text-gray-400 hover:text-gray-300'
+                }`}
+              >
+                Sessions
+              </button>
+              <button
+                onClick={() => setSidePanelTab('dashboard')}
+                className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                  sidePanelTab === 'dashboard'
+                    ? 'text-white bg-gray-800'
+                    : 'text-gray-400 hover:text-gray-300'
+                }`}
+                data-onboarding="dashboard"
+              >
+                Dashboard
+              </button>
+              <button
+                onClick={() => setShowSidePanel(false)}
+                className="p-2 text-gray-400 hover:text-white transition-colors"
+                title="閉じる"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            {/* Tab content */}
+            <div className="flex-1 min-h-0 overflow-hidden">
+              {sidePanelTab === 'sessions' ? (
+                <SessionList
+                  onSelectSession={handleSessionSelect}
+                  inline={true}
+                  isOnboarding={showSessionListOnboarding}
+                />
+              ) : (
+                <Dashboard className="h-full" />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* File Viewer Modal */}
       {showFileViewer && activeSession?.currentPath && (
@@ -699,6 +851,7 @@ export function DesktopLayout({
             onFilePicker={handleFilePicker}
             onUrlExtract={handleUrlExtract}
             isUploading={isUploading}
+            elevated={keyboardElevated}
           />
         </>
       )}
@@ -769,6 +922,11 @@ export function DesktopLayout({
           </div>
         );
       })()}
+
+      {/* Session list onboarding (for first-time users) */}
+      {showSessionListOnboarding && showSidePanel && sidePanelTab === 'sessions' && onCompleteSessionListOnboarding && (
+        <Onboarding type="sessionList" onComplete={onCompleteSessionListOnboarding} />
+      )}
     </div>
   );
 }

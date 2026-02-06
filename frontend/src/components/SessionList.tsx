@@ -70,6 +70,7 @@ interface SessionListProps {
   onBack?: () => void;
   inline?: boolean;  // true for side panel, false for fullscreen
   contentScale?: number;  // Scale factor for content (tabs remain fixed)
+  isOnboarding?: boolean;  // Show dummy session for onboarding
 }
 
 // Session menu dialog (color change + delete)
@@ -630,7 +631,7 @@ function SessionItem({
   );
 }
 
-export function SessionList({ onSelectSession, onBack, inline = false, contentScale }: SessionListProps) {
+export function SessionList({ onSelectSession, onBack, inline = false, contentScale, isOnboarding = false }: SessionListProps) {
   const { t } = useTranslation();
   const {
     sessions,
@@ -751,7 +752,8 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
     ? "h-full flex flex-col bg-gray-900 text-white overflow-hidden"
     : "h-screen flex flex-col bg-gray-900 text-white";
 
-  if (isLoading && sessions.length === 0) {
+  // Don't show loading screen during onboarding (need to show UI elements)
+  if (isLoading && sessions.length === 0 && !isOnboarding) {
     return (
       <div className={`flex items-center justify-center bg-gray-900 ${inline ? 'h-full' : 'h-screen'}`}>
         <div className="text-gray-400">{t('common.loading')}</div>
@@ -787,15 +789,16 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {sessions.map((session) => (
-                    <SessionItem
-                      key={session.id}
-                      session={session}
-                      onSelect={onSelectSession}
-                      onShowMenu={handleShowMenu}
-                      onResume={handleResume}
-                      onShowConversation={handleShowConversation}
-                    />
+                  {sessions.map((session, index) => (
+                    <div key={session.id} data-onboarding={index === 0 ? 'session-item' : undefined}>
+                      <SessionItem
+                        session={session}
+                        onSelect={onSelectSession}
+                        onShowMenu={handleShowMenu}
+                        onResume={handleResume}
+                        onShowConversation={handleShowConversation}
+                      />
+                    </div>
                   ))}
                 </div>
               )}
@@ -843,6 +846,7 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
             <button
               onClick={() => setShowCreateModal(true)}
               className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+              data-onboarding="new-session"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -870,6 +874,7 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
                 ? 'text-white bg-gray-800 border-t-2 border-blue-500'
                 : 'text-gray-400 hover:text-gray-300'
             }`}
+            data-onboarding="history-tab"
           >
             {t('history.title')}
           </button>
@@ -880,6 +885,7 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
                 ? 'text-white bg-gray-800 border-t-2 border-blue-500'
                 : 'text-gray-400 hover:text-gray-300'
             }`}
+            data-onboarding="dashboard-tab"
           >
             {t('dashboard.title')}
           </button>

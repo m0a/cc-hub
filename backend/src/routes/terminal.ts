@@ -125,13 +125,27 @@ export const terminalWebSocket = {
       return;
     }
 
-    // Handle JSON messages (resize commands)
+    // Handle JSON messages (resize, refresh commands)
     if (message.startsWith('{')) {
       try {
         const data = JSON.parse(message);
         if (data.type === 'resize' && typeof data.cols === 'number' && typeof data.rows === 'number') {
           process.terminal.resize(data.cols, data.rows);
           console.log(`[${sessionId}] Resized to ${data.cols}x${data.rows}`);
+          return;
+        }
+        if (data.type === 'refresh') {
+          // Force tmux to completely redraw by refresh-client
+          try {
+            const proc = Bun.spawn(['tmux', 'refresh-client', '-S', '-t', sessionId], {
+              stdout: 'ignore',
+              stderr: 'ignore',
+            });
+            await proc.exited;
+            console.log(`[${sessionId}] Refreshed tmux client`);
+          } catch (error) {
+            console.error(`[${sessionId}] Failed to refresh:`, error);
+          }
           return;
         }
       } catch {

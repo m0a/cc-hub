@@ -4,9 +4,9 @@ import { TerminalComponent, type TerminalRef } from './Terminal';
 import { ConversationViewer } from './ConversationViewer';
 import { FileViewer } from './files/FileViewer';
 import { SessionList } from './SessionList';
-import { Dashboard } from './dashboard/Dashboard';
+import { Onboarding } from './Onboarding';
 import { authFetch } from '../services/api';
-import type { SessionState, ConversationMessage, SessionResponse, SessionTheme } from '../../../shared/types';
+import type { SessionState, ConversationMessage, SessionTheme } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const SESSION_LIST_WIDTH_KEY = 'cchub-session-list-width';
@@ -48,6 +48,8 @@ interface PaneContainerProps {
   sessionListToggleRefs?: React.RefObject<Map<string, () => void>>;
   isTablet?: boolean;
   globalReloadKey?: number;
+  showSessionListOnboarding?: boolean;
+  onCompleteSessionListOnboarding?: () => void;
 }
 
 export function PaneContainer({
@@ -64,6 +66,8 @@ export function PaneContainer({
   sessionListToggleRefs,
   isTablet = false,
   globalReloadKey = 0,
+  showSessionListOnboarding = false,
+  onCompleteSessionListOnboarding,
 }: PaneContainerProps) {
   if (node.type === 'terminal') {
     return (
@@ -81,6 +85,8 @@ export function PaneContainer({
         sessionListToggleRefs={sessionListToggleRefs}
         globalReloadKey={globalReloadKey}
         isTablet={isTablet}
+        showSessionListOnboarding={showSessionListOnboarding}
+        onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
       />
     );
   }
@@ -101,6 +107,8 @@ export function PaneContainer({
         sessionListToggleRefs={sessionListToggleRefs}
         isTablet={isTablet}
         globalReloadKey={globalReloadKey}
+        showSessionListOnboarding={showSessionListOnboarding}
+        onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
       />
     );
   }
@@ -123,6 +131,8 @@ export function PaneContainer({
       sessionListToggleRefs={sessionListToggleRefs}
       globalReloadKey={globalReloadKey}
       isTablet={isTablet}
+      showSessionListOnboarding={showSessionListOnboarding}
+      onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
     />
   );
 }
@@ -141,6 +151,8 @@ interface TerminalPaneProps {
   sessionListToggleRefs?: React.RefObject<Map<string, () => void>>;
   globalReloadKey?: number;
   isTablet?: boolean;
+  showSessionListOnboarding?: boolean;
+  onCompleteSessionListOnboarding?: () => void;
 }
 
 function TerminalPane({
@@ -157,6 +169,8 @@ function TerminalPane({
   sessionListToggleRefs,
   globalReloadKey = 0,
   isTablet = false,
+  showSessionListOnboarding = false,
+  onCompleteSessionListOnboarding,
 }: TerminalPaneProps) {
   const { t } = useTranslation();
   const terminalRef = useRef<TerminalRef>(null);
@@ -269,10 +283,15 @@ function TerminalPane({
     pinchStartRef.current = null;
   }, []);
 
-  // Reload terminal by remounting
+  // Refresh terminal display (force tmux redraw without remounting)
   const handleReload = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    setReloadKey(prev => prev + 1);
+    if (terminalRef.current?.refreshTerminal) {
+      terminalRef.current.refreshTerminal();
+    } else {
+      // Fallback: remount terminal
+      setReloadKey(prev => prev + 1);
+    }
   }, []);
 
   // Open file viewer
@@ -415,6 +434,7 @@ function TerminalPane({
               onClick={handleOpenFileViewer}
               className={`${isTablet ? 'p-1.5' : 'p-1'} text-white/50 hover:text-white/80 transition-colors`}
               title={t('files.title')}
+              data-onboarding="file-browser"
             >
               <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
@@ -470,6 +490,7 @@ function TerminalPane({
                 : 'text-white/50 hover:text-white/80'
             }`}
             title={showSessionList ? t('session.hideList') : t('session.showList')}
+            data-onboarding="session-list"
           >
             <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
@@ -558,6 +579,7 @@ function TerminalPane({
                   }}
                   inline={true}
                   contentScale={sessionListScale}
+                  isOnboarding={showSessionListOnboarding}
                 />
               </div>
             </div>
@@ -571,6 +593,11 @@ function TerminalPane({
           sessionWorkingDir={session.currentPath}
           onClose={() => setShowFileViewer(false)}
         />
+      )}
+
+      {/* Session list onboarding (for first-time users) */}
+      {showSessionListOnboarding && showSessionList && onCompleteSessionListOnboarding && (
+        <Onboarding type="sessionList" onComplete={onCompleteSessionListOnboarding} />
       )}
     </div>
   );
@@ -623,6 +650,8 @@ interface SplitContainerProps {
   sessionListToggleRefs?: React.RefObject<Map<string, () => void>>;
   isTablet?: boolean;
   globalReloadKey?: number;
+  showSessionListOnboarding?: boolean;
+  onCompleteSessionListOnboarding?: () => void;
 }
 
 function SplitContainer({
@@ -639,6 +668,8 @@ function SplitContainer({
   sessionListToggleRefs,
   isTablet = false,
   globalReloadKey = 0,
+  showSessionListOnboarding = false,
+  onCompleteSessionListOnboarding,
 }: SplitContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState<number | null>(null);
@@ -733,6 +764,8 @@ function SplitContainer({
           sessionListToggleRefs={sessionListToggleRefs}
           isTablet={isTablet}
           globalReloadKey={globalReloadKey}
+          showSessionListOnboarding={showSessionListOnboarding}
+          onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
         />
       </div>
     );

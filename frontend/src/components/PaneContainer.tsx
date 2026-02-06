@@ -45,6 +45,7 @@ interface PaneContainerProps {
   onSplit?: (direction: 'horizontal' | 'vertical') => void;
   sessions: ExtendedSession[];
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
+  sessionListToggleRefs?: React.RefObject<Map<string, () => void>>;
   isTablet?: boolean;
   globalReloadKey?: number;
 }
@@ -60,6 +61,7 @@ export function PaneContainer({
   onSplit,
   sessions,
   terminalRefs,
+  sessionListToggleRefs,
   isTablet = false,
   globalReloadKey = 0,
 }: PaneContainerProps) {
@@ -76,6 +78,7 @@ export function PaneContainer({
         onSplit={onSplit}
         sessions={sessions}
         terminalRefs={terminalRefs}
+        sessionListToggleRefs={sessionListToggleRefs}
         globalReloadKey={globalReloadKey}
         isTablet={isTablet}
       />
@@ -95,6 +98,7 @@ export function PaneContainer({
         onSplit={onSplit}
         sessions={sessions}
         terminalRefs={terminalRefs}
+        sessionListToggleRefs={sessionListToggleRefs}
         isTablet={isTablet}
         globalReloadKey={globalReloadKey}
       />
@@ -116,6 +120,7 @@ export function PaneContainer({
       onSplit={onSplit}
       sessions={sessions}
       terminalRefs={terminalRefs}
+      sessionListToggleRefs={sessionListToggleRefs}
       globalReloadKey={globalReloadKey}
       isTablet={isTablet}
     />
@@ -133,6 +138,7 @@ interface TerminalPaneProps {
   onSplit?: (direction: 'horizontal' | 'vertical') => void;
   sessions: ExtendedSession[];
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
+  sessionListToggleRefs?: React.RefObject<Map<string, () => void>>;
   globalReloadKey?: number;
   isTablet?: boolean;
 }
@@ -148,6 +154,7 @@ function TerminalPane({
   onSplit,
   sessions,
   terminalRefs,
+  sessionListToggleRefs,
   globalReloadKey = 0,
   isTablet = false,
 }: TerminalPaneProps) {
@@ -283,6 +290,16 @@ function TerminalPane({
       terminalRefs.current.delete(paneId);
     };
   }, [paneId, sessionId, terminalRefs]);
+
+  // Register session list toggle function
+  useEffect(() => {
+    if (sessionListToggleRefs?.current) {
+      sessionListToggleRefs.current.set(paneId, () => setShowSessionList(prev => !prev));
+    }
+    return () => {
+      sessionListToggleRefs?.current?.delete(paneId);
+    };
+  }, [paneId, sessionListToggleRefs]);
 
   const handleConnect = useCallback(() => {
     if (sessionId) {
@@ -603,6 +620,7 @@ interface SplitContainerProps {
   onSplit?: (direction: 'horizontal' | 'vertical') => void;
   sessions: ExtendedSession[];
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
+  sessionListToggleRefs?: React.RefObject<Map<string, () => void>>;
   isTablet?: boolean;
   globalReloadKey?: number;
 }
@@ -618,6 +636,7 @@ function SplitContainer({
   onSplit,
   sessions,
   terminalRefs,
+  sessionListToggleRefs,
   isTablet = false,
   globalReloadKey = 0,
 }: SplitContainerProps) {
@@ -711,6 +730,7 @@ function SplitContainer({
           onSplit={onSplit}
           sessions={sessions}
           terminalRefs={terminalRefs}
+          sessionListToggleRefs={sessionListToggleRefs}
           isTablet={isTablet}
           globalReloadKey={globalReloadKey}
         />

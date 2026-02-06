@@ -1,7 +1,5 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { PaneContainer, type PaneNode } from './PaneContainer';
-import { SessionList } from './SessionList';
-import { Dashboard } from './dashboard/Dashboard';
 import { FileViewer } from './files/FileViewer';
 import { FloatingKeyboard } from './FloatingKeyboard';
 import { authFetch } from '../services/api';
@@ -213,6 +211,7 @@ export function DesktopLayout({
   isTablet = false,
 }: DesktopLayoutProps) {
   const terminalRefs = useRef<Map<string, TerminalRef | null>>(new Map());
+  const sessionListToggleRefs = useRef<Map<string, () => void>>(new Map());
   const activePaneRef = useRef<string>('');
 
   // Get latest session info (including theme) from API
@@ -243,10 +242,7 @@ export function DesktopLayout({
             };
       })
     : propSessions;
-  const [showSidePanel, setShowSidePanel] = useState(false);
-  const [sidePanelTab, setSidePanelTab] = useState<'sessions' | 'dashboard'>('sessions');
   const [showFileViewer, setShowFileViewer] = useState(false);
-  const [pendingSessionPane, setPendingSessionPane] = useState<string | null>(null);
 
   // Floating keyboard state (for tablet mode)
   const [showKeyboard, setShowKeyboard] = useState(() => {
@@ -399,10 +395,11 @@ export function DesktopLayout({
         return;
       }
 
-      // Ctrl/Cmd + B: Toggle side panel
+      // Ctrl/Cmd + B: Toggle session list in active pane
       if (!e.shiftKey && e.key.toLowerCase() === 'b') {
         e.preventDefault();
-        setShowSidePanel(prev => !prev);
+        const toggleFn = sessionListToggleRefs.current.get(activePaneRef.current);
+        toggleFn?.();
         return;
       }
 
@@ -603,31 +600,17 @@ export function DesktopLayout({
         root: updateSessionId(prev.root, paneId, sessionId),
         activePane: paneId,
       }));
-    } else {
-      // Open side panel for session selection
-      setPendingSessionPane(paneId);
-      setShowSidePanel(true);
-      setSidePanelTab('sessions');
     }
   }, []);
 
   const handleSessionSelect = useCallback((session: SessionResponse) => {
-    if (pendingSessionPane) {
-      setDesktopState(prev => ({
-        ...prev,
-        root: updateSessionId(prev.root, pendingSessionPane, session.id),
-        activePane: pendingSessionPane,
-      }));
-      setPendingSessionPane(null);
-    } else {
-      // Update active pane
-      setDesktopState(prev => ({
-        ...prev,
-        root: updateSessionId(prev.root, prev.activePane, session.id),
-      }));
-    }
+    // Update active pane
+    setDesktopState(prev => ({
+      ...prev,
+      root: updateSessionId(prev.root, prev.activePane, session.id),
+    }));
     onSelectSession(session);
-  }, [pendingSessionPane, onSelectSession]);
+  }, [onSelectSession]);
 
   const handleSplitRatioChange = useCallback((nodeId: string, ratio: number[]) => {
     setDesktopState(prev => ({
@@ -683,118 +666,11 @@ export function DesktopLayout({
             onSplit={handleSplit}
             sessions={sessions}
             terminalRefs={terminalRefs}
+            sessionListToggleRefs={sessionListToggleRefs}
             isTablet={isTablet}
           />
         </div>
       </div>
-
-      {/* Side panel - overlay on tablet, inline on desktop */}
-      {showSidePanel && (
-        isTablet ? (
-          // Tablet: Overlay side panel
-          <div className="fixed inset-0 z-40">
-            {/* Backdrop */}
-            <div
-              className="absolute inset-0 bg-black/50"
-              onClick={() => setShowSidePanel(false)}
-            />
-            {/* Panel */}
-            <div className="absolute right-0 top-0 bottom-0 w-80 bg-gray-900 shadow-xl flex flex-col">
-              {/* Tab header */}
-              <div className="flex items-center border-b border-gray-700 shrink-0">
-                <button
-                  onClick={() => setSidePanelTab('sessions')}
-                  className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-                    sidePanelTab === 'sessions'
-                      ? 'text-white bg-gray-800'
-                      : 'text-gray-400 hover:text-gray-300'
-                  }`}
-                >
-                  Sessions
-                </button>
-                <button
-                  onClick={() => setSidePanelTab('dashboard')}
-                  className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-                    sidePanelTab === 'dashboard'
-                      ? 'text-white bg-gray-800'
-                      : 'text-gray-400 hover:text-gray-300'
-                  }`}
-                >
-                  Dashboard
-                </button>
-                <button
-                  onClick={() => setShowSidePanel(false)}
-                  className="p-2 text-gray-400 hover:text-white transition-colors"
-                  title="閉じる"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              {/* Tab content */}
-              <div className="flex-1 min-h-0 overflow-hidden">
-                {sidePanelTab === 'sessions' ? (
-                  <SessionList
-                    onSelectSession={handleSessionSelect}
-                    inline={true}
-                  />
-                ) : (
-                  <Dashboard className="h-full" />
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          // Desktop: Inline side panel
-          <div className="w-80 h-full flex flex-col border-l border-gray-700 bg-gray-900 shrink-0">
-            {/* Tab header */}
-            <div className="flex items-center border-b border-gray-700 shrink-0">
-              <button
-                onClick={() => setSidePanelTab('sessions')}
-                className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-                  sidePanelTab === 'sessions'
-                    ? 'text-white bg-gray-800'
-                    : 'text-gray-400 hover:text-gray-300'
-                }`}
-              >
-                Sessions
-              </button>
-              <button
-                onClick={() => setSidePanelTab('dashboard')}
-                className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-                  sidePanelTab === 'dashboard'
-                    ? 'text-white bg-gray-800'
-                    : 'text-gray-400 hover:text-gray-300'
-                }`}
-              >
-                Dashboard
-              </button>
-              <button
-                onClick={() => setShowSidePanel(false)}
-                className="p-2 text-gray-400 hover:text-white transition-colors"
-                title="閉じる"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Tab content */}
-            <div className="flex-1 min-h-0 overflow-hidden">
-              {sidePanelTab === 'sessions' ? (
-                <SessionList
-                  onSelectSession={handleSessionSelect}
-                  inline={true}
-                />
-              ) : (
-                <Dashboard className="h-full" />
-              )}
-            </div>
-          </div>
-        )
-      )}
 
       {/* File Viewer Modal */}
       {showFileViewer && activeSession?.currentPath && (

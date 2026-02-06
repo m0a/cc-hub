@@ -856,10 +856,10 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
         )}
 
         {/* Tab navigation */}
-        <div className="flex">
+        <div className="flex min-w-0">
           <button
             onClick={() => setActiveTab('sessions')}
-            className={`flex-1 px-3 py-2.5 text-sm font-medium transition-colors ${
+            className={`flex-1 min-w-0 px-1 py-2 text-xs font-medium truncate transition-colors ${
               activeTab === 'sessions'
                 ? 'text-white bg-gray-800 border-t-2 border-blue-500'
                 : 'text-gray-400 hover:text-gray-300'
@@ -869,7 +869,7 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
           </button>
           <button
             onClick={() => setActiveTab('history')}
-            className={`flex-1 px-3 py-2.5 text-sm font-medium transition-colors ${
+            className={`flex-1 min-w-0 px-1 py-2 text-xs font-medium truncate transition-colors ${
               activeTab === 'history'
                 ? 'text-white bg-gray-800 border-t-2 border-blue-500'
                 : 'text-gray-400 hover:text-gray-300'
@@ -880,7 +880,7 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
           </button>
           <button
             onClick={() => setActiveTab('dashboard')}
-            className={`flex-1 px-3 py-2.5 text-sm font-medium transition-colors ${
+            className={`flex-1 min-w-0 px-1 py-2 text-xs font-medium truncate transition-colors ${
               activeTab === 'dashboard'
                 ? 'text-white bg-gray-800 border-t-2 border-blue-500'
                 : 'text-gray-400 hover:text-gray-300'

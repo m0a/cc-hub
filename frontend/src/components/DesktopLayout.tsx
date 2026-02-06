@@ -1,14 +1,11 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { PaneContainer, type PaneNode } from './PaneContainer';
-import { SessionList } from './SessionList';
-import { Dashboard } from './dashboard/Dashboard';
 import { FileViewer } from './files/FileViewer';
 import { FloatingKeyboard } from './FloatingKeyboard';
-import { Onboarding } from './Onboarding';
 import { authFetch } from '../services/api';
 import { useSessions } from '../hooks/useSessions';
 import type { TerminalRef } from './Terminal';
-import type { SessionResponse, SessionState, SessionTheme } from '../../../shared/types';
+import type { SessionState, SessionTheme } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const DESKTOP_STATE_KEY = 'cchub-desktop-state';
@@ -30,9 +27,7 @@ interface DesktopState {
 interface DesktopLayoutProps {
   sessions: OpenSession[];
   activeSessionId: string | null;
-  onSelectSession: (session: SessionResponse) => void;
   onSessionStateChange: (id: string, state: SessionState) => void;
-  onShowSessionList: () => void;
   onReload: () => void;
   isTablet?: boolean;
   showSessionListOnboarding?: boolean;
@@ -210,9 +205,7 @@ const KEYBOARD_VISIBLE_KEY = 'cchub-floating-keyboard-visible';
 export function DesktopLayout({
   sessions: propSessions,
   activeSessionId,
-  onSelectSession,
   onSessionStateChange,
-  onShowSessionList,
   onReload,
   isTablet = false,
   showSessionListOnboarding = false,
@@ -220,6 +213,7 @@ export function DesktopLayout({
   keyboardControlRef,
 }: DesktopLayoutProps) {
   const terminalRefs = useRef<Map<string, TerminalRef | null>>(new Map());
+  const sessionListToggleRefs = useRef<Map<string, () => void>>(new Map());
   const activePaneRef = useRef<string>('');
 
   // Get latest session info (including theme) from API
@@ -250,10 +244,7 @@ export function DesktopLayout({
             };
       })
     : propSessions;
-  const [showSidePanel, setShowSidePanel] = useState(false);
-  const [sidePanelTab, setSidePanelTab] = useState<'sessions' | 'dashboard'>('sessions');
   const [showFileViewer, setShowFileViewer] = useState(false);
-  const [pendingSessionPane, setPendingSessionPane] = useState<string | null>(null);
 
   // Floating keyboard state (for tablet mode)
   const [showKeyboard, setShowKeyboard] = useState(() => {
@@ -290,9 +281,7 @@ export function DesktopLayout({
 
   // Refresh all terminal panes (force tmux redraw without page reload)
   const handleGlobalReload = useCallback(() => {
-    terminalRefs.current.forEach((ref) => {
-      ref?.refreshTerminal();
-    });
+    window.location.reload();
   }, []);
 
   // Keep onReload reference for compatibility
@@ -304,9 +293,6 @@ export function DesktopLayout({
       localStorage.setItem(KEYBOARD_VISIBLE_KEY, String(showKeyboard));
     }
   }, [showKeyboard, isTablet]);
-
-  // Use onShowSessionList in tablet mode for session list
-  void onShowSessionList;
 
   // Migrate old pane types to terminal
   const migratePaneNode = (node: PaneNode): PaneNode => {
@@ -426,10 +412,11 @@ export function DesktopLayout({
         return;
       }
 
-      // Ctrl/Cmd + B: Toggle side panel
+      // Ctrl/Cmd + B: Toggle session list in active pane
       if (!e.shiftKey && e.key.toLowerCase() === 'b') {
         e.preventDefault();
-        setShowSidePanel(prev => !prev);
+        const toggleFn = sessionListToggleRefs.current.get(activePaneRef.current);
+        toggleFn?.();
         return;
       }
 
@@ -477,9 +464,17 @@ export function DesktopLayout({
 
   // Handle paste (text or image)
   const handlePaste = useCallback(async () => {
+    const pasteText = async (text: string) => {
+      if (text) {
+        const ref = terminalRefs.current?.get(activePaneRef.current);
+        ref?.sendInput(text);
+      }
+    };
+
     try {
       // Try to read clipboard items (for images)
       const items = await navigator.clipboard.read();
+      let handled = false;
       for (const item of items) {
         // Check for image
         const imageType = item.types.find(t => t.startsWith('image/'));
@@ -507,21 +502,21 @@ export function DesktopLayout({
         if (item.types.includes('text/plain')) {
           const blob = await item.getType('text/plain');
           const text = await blob.text();
-          if (text) {
-            const ref = terminalRefs.current?.get(activePaneRef.current);
-            ref?.sendInput(text);
-          }
-          return;
+          await pasteText(text);
+          handled = true;
+          break;
         }
+      }
+      // If no items were handled, try readText as fallback
+      if (!handled) {
+        const text = await navigator.clipboard.readText();
+        await pasteText(text);
       }
     } catch {
       // Fallback to readText for browsers that don't support clipboard.read()
       try {
         const text = await navigator.clipboard.readText();
-        if (text) {
-          const ref = terminalRefs.current?.get(activePaneRef.current);
-          ref?.sendInput(text);
-        }
+        await pasteText(text);
       } catch (err) {
         console.error('Clipboard read failed:', err);
       }
@@ -622,31 +617,8 @@ export function DesktopLayout({
         root: updateSessionId(prev.root, paneId, sessionId),
         activePane: paneId,
       }));
-    } else {
-      // Open side panel for session selection
-      setPendingSessionPane(paneId);
-      setShowSidePanel(true);
-      setSidePanelTab('sessions');
     }
   }, []);
-
-  const handleSessionSelect = useCallback((session: SessionResponse) => {
-    if (pendingSessionPane) {
-      setDesktopState(prev => ({
-        ...prev,
-        root: updateSessionId(prev.root, pendingSessionPane, session.id),
-        activePane: pendingSessionPane,
-      }));
-      setPendingSessionPane(null);
-    } else {
-      // Update active pane
-      setDesktopState(prev => ({
-        ...prev,
-        root: updateSessionId(prev.root, prev.activePane, session.id),
-      }));
-    }
-    onSelectSession(session);
-  }, [pendingSessionPane, onSelectSession]);
 
   const handleSplitRatioChange = useCallback((nodeId: string, ratio: number[]) => {
     setDesktopState(prev => ({
@@ -665,68 +637,53 @@ export function DesktopLayout({
     <div className="h-screen flex bg-gray-900">
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
-        <div className="flex items-center justify-between px-3 py-1 bg-black/50 border-b border-gray-700 shrink-0">
-          {/* Left: Menu button (desktop only, tablet uses PaneContainer sidebar) */}
-          {!isTablet && (
-            <button
-              onClick={() => setShowSidePanel(prev => !prev)}
-              className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-              title="サイドパネル (Ctrl+B)"
-              data-onboarding="session-list"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-          )}
+        {/* Header - tablet only for keyboard toggle */}
+        {isTablet && (
+          <div className="flex items-center justify-between px-3 py-1 bg-black/50 border-b border-gray-700 shrink-0">
+            {/* Left: Session name */}
+            <span className="text-white/70 text-sm truncate max-w-[300px]">
+              {activeSession?.name || 'CC Hub - Desktop'}
+            </span>
 
-          {/* Center: Session name */}
-          <span className="text-white/70 text-sm truncate max-w-[300px]">
-            {activeSession?.name || 'CC Hub - Desktop'}
-          </span>
+            {/* Right: Action buttons */}
+            <div className="flex items-center gap-1">
+              {/* Split buttons */}
+              <div className="flex items-center gap-1" data-onboarding="split-pane">
+                <button
+                  onClick={() => handleSplit('horizontal')}
+                  className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                  title="縦分割 (Ctrl+D)"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <line x1="12" y1="3" x2="12" y2="21" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => handleSplit('vertical')}
+                  className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                  title="横分割 (Ctrl+Shift+D)"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                  </svg>
+                </button>
+              </div>
 
-          {/* Right: Action buttons */}
-          <div className="flex items-center gap-1">
-            {/* Split buttons */}
-            <div className="flex items-center gap-1" data-onboarding="split-pane">
+              {/* Reload all panes */}
               <button
-                onClick={() => handleSplit('horizontal')}
+                onClick={handleGlobalReload}
                 className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-                title="縦分割 (Ctrl+D)"
+                title="全ペインをリロード"
+                data-onboarding="reload"
               >
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <line x1="12" y1="3" x2="12" y2="21" />
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
               </button>
-              <button
-                onClick={() => handleSplit('vertical')}
-                className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-                title="横分割 (Ctrl+Shift+D)"
-              >
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <line x1="3" y1="12" x2="21" y2="12" />
-                </svg>
-              </button>
-            </div>
 
-
-            {/* Reload all panes */}
-            <button
-              onClick={handleGlobalReload}
-              className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-              title="全ペインをリロード"
-              data-onboarding="reload"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            </button>
-
-            {/* Keyboard toggle (tablet only) */}
-            {isTablet && (
+              {/* Keyboard toggle */}
               <button
                 onClick={() => setShowKeyboard(prev => !prev)}
                 className={`p-1 rounded transition-colors ${
@@ -746,9 +703,9 @@ export function DesktopLayout({
                   <line x1="6" y1="14" x2="18" y2="14" />
                 </svg>
               </button>
-            )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Pane container */}
         <div className="flex-1 min-h-0" data-onboarding="terminal">
@@ -760,8 +717,10 @@ export function DesktopLayout({
             onSessionStateChange={onSessionStateChange}
             onSplitRatioChange={handleSplitRatioChange}
             onClosePane={handleClosePane}
+            onSplit={handleSplit}
             sessions={sessions}
             terminalRefs={terminalRefs}
+            sessionListToggleRefs={sessionListToggleRefs}
             isTablet={isTablet}
             showSessionListOnboarding={showSessionListOnboarding}
             onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
@@ -769,117 +728,6 @@ export function DesktopLayout({
         </div>
       </div>
 
-      {/* Side panel - overlay on tablet, inline on desktop */}
-      {showSidePanel && (
-        isTablet ? (
-          // Tablet: Overlay side panel
-          <div className="fixed inset-0 z-40">
-            {/* Backdrop */}
-            <div
-              className="absolute inset-0 bg-black/50"
-              onClick={() => setShowSidePanel(false)}
-            />
-            {/* Panel */}
-            <div className="absolute right-0 top-0 bottom-0 w-80 bg-gray-900 shadow-xl flex flex-col">
-              {/* Tab header */}
-              <div className="flex items-center border-b border-gray-700 shrink-0">
-                <button
-                  onClick={() => setSidePanelTab('sessions')}
-                  className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-                    sidePanelTab === 'sessions'
-                      ? 'text-white bg-gray-800'
-                      : 'text-gray-400 hover:text-gray-300'
-                  }`}
-                >
-                  Sessions
-                </button>
-                <button
-                  onClick={() => setSidePanelTab('dashboard')}
-                  className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-                    sidePanelTab === 'dashboard'
-                      ? 'text-white bg-gray-800'
-                      : 'text-gray-400 hover:text-gray-300'
-                  }`}
-                  data-onboarding="dashboard"
-                >
-                  Dashboard
-                </button>
-                <button
-                  onClick={() => setShowSidePanel(false)}
-                  className="p-2 text-gray-400 hover:text-white transition-colors"
-                  title="閉じる"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              {/* Tab content */}
-              <div className="flex-1 min-h-0 overflow-hidden">
-                {sidePanelTab === 'sessions' ? (
-                  <SessionList
-                    onSelectSession={handleSessionSelect}
-                    inline={true}
-                    isOnboarding={showSessionListOnboarding}
-                  />
-                ) : (
-                  <Dashboard className="h-full" />
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          // Desktop: Inline side panel
-          <div className="w-80 h-full flex flex-col border-l border-gray-700 bg-gray-900 shrink-0">
-            {/* Tab header */}
-            <div className="flex items-center border-b border-gray-700 shrink-0">
-              <button
-                onClick={() => setSidePanelTab('sessions')}
-                className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-                  sidePanelTab === 'sessions'
-                    ? 'text-white bg-gray-800'
-                    : 'text-gray-400 hover:text-gray-300'
-                }`}
-              >
-                Sessions
-              </button>
-              <button
-                onClick={() => setSidePanelTab('dashboard')}
-                className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-                  sidePanelTab === 'dashboard'
-                    ? 'text-white bg-gray-800'
-                    : 'text-gray-400 hover:text-gray-300'
-                }`}
-                data-onboarding="dashboard"
-              >
-                Dashboard
-              </button>
-              <button
-                onClick={() => setShowSidePanel(false)}
-                className="p-2 text-gray-400 hover:text-white transition-colors"
-                title="閉じる"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Tab content */}
-            <div className="flex-1 min-h-0 overflow-hidden">
-              {sidePanelTab === 'sessions' ? (
-                <SessionList
-                  onSelectSession={handleSessionSelect}
-                  inline={true}
-                  isOnboarding={showSessionListOnboarding}
-                />
-              ) : (
-                <Dashboard className="h-full" />
-              )}
-            </div>
-          </div>
-        )
-      )}
 
       {/* File Viewer Modal */}
       {showFileViewer && activeSession?.currentPath && (
@@ -980,10 +828,6 @@ export function DesktopLayout({
         );
       })()}
 
-      {/* Session list onboarding (for first-time users) */}
-      {showSessionListOnboarding && showSidePanel && sidePanelTab === 'sessions' && onCompleteSessionListOnboarding && (
-        <Onboarding type="sessionList" onComplete={onCompleteSessionListOnboarding} />
-      )}
     </div>
   );
 }

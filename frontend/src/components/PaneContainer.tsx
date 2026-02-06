@@ -42,8 +42,10 @@ interface PaneContainerProps {
   onSessionStateChange: (sessionId: string, state: SessionState) => void;
   onSplitRatioChange: (nodeId: string, ratio: number[]) => void;
   onClosePane: (paneId: string) => void;
+  onSplit?: (direction: 'horizontal' | 'vertical') => void;
   sessions: ExtendedSession[];
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
+  sessionListToggleRefs?: React.RefObject<Map<string, () => void>>;
   isTablet?: boolean;
   globalReloadKey?: number;
   showSessionListOnboarding?: boolean;
@@ -58,8 +60,10 @@ export function PaneContainer({
   onSessionStateChange,
   onSplitRatioChange,
   onClosePane,
+  onSplit,
   sessions,
   terminalRefs,
+  sessionListToggleRefs,
   isTablet = false,
   globalReloadKey = 0,
   showSessionListOnboarding = false,
@@ -75,8 +79,10 @@ export function PaneContainer({
         onSelectSession={(sessionId) => onSelectSession(node.id, sessionId)}
         onSessionStateChange={onSessionStateChange}
         onClose={() => onClosePane(node.id)}
+        onSplit={onSplit}
         sessions={sessions}
         terminalRefs={terminalRefs}
+        sessionListToggleRefs={sessionListToggleRefs}
         globalReloadKey={globalReloadKey}
         isTablet={isTablet}
         showSessionListOnboarding={showSessionListOnboarding}
@@ -95,8 +101,10 @@ export function PaneContainer({
         onSessionStateChange={onSessionStateChange}
         onSplitRatioChange={onSplitRatioChange}
         onClosePane={onClosePane}
+        onSplit={onSplit}
         sessions={sessions}
         terminalRefs={terminalRefs}
+        sessionListToggleRefs={sessionListToggleRefs}
         isTablet={isTablet}
         globalReloadKey={globalReloadKey}
         showSessionListOnboarding={showSessionListOnboarding}
@@ -117,8 +125,10 @@ export function PaneContainer({
       onSelectSession={(sessionId) => onSelectSession(legacyNode.id, sessionId)}
       onSessionStateChange={onSessionStateChange}
       onClose={() => onClosePane(legacyNode.id)}
+      onSplit={onSplit}
       sessions={sessions}
       terminalRefs={terminalRefs}
+      sessionListToggleRefs={sessionListToggleRefs}
       globalReloadKey={globalReloadKey}
       isTablet={isTablet}
       showSessionListOnboarding={showSessionListOnboarding}
@@ -135,8 +145,10 @@ interface TerminalPaneProps {
   onSelectSession: (sessionId?: string) => void;
   onSessionStateChange: (sessionId: string, state: SessionState) => void;
   onClose: () => void;
+  onSplit?: (direction: 'horizontal' | 'vertical') => void;
   sessions: ExtendedSession[];
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
+  sessionListToggleRefs?: React.RefObject<Map<string, () => void>>;
   globalReloadKey?: number;
   isTablet?: boolean;
   showSessionListOnboarding?: boolean;
@@ -151,8 +163,10 @@ function TerminalPane({
   onSelectSession,
   onSessionStateChange,
   onClose,
+  onSplit,
   sessions,
   terminalRefs,
+  sessionListToggleRefs,
   globalReloadKey = 0,
   isTablet = false,
   showSessionListOnboarding = false,
@@ -205,6 +219,7 @@ function TerminalPane({
     if (!isDraggingSidebar) return;
 
     const handleMove = (e: MouseEvent | TouchEvent) => {
+      e.preventDefault();
       if (!containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
       const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
@@ -219,7 +234,7 @@ function TerminalPane({
 
     document.addEventListener('mousemove', handleMove);
     document.addEventListener('mouseup', handleEnd);
-    document.addEventListener('touchmove', handleMove);
+    document.addEventListener('touchmove', handleMove, { passive: false });
     document.addEventListener('touchend', handleEnd);
 
     return () => {
@@ -295,6 +310,16 @@ function TerminalPane({
       terminalRefs.current.delete(paneId);
     };
   }, [paneId, sessionId, terminalRefs]);
+
+  // Register session list toggle function
+  useEffect(() => {
+    if (sessionListToggleRefs?.current) {
+      sessionListToggleRefs.current.set(paneId, () => setShowSessionList(prev => !prev));
+    }
+    return () => {
+      sessionListToggleRefs?.current?.delete(paneId);
+    };
+  }, [paneId, sessionListToggleRefs]);
 
   const handleConnect = useCallback(() => {
     if (sessionId) {
@@ -429,6 +454,32 @@ function TerminalPane({
               </svg>
             </button>
           )}
+          {/* Split buttons - desktop only */}
+          {!isTablet && onSplit && (
+            <div className="flex items-center" data-onboarding="split-pane">
+              <button
+                onClick={(e) => { e.stopPropagation(); onSplit('horizontal'); }}
+                className="p-1 text-white/50 hover:text-white/80 transition-colors"
+                title="縦分割 (Ctrl+D)"
+                data-onboarding="split-pane"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <line x1="12" y1="3" x2="12" y2="21" />
+                </svg>
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onSplit('vertical'); }}
+                className="p-1 text-white/50 hover:text-white/80 transition-colors"
+                title="横分割 (Ctrl+Shift+D)"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                </svg>
+              </button>
+            </div>
+          )}
           {/* Session list toggle button */}
           <button
             onClick={(e) => {
@@ -461,7 +512,7 @@ function TerminalPane({
       </div>
 
       {/* Terminal, conversation, or session selector - with optional session list sidebar */}
-      <div className="flex-1 min-h-0 flex">
+      <div className="flex-1 min-h-0 flex relative">
         {/* Main content */}
         <div className={`${showSessionList ? 'flex-1' : 'w-full'} min-w-0`}>
           {showConversation && currentCcSessionId ? (
@@ -497,44 +548,45 @@ function TerminalPane({
           )}
         </div>
 
+        {/* Resize handle - absolute, overlaying the border between terminal and sidebar */}
+        {showSessionList && (
+          <div
+            onMouseDown={handleSidebarDragStart}
+            onTouchStart={handleSidebarDragStart}
+            className={`absolute top-0 h-full cursor-col-resize z-10 flex items-center justify-center ${
+              isDraggingSidebar ? 'bg-blue-500/20' : ''
+            }`}
+            style={{ width: isTablet ? 24 : 12, right: sessionListWidth - 8 - (isTablet ? 12 : 6), touchAction: 'none' }}
+          >
+            <div className={`w-0.5 h-8 rounded-full transition-colors ${isDraggingSidebar ? 'bg-blue-400' : 'bg-gray-500'}`} />
+          </div>
+        )}
+
         {/* Session list sidebar */}
         {showSessionList && (
-          <>
-            {/* Resize handle */}
-            <div
-              onMouseDown={handleSidebarDragStart}
-              onTouchStart={handleSidebarDragStart}
-              className={`w-1.5 h-full cursor-col-resize flex items-center justify-center shrink-0 transition-colors ${
-                isDraggingSidebar ? 'bg-blue-500/50' : 'bg-gray-700 hover:bg-blue-500/30'
-              }`}
-            >
-              <div className="w-0.5 h-8 bg-gray-500 rounded-full" />
+          <div
+            className="flex flex-col shrink-0 overflow-hidden bg-gray-900 -ml-2 border-l border-gray-700"
+            style={{ width: sessionListWidth, touchAction: 'none' }}
+            onTouchStart={handleSidebarTouchStart}
+            onTouchMove={handleSidebarTouchMove}
+            onTouchEnd={handleSidebarTouchEnd}
+          >
+            <div className={`px-2 py-1 bg-black/30 border-b border-gray-700 text-xs text-white/70 flex items-center justify-between shrink-0 ${isTablet ? 'mt-10' : ''}`}>
+              <span>{t('session.list')}</span>
+              <span className="text-white/40">{Math.round(sessionListScale * 100)}%</span>
             </div>
-            {/* Sidebar content - pinch to zoom */}
-            <div
-              className="border-l border-gray-700 flex flex-col shrink-0 overflow-hidden"
-              style={{ width: sessionListWidth, touchAction: 'none' }}
-              onTouchStart={handleSidebarTouchStart}
-              onTouchMove={handleSidebarTouchMove}
-              onTouchEnd={handleSidebarTouchEnd}
-            >
-              <div className={`px-2 py-1 bg-black/30 border-b border-gray-700 text-xs text-white/70 flex items-center justify-between shrink-0 ${isTablet ? 'mt-10' : ''}`}>
-                <span>{t('session.list')}</span>
-                <span className="text-white/40">{Math.round(sessionListScale * 100)}%</span>
-              </div>
-              <div className="flex-1 min-h-0 overflow-hidden">
-                <SessionList
-                  onSelectSession={(sess) => {
-                    onSelectSession(sess.id);
-                    // Keep session list open after selection
-                  }}
-                  inline={true}
-                  contentScale={sessionListScale}
-                  isOnboarding={showSessionListOnboarding}
-                />
-              </div>
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <SessionList
+                onSelectSession={(sess) => {
+                  onSelectSession(sess.id);
+                  // Keep session list open after selection
+                }}
+                inline={true}
+                contentScale={sessionListScale}
+                isOnboarding={showSessionListOnboarding}
+              />
             </div>
-          </>
+          </div>
         )}
       </div>
 
@@ -595,8 +647,10 @@ interface SplitContainerProps {
   onSessionStateChange: (sessionId: string, state: SessionState) => void;
   onSplitRatioChange: (nodeId: string, ratio: number[]) => void;
   onClosePane: (paneId: string) => void;
+  onSplit?: (direction: 'horizontal' | 'vertical') => void;
   sessions: ExtendedSession[];
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
+  sessionListToggleRefs?: React.RefObject<Map<string, () => void>>;
   isTablet?: boolean;
   globalReloadKey?: number;
   showSessionListOnboarding?: boolean;
@@ -611,8 +665,10 @@ function SplitContainer({
   onSessionStateChange,
   onSplitRatioChange,
   onClosePane,
+  onSplit,
   sessions,
   terminalRefs,
+  sessionListToggleRefs,
   isTablet = false,
   globalReloadKey = 0,
   showSessionListOnboarding = false,
@@ -705,8 +761,10 @@ function SplitContainer({
           onSessionStateChange={onSessionStateChange}
           onSplitRatioChange={onSplitRatioChange}
           onClosePane={onClosePane}
+          onSplit={onSplit}
           sessions={sessions}
           terminalRefs={terminalRefs}
+          sessionListToggleRefs={sessionListToggleRefs}
           isTablet={isTablet}
           globalReloadKey={globalReloadKey}
           showSessionListOnboarding={showSessionListOnboarding}

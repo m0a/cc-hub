@@ -142,6 +142,10 @@ export const terminalWebSocket = {
           process.terminal.resize(data.cols, data.rows);
           return;
         }
+        if (data.type === 'ping' && typeof data.timestamp === 'number') {
+          ws.send(JSON.stringify({ type: 'pong', timestamp: data.timestamp }));
+          return;
+        }
         if (data.type === 'refresh') {
           // Force tmux to completely redraw by refresh-client
           try {

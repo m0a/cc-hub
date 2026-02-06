@@ -5,6 +5,7 @@ import { UsageLimits } from './UsageLimits';
 import { DailyUsageChart } from './DailyUsageChart';
 import { ModelUsageChart } from './ModelUsageChart';
 import { HourlyHeatmap } from './HourlyHeatmap';
+import { NetworkLatency } from './NetworkLatency';
 import { LanguageSwitcher } from '../LanguageSwitcher';
 
 // Onboarding localStorage keys
@@ -45,6 +46,7 @@ export function Dashboard({ className = '' }: DashboardProps) {
 
   return (
     <div className={`p-2 space-y-2 overflow-y-auto ${className}`}>
+      <NetworkLatency />
       <UsageLimits data={data?.usageLimits || null} />
       <DailyUsageChart data={data?.dailyActivity || []} />
       <ModelUsageChart data={data?.modelUsage || []} />

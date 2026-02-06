@@ -176,9 +176,11 @@ function SessionMenuDialog({
 function CreateSessionModal({
   onConfirm,
   onCancel,
+  existingNames,
 }: {
   onConfirm: (name: string, workingDir?: string) => void;
   onCancel: () => void;
+  existingNames: Set<string>;
 }) {
   const { t } = useTranslation();
   const [name, setName] = useState('');
@@ -218,7 +220,12 @@ function CreateSessionModal({
       // Auto-suggest session name from directory name (only if not manually edited)
       if (!nameManuallyEdited) {
         const dirName = result.path.split('/').pop() || '';
-        setName(dirName);
+        let suggested = dirName;
+        let counter = 1;
+        while (existingNames.has(suggested)) {
+          suggested = `${dirName}-${counter++}`;
+        }
+        setName(suggested);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load directory');
@@ -907,6 +914,7 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
         <CreateSessionModal
           onConfirm={handleCreateSession}
           onCancel={() => setShowCreateModal(false)}
+          existingNames={new Set(sessions.map(s => s.name))}
         />
       )}
 

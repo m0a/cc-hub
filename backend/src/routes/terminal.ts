@@ -41,18 +41,12 @@ export const terminalWebSocket = {
     }
     activeConnections.get(sessionId)!.add(ws);
 
-    // Check if tmux session exists, create if not
+    // Check if tmux session exists - don't auto-create to prevent phantom sessions
     const exists = await tmuxService.sessionExists(sessionId);
     if (!exists) {
-      try {
-        await tmuxService.createSession(sessionId);
-        console.log(`Created tmux session: ${sessionId}`);
-      } catch (error) {
-        console.error('Failed to create tmux session:', error);
-        ws.send(JSON.stringify({ type: 'error', message: 'Failed to create session' }));
-        ws.close();
-        return;
-      }
+      ws.send(JSON.stringify({ type: 'error', message: 'Session not found' }));
+      ws.close();
+      return;
     }
 
     // Check if PTY process already exists for this session

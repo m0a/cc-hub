@@ -91,9 +91,12 @@ shared/      # Shared types and Zod schemas
 ### Frontend Components
 
 **Layout**:
-- **DesktopLayout.tsx** - Main layout with split panes, supports desktop and tablet modes (`isTablet` prop)
+- **DesktopLayout.tsx** - Main layout with split panes, supports desktop and tablet modes (`isTablet` prop). Header with split/reload/keyboard buttons (tablet only)
 - **TabletLayout.tsx** - Alternative tablet-specific layout with built-in keyboard
-- **PaneContainer.tsx** - Tree-based pane system with tabbed content (sessions, dashboard, history, files)
+- **PaneContainer.tsx** - Tree-based pane system with per-pane session list sidebar (resizable, pinch-to-zoom), split buttons (desktop), file viewer, conversation viewer
+
+**Onboarding**:
+- **Onboarding.tsx** - Spotlight-style walkthrough for new users with `beforeAction` support for triggering UI before showing steps
 
 **Terminal**:
 - **Terminal.tsx** - xterm.js terminal with WebGL rendering, fit addon, web links addon

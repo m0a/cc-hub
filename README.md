@@ -19,6 +19,9 @@ A web-based terminal manager for remotely managing Claude Code sessions. Control
 - **Dashboard** - Usage limits, daily statistics, cost estimates
 - **Session History** - Browse and resume past Claude Code sessions
 - **Conversation Viewer** - Markdown rendering, image display, system summary distinction
+- **Onboarding Walkthrough** - Spotlight-style guide for first-time users
+- **Split Panes** - Split terminal into multiple panes with per-pane session list sidebar
+- **Terminal Refresh** - Lightweight recovery from display corruption via WebSocket
 
 ## Installation
 
@@ -174,9 +177,9 @@ Settings are saved to `~/.cchub/session-themes.json` and persist across restarts
 ### Tablet Mode
 
 Automatically switches to tablet layout when screen width ≥ 640px and height ≥ 500px:
-- Left: Terminal (pinch-to-zoom supported)
-- Top right: Session list / Dashboard / History (tab switching)
-- Bottom right: Floating keyboard
+- Left: Terminal with split pane support (pinch-to-zoom supported)
+- Per-pane session list sidebar (resizable by drag, pinch-to-zoom)
+- Floating keyboard (draggable, minimizable)
 
 **Pinch Zoom**: Pinch with two fingers on the terminal to zoom. UI controls are not affected by zoom.
 

@@ -455,7 +455,7 @@ function TerminalPane({
           )}
           {/* Split buttons - desktop only */}
           {!isTablet && onSplit && (
-            <>
+            <div className="flex items-center" data-onboarding="split-pane">
               <button
                 onClick={(e) => { e.stopPropagation(); onSplit('horizontal'); }}
                 className="p-1 text-white/50 hover:text-white/80 transition-colors"
@@ -477,7 +477,7 @@ function TerminalPane({
                   <line x1="3" y1="12" x2="21" y2="12" />
                 </svg>
               </button>
-            </>
+            </div>
           )}
           {/* Session list toggle button */}
           <button

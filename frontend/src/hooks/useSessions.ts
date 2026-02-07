@@ -95,15 +95,18 @@ export function useSessions(): UseSessionsReturn {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to create session');
+        const errorData = await response.json().catch(() => ({}));
+        const err = new Error(errorData.error || 'Failed to create session');
+        (err as Error & { data?: unknown }).data = errorData;
+        throw err;
       }
 
       const session = await response.json();
       setSessions(prev => [session, ...prev]);
       return session;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-      return null;
+      // Don't setError here — let the caller handle display
+      throw err;
     }
   }, []);
 

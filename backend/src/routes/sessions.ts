@@ -76,6 +76,24 @@ sessions.get('/', async (c) => {
 
       if (ptySessionId) {
         ccSession = await claudeCodeService.getSessionById(ptySessionId, s.currentPath);
+
+        // After /clear, the PTY still shows the old session ID.
+        // Compare mtime with the newest .jsonl in the same project dir;
+        // if the newest one is sufficiently newer, use it instead.
+        if (ccSession) {
+          const [newestSession] = await claudeCodeService.getRecentSessionsForPath(s.currentPath, 1);
+          if (
+            newestSession &&
+            newestSession.sessionId !== ccSession.sessionId &&
+            newestSession.modified && ccSession.modified
+          ) {
+            const newestMtime = new Date(newestSession.modified).getTime();
+            const currentMtime = new Date(ccSession.modified).getTime();
+            if (newestMtime - currentMtime > 5000) {
+              ccSession = newestSession;
+            }
+          }
+        }
       }
 
       if (!ccSession && s.paneTty) {
@@ -167,6 +185,16 @@ sessions.post('/', async (c) => {
   const exists = await tmuxService.sessionExists(name);
   if (exists) {
     return c.json({ error: 'Session already exists' }, 400);
+  }
+
+  // Guard: reject if a Claude session is already running in the same directory
+  if (parsed.success && parsed.data.workingDir) {
+    const conflicting = tmuxSessions.find(
+      s => s.currentCommand === 'claude' && s.currentPath === parsed.data.workingDir
+    );
+    if (conflicting) {
+      return c.json({ error: 'duplicate_working_dir', existingSession: conflicting.name }, 409);
+    }
   }
 
   try {
@@ -318,6 +346,14 @@ sessions.post('/history/resume', async (c) => {
     // Generate a unique tmux session name based on project
     const projectName = projectPath.split('/').pop() || 'session';
     const tmuxSessions = await tmuxService.listSessions();
+
+    // Guard: reject if a Claude session is already running in the same directory
+    const conflicting = tmuxSessions.find(
+      s => s.currentCommand === 'claude' && s.currentPath === projectPath
+    );
+    if (conflicting) {
+      return c.json({ error: 'duplicate_working_dir', existingSession: conflicting.name }, 409);
+    }
     let tmuxSessionName = projectName;
     let counter = 1;
     while (tmuxSessions.some(s => s.name === tmuxSessionName)) {

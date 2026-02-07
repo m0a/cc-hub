@@ -131,13 +131,16 @@ export function useSessionHistory(): UseSessionHistoryResult {
         body: JSON.stringify({ sessionId, projectPath }),
       });
       if (!response.ok) {
-        throw new Error('Failed to resume session');
+        const errorData = await response.json().catch(() => ({}));
+        const err = new Error(errorData.error || 'Failed to resume session');
+        (err as Error & { data?: unknown }).data = errorData;
+        throw err;
       }
       const data = await response.json();
       return { tmuxSessionId: data.tmuxSessionId };
     } catch (err) {
       console.error('Failed to resume session:', err);
-      return null;
+      throw err;
     }
   }, []);
 

@@ -1,7 +1,8 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import type { ConversationMessage, ToolUseInfo, ToolResultInfo } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -231,6 +232,71 @@ const markdownComponents = {
   ),
 };
 
+// Memoized message item component
+const MessageItem = memo(function MessageItem({ msg }: { msg: ConversationMessage }) {
+  const { t } = useTranslation();
+
+  // Determine if this is a tool-result-only message (system response)
+  const isToolResultOnly = msg.role === 'user' &&
+    msg.toolResult && msg.toolResult.length > 0 &&
+    !msg.content;
+
+  // Determine if this is a system-generated summary (context continuation)
+  const isSummaryMessage = msg.role === 'user' &&
+    msg.content && isSystemSummary(msg.content);
+
+  // Get display role and style
+  let displayRole: string;
+  let containerStyle: string;
+
+  if (isSummaryMessage) {
+    displayRole = t('conversation.systemSummary');
+    containerStyle = 'mx-4 bg-amber-900/20 border-l-2 border-amber-500';
+  } else if (isToolResultOnly) {
+    displayRole = t('conversation.system');
+    containerStyle = 'mr-8 bg-gray-700/50 border-l-2 border-gray-500';
+  } else if (msg.role === 'user') {
+    displayRole = t('conversation.you');
+    containerStyle = 'ml-8 bg-blue-900/30 border-l-2 border-blue-500';
+  } else {
+    displayRole = t('conversation.claude');
+    containerStyle = 'mr-8 bg-gray-800 border-l-2 border-gray-600';
+  }
+
+  return (
+    <div className={`${containerStyle} p-2 rounded`}>
+      <div className="text-xs text-gray-400 mb-1">
+        {displayRole}
+      </div>
+
+      {/* Thinking block (Claude only) */}
+      {msg.thinking && <ThinkingDisplay thinking={msg.thinking} />}
+
+      {/* Main text content */}
+      {msg.content && (
+        <div className="text-sm text-gray-200 markdown-content">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={markdownComponents}
+          >
+            {processImageReferences(msg.content)}
+          </ReactMarkdown>
+        </div>
+      )}
+
+      {/* Tool use (Claude only) */}
+      {msg.toolUse && msg.toolUse.length > 0 && (
+        <ToolUseDisplay tools={msg.toolUse} />
+      )}
+
+      {/* Tool result (displayed as System when no user text) */}
+      {msg.toolResult && msg.toolResult.length > 0 && (
+        <ToolResultDisplay results={msg.toolResult} />
+      )}
+    </div>
+  );
+});
+
 export function ConversationViewer({
   title,
   subtitle,
@@ -245,19 +311,35 @@ export function ConversationViewer({
   inline = false,
 }: ConversationViewerProps) {
   const { t } = useTranslation();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const parentRef = useRef<HTMLDivElement>(null);
   const [prevMessageCount, setPrevMessageCount] = useState(0);
 
+  const virtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 100,
+    overscan: 5,
+  });
+
   // Scroll to bottom only when NEW messages are added (not on every refresh)
+  const scrollToEnd = useCallback(() => {
+    if (messages.length > 0) {
+      virtualizer.scrollToIndex(messages.length - 1, { align: 'end' });
+    }
+  }, [virtualizer, messages.length]);
+
   useEffect(() => {
     if (scrollToBottom && messages.length > 0 && !isLoading) {
       // Only scroll if message count increased (new message added)
       if (messages.length > prevMessageCount) {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+        // Use requestAnimationFrame to ensure virtualizer has measured items
+        requestAnimationFrame(() => {
+          scrollToEnd();
+        });
       }
       setPrevMessageCount(messages.length);
     }
-  }, [messages, isLoading, scrollToBottom, prevMessageCount]);
+  }, [messages.length, isLoading, scrollToBottom, prevMessageCount, scrollToEnd]);
 
   // Auto-refresh when session is active (silently in background)
   useEffect(() => {
@@ -280,7 +362,11 @@ export function ConversationViewer({
   return (
     <div className={containerClass}>
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3 select-text" style={{ WebkitUserSelect: 'text', userSelect: 'text' }}>
+      <div
+        ref={parentRef}
+        className="flex-1 overflow-y-auto p-3 select-text"
+        style={{ WebkitUserSelect: 'text', userSelect: 'text' }}
+      >
         {isLoading ? (
           <div className="text-center text-gray-500 py-8">
             {t('common.loading')}
@@ -290,73 +376,32 @@ export function ConversationViewer({
             {t('conversation.noMessages')}
           </div>
         ) : (
-          <>
-            {messages.map((msg, index) => {
-              // Determine if this is a tool-result-only message (system response)
-              const isToolResultOnly = msg.role === 'user' &&
-                msg.toolResult && msg.toolResult.length > 0 &&
-                !msg.content;
-
-              // Determine if this is a system-generated summary (context continuation)
-              const isSummaryMessage = msg.role === 'user' &&
-                msg.content && isSystemSummary(msg.content);
-
-              // Get display role and style
-              let displayRole: string;
-              let containerStyle: string;
-
-              if (isSummaryMessage) {
-                displayRole = t('conversation.systemSummary');
-                containerStyle = 'mx-4 bg-amber-900/20 border-l-2 border-amber-500';
-              } else if (isToolResultOnly) {
-                displayRole = t('conversation.system');
-                containerStyle = 'mr-8 bg-gray-700/50 border-l-2 border-gray-500';
-              } else if (msg.role === 'user') {
-                displayRole = t('conversation.you');
-                containerStyle = 'ml-8 bg-blue-900/30 border-l-2 border-blue-500';
-              } else {
-                displayRole = t('conversation.claude');
-                containerStyle = 'mr-8 bg-gray-800 border-l-2 border-gray-600';
-              }
-
-              return (
-                <div
-                  key={index}
-                  className={`${containerStyle} p-2 rounded`}
-                >
-                  <div className="text-xs text-gray-400 mb-1">
-                    {displayRole}
-                  </div>
-
-                  {/* Thinking block (Claude only) */}
-                  {msg.thinking && <ThinkingDisplay thinking={msg.thinking} />}
-
-                  {/* Main text content */}
-                  {msg.content && (
-                    <div className="text-sm text-gray-200 markdown-content">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={markdownComponents}
-                      >
-                        {processImageReferences(msg.content)}
-                      </ReactMarkdown>
-                    </div>
-                  )}
-
-                  {/* Tool use (Claude only) */}
-                  {msg.toolUse && msg.toolUse.length > 0 && (
-                    <ToolUseDisplay tools={msg.toolUse} />
-                  )}
-
-                  {/* Tool result (displayed as System when no user text) */}
-                  {msg.toolResult && msg.toolResult.length > 0 && (
-                    <ToolResultDisplay results={msg.toolResult} />
-                  )}
+          <div
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+              width: '100%',
+              position: 'relative',
+            }}
+          >
+            {virtualizer.getVirtualItems().map((virtualRow) => (
+              <div
+                key={virtualRow.key}
+                data-index={virtualRow.index}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                <div className="pb-3">
+                  <MessageItem msg={messages[virtualRow.index]} />
                 </div>
-              );
-            })}
-            <div ref={messagesEndRef} />
-          </>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

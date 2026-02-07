@@ -472,20 +472,20 @@ export function useOnboarding() {
     return !completed;
   });
 
-  const completeOnboarding = () => {
+  const completeOnboarding = useCallback(() => {
     setShowOnboarding(false);
-  };
+  }, []);
 
-  const completeSessionListOnboarding = () => {
+  const completeSessionListOnboarding = useCallback(() => {
     setShowSessionListOnboarding(false);
-  };
+  }, []);
 
-  const resetOnboarding = () => {
+  const resetOnboarding = useCallback(() => {
     localStorage.removeItem(ONBOARDING_KEY);
     localStorage.removeItem(ONBOARDING_SESSIONLIST_KEY);
     setShowOnboarding(true);
     setShowSessionListOnboarding(true);
-  };
+  }, []);
 
   return {
     showOnboarding,

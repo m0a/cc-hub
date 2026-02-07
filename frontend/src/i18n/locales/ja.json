@@ -111,7 +111,10 @@
     "source": "ソース",
     "resetFontSize": "フォントサイズをリセット",
     "fileTooLarge": "ファイルが大きすぎるため一部のみ表示しています",
-    "reload": "リロード"
+    "reload": "リロード",
+    "listView": "一覧表示",
+    "treeView": "ツリー表示",
+    "changedFiles": "変更ファイル"
   },
   "conversation": {
     "title": "会話",

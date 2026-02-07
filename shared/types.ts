@@ -163,6 +163,26 @@ export interface FileChangesResponse {
   changes: FileChange[];
 }
 
+// Git diff types
+export type GitChangeStatus = 'M' | 'A' | 'D' | 'R' | '??' | 'U';
+
+export interface GitFileChange {
+  path: string;
+  status: GitChangeStatus;
+  staged: boolean;
+}
+
+export interface GitChangesResponse {
+  workingDir: string;
+  changes: GitFileChange[];
+  branch: string;
+}
+
+export interface GitDiffResponse {
+  diff: string;
+  path: string;
+}
+
 // =============================================================================
 // Dashboard Types
 // =============================================================================

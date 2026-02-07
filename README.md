@@ -11,7 +11,8 @@ A web-based terminal manager for remotely managing Claude Code sessions. Control
 - **Tablet-optimized UI** - Split layout, floating keyboard, pinch-to-zoom
 - **Mobile Support** - Tap/long-press for custom keyboard, no OS keyboard needed
 - **File Viewer** - Syntax-highlighted code, image and HTML preview
-- **Change Tracking** - View file diffs from Claude Code edits
+- **Change Tracking** - View file diffs from Claude Code edits and git changes (toggle between Claude/Git mode)
+- **Browser Back Navigation** - Navigate back through FileViewer states with browser back gesture
 - **Tailscale Integration** - Secure HTTPS via Tailscale certificates
 - **Password Authentication** - Access control with `-P` option
 - **Auto-update** - Automatic updates from GitHub Releases

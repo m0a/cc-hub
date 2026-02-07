@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.29] - 2026-02-07
+
+### Added
+
+- **Git差分ビューア** - ファイルビューアの「変更」タブにClaude/Git切り替えトグルを追加
+  - Gitモード: `git status --porcelain` + `git diff` でワーキングツリーの変更を表示
+  - Claude変更とGit変更をセグメントボタンで切り替え（デフォルト: Git）
+  - 一覧/ツリー表示モード（localStorageで保存）
+  - ファイルクリックで既存のDiffViewerにunified diffを表示
+  - 新規API: `GET /api/files/git-changes/:workingDir`, `GET /api/files/git-diff/:workingDir`
+
+- **ブラウザバックジェスチャー対応** - FileViewerでhistory.back()によるナビゲーション
+  - diff表示 → 変更一覧 → ブラウザビュー → ターミナル の順に戻る
+  - `window.history.pushState` / `popstate`イベントで実装
+
+### Fixed
+
+- **Biomeリント設定整備** - `biome.json`でa11y/style系ルールをwarnに設定
+  - `useButtonType`, `noSvgWithoutTitle`, `noStaticElementInteractions`等8つのa11yルールをwarn化
+  - `noExplicitAny`, `noNonNullAssertion`, `useExhaustiveDependencies`等もwarn化
+  - バックエンド16ファイル、フロントエンド14ファイルの自動修正可能なlintエラーを修正
+  - DesktopLayout.tsx: `useEffect`の変数宣言順序を修正
+  - FloatingKeyboard.tsx: `getDefaultPosition`をモジュールレベルに移動
+
 ## [0.0.28] - 2026-02-07
 
 ### Added

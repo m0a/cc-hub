@@ -76,6 +76,8 @@ shared/      # Shared types and Zod schemas
 - `GET /read` - File content (with size limits)
 - `GET /browse` - Browse directory tree
 - `GET /changes/:sessionWorkingDir` - Claude Code changes from `.jsonl`
+- `GET /git-changes/:workingDir` - Git-tracked changed files (`git status --porcelain`)
+- `GET /git-diff/:workingDir?path=...` - Unified diff for a specific file (`git diff`)
 - `GET /images/:filename` - Serve conversation images
 - `GET /language` - Detect file language
 - `POST /mkdir` - Create directory
@@ -112,7 +114,7 @@ shared/      # Shared types and Zod schemas
 - **Keyboard.tsx** - Virtual keyboard component with long-press for symbols
 
 **Files** (`components/files/`):
-- **FileViewer.tsx** - Container with file browser and content viewer
+- **FileViewer.tsx** - Container with file browser and content viewer, Claude/Git change toggle, browser history navigation
 - **FileBrowser.tsx** - Directory tree navigation
 - **CodeViewer.tsx** - Syntax highlighted code display
 - **DiffViewer.tsx** - Side-by-side diff view for file changes
@@ -197,6 +199,14 @@ LANG=en_US.UTF-8 cchub --help
 ## Type Sharing
 
 Types are defined in `shared/types.ts` with Zod schemas for validation. Import from `../../../shared/types` in both backend and frontend.
+
+## Linting
+
+Uses [Biome](https://biomejs.dev/) for linting. Configuration in `biome.json` at project root.
+
+- a11y rules (`useButtonType`, `noSvgWithoutTitle`, etc.) set to `"warn"` — not blocking CI
+- Biome 2.x config format: `{ "level": "warn" }` (NOT just `"warn"`)
+- Run `bun run lint` to check all packages
 
 ## Debugging
 

@@ -94,7 +94,9 @@
     "networkLatency": "Network Latency",
     "websocket": "WebSocket",
     "api": "API",
-    "latencyNA": "N/A"
+    "latencyNA": "N/A",
+    "chartNow": "Now",
+    "chartReset": "Reset"
   },
   "files": {
     "title": "File Browser",

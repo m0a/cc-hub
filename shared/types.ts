@@ -249,9 +249,21 @@ export interface UsageLimits {
   sevenDay: UsageCycleInfo;
 }
 
+// Usage history snapshot for line chart
+export interface UsageSnapshot {
+  timestamp: string; // ISO 8601
+  fiveHour: { utilization: number; resetsAt: string };
+  sevenDay: { utilization: number; resetsAt: string };
+}
+
+export interface UsageHistoryResponse {
+  snapshots: UsageSnapshot[];
+}
+
 export interface DashboardResponse {
   limits: LimitsInfo | null; // Deprecated, kept for compatibility
   usageLimits: UsageLimits | null; // New: from Anthropic API
+  usageHistory: UsageSnapshot[]; // Usage history for line chart
   dailyActivity: DailyActivity[];
   modelUsage: ModelUsage[];
   costEstimates: CostEstimate[];

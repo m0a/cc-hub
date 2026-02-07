@@ -11,8 +11,12 @@ export class UsageHistoryService {
   async getHistory(): Promise<UsageSnapshot[]> {
     try {
       const content = await readFile(HISTORY_FILE, 'utf-8');
-      const snapshots: UsageSnapshot[] = JSON.parse(content);
-      return snapshots;
+      const parsed = JSON.parse(content);
+      // Handle both array format and legacy {snapshots: [...]} format
+      if (Array.isArray(parsed)) {
+        return parsed.filter((s: unknown) => s && typeof s === 'object' && 'timestamp' in (s as Record<string, unknown>));
+      }
+      return [];
     } catch {
       return [];
     }

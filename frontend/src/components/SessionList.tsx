@@ -195,6 +195,37 @@ function CreateSessionModal({
   const inputRef = useRef<HTMLInputElement>(null);
   const newFolderInputRef = useRef<HTMLInputElement>(null);
 
+  const nameManuallyEditedRef = useRef(nameManuallyEdited);
+  nameManuallyEditedRef.current = nameManuallyEdited;
+  const existingNamesRef = useRef(existingNames);
+  existingNamesRef.current = existingNames;
+
+  const loadDirectory = useCallback(async (path?: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const result = await browseDirectory(path);
+      setCurrentPath(result.path);
+      setDirectories(result.files);
+      setParentPath(result.parentPath);
+
+      // Auto-suggest session name from directory name (only if not manually edited)
+      if (!nameManuallyEditedRef.current) {
+        const dirName = result.path.split('/').pop() || '';
+        let suggested = dirName;
+        let counter = 1;
+        while (existingNamesRef.current.has(suggested)) {
+          suggested = `${dirName}-${counter++}`;
+        }
+        setName(suggested);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load directory');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   // Load initial directory
   useEffect(() => {
     loadDirectory();
@@ -206,32 +237,6 @@ function CreateSessionModal({
       newFolderInputRef.current?.focus();
     }
   }, [showNewFolderInput]);
-
-  const loadDirectory = async (path?: string) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await browseDirectory(path);
-      setCurrentPath(result.path);
-      setDirectories(result.files);
-      setParentPath(result.parentPath);
-
-      // Auto-suggest session name from directory name (only if not manually edited)
-      if (!nameManuallyEdited) {
-        const dirName = result.path.split('/').pop() || '';
-        let suggested = dirName;
-        let counter = 1;
-        while (existingNames.has(suggested)) {
-          suggested = `${dirName}-${counter++}`;
-        }
-        setName(suggested);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load directory');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleDirectoryClick = (dir: FileInfo) => {
     loadDirectory(dir.path);

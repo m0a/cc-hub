@@ -1118,6 +1118,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                         setInputMode('input');
                         setTimeout(() => {
                           setIsAnimating(false);
+                          inputRef.current?.focus();
                           fitTerminal();
                           setTimeout(fitTerminal, 300);
                         }, 350);
@@ -1167,6 +1168,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                     setInputMode('input');
                     setTimeout(() => {
                       setIsAnimating(false);
+                      inputRef.current?.focus();
                       fitTerminal();
                       setTimeout(fitTerminal, 300);
                     }, 350);
@@ -1192,6 +1194,8 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                 autoComplete="off"
                 spellCheck={false}
                 enterKeyHint="send"
+                // biome-ignore lint/a11y/noAutofocus: required to show OS keyboard on mode switch
+                autoFocus
                 placeholder="入力欄をタップしてキーボード表示"
                 className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
                 style={{ fontSize: '16px' }}

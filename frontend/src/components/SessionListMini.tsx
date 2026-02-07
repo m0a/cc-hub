@@ -25,7 +25,6 @@ function getIndicatorStyle(state?: IndicatorState): { color: string; icon: strin
       return { color: 'bg-yellow-500 animate-pulse', icon: '' };
     case 'idle':
       return { color: 'bg-blue-500', icon: '' };
-    case 'completed':
     default:
       return { color: 'bg-gray-500', icon: '' };
   }
@@ -191,7 +190,7 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
       const activeElement = containerRef.current.querySelector(`[data-session-id="${activeSessionId}"]`);
       activeElement?.scrollIntoView({ block: 'nearest' });
     }
-  }, [activeSessionId, sessions]);
+  }, [activeSessionId]);
 
   // Resume a Claude session
   const handleResume = useCallback(async (sessionId: string, ccSessionId?: string) => {

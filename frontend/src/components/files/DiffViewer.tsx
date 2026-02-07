@@ -30,7 +30,8 @@ interface DiffViewerProps {
   oldContent?: string;
   newContent?: string;
   fileName?: string;
-  toolName: 'Write' | 'Edit';
+  toolName?: 'Write' | 'Edit' | 'git';
+  unifiedDiff?: string;
 }
 
 interface DiffLine {
@@ -153,11 +154,51 @@ function computeLCS(a: string[], b: string[]): string[] {
   return lcs;
 }
 
+function parseUnifiedDiff(diff: string): DiffLine[] {
+  const lines = diff.split('\n');
+  const result: DiffLine[] = [];
+  let oldLineNum = 0;
+  let newLineNum = 0;
+
+  for (const line of lines) {
+    // Skip file headers
+    if (line.startsWith('---') || line.startsWith('+++') || line.startsWith('diff ') || line.startsWith('index ')) {
+      continue;
+    }
+
+    // Parse hunk headers
+    if (line.startsWith('@@')) {
+      const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (match) {
+        oldLineNum = parseInt(match[1], 10);
+        newLineNum = parseInt(match[2], 10);
+      }
+      // Show hunk header as separator
+      result.push({ type: 'context', content: line, oldLineNum: undefined, newLineNum: undefined });
+      continue;
+    }
+
+    // Skip "no newline" markers
+    if (line.startsWith('\\')) continue;
+
+    if (line.startsWith('+')) {
+      result.push({ type: 'add', content: line.slice(1), newLineNum: newLineNum++ });
+    } else if (line.startsWith('-')) {
+      result.push({ type: 'remove', content: line.slice(1), oldLineNum: oldLineNum++ });
+    } else if (line.startsWith(' ')) {
+      result.push({ type: 'context', content: line.slice(1), oldLineNum: oldLineNum++, newLineNum: newLineNum++ });
+    }
+  }
+
+  return result;
+}
+
 export function DiffViewer({
   oldContent,
   newContent,
   fileName,
-  toolName,
+  toolName = 'Edit',
+  unifiedDiff,
 }: DiffViewerProps) {
   const [wordWrap, setWordWrap] = useState(() => getWordWrapSetting(fileName || ''));
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -183,6 +224,10 @@ export function DiffViewer({
   }, []);
 
   const diffLines = useMemo(() => {
+    if (unifiedDiff) {
+      return parseUnifiedDiff(unifiedDiff);
+    }
+
     if (toolName === 'Write') {
       // For Write, show all lines as added
       const lines = (newContent || '').split('\n');
@@ -195,7 +240,7 @@ export function DiffViewer({
 
     // For Edit, compute diff
     return computeDiff(oldContent || '', newContent || '');
-  }, [oldContent, newContent, toolName]);
+  }, [oldContent, newContent, toolName, unifiedDiff]);
 
   const stats = useMemo(() => {
     const added = diffLines.filter(l => l.type === 'add').length;
@@ -213,11 +258,13 @@ export function DiffViewer({
         {fileName && (
           <span className="text-sm text-gray-300 truncate flex-1">{fileName}</span>
         )}
-        <span className={`text-xs px-1.5 py-0.5 rounded ${
-          toolName === 'Write' ? 'bg-green-900 text-green-300' : 'bg-yellow-900 text-yellow-300'
-        }`}>
-          {toolName === 'Write' ? '新規作成' : '編集'}
-        </span>
+        {toolName !== 'git' && (
+          <span className={`text-xs px-1.5 py-0.5 rounded ${
+            toolName === 'Write' ? 'bg-green-900 text-green-300' : 'bg-yellow-900 text-yellow-300'
+          }`}>
+            {toolName === 'Write' ? '新規作成' : '編集'}
+          </span>
+        )}
       </div>
 
       {/* Stats */}

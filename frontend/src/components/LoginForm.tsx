@@ -39,7 +39,6 @@ export function LoginForm({ onLogin, isLoading, error }: LoginFormProps) {
               onChange={(e) => setPassword(e.target.value)}
               className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
-              autoFocus
               disabled={isLoading}
             />
           </div>

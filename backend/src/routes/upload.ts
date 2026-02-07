@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
-import { randomBytes } from 'crypto';
-import { mkdir, writeFile } from 'fs/promises';
-import { join } from 'path';
+import { randomBytes } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 const upload = new Hono();
 

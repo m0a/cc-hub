@@ -111,7 +111,10 @@
     "source": "Source",
     "resetFontSize": "Reset font size",
     "fileTooLarge": "File is too large, showing partial content",
-    "reload": "Reload"
+    "reload": "Reload",
+    "listView": "List view",
+    "treeView": "Tree view",
+    "changedFiles": "Changed Files"
   },
   "conversation": {
     "title": "Conversation",

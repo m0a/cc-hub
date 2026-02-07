@@ -1,5 +1,5 @@
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 interface TmuxSessionInfo {
   id: string;
@@ -109,7 +109,7 @@ export class TmuxService {
           return {
             id: name,
             name: name,
-            createdAt: new Date(parseInt(created) * 1000).toISOString(),
+            createdAt: new Date(parseInt(created, 10) * 1000).toISOString(),
             attached: attached === '1',
           };
         });

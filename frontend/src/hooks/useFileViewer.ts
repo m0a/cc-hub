@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import type { FileInfo, FileContent, FileChange } from '../../../shared/types';
+import type { FileInfo, FileContent, FileChange, GitFileChange } from '../../../shared/types';
 import { authFetch } from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -10,11 +10,15 @@ interface UseFileViewerReturn {
   parentPath: string | null;
   selectedFile: FileContent | null;
   changes: FileChange[];
+  gitChanges: GitFileChange[];
+  gitBranch: string;
   isLoading: boolean;
   error: string | null;
   listDirectory: (path: string) => Promise<void>;
   readFile: (path: string, maxSize?: number) => Promise<void>;
   getChanges: () => Promise<void>;
+  getGitChanges: () => Promise<void>;
+  getGitDiff: (filePath: string, staged?: boolean) => Promise<string>;
   navigateTo: (path: string) => Promise<void>;
   navigateUp: () => Promise<void>;
   clearSelectedFile: () => void;
@@ -27,6 +31,8 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
   const [parentPath, setParentPath] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileContent | null>(null);
   const [changes, setChanges] = useState<FileChange[]>([]);
+  const [gitChanges, setGitChanges] = useState<GitFileChange[]>([]);
+  const [gitBranch, setGitBranch] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -112,6 +118,51 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
     }
   }, [sessionWorkingDir]);
 
+  const getGitChanges = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await authFetch(
+        `${API_BASE}/api/files/git-changes/${encodeURIComponent(sessionWorkingDir)}`
+      );
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(data.error || 'Failed to get git changes');
+      }
+
+      const data = await response.json();
+      setGitChanges(data.changes);
+      setGitBranch(data.branch);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+      setGitChanges([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sessionWorkingDir]);
+
+  const getGitDiff = useCallback(async (filePath: string, staged?: boolean): Promise<string> => {
+    try {
+      const params = new URLSearchParams({ path: filePath });
+      if (staged) params.set('staged', 'true');
+
+      const response = await authFetch(
+        `${API_BASE}/api/files/git-diff/${encodeURIComponent(sessionWorkingDir)}?${params}`
+      );
+
+      if (!response.ok) {
+        return '';
+      }
+
+      const data = await response.json();
+      return data.diff || '';
+    } catch {
+      return '';
+    }
+  }, [sessionWorkingDir]);
+
   const navigateTo = useCallback(async (path: string) => {
     await listDirectory(path);
   }, [listDirectory]);
@@ -143,11 +194,15 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
     parentPath,
     selectedFile,
     changes,
+    gitChanges,
+    gitBranch,
     isLoading,
     error,
     listDirectory,
     readFile,
     getChanges,
+    getGitChanges,
+    getGitDiff,
     navigateTo,
     navigateUp,
     clearSelectedFile,

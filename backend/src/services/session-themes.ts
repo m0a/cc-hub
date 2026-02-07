@@ -1,6 +1,6 @@
 import { join } from 'node:path';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { getDataDir, ensureDataDir } from '../utils/storage';
+import { readFile, writeFile, } from 'node:fs/promises';
+import { ensureDataDir } from '../utils/storage';
 import type { SessionTheme } from '../../../shared/types';
 
 const THEMES_FILE = 'session-themes.json';

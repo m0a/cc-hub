@@ -104,7 +104,7 @@ function ToolResultDisplay({ results }: { results: ToolResultInfo[] }) {
       {results.map((result, idx) => {
         const maxPreview = 500;
         const isLong = result.output.length > maxPreview;
-        const preview = isLong ? result.output.substring(0, maxPreview) + '...' : result.output;
+        const preview = isLong ? `${result.output.substring(0, maxPreview)}...` : result.output;
 
         return (
           <CollapsibleSection

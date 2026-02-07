@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSessionHistory, ProjectInfo } from '../hooks/useSessionHistory';
+import { useSessionHistory, type ProjectInfo } from '../hooks/useSessionHistory';
 import { authFetch } from '../services/api';
 import type { HistorySession, ConversationMessage, SessionResponse } from '../../../shared/types';
 import { ConversationViewer } from './ConversationViewer';
@@ -58,7 +58,7 @@ function HistoryItem({
   const { t, i18n } = useTranslation();
   const displayText = session.firstPrompt || session.summary || 'No description';
   const truncatedText = displayText.length > 60
-    ? displayText.substring(0, 60) + '...'
+    ? `${displayText.substring(0, 60)}...`
     : displayText;
 
   const duration = formatDuration(session.durationMinutes, t);

@@ -84,12 +84,12 @@ export class FileService {
       const resolvedRequested = await realpath(requested);
 
       // Check if requested path is within allowed base
-      if (!resolvedRequested.startsWith(resolvedBase + '/') && resolvedRequested !== resolvedBase) {
+      if (!resolvedRequested.startsWith(`${resolvedBase}/`) && resolvedRequested !== resolvedBase) {
         return null;
       }
 
       return resolvedRequested;
-    } catch (error) {
+    } catch (_error) {
       // Path doesn't exist or can't be accessed
       return null;
     }
@@ -105,7 +105,7 @@ export class FileService {
       // First try to resolve the full path
       try {
         const resolvedRequested = await realpath(requested);
-        if (!resolvedRequested.startsWith(resolvedBase + '/') && resolvedRequested !== resolvedBase) {
+        if (!resolvedRequested.startsWith(`${resolvedBase}/`) && resolvedRequested !== resolvedBase) {
           return null;
         }
         return resolvedRequested;
@@ -114,7 +114,7 @@ export class FileService {
         const parent = dirname(requested);
         const resolvedParent = await realpath(parent);
 
-        if (!resolvedParent.startsWith(resolvedBase + '/') && resolvedParent !== resolvedBase) {
+        if (!resolvedParent.startsWith(`${resolvedBase}/`) && resolvedParent !== resolvedBase) {
           return null;
         }
 

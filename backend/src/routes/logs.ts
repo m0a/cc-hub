@@ -9,7 +9,7 @@ logs.post('/', async (c) => {
   const body = await c.req.json();
   const { level, message, timestamp, stack } = body;
 
-  const logLine = `[${level.toUpperCase()}] ${timestamp}\n  ${message}${stack ? '\n  ' + stack : ''}\n`;
+  const logLine = `[${level.toUpperCase()}] ${timestamp}\n  ${message}${stack ? `\n  ${stack}` : ''}\n`;
 
   // Write to file
   await appendFile(LOG_FILE, logLine);

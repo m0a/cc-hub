@@ -59,7 +59,6 @@ function getIndicatorColor(state?: IndicatorState): string {
       return 'bg-yellow-500 animate-pulse';
     case 'idle':
       return 'bg-blue-500';
-    case 'completed':
     default:
       return 'bg-gray-500';
   }
@@ -140,7 +139,7 @@ function SessionMenuDialog({
                 className={`w-8 h-8 rounded-full border-2 transition-all ${
                   theme === null
                     ? 'bg-gray-600 border-gray-500'
-                    : THEME_COLORS[theme].bg + ' border-transparent'
+                    : `${THEME_COLORS[theme].bg} border-transparent`
                 } ${
                   extSession.theme === theme || (extSession.theme === undefined && theme === null)
                     ? 'ring-2 ring-white ring-offset-2 ring-offset-gray-800'
@@ -199,7 +198,7 @@ function CreateSessionModal({
   // Load initial directory
   useEffect(() => {
     loadDirectory();
-  }, []);
+  }, [loadDirectory]);
 
   // Focus new folder input when shown
   useEffect(() => {

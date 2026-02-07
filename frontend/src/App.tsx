@@ -201,7 +201,7 @@ export function App() {
     const handleResize = () => setDeviceType(checkDeviceType());
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [checkDeviceType]);
 
   // Periodically fetch sessions for mobile view (to get theme updates)
   useEffect(() => {
@@ -384,7 +384,7 @@ export function App() {
     };
 
     fetchAndOpenSession();
-  }, []);
+  }, [createInitialSession]);
 
   // Save to localStorage when sessions change
   useEffect(() => {

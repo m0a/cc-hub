@@ -344,108 +344,6 @@ export function DesktopLayout({
     }
   }, [activeSessionId, desktopState.root]);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-      const modifier = isMac ? e.metaKey : e.ctrlKey;
-
-
-      if (!modifier) return;
-
-      // Ctrl/Cmd + D: Vertical split (right)
-      if (!e.shiftKey && e.key.toLowerCase() === 'd') {
-        e.preventDefault();
-        handleSplit('horizontal');
-        return;
-      }
-
-      // Ctrl/Cmd + Shift + D: Horizontal split (bottom)
-      if (e.shiftKey && e.key.toLowerCase() === 'd') {
-        e.preventDefault();
-        handleSplit('vertical');
-        return;
-      }
-
-      // Ctrl/Cmd + W: Close pane
-      if (!e.shiftKey && e.key.toLowerCase() === 'w') {
-        e.preventDefault();
-        handleClosePane();
-        return;
-      }
-
-      // Ctrl/Cmd + C: Copy from tmux buffer or terminal selection
-      if (!e.shiftKey && e.key.toLowerCase() === 'c') {
-        const ref = terminalRefs.current?.get(activePaneRef.current);
-        const selection = ref?.getSelection();
-
-        // First try xterm selection
-        if (selection) {
-          e.preventDefault();
-          navigator.clipboard.writeText(selection).catch(err => {
-            console.error('Clipboard write failed:', err);
-          });
-          return;
-        }
-
-        // Then try tmux buffer
-        e.preventDefault();
-        authFetch(`${API_BASE}/api/sessions/clipboard`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.content) {
-              navigator.clipboard.writeText(data.content).catch(err => {
-                console.error('Clipboard write failed:', err);
-              });
-            }
-          })
-          .catch(() => {
-            // No buffer content, ignore
-          });
-        return;
-      }
-
-      // Ctrl/Cmd + V: Paste to terminal (text or image)
-      if (!e.shiftKey && e.key.toLowerCase() === 'v') {
-        e.preventDefault();
-        handlePaste();
-        return;
-      }
-
-      // Ctrl/Cmd + B: Toggle session list in active pane
-      if (!e.shiftKey && e.key.toLowerCase() === 'b') {
-        e.preventDefault();
-        const toggleFn = sessionListToggleRefs.current.get(activePaneRef.current);
-        toggleFn?.();
-        return;
-      }
-
-      // Ctrl/Cmd + Arrow: Focus navigation
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-        e.preventDefault();
-        handleFocusNavigation(e.key);
-        return;
-      }
-
-      // Ctrl/Cmd + 1-9: Session switch
-      const num = parseInt(e.key);
-      if (!e.shiftKey && num >= 1 && num <= 9) {
-        e.preventDefault();
-        const session = sessions[num - 1];
-        if (session) {
-          setDesktopState(prev => ({
-            ...prev,
-            root: updateSessionId(prev.root, prev.activePane, session.id),
-          }));
-        }
-        return;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [sessions]);
-
   const handleSplit = useCallback((direction: 'horizontal' | 'vertical') => {
     setDesktopState(prev => {
       const { newRoot, newPaneId } = splitPane(prev.root, prev.activePane, direction);
@@ -540,6 +438,107 @@ export function DesktopLayout({
     const ref = terminalRefs.current.get(allPanes[nextIndex]);
     ref?.focus();
   }, [desktopState.root, desktopState.activePane]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      const modifier = isMac ? e.metaKey : e.ctrlKey;
+
+      if (!modifier) return;
+
+      // Ctrl/Cmd + D: Vertical split (right)
+      if (!e.shiftKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        handleSplit('horizontal');
+        return;
+      }
+
+      // Ctrl/Cmd + Shift + D: Horizontal split (bottom)
+      if (e.shiftKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        handleSplit('vertical');
+        return;
+      }
+
+      // Ctrl/Cmd + W: Close pane
+      if (!e.shiftKey && e.key.toLowerCase() === 'w') {
+        e.preventDefault();
+        handleClosePane();
+        return;
+      }
+
+      // Ctrl/Cmd + C: Copy from tmux buffer or terminal selection
+      if (!e.shiftKey && e.key.toLowerCase() === 'c') {
+        const ref = terminalRefs.current?.get(activePaneRef.current);
+        const selection = ref?.getSelection();
+
+        // First try xterm selection
+        if (selection) {
+          e.preventDefault();
+          navigator.clipboard.writeText(selection).catch(err => {
+            console.error('Clipboard write failed:', err);
+          });
+          return;
+        }
+
+        // Then try tmux buffer
+        e.preventDefault();
+        authFetch(`${API_BASE}/api/sessions/clipboard`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.content) {
+              navigator.clipboard.writeText(data.content).catch(err => {
+                console.error('Clipboard write failed:', err);
+              });
+            }
+          })
+          .catch(() => {
+            // No buffer content, ignore
+          });
+        return;
+      }
+
+      // Ctrl/Cmd + V: Paste to terminal (text or image)
+      if (!e.shiftKey && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        handlePaste();
+        return;
+      }
+
+      // Ctrl/Cmd + B: Toggle session list in active pane
+      if (!e.shiftKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        const toggleFn = sessionListToggleRefs.current.get(activePaneRef.current);
+        toggleFn?.();
+        return;
+      }
+
+      // Ctrl/Cmd + Arrow: Focus navigation
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        handleFocusNavigation(e.key);
+        return;
+      }
+
+      // Ctrl/Cmd + 1-9: Session switch
+      const num = parseInt(e.key, 10);
+      if (!e.shiftKey && num >= 1 && num <= 9) {
+        e.preventDefault();
+        const session = sessions[num - 1];
+        if (session) {
+          setDesktopState(prev => ({
+            ...prev,
+            root: updateSessionId(prev.root, prev.activePane, session.id),
+          }));
+        }
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [sessions, handleClosePane, handleFocusNavigation, handlePaste, handleSplit]);
 
   // Floating keyboard handlers (for tablet mode)
   const handleKeyboardSend = useCallback((char: string) => {

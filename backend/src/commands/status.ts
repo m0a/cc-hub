@@ -53,7 +53,7 @@ export async function showStatus(): Promise<void> {
     if (match && match[1] !== 'n/a') {
       // Convert microseconds to readable date
       const usec = parseInt(match[1], 10);
-      if (!isNaN(usec)) {
+      if (!Number.isNaN(usec)) {
         const date = new Date(usec / 1000);
         console.log(`   Next check: ${date.toLocaleString()}`);
       }

@@ -4,7 +4,7 @@ import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { FileService } from '../services/file-service';
 import { FileChangeTracker } from '../services/file-change-tracker';
-import type { FileListResponse, FileReadResponse, FileChangesResponse, FileInfo } from '../../../shared/types';
+import type { FileListResponse, FileReadResponse, FileChangesResponse, FileInfo, GitChangesResponse, GitDiffResponse, GitFileChange, GitChangeStatus } from '../../../shared/types';
 
 const fileService = new FileService();
 const changeTracker = new FileChangeTracker();
@@ -103,8 +103,149 @@ files.get('/changes/:sessionWorkingDir', async (c) => {
     };
 
     return c.json(response);
-  } catch (error) {
+  } catch (_error) {
     return c.json({ error: 'Failed to get changes' }, 500);
+  }
+});
+
+/**
+ * GET /files/git-changes/:workingDir - Get git-tracked changed files
+ * Path params:
+ *   - workingDir: URL-encoded working directory
+ */
+files.get('/git-changes/:workingDir', async (c) => {
+  const workingDir = decodeURIComponent(c.req.param('workingDir'));
+
+  if (!workingDir) {
+    return c.json({ error: 'Missing workingDir parameter' }, 400);
+  }
+
+  try {
+    // Get current branch
+    const branchProc = Bun.spawn(['git', '-C', workingDir, 'rev-parse', '--abbrev-ref', 'HEAD'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const branchOutput = await new Response(branchProc.stdout).text();
+    await branchProc.exited;
+    const branch = branchOutput.trim() || 'unknown';
+
+    // Get git status
+    const statusProc = Bun.spawn(['git', '-C', workingDir, 'status', '--porcelain'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const statusOutput = await new Response(statusProc.stdout).text();
+    await statusProc.exited;
+
+    const changes: GitFileChange[] = [];
+    for (const line of statusOutput.split('\n')) {
+      if (!line.trim()) continue;
+
+      const indexStatus = line[0];
+      const workTreeStatus = line[1];
+      const filePath = line.slice(3).trim();
+
+      // Skip empty paths
+      if (!filePath) continue;
+
+      // Handle renamed files (e.g., "R  old -> new")
+      const actualPath = filePath.includes(' -> ') ? filePath.split(' -> ')[1] : filePath;
+
+      // Staged changes
+      if (indexStatus !== ' ' && indexStatus !== '?') {
+        let status: GitChangeStatus = 'M';
+        if (indexStatus === 'A') status = 'A';
+        else if (indexStatus === 'D') status = 'D';
+        else if (indexStatus === 'R') status = 'R';
+        else if (indexStatus === 'U') status = 'U';
+        changes.push({ path: actualPath, status, staged: true });
+      }
+
+      // Unstaged changes
+      if (workTreeStatus !== ' ' && workTreeStatus !== '?') {
+        // Don't add duplicate for same file if already added as staged
+        const existingUnstaged = changes.find(ch => ch.path === actualPath && !ch.staged);
+        if (!existingUnstaged) {
+          let status: GitChangeStatus = 'M';
+          if (workTreeStatus === 'D') status = 'D';
+          else if (workTreeStatus === 'U') status = 'U';
+          changes.push({ path: actualPath, status, staged: false });
+        }
+      }
+
+      // Untracked files
+      if (indexStatus === '?' && workTreeStatus === '?') {
+        changes.push({ path: actualPath, status: '??', staged: false });
+      }
+    }
+
+    const response: GitChangesResponse = { workingDir, changes, branch };
+    return c.json(response);
+  } catch (error) {
+    console.error('Git changes error:', error);
+    return c.json({ error: 'Failed to get git changes' }, 500);
+  }
+});
+
+/**
+ * GET /files/git-diff/:workingDir - Get unified diff for a file
+ * Path params:
+ *   - workingDir: URL-encoded working directory
+ * Query params:
+ *   - path: File path (relative to workingDir)
+ *   - staged: "true" for staged diff
+ */
+files.get('/git-diff/:workingDir', async (c) => {
+  const workingDir = decodeURIComponent(c.req.param('workingDir'));
+  const filePath = c.req.query('path');
+  const staged = c.req.query('staged') === 'true';
+
+  if (!workingDir || !filePath) {
+    return c.json({ error: 'Missing workingDir or path parameter' }, 400);
+  }
+
+  try {
+    const args = ['git', '-C', workingDir, 'diff'];
+    if (staged) {
+      args.push('--cached');
+    }
+    args.push('--', filePath);
+
+    const proc = Bun.spawn(args, {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const diffOutput = await new Response(proc.stdout).text();
+    await proc.exited;
+
+    // If no diff output (e.g., untracked file), try to read the file content
+    if (!diffOutput.trim()) {
+      // For untracked files, generate a "new file" diff
+      try {
+        const fullPath = join(workingDir, filePath);
+        const content = await readFile(fullPath, 'utf-8');
+        const lines = content.split('\n');
+        const fakeDiff = [
+          `--- /dev/null`,
+          `+++ b/${filePath}`,
+          `@@ -0,0 +1,${lines.length} @@`,
+          ...lines.map(line => `+${line}`),
+        ].join('\n');
+
+        const response: GitDiffResponse = { diff: fakeDiff, path: filePath };
+        return c.json(response);
+      } catch {
+        const response: GitDiffResponse = { diff: '', path: filePath };
+        return c.json(response);
+      }
+    }
+
+    const response: GitDiffResponse = { diff: diffOutput, path: filePath };
+    return c.json(response);
+  } catch (error) {
+    console.error('Git diff error:', error);
+    return c.json({ error: 'Failed to get git diff' }, 500);
   }
 });
 
@@ -188,7 +329,7 @@ files.get('/browse', async (c) => {
     }
 
     // Security: ensure path is within home directory
-    if (!resolvedPath.startsWith(resolvedHome + '/') && resolvedPath !== resolvedHome) {
+    if (!resolvedPath.startsWith(`${resolvedHome}/`) && resolvedPath !== resolvedHome) {
       return c.json({ error: 'Access denied: path outside home directory' }, 403);
     }
 
@@ -247,7 +388,7 @@ files.post('/mkdir', async (c) => {
       return c.json({ error: 'Parent directory not found' }, 404);
     }
 
-    if (!resolvedParent.startsWith(resolvedHome + '/') && resolvedParent !== resolvedHome) {
+    if (!resolvedParent.startsWith(`${resolvedHome}/`) && resolvedParent !== resolvedHome) {
       return c.json({ error: 'Access denied: path outside home directory' }, 403);
     }
 

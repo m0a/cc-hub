@@ -165,7 +165,7 @@ export class ClaudeCodeService {
         // This handles both new sessions and resumed sessions
         const validStats = fileStats
           .filter((s): s is { name: string; mtime: number; ctime: number } => s !== null)
-          .filter(s => s.mtime >= processStartTime!.getTime() - 5000) // 5s tolerance
+          .filter(s => s.mtime >= processStartTime?.getTime() - 5000) // 5s tolerance
           .sort((a, b) => b.mtime - a.mtime); // Most recently modified first
 
         console.log(`[getSessionByTtyStartTime] Found ${validStats.length} candidate files for ${ttyName}`);

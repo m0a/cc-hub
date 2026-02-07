@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { readdir, readFile, writeFile, rm, mkdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { getDataDir, ensureDataDir } from '../utils/storage';
+import { ensureDataDir } from '../utils/storage';
 import type { Session, SessionState, SessionResponse } from '../../../shared/types';
 
 const SESSIONS_DIR = 'sessions';

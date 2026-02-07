@@ -1,4 +1,7 @@
 import { useMemo, useState, useRef, useCallback } from 'react';
+import hljs from 'highlight.js';
+import 'highlight.js/styles/github-dark.css';
+import { getLanguageFromPath } from './language-detect';
 
 const WORDWRAP_STORAGE_KEY = 'cchub-wordwrap';
 
@@ -7,12 +10,12 @@ function getWordWrapSetting(fileName: string): boolean {
     const stored = localStorage.getItem(WORDWRAP_STORAGE_KEY);
     if (stored) {
       const settings = JSON.parse(stored);
-      return settings[fileName] ?? true; // デフォルトはtrue
+      return settings[fileName] ?? true;
     }
   } catch {
     // ignore
   }
-  return true; // デフォルトはtrue
+  return true;
 }
 
 function setWordWrapSetting(fileName: string, value: boolean) {
@@ -35,10 +38,54 @@ interface DiffViewerProps {
 }
 
 interface DiffLine {
-  type: 'add' | 'remove' | 'context';
+  type: 'add' | 'remove' | 'context' | 'hunk';
   content: string;
   oldLineNum?: number;
   newLineNum?: number;
+}
+
+// Split highlighted HTML into lines, properly handling unclosed span tags
+function splitHighlightedHtml(html: string): string[] {
+  const rawLines = html.split('\n');
+  const result: string[] = [];
+  let openTags: string[] = [];
+
+  for (const rawLine of rawLines) {
+    const line = openTags.join('') + rawLine;
+
+    // Track open/close span tags
+    const tags: string[] = [];
+    const tagRe = /<(\/?)span([^>]*)>/g;
+    let m: RegExpExecArray | null;
+    while ((m = tagRe.exec(line)) !== null) {
+      if (m[1] === '/') {
+        if (tags.length > 0) tags.pop();
+      } else {
+        tags.push(m[0]);
+      }
+    }
+
+    // Close unclosed tags at end of line
+    result.push(line + '</span>'.repeat(tags.length));
+    openTags = tags;
+  }
+
+  return result;
+}
+
+function highlightCode(content: string, language: string): string[] {
+  if (!language || language === 'plaintext') {
+    return content.split('\n');
+  }
+  try {
+    if (!hljs.getLanguage(language)) {
+      return content.split('\n');
+    }
+    const result = hljs.highlight(content, { language, ignoreIllegals: true });
+    return splitHighlightedHtml(result.value);
+  } catch {
+    return content.split('\n');
+  }
 }
 
 function computeDiff(oldText: string, newText: string): DiffLine[] {
@@ -46,7 +93,6 @@ function computeDiff(oldText: string, newText: string): DiffLine[] {
   const newLines = newText.split('\n');
   const result: DiffLine[] = [];
 
-  // Simple diff algorithm using LCS (Longest Common Subsequence)
   const lcs = computeLCS(oldLines, newLines);
 
   let oldIdx = 0;
@@ -56,7 +102,6 @@ function computeDiff(oldText: string, newText: string): DiffLine[] {
   while (oldIdx < oldLines.length || newIdx < newLines.length) {
     if (lcsIdx < lcs.length && oldIdx < oldLines.length && oldLines[oldIdx] === lcs[lcsIdx]) {
       if (newIdx < newLines.length && newLines[newIdx] === lcs[lcsIdx]) {
-        // Context line (unchanged)
         result.push({
           type: 'context',
           content: oldLines[oldIdx],
@@ -67,7 +112,6 @@ function computeDiff(oldText: string, newText: string): DiffLine[] {
         newIdx++;
         lcsIdx++;
       } else {
-        // Added line
         result.push({
           type: 'add',
           content: newLines[newIdx],
@@ -76,7 +120,6 @@ function computeDiff(oldText: string, newText: string): DiffLine[] {
         newIdx++;
       }
     } else if (lcsIdx < lcs.length && newIdx < newLines.length && newLines[newIdx] === lcs[lcsIdx]) {
-      // Removed line
       result.push({
         type: 'remove',
         content: oldLines[oldIdx],
@@ -84,7 +127,6 @@ function computeDiff(oldText: string, newText: string): DiffLine[] {
       });
       oldIdx++;
     } else if (oldIdx < oldLines.length && newIdx < newLines.length) {
-      // Both lines are different - show as remove then add
       result.push({
         type: 'remove',
         content: oldLines[oldIdx],
@@ -98,7 +140,6 @@ function computeDiff(oldText: string, newText: string): DiffLine[] {
       oldIdx++;
       newIdx++;
     } else if (oldIdx < oldLines.length) {
-      // Only old lines left - all removed
       result.push({
         type: 'remove',
         content: oldLines[oldIdx],
@@ -106,7 +147,6 @@ function computeDiff(oldText: string, newText: string): DiffLine[] {
       });
       oldIdx++;
     } else if (newIdx < newLines.length) {
-      // Only new lines left - all added
       result.push({
         type: 'add',
         content: newLines[newIdx],
@@ -123,7 +163,6 @@ function computeLCS(a: string[], b: string[]): string[] {
   const m = a.length;
   const n = b.length;
 
-  // Create DP table
   const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
 
   for (let i = 1; i <= m; i++) {
@@ -136,7 +175,6 @@ function computeLCS(a: string[], b: string[]): string[] {
     }
   }
 
-  // Backtrack to find LCS
   const lcs: string[] = [];
   let i = m, j = n;
   while (i > 0 && j > 0) {
@@ -161,24 +199,20 @@ function parseUnifiedDiff(diff: string): DiffLine[] {
   let newLineNum = 0;
 
   for (const line of lines) {
-    // Skip file headers
     if (line.startsWith('---') || line.startsWith('+++') || line.startsWith('diff ') || line.startsWith('index ')) {
       continue;
     }
 
-    // Parse hunk headers
     if (line.startsWith('@@')) {
       const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
       if (match) {
         oldLineNum = parseInt(match[1], 10);
         newLineNum = parseInt(match[2], 10);
       }
-      // Show hunk header as separator
-      result.push({ type: 'context', content: line, oldLineNum: undefined, newLineNum: undefined });
+      result.push({ type: 'hunk', content: line, oldLineNum: undefined, newLineNum: undefined });
       continue;
     }
 
-    // Skip "no newline" markers
     if (line.startsWith('\\')) continue;
 
     if (line.startsWith('+')) {
@@ -223,13 +257,17 @@ export function DiffViewer({
     }
   }, []);
 
+  const language = useMemo(() => {
+    if (!fileName) return 'plaintext';
+    return getLanguageFromPath(fileName);
+  }, [fileName]);
+
   const diffLines = useMemo(() => {
     if (unifiedDiff) {
       return parseUnifiedDiff(unifiedDiff);
     }
 
     if (toolName === 'Write') {
-      // For Write, show all lines as added
       const lines = (newContent || '').split('\n');
       return lines.map((content, i): DiffLine => ({
         type: 'add',
@@ -238,9 +276,47 @@ export function DiffViewer({
       }));
     }
 
-    // For Edit, compute diff
     return computeDiff(oldContent || '', newContent || '');
   }, [oldContent, newContent, toolName, unifiedDiff]);
+
+  // Build highlighted line map from diff lines
+  const highlightedMap = useMemo(() => {
+    if (language === 'plaintext') return null;
+
+    // Reconstruct new-side (context + add) and old-side (context + remove)
+    const newSide: { idx: number; content: string }[] = [];
+    const oldSide: { idx: number; content: string }[] = [];
+
+    for (let i = 0; i < diffLines.length; i++) {
+      const line = diffLines[i];
+      if (line.type === 'hunk') continue;
+      if (line.type === 'add' || line.type === 'context') {
+        newSide.push({ idx: i, content: line.content });
+      }
+      if (line.type === 'remove' || line.type === 'context') {
+        oldSide.push({ idx: i, content: line.content });
+      }
+    }
+
+    const highlightedNew = highlightCode(newSide.map(l => l.content).join('\n'), language);
+    const highlightedOld = highlightCode(oldSide.map(l => l.content).join('\n'), language);
+
+    const result = new Map<number, string>();
+
+    // Map new-side (context + add lines)
+    for (let i = 0; i < newSide.length; i++) {
+      result.set(newSide[i].idx, highlightedNew[i] || '');
+    }
+
+    // Map old-side (remove lines only; context already mapped from new-side)
+    for (let i = 0; i < oldSide.length; i++) {
+      if (!result.has(oldSide[i].idx)) {
+        result.set(oldSide[i].idx, highlightedOld[i] || '');
+      }
+    }
+
+    return result;
+  }, [diffLines, language]);
 
   const stats = useMemo(() => {
     const added = diffLines.filter(l => l.type === 'add').length;
@@ -317,13 +393,14 @@ export function DiffViewer({
               className={`flex min-w-full ${
                 line.type === 'add' ? 'bg-green-900/30' :
                 line.type === 'remove' ? 'bg-red-900/30' :
+                line.type === 'hunk' ? 'bg-blue-900/20' :
                 ''
               }`}
             >
               {/* Line numbers - hidden when word wrap is enabled */}
               {!wordWrap && (
                 <div className="shrink-0 text-gray-500 text-right select-none border-r border-gray-700 bg-gray-800/50 text-xs leading-6 px-1 min-w-[2rem]">
-                  {toolName === 'Write' ? line.newLineNum : (line.newLineNum || line.oldLineNum || '')}
+                  {line.type === 'hunk' ? '...' : (toolName === 'Write' ? line.newLineNum : (line.newLineNum || line.oldLineNum || ''))}
                 </div>
               )}
 
@@ -338,7 +415,11 @@ export function DiffViewer({
 
               {/* Content */}
               <pre className={`flex-1 px-2 leading-6 ${wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'}`}>
-                {line.content || ' '}
+                {highlightedMap?.has(i) ? (
+                  <span dangerouslySetInnerHTML={{ __html: highlightedMap.get(i) || '&nbsp;' }} />
+                ) : (
+                  line.content || ' '
+                )}
               </pre>
             </div>
           ))}

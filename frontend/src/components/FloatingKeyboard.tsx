@@ -27,6 +27,11 @@ interface Position {
   y: number;
 }
 
+const getDefaultPosition = (): Position => ({
+  x: window.innerWidth / 2 - 200,
+  y: window.innerHeight - 300,
+});
+
 interface FloatingKeyboardProps {
   visible: boolean;
   onClose: () => void;
@@ -50,20 +55,14 @@ export function FloatingKeyboard({
   const [inputValue, setInputValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Helper to get default position
-  const getDefaultPosition = () => ({
-    x: window.innerWidth / 2 - 200,
-    y: window.innerHeight - 300,
-  });
-
   // Helper to load position for a mode
-  const loadPositionForMode = (mode: 'keyboard' | 'input'): Position => {
+  const loadPositionForMode = useCallback((mode: 'keyboard' | 'input'): Position => {
     try {
       const saved = localStorage.getItem(getPositionKey(mode));
       if (saved) return JSON.parse(saved);
     } catch {}
     return getDefaultPosition();
-  };
+  }, []);
 
   // Position state
   const [position, setPosition] = useState<Position>(() => loadPositionForMode('keyboard'));
@@ -150,7 +149,7 @@ export function FloatingKeyboard({
     setPosition(newPosition);
     setInputMode('input');
     setTimeout(() => inputRef.current?.focus(), 50);
-  }, [position]);
+  }, [position, loadPositionForMode]);
 
   // Mode switch handler (input -> keyboard)
   const handleSwitchToKeyboard = useCallback(() => {
@@ -160,7 +159,7 @@ export function FloatingKeyboard({
     setPosition(newPosition);
     setInputMode('keyboard');
     setInputValue('');
-  }, [position]);
+  }, [position, loadPositionForMode]);
 
   // Input key handler
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -304,7 +303,6 @@ export function FloatingKeyboard({
                 autoComplete="off"
                 spellCheck={false}
                 enterKeyHint="send"
-                autoFocus
                 placeholder="日本語入力 - Enterで送信"
                 className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
                 style={{ fontSize: '16px' }}

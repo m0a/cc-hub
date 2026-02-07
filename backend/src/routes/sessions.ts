@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { CreateSessionSchema, type IndicatorState, type SessionTheme } from '../../../shared/types';
+import { CreateSessionSchema, type IndicatorState, } from '../../../shared/types';
 import { TmuxService } from '../services/tmux';
 import { ClaudeCodeService } from '../services/claude-code';
 import { SessionHistoryService } from '../services/session-history';
@@ -18,7 +18,7 @@ export const sessions = new Hono();
 function getIndicatorState(
   isClaudeRunning: boolean,
   waitingForInput: boolean,
-  waitingToolName?: string
+  _waitingToolName?: string
 ): IndicatorState {
   if (!isClaudeRunning) {
     return 'completed'; // Not running Claude = shell prompt
@@ -47,7 +47,7 @@ sessions.get('/', async (c) => {
     tmuxSessions
       .filter(s => s.currentCommand === 'claude' && s.paneTty)
       .map(async (s) => {
-        const sessionId = await claudeCodeService.getSessionIdFromTty(s.paneTty!);
+        const sessionId = await claudeCodeService.getSessionIdFromTty(s.paneTty ?? '');
         if (sessionId) {
           sessionIdByTmuxId.set(s.id, sessionId);
         }
@@ -56,8 +56,8 @@ sessions.get('/', async (c) => {
 
   // Get Claude Code session info for sessions running claude
   const claudePaths = tmuxSessions
-    .filter(s => s.currentCommand === 'claude' && s.currentPath)
-    .map(s => s.currentPath!);
+    .filter((s): s is typeof s & { currentPath: string } => s.currentCommand === 'claude' && !!s.currentPath)
+    .map(s => s.currentPath);
 
   // Also get sessions by path for fallback (when session ID not found from PTY)
   const ccSessionsByPath = await claudeCodeService.getSessionsForPaths(claudePaths);
@@ -65,7 +65,7 @@ sessions.get('/', async (c) => {
   // Batch check process state for all Claude sessions (single ps call instead of N)
   const claudeTtys = tmuxSessions
     .filter(s => s.currentCommand === 'claude' && s.paneTty)
-    .map(s => s.paneTty!.replace('/dev/', ''));
+    .map(s => (s.paneTty as string).replace('/dev/', ''));
   const processRunningByTty = await tmuxService.batchCheckProcessRunning(claudeTtys);
 
   const sessions = await Promise.all(tmuxSessions.map(async (s) => {
@@ -184,7 +184,7 @@ sessions.post('/', async (c) => {
       lastAccessedAt: new Date().toISOString(),
       state: 'idle',
     }, 201);
-  } catch (error) {
+  } catch (_error) {
     return c.json({ error: 'Failed to create session' }, 500);
   }
 });
@@ -224,7 +224,7 @@ sessions.get('/history/search/stream', async (c) => {
         }
         // Send done event
         controller.enqueue(encoder.encode('event: done\ndata: {}\n\n'));
-      } catch (error) {
+      } catch (_error) {
         controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ error: 'Search failed' })}\n\n`));
       } finally {
         controller.close();
@@ -342,7 +342,7 @@ sessions.post('/history/resume', async (c) => {
       tmuxSessionId: tmuxSessionName,
       ccSessionId: sessionId,
     });
-  } catch (error) {
+  } catch (_error) {
     return c.json({ error: 'Failed to resume session from history' }, 500);
   }
 });
@@ -403,7 +403,7 @@ sessions.delete('/:id', async (c) => {
   try {
     await tmuxService.killSession(id);
     return c.json({ success: true });
-  } catch (error) {
+  } catch (_error) {
     return c.json({ error: 'Failed to delete session' }, 500);
   }
 });
@@ -431,7 +431,7 @@ sessions.post('/:id/resume', async (c) => {
     }
 
     return c.json({ success: true, command });
-  } catch (error) {
+  } catch (_error) {
     return c.json({ error: 'Failed to resume session' }, 500);
   }
 });
@@ -458,7 +458,7 @@ sessions.put('/:id/theme', async (c) => {
   try {
     await setSessionTheme(id, parsed.data.theme);
     return c.json({ success: true, theme: parsed.data.theme });
-  } catch (error) {
+  } catch (_error) {
     return c.json({ error: 'Failed to update theme' }, 500);
   }
 });

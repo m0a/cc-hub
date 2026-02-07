@@ -34,7 +34,7 @@ function loadFontSize(sessionId: string): number {
   const saved = localStorage.getItem(FONT_SIZE_KEY_PREFIX + sessionId);
   if (saved) {
     const size = parseInt(saved, 10);
-    if (!isNaN(size) && size >= MIN_FONT_SIZE && size <= MAX_FONT_SIZE) {
+    if (!Number.isNaN(size) && size >= MIN_FONT_SIZE && size <= MAX_FONT_SIZE) {
       return size;
     }
   }
@@ -109,7 +109,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const [urlPage, setUrlPage] = useState(0);
   const URL_PAGE_SIZE = 5;
   // Detect touch device (for overlay behavior)
-  const [isTouchDevice] = useState(() => {
+  const [_isTouchDevice] = useState(() => {
     const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     const hasCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
     return hasTouch && hasCoarsePointer;
@@ -162,7 +162,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         clearTimeout(positionToggleTimeoutRef.current);
       }
     };
-  }, [showPositionToggle, isTablet, keyboardPosition]);
+  }, [showPositionToggle, isTablet]);
 
   // Show position toggle when keyboard position changes
   const handlePositionToggle = () => {
@@ -208,7 +208,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       if (!term) return [];
 
       const urls: string[] = [];
-      const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g;
+      const urlRegex = /https?:\/\/[^\s<>"{}|\\^`[\]]+/g;
 
       const buffer = term.buffer.active;
       for (let i = 0; i < buffer.length; i++) {
@@ -249,7 +249,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         setTimeout(() => refreshRef.current(), 100);
       }, 100);
     }
-  }, [isConnected, send]);
+  }, [isConnected, send, fitTerminal]);
 
   // Create terminal - run only once per sessionId
   useEffect(() => {
@@ -594,7 +594,8 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       fitAddonRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, // Connect to WebSocket
+    connect, sessionTheme]);
 
   // Track visual viewport for soft keyboard offset (mobile fullscreen only)
   useEffect(() => {
@@ -688,7 +689,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         clearTimeout(fontSizeTimeoutRef.current);
       }
     };
-  }, [fontSize, isInitialized]);
+  }, [isInitialized]);
 
   // Update terminal theme when session theme changes
   useEffect(() => {
@@ -772,7 +773,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     if (!term) return;
 
     const urls: string[] = [];
-    const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g;
+    const urlRegex = /https?:\/\/[^\s<>"{}|\\^`[\]]+/g;
 
     // Get visible buffer content
     const buffer = term.buffer.active;
@@ -1191,7 +1192,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                 autoComplete="off"
                 spellCheck={false}
                 enterKeyHint="send"
-                autoFocus
                 placeholder="入力欄をタップしてキーボード表示"
                 className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
                 style={{ fontSize: '16px' }}

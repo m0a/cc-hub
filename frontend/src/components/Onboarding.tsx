@@ -164,7 +164,7 @@ export function Onboarding({ onComplete, type = 'main', onStepAction }: Onboardi
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [type, stepsForType, onStepAction]);
+  }, [stepsForType, onStepAction, onComplete]);
 
   const step = availableSteps[currentStep];
   const isLastStep = currentStep === availableSteps.length - 1;

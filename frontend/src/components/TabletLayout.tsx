@@ -383,7 +383,6 @@ export function TabletLayout({
                   autoComplete="off"
                   spellCheck={false}
                   enterKeyHint="send"
-                  autoFocus
                   placeholder="日本語入力 - Enterで送信"
                   className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
                   style={{ fontSize: '16px' }}

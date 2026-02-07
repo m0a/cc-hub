@@ -96,7 +96,7 @@ export class SessionHistoryService {
         try {
           const entry = JSON.parse(line);
           if (entry.type === 'user' && entry.message?.content) {
-            let content = entry.message.content;
+            const content = entry.message.content;
 
             // Skip array content (tool_result etc.)
             if (Array.isArray(content)) continue;
@@ -149,8 +149,8 @@ export class SessionHistoryService {
               const start = Math.max(0, idx - 20);
               const end = Math.min(content.length, idx + query.length + 60);
               let snippet = content.substring(start, end).replace(/\n/g, ' ').trim();
-              if (start > 0) snippet = '...' + snippet;
-              if (end < content.length) snippet = snippet + '...';
+              if (start > 0) snippet = `...${snippet}`;
+              if (end < content.length) snippet = `${snippet}...`;
               return snippet;
             }
           }
@@ -352,7 +352,7 @@ export class SessionHistoryService {
         const basicInfo = await this.scanJsonlForBasicInfo(jsonlPath);
 
         // Skip sessions with no user messages
-        if (basicInfo && basicInfo.lastPrompt) {
+        if (basicInfo?.lastPrompt) {
           const projectName = basicInfo.projectPath.replace(/^\/home\/[^/]+\//, '~/');
 
           sessions.push({
@@ -392,7 +392,7 @@ export class SessionHistoryService {
             const basicInfo = await this.scanJsonlForBasicInfo(jsonlPath);
 
             // Skip sessions with no user messages (empty/abandoned sessions)
-            if (basicInfo && basicInfo.lastPrompt && !seenSessionIds.has(basicInfo.sessionId)) {
+            if (basicInfo?.lastPrompt && !seenSessionIds.has(basicInfo.sessionId)) {
               seenSessionIds.add(basicInfo.sessionId);
 
               const projectName = basicInfo.projectPath.replace(/^\/home\/[^/]+\//, '~/');
@@ -650,13 +650,13 @@ export class SessionHistoryService {
               .replace(/<task-id>[^<]*<\/task-id>/g, '')
               .replace(/<output-file>[^<]*<\/output-file>/g, '')
               .replace(/<shell-id>[^<]*<\/shell-id>/g, '')
-              // Remove terminal escape sequences
+              // biome-ignore lint/suspicious/noControlCharactersInRegex: removing terminal escape sequences requires matching ESC char
               .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
               .replace(/\[\?[0-9]+[hl]/g, '');
 
             // Clean up long content
             if (content.length > 5000) {
-              content = content.substring(0, 2000) + '\n...(truncated)...';
+              content = `${content.substring(0, 2000)}\n...(truncated)...`;
             }
           }
 
@@ -770,7 +770,7 @@ export class SessionHistoryService {
             const jsonlPath = join(projectDir, file);
             const basicInfo = await this.scanJsonlForBasicInfo(jsonlPath);
 
-            if (basicInfo && basicInfo.lastPrompt) {
+            if (basicInfo?.lastPrompt) {
               // Search in project name and first prompt
               const projectName = basicInfo.projectPath.replace(/^\/home\/[^/]+\//, '~/');
               const searchText = `${projectName} ${basicInfo.lastPrompt}`.toLowerCase();

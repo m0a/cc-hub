@@ -50,7 +50,7 @@ async function getLatestRelease(): Promise<GitHubRelease | null> {
     }
 
     return await response.json();
-  } catch (error) {
+  } catch (_error) {
     console.error(`❌ ${t('update.githubConnectionFailed')}`);
     return null;
   }

@@ -39,7 +39,7 @@ export const terminalWebSocket = {
     if (!activeConnections.has(sessionId)) {
       activeConnections.set(sessionId, new Set());
     }
-    activeConnections.get(sessionId)!.add(ws);
+    activeConnections.get(sessionId)?.add(ws);
 
     // Check if tmux session exists - don't auto-create to prevent phantom sessions
     const exists = await tmuxService.sessionExists(sessionId);
@@ -188,7 +188,7 @@ export const terminalWebSocket = {
           const timer = setTimeout(() => {
             ptyGraceTimers.delete(sessionId);
             // Only kill if still no clients connected
-            if (!activeConnections.has(sessionId) || activeConnections.get(sessionId)!.size === 0) {
+            if (!activeConnections.has(sessionId) || activeConnections.get(sessionId)?.size === 0) {
               const currentProc = sessionProcesses.get(sessionId);
               if (currentProc && !currentProc.killed) {
                 currentProc.kill();

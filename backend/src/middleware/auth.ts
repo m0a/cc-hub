@@ -44,7 +44,7 @@ export const conditionalAuthMiddleware = createMiddleware(async (c: Context, nex
     const payload = await authService.verifyToken(token);
     c.set('user', payload);
     await next();
-  } catch (error) {
+  } catch (_error) {
     return c.json({ error: 'Invalid or expired token' }, 401);
   }
 });
@@ -64,7 +64,7 @@ export const authMiddleware = createMiddleware(async (c: Context, next: Next) =>
     const payload = await authService.verifyToken(token);
     c.set('user', payload);
     await next();
-  } catch (error) {
+  } catch (_error) {
     return c.json({ error: 'Invalid or expired token' }, 401);
   }
 });

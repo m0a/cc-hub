@@ -1,0 +1,59 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.0.6/schema.json",
+  "linter": {
+    "rules": {
+      "a11y": {
+        "useButtonType": {
+          "level": "warn"
+        },
+        "noSvgWithoutTitle": {
+          "level": "warn"
+        },
+        "noStaticElementInteractions": {
+          "level": "warn"
+        },
+        "useKeyWithClickEvents": {
+          "level": "warn"
+        },
+        "useSemanticElements": {
+          "level": "warn"
+        },
+        "noNoninteractiveTabindex": {
+          "level": "warn"
+        },
+        "noLabelWithoutControl": {
+          "level": "warn"
+        },
+        "noAutofocus": {
+          "level": "warn"
+        }
+      },
+      "security": {
+        "noDangerouslySetInnerHtml": {
+          "level": "warn"
+        }
+      },
+      "suspicious": {
+        "noArrayIndexKey": {
+          "level": "warn"
+        },
+        "noExplicitAny": {
+          "level": "warn"
+        }
+      },
+      "style": {
+        "noNonNullAssertion": {
+          "level": "warn"
+        }
+      },
+      "correctness": {
+        "useExhaustiveDependencies": {
+          "level": "warn"
+        },
+        "noInvalidUseBeforeDeclaration": {
+          "level": "warn"
+        }
+      }
+    }
+  }
+}

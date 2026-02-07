@@ -14,7 +14,7 @@ function getFontSizeSetting(): number {
     const stored = localStorage.getItem(FONTSIZE_STORAGE_KEY);
     if (stored) {
       const size = parseInt(stored, 10);
-      if (!isNaN(size) && size >= MIN_FONTSIZE && size <= MAX_FONTSIZE) {
+      if (!Number.isNaN(size) && size >= MIN_FONTSIZE && size <= MAX_FONTSIZE) {
         return size;
       }
     }

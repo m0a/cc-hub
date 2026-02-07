@@ -113,11 +113,11 @@ if (EMBEDDED_MODE && getStaticAsset) {
     }
 
     // Try to get asset
-    let asset = getStaticAsset!(path);
+    let asset = getStaticAsset?.(path);
 
     // SPA fallback
     if (!asset) {
-      asset = getStaticAsset!('/index.html');
+      asset = getStaticAsset?.('/index.html');
     }
 
     if (asset) {
@@ -166,7 +166,7 @@ try {
   }
   // Remove trailing dot if present
   tailscaleHostname = dnsName.replace(/\.$/, '');
-} catch (e) {
+} catch (_e) {
   console.error(`❌ ${t('server.tailscaleParseError')}`);
   process.exit(1);
 }

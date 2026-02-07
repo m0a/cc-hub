@@ -215,7 +215,7 @@ export function Keyboard({
 
     // Apply Alt modifier (ESC prefix)
     if (altPressed) {
-      char = '\x1b' + char;
+      char = `\x1b${char}`;
       setAltPressed(false);
     }
 
@@ -225,7 +225,7 @@ export function Keyboard({
     }
 
     onSend(char);
-  }, [ctrlPressed, altPressed, shiftPressed, onSend, layer]);
+  }, [ctrlPressed, altPressed, shiftPressed, onSend]);
 
   // Handle long press for alternative characters
   const sendLongPress = useCallback((keyDef: KeyDef) => {

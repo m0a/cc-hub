@@ -73,7 +73,7 @@ export class UsageTracker {
       join(this.claudeDir, 'limit-tracker', 'config', 'limits.json')
     );
 
-    const planLimits = limitsConfig?.[plan] || limitsConfig?.['pro'];
+    const planLimits = limitsConfig?.[plan] || limitsConfig?.pro;
 
     if (!planLimits) {
       return null;

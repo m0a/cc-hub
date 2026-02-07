@@ -103,7 +103,7 @@ files.get('/changes/:sessionWorkingDir', async (c) => {
     };
 
     return c.json(response);
-  } catch (error) {
+  } catch (_error) {
     return c.json({ error: 'Failed to get changes' }, 500);
   }
 });
@@ -329,7 +329,7 @@ files.get('/browse', async (c) => {
     }
 
     // Security: ensure path is within home directory
-    if (!resolvedPath.startsWith(resolvedHome + '/') && resolvedPath !== resolvedHome) {
+    if (!resolvedPath.startsWith(`${resolvedHome}/`) && resolvedPath !== resolvedHome) {
       return c.json({ error: 'Access denied: path outside home directory' }, 403);
     }
 
@@ -388,7 +388,7 @@ files.post('/mkdir', async (c) => {
       return c.json({ error: 'Parent directory not found' }, 404);
     }
 
-    if (!resolvedParent.startsWith(resolvedHome + '/') && resolvedParent !== resolvedHome) {
+    if (!resolvedParent.startsWith(`${resolvedHome}/`) && resolvedParent !== resolvedHome) {
       return c.json({ error: 'Access denied: path outside home directory' }, 403);
     }
 

@@ -41,6 +41,8 @@
     "newFolder": "New Folder",
     "folderName": "Folder name",
     "noSubdirectories": "No subdirectories",
+    "duplicateWorkingDir": "A Claude session is already running in this directory ({{name}})",
+    "resumeFailed": "Failed to resume session",
     "history": "History",
     "longPressHint": "Long press to delete",
     "processing": "Processing",

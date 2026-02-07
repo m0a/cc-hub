@@ -41,6 +41,8 @@
     "newFolder": "新規フォルダ",
     "folderName": "フォルダ名",
     "noSubdirectories": "サブディレクトリがありません",
+    "duplicateWorkingDir": "このディレクトリでは既にClaudeセッションが実行中です（{{name}}）",
+    "resumeFailed": "セッションの再開に失敗しました",
     "history": "履歴",
     "longPressHint": "長押しで削除",
     "processing": "処理中",

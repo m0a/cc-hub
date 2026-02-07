@@ -239,6 +239,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
   const [searchInput, setSearchInput] = useState('');
 
   const [resumingId, setResumingId] = useState<string | null>(null);
+  const [resumeError, setResumeError] = useState<string | null>(null);
   const [selectedSession, setSelectedSession] = useState<HistorySession | null>(null);
   const [conversation, setConversation] = useState<ConversationMessage[]>([]);
   const [loadingConversation, setLoadingConversation] = useState(false);
@@ -278,6 +279,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
 
   const handleResume = async (session: HistorySession) => {
     setResumingId(session.sessionId);
+    setResumeError(null);
     try {
       const result = await resumeSession(session.sessionId, session.projectPath);
 
@@ -303,6 +305,13 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
         await refreshAllLoadedProjects();
       }
       setSelectedSession(null);
+    } catch (err) {
+      const error = err as Error & { data?: { error?: string; existingSession?: string } };
+      if (error.data?.error === 'duplicate_working_dir') {
+        setResumeError(t('session.duplicateWorkingDir', { name: error.data.existingSession || '' }));
+      } else {
+        setResumeError(t('session.resumeFailed'));
+      }
     } finally {
       setResumingId(null);
     }
@@ -417,6 +426,14 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
           )}
         </div>
       </form>
+
+      {/* Resume error banner */}
+      {resumeError && (
+        <div className="px-3 py-2 bg-red-900/50 text-red-300 text-xs flex items-center justify-between border-b border-gray-700">
+          <span>{resumeError}</span>
+          <button onClick={() => setResumeError(null)} className="text-red-400 hover:text-red-200 ml-2">×</button>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto">
         {/* Search results */}

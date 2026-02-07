@@ -176,10 +176,12 @@ function CreateSessionModal({
   onConfirm,
   onCancel,
   existingNames,
+  externalError,
 }: {
   onConfirm: (name: string, workingDir?: string) => void;
   onCancel: () => void;
   existingNames: Set<string>;
+  externalError?: string | null;
 }) {
   const { t } = useTranslation();
   const [name, setName] = useState('');
@@ -357,8 +359,8 @@ function CreateSessionModal({
           )}
 
           {/* Error display */}
-          {error && (
-            <div className="text-xs text-red-400 mb-2">{error}</div>
+          {(error || externalError) && (
+            <div className="text-xs text-red-400 mb-2">{externalError || error}</div>
           )}
 
           {/* Directory list */}
@@ -726,11 +728,23 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
     }
   }, [viewingConversation, fetchConversation]);
 
+  const [createError, setCreateError] = useState<string | null>(null);
+
   const handleCreateSession = async (name: string, workingDir?: string) => {
-    const session = await createSession(name || undefined, workingDir);
-    if (session) {
-      setShowCreateModal(false);
-      onSelectSession(session);
+    setCreateError(null);
+    try {
+      const session = await createSession(name || undefined, workingDir);
+      if (session) {
+        setShowCreateModal(false);
+        onSelectSession(session);
+      }
+    } catch (err) {
+      const error = err as Error & { data?: { error?: string; existingSession?: string } };
+      if (error.data?.error === 'duplicate_working_dir') {
+        setCreateError(t('session.duplicateWorkingDir', { name: error.data.existingSession || '' }));
+      } else {
+        setCreateError(error.message || t('common.error'));
+      }
     }
   };
 
@@ -917,8 +931,9 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
       {showCreateModal && (
         <CreateSessionModal
           onConfirm={handleCreateSession}
-          onCancel={() => setShowCreateModal(false)}
+          onCancel={() => { setShowCreateModal(false); setCreateError(null); }}
           existingNames={new Set(sessions.map(s => s.name))}
+          externalError={createError}
         />
       )}
 

@@ -218,6 +218,9 @@ sessions.post('/', async (c) => {
               // Wait a bit more for claude to be fully ready
               await new Promise(r => setTimeout(r, 2000));
               await tmuxService.sendKeys(sessionName, prompt);
+              // Send extra Enter to submit the prompt
+              await new Promise(r => setTimeout(r, 500));
+              await tmuxService.sendKeys(sessionName, '');
               return;
             }
           }

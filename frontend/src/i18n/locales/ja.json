@@ -94,7 +94,9 @@
     "networkLatency": "ネットワーク遅延",
     "websocket": "WebSocket",
     "api": "API",
-    "latencyNA": "N/A"
+    "latencyNA": "N/A",
+    "chartNow": "現在",
+    "chartReset": "リセット"
   },
   "files": {
     "title": "ファイルブラウザ",

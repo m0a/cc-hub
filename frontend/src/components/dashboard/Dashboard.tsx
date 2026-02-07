@@ -47,7 +47,7 @@ export function Dashboard({ className = '' }: DashboardProps) {
   return (
     <div className={`p-2 space-y-2 overflow-y-auto ${className}`}>
       <NetworkLatency />
-      <UsageLimits data={data?.usageLimits || null} />
+      <UsageLimits data={data?.usageLimits || null} history={data?.usageHistory || []} />
       <DailyUsageChart data={data?.dailyActivity || []} />
       <ModelUsageChart data={data?.modelUsage || []} />
       {data?.hourlyActivity && Object.keys(data.hourlyActivity).length > 0 && (

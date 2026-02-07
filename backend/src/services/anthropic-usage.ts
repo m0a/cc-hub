@@ -139,21 +139,27 @@ export class AnthropicUsageService {
     };
   }
 
+  private formatDuration(diffMs: number): string {
+    if (diffMs <= 0) return 'soon';
+
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+    if (days > 0) {
+      return `${days}d ${hours}h${minutes}m`;
+    }
+    if (hours > 0) {
+      return `${hours}h${minutes}m`;
+    }
+    return `${minutes}m`;
+  }
+
   private formatTimeRemaining(resetsAt: string): string {
     try {
       const resetTime = new Date(resetsAt);
       const now = new Date();
-      const diffMs = resetTime.getTime() - now.getTime();
-
-      if (diffMs <= 0) return 'soon';
-
-      const hours = Math.floor(diffMs / (1000 * 60 * 60));
-      const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-
-      if (hours > 0) {
-        return `${hours}h${minutes}m`;
-      }
-      return `${minutes}m`;
+      return this.formatDuration(resetTime.getTime() - now.getTime());
     } catch {
       return '?';
     }
@@ -196,15 +202,14 @@ export class AnthropicUsageService {
         return undefined;
       }
 
-      // Format the hit time
-      const diffMs = hitTime.getTime() - now.getTime();
-      const hours = Math.floor(diffMs / (1000 * 60 * 60));
-      const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-
-      if (hours > 0) {
-        return `${hours}h${minutes}m`;
+      // If hit time is within the last 10% of remaining time, not really dangerous
+      const remainingMs = resetTime.getTime() - now.getTime();
+      if (remainingMs > 0 && (hitTime.getTime() - now.getTime()) > remainingMs * 0.9) {
+        return undefined;
       }
-      return `${minutes}m`;
+
+      // Format the hit time
+      return this.formatDuration(hitTime.getTime() - now.getTime());
     } catch {
       return undefined;
     }

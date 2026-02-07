@@ -36,6 +36,12 @@ const PRICING: Record<string, {
     cacheRead: 1.50 / 1_000_000,
     cacheWrite: 18.75 / 1_000_000,
   },
+  'claude-opus-4-6': {
+    input: 15.00 / 1_000_000,
+    output: 75.00 / 1_000_000,
+    cacheRead: 1.50 / 1_000_000,
+    cacheWrite: 18.75 / 1_000_000,
+  },
   'claude-sonnet-4-5-20250929': {
     input: 3.00 / 1_000_000,
     output: 15.00 / 1_000_000,
@@ -119,6 +125,13 @@ export class StatsService {
   }
 
   private getModelDisplayName(modelId: string): string {
+    // Extract version from model ID (e.g., "claude-opus-4-6" -> "4.6", "claude-opus-4-5-20251101" -> "4.5")
+    const match = modelId.match(/claude-(opus|sonnet)-(\d+)-(\d+)/);
+    if (match) {
+      const [, family, major, minor] = match;
+      const name = family === 'opus' ? 'Opus' : 'Sonnet';
+      return `${name} ${major}.${minor}`;
+    }
     if (modelId.includes('opus')) return 'Opus';
     if (modelId.includes('sonnet')) return 'Sonnet';
     return modelId;

@@ -28,9 +28,12 @@ export function ModelUsageChart({ data }: ModelUsageChartProps) {
 
   const total = data.reduce((sum, m) => sum + m.totalTokensIn + m.totalTokensOut + m.totalCacheRead, 0);
 
-  const colors: Record<string, string> = {
-    'Opus': 'bg-purple-500',
-    'Sonnet': 'bg-blue-500',
+  const getColor = (model: string): string => {
+    if (model === 'Opus 4.6') return 'bg-purple-500';
+    if (model === 'Opus 4.5') return 'bg-fuchsia-400';
+    if (model.startsWith('Opus')) return 'bg-purple-500';
+    if (model.startsWith('Sonnet')) return 'bg-blue-500';
+    return 'bg-gray-500';
   };
 
   return (
@@ -46,7 +49,7 @@ export function ModelUsageChart({ data }: ModelUsageChartProps) {
           return (
             <div
               key={model.model}
-              className={`${colors[model.model] || 'bg-gray-500'} h-full`}
+              className={`${getColor(model.model)} h-full`}
               style={{ width: `${pct}%` }}
               title={`${model.model}: ${formatTokens(modelTotal)} tokens`}
             />
@@ -58,7 +61,7 @@ export function ModelUsageChart({ data }: ModelUsageChartProps) {
       <div className="mt-2 flex gap-3 text-xs">
         {data.map((model) => (
           <div key={model.model} className="flex items-center gap-1">
-            <div className={`w-2 h-2 rounded-full ${colors[model.model] || 'bg-gray-500'}`} />
+            <div className={`w-2 h-2 rounded-full ${getColor(model.model)}`} />
             <span className="text-gray-400">{model.model}</span>
             <span className="text-gray-500">{formatTokens(model.totalTokensOut)}</span>
           </div>

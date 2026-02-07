@@ -66,7 +66,7 @@ function getStatusMessage(
     case 'exceeded':
       return t('dashboard.statusExceeded');
     case 'danger':
-      return t('dashboard.statusDanger', { time: estimatedHitTime || timeRemaining });
+      return t('dashboard.statusDanger', { time: estimatedHitTime || timeRemaining, resetTime: timeRemaining });
     case 'warning':
       return t('dashboard.statusWarning', { time: timeRemaining });
     default:
@@ -94,14 +94,14 @@ export function UsageLimits({ data }: UsageLimitsProps) {
         label={t('dashboard.fiveHourCycle')}
         utilization={data.fiveHour.utilization}
         status={data.fiveHour.status || 'safe'}
-        statusMessage={getStatusMessage(t, data.fiveHour.status, data.fiveHour.timeRemaining)}
+        statusMessage={getStatusMessage(t, data.fiveHour.status, data.fiveHour.timeRemaining, data.fiveHour.estimatedHitTime)}
       />
 
       <ProgressBar
         label={t('dashboard.sevenDayCycle')}
         utilization={data.sevenDay.utilization}
         status={data.sevenDay.status || 'safe'}
-        statusMessage={getStatusMessage(t, data.sevenDay.status, data.sevenDay.timeRemaining)}
+        statusMessage={getStatusMessage(t, data.sevenDay.status, data.sevenDay.timeRemaining, data.sevenDay.estimatedHitTime)}
       />
     </div>
   );

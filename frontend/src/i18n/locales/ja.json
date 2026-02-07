@@ -82,7 +82,7 @@
     "today": "今日",
     "resetInTime": "リセットまで{{time}}",
     "statusExceeded": "リミット到達中",
-    "statusDanger": "このペースで{{time}}後にリミット到達",
+    "statusDanger": "このペースで{{time}}後にリミット到達（未使用なら{{resetTime}}でリセット）",
     "statusWarning": "余裕あり（リセットまで{{time}}）",
     "statusNormal": "順調（リセットまで{{time}}）",
     "statusSafe": "余裕十分（リセットまで{{time}}）",

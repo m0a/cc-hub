@@ -200,9 +200,29 @@ sessions.post('/', async (c) => {
   try {
     await tmuxService.createSession(name);
 
-    // If workingDir is specified, change to that directory and start claude
+    // Start claude if workingDir is specified
     if (parsed.success && parsed.data.workingDir) {
       await tmuxService.sendKeys(name, `cd ${parsed.data.workingDir} && claude`);
+
+      // Send initial prompt after claude starts (interactive mode)
+      if (parsed.data.initialPrompt) {
+        const prompt = parsed.data.initialPrompt;
+        const sessionName = name;
+        // Poll until claude process is running on the session's TTY
+        (async () => {
+          for (let i = 0; i < 30; i++) { // up to 30 seconds
+            await new Promise(r => setTimeout(r, 1000));
+            const sessions = await tmuxService.listSessions();
+            const session = sessions.find(s => s.name === sessionName);
+            if (session?.currentCommand === 'claude') {
+              // Wait a bit more for claude to be fully ready
+              await new Promise(r => setTimeout(r, 2000));
+              await tmuxService.sendKeys(sessionName, prompt);
+              return;
+            }
+          }
+        })();
+      }
     }
 
     return c.json({

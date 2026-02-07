@@ -13,6 +13,7 @@ After=network.target tailscaled.service
 Type=simple
 ExecStart=__SHELL__ -lc 'exec __EXEC_PATH__ -p __PORT__'
 EnvironmentFile=%h/.config/cchub/env
+KillMode=process
 Restart=always
 RestartSec=3
 

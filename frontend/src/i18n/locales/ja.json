@@ -223,6 +223,7 @@
     "historyTabTitle": "履歴",
     "historyTabDescription": "過去のClaude Codeセッションを検索・閲覧できます。以前の会話を再開したり履歴を確認できます。",
     "dashboardTabTitle": "ダッシュボード",
-    "dashboardTabDescription": "使用量リミット、アクティビティ統計、コスト推定をリアルタイムで確認できます。"
+    "dashboardTabDescription": "使用量リミット、アクティビティ統計、コスト推定をリアルタイムで確認できます。",
+    "welcomePrompt": "こんにちは！CC Hubへようこそ。あなたはClaude Codeです。CC Hubを通じてリモートからアクセスしています。簡単に自己紹介してください。"
   }
 }

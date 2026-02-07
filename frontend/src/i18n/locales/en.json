@@ -223,6 +223,7 @@
     "historyTabTitle": "History",
     "historyTabDescription": "Search and browse past Claude Code sessions. Resume previous conversations or view their history.",
     "dashboardTabTitle": "Dashboard",
-    "dashboardTabDescription": "Monitor usage limits, activity statistics, and cost estimates in real-time."
+    "dashboardTabDescription": "Monitor usage limits, activity statistics, and cost estimates in real-time.",
+    "welcomePrompt": "Hello! Welcome to CC Hub. You are Claude Code, being accessed remotely through CC Hub. Please briefly introduce yourself."
   }
 }

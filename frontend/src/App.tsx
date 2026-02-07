@@ -259,7 +259,11 @@ export function App() {
       const response = await authFetch(`${API_BASE}/api/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'Welcome' }),  // Will use home directory by default
+        body: JSON.stringify({
+          name: 'Welcome',
+          workingDir: '~',
+          initialPrompt: t('onboarding.welcomePrompt'),
+        }),
       });
       if (response.ok) {
         const session = await response.json();

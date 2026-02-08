@@ -213,8 +213,9 @@ export function FloatingKeyboard({
 
   if (!visible) return null;
 
-  // Minimized FAB button
+  // Minimized mini keyboard with arrow up/down and enter
   if (minimized) {
+    const miniKeyClass = "p-3 text-white hover:bg-gray-700 active:bg-gray-600 transition-colors select-none";
     return (
       <div
         ref={containerRef}
@@ -222,27 +223,73 @@ export function FloatingKeyboard({
         style={{ left: position.x, top: position.y }}
       >
         <div
-          className="flex items-center gap-1 bg-gray-800 border border-gray-600 rounded-lg shadow-lg cursor-move"
+          className="flex items-center bg-gray-800 border border-gray-600 rounded-lg shadow-lg cursor-move"
           onMouseDown={handleDragStart}
           onTouchStart={handleDragStart}
         >
+          {/* Drag handle + Expand */}
+          <div className="flex items-center rounded-l-lg">
+            <div className="flex items-center gap-0.5 px-2 py-3">
+              <div className="w-1 h-4 bg-gray-500 rounded-full" />
+              <div className="w-1 h-4 bg-gray-500 rounded-full" />
+            </div>
+            <button
+              onClick={toggleMinimize}
+              className={`${miniKeyClass} rounded-l-lg`}
+              onMouseDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+              </svg>
+            </button>
+          </div>
+          {/* Divider */}
+          <div className="w-px h-6 bg-gray-600" />
+          {/* Arrow Up */}
           <button
-            onClick={toggleMinimize}
-            className="p-3 text-white hover:bg-gray-700 rounded-l-lg transition-colors"
+            onClick={() => onSend('\x1b[A')}
+            className={miniKeyClass}
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
             </svg>
           </button>
+          {/* Arrow Down */}
           <button
-            onClick={onClose}
-            className="p-3 text-gray-400 hover:text-white hover:bg-gray-700 rounded-r-lg transition-colors"
+            onClick={() => onSend('\x1b[B')}
+            className={miniKeyClass}
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {/* Enter */}
+          <button
+            onClick={() => onSend('\r')}
+            className={miniKeyClass}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6,15 3,12 6,9" />
+              <path d="M3 12h11V3" />
+            </svg>
+          </button>
+          {/* Divider */}
+          <div className="w-px h-6 bg-gray-600" />
+          {/* Close */}
+          <button
+            onClick={onClose}
+            className={`${miniKeyClass} text-gray-400 hover:text-white rounded-r-lg`}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -278,11 +325,11 @@ export function FloatingKeyboard({
           </div>
           <span className="text-xs text-gray-400">Keyboard</span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           {/* Transparent toggle */}
           <button
             onClick={toggleTransparent}
-            className={`p-1 ${transparent ? 'text-blue-400' : 'text-gray-400'} hover:text-white hover:bg-gray-600 rounded transition-colors`}
+            className={`p-2 ${transparent ? 'text-blue-400' : 'text-gray-400'} hover:text-white hover:bg-gray-600 rounded transition-colors`}
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
@@ -296,7 +343,7 @@ export function FloatingKeyboard({
           </button>
           <button
             onClick={toggleMinimize}
-            className="p-1 text-gray-400 hover:text-white hover:bg-gray-600 rounded transition-colors"
+            className="p-2 text-gray-400 hover:text-white hover:bg-gray-600 rounded transition-colors"
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
@@ -306,7 +353,7 @@ export function FloatingKeyboard({
           </button>
           <button
             onClick={onClose}
-            className="p-1 text-gray-400 hover:text-white hover:bg-gray-600 rounded transition-colors"
+            className="p-2 text-gray-400 hover:text-white hover:bg-gray-600 rounded transition-colors"
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >

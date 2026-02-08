@@ -5,6 +5,7 @@ const POSITION_KEY_KEYBOARD = 'cchub-floating-keyboard-position-keyboard';
 const POSITION_KEY_INPUT = 'cchub-floating-keyboard-position-input';
 const POSITION_KEY_OLD = 'cchub-floating-keyboard-position'; // Legacy key for migration
 const MINIMIZED_KEY = 'cchub-floating-keyboard-minimized';
+const TRANSPARENT_KEY = 'cchub-floating-keyboard-transparent';
 
 const getPositionKey = (mode: 'keyboard' | 'input') =>
   mode === 'keyboard' ? POSITION_KEY_KEYBOARD : POSITION_KEY_INPUT;
@@ -75,6 +76,14 @@ export function FloatingKeyboard({
     return false;
   });
 
+  // Transparent state
+  const [transparent, setTransparent] = useState(() => {
+    try {
+      return localStorage.getItem(TRANSPARENT_KEY) === 'true';
+    } catch {}
+    return false;
+  });
+
   // Dragging state
   const [isDragging, setIsDragging] = useState(false);
   const dragOffset = useRef<Position>({ x: 0, y: 0 });
@@ -89,6 +98,11 @@ export function FloatingKeyboard({
   useEffect(() => {
     localStorage.setItem(MINIMIZED_KEY, String(minimized));
   }, [minimized]);
+
+  // Save transparent state to localStorage
+  useEffect(() => {
+    localStorage.setItem(TRANSPARENT_KEY, String(transparent));
+  }, [transparent]);
 
   // Drag start handler
   const handleDragStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
@@ -192,6 +206,11 @@ export function FloatingKeyboard({
     setMinimized(prev => !prev);
   }, []);
 
+  // Toggle transparent
+  const toggleTransparent = useCallback(() => {
+    setTransparent(prev => !prev);
+  }, []);
+
   if (!visible) return null;
 
   // Minimized FAB button
@@ -236,12 +255,19 @@ export function FloatingKeyboard({
   return (
     <div
       ref={containerRef}
-      className={`fixed ${elevated ? 'z-[10002]' : 'z-40'} bg-gray-900 border border-gray-700 rounded-lg shadow-2xl overflow-hidden`}
-      style={{ left: position.x, top: position.y, width: 420 }}
+      className={`fixed ${elevated ? 'z-[10002]' : 'z-40'} ${transparent ? '' : 'bg-gray-900'} border border-gray-700 rounded-lg shadow-2xl overflow-hidden`}
+      style={{
+        left: position.x,
+        top: position.y,
+        width: 420,
+        backgroundColor: transparent ? 'rgba(17, 24, 39, 0.35)' : undefined,
+        backdropFilter: transparent ? 'blur(2px)' : undefined,
+        WebkitBackdropFilter: transparent ? 'blur(2px)' : undefined,
+      }}
     >
       {/* Header - drag handle */}
       <div
-        className={`flex items-center justify-between px-2 py-1.5 bg-gray-800 border-b border-gray-700 cursor-move select-none ${isDragging ? 'bg-gray-700' : ''}`}
+        className={`flex items-center justify-between px-2 py-1.5 ${transparent ? 'bg-transparent' : isDragging ? 'bg-gray-700' : 'bg-gray-800'} border-b border-gray-700 cursor-move select-none`}
         onMouseDown={handleDragStart}
         onTouchStart={handleDragStart}
       >
@@ -253,6 +279,21 @@ export function FloatingKeyboard({
           <span className="text-xs text-gray-400">Keyboard</span>
         </div>
         <div className="flex items-center gap-1">
+          {/* Transparent toggle */}
+          <button
+            onClick={toggleTransparent}
+            className={`p-1 ${transparent ? 'text-blue-400' : 'text-gray-400'} hover:text-white hover:bg-gray-600 rounded transition-colors`}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {transparent ? (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L6.59 6.59m7.532 7.532l3.29 3.29M3 3l18 18" />
+              )}
+            </svg>
+          </button>
           <button
             onClick={toggleMinimize}
             className="p-1 text-gray-400 hover:text-white hover:bg-gray-600 rounded transition-colors"
@@ -277,7 +318,7 @@ export function FloatingKeyboard({
       </div>
 
       {/* Content */}
-      <div className="bg-black">
+      <div className={transparent ? 'bg-transparent' : 'bg-black'}>
         {inputMode === 'keyboard' ? (
           <Keyboard
             onSend={onSend}
@@ -286,6 +327,7 @@ export function FloatingKeyboard({
             onUrlExtract={onUrlExtract}
             isUploading={isUploading}
             compact={true}
+            transparent={transparent}
           />
         ) : (
           <div className="p-2">

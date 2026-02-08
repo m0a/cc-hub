@@ -29,6 +29,7 @@ export function useDashboard(refreshInterval: number = 60000): UseDashboardRetur
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
+      // Keep previous data on error (don't setData(null))
     } finally {
       setIsLoading(false);
     }

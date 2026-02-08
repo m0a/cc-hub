@@ -18,7 +18,7 @@ interface DashboardProps {
 
 export function Dashboard({ className = '' }: DashboardProps) {
   const { t } = useTranslation();
-  const { data, isLoading, error } = useDashboard(60000);
+  const { data, isLoading, error } = useDashboard(300000);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const handleResetOnboarding = () => {

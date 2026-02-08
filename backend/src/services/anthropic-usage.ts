@@ -35,6 +35,7 @@ export interface UsageLimits {
 
 export class AnthropicUsageService {
   private claudeDir: string;
+  private lastSuccessfulResult: UsageLimits | null = null;
 
   constructor() {
     this.claudeDir = join(homedir(), '.claude');
@@ -53,7 +54,7 @@ export class AnthropicUsageService {
   async getUsageLimits(): Promise<UsageLimits | null> {
     const token = await this.getAccessToken();
     if (!token) {
-      return null;
+      return this.lastSuccessfulResult;
     }
 
     try {
@@ -68,7 +69,7 @@ export class AnthropicUsageService {
 
       if (!response.ok) {
         console.error('Failed to fetch usage:', response.status);
-        return null;
+        return this.lastSuccessfulResult;
       }
 
       const data: UsageResponse = await response.json();
@@ -76,7 +77,7 @@ export class AnthropicUsageService {
       const fiveHourEstimate = this.estimateHitTime(data.five_hour.utilization, data.five_hour.resets_at, 5);
       const sevenDayEstimate = this.estimateHitTime(data.seven_day.utilization, data.seven_day.resets_at, 7 * 24);
 
-      return {
+      const result: UsageLimits = {
         fiveHour: {
           utilization: data.five_hour.utilization,
           resetsAt: data.five_hour.resets_at,
@@ -92,9 +93,12 @@ export class AnthropicUsageService {
           ...this.calculateStatus(data.seven_day.utilization, sevenDayEstimate, this.formatTimeRemaining(data.seven_day.resets_at)),
         },
       };
+
+      this.lastSuccessfulResult = result;
+      return result;
     } catch (err) {
       console.error('Error fetching usage:', err);
-      return null;
+      return this.lastSuccessfulResult;
     }
   }
 

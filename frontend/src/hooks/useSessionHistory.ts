@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { HistorySession, ConversationMessage } from '../../../shared/types';
-import { authFetch } from '../services/api';
+import { authFetch, isTimeoutError } from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -72,7 +72,7 @@ export function useSessionHistory(): UseSessionHistoryResult {
         return newJson === prevJson ? prev : (data.projects || []);
       });
     } catch (err) {
-      if (!silent) {
+      if (!silent && !isTimeoutError(err)) {
         setError(err instanceof Error ? err.message : 'Unknown error');
       }
     } finally {

@@ -11,6 +11,11 @@ export function getAuthToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
 
+// Check if an error is a timeout AbortError
+export function isTimeoutError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'AbortError';
+}
+
 // Fetch with timeout using AbortController
 export async function fetchWithTimeout(
   url: string,

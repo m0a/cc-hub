@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { FileInfo, FileContent, FileChange, GitFileChange } from '../../../shared/types';
-import { authFetch } from '../services/api';
+import { authFetch, isTimeoutError } from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -57,7 +57,7 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
       setCurrentPath(data.path);
       setParentPath(data.parentPath);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      if (!isTimeoutError(err)) setError(err instanceof Error ? err.message : 'Unknown error');
       setFiles([]);
     } finally {
       setIsLoading(false);
@@ -87,7 +87,7 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
       const data = await response.json();
       setSelectedFile(data.file);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      if (!isTimeoutError(err)) setError(err instanceof Error ? err.message : 'Unknown error');
       setSelectedFile(null);
     } finally {
       setIsLoading(false);
@@ -111,7 +111,7 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
       const data = await response.json();
       setChanges(data.changes);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      if (!isTimeoutError(err)) setError(err instanceof Error ? err.message : 'Unknown error');
       setChanges([]);
     } finally {
       setIsLoading(false);
@@ -136,7 +136,7 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
       setGitChanges(data.changes);
       setGitBranch(data.branch);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      if (!isTimeoutError(err)) setError(err instanceof Error ? err.message : 'Unknown error');
       setGitChanges([]);
     } finally {
       setIsLoading(false);

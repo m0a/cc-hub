@@ -1,4 +1,11 @@
 {
+  "loading": {
+    "checkingAuth": "認証を確認中...",
+    "fetchingSessions": "セッションを取得中...",
+    "slow": "サーバーの応答を待っています（{{seconds}}秒）",
+    "connectionFailed": "サーバーに接続できませんでした",
+    "retry": "再試行"
+  },
   "common": {
     "loading": "読み込み中...",
     "error": "エラー",

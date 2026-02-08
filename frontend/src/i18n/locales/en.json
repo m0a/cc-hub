@@ -1,4 +1,11 @@
 {
+  "loading": {
+    "checkingAuth": "Checking authentication...",
+    "fetchingSessions": "Fetching sessions...",
+    "slow": "Waiting for server response ({{seconds}}s)",
+    "connectionFailed": "Could not connect to server",
+    "retry": "Retry"
+  },
   "common": {
     "loading": "Loading...",
     "error": "Error",

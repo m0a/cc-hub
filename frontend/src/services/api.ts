@@ -11,8 +11,31 @@ export function getAuthToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
 
+// Fetch with timeout using AbortController
+export async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 10000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // Authenticated fetch - automatically adds auth header if token exists
-export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
+export async function authFetch(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 10000,
+): Promise<Response> {
   const token = getAuthToken();
   const headers = new Headers(options.headers);
 
@@ -20,17 +43,14 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  return fetch(url, {
-    ...options,
-    headers,
-  });
+  return fetchWithTimeout(url, { ...options, headers }, timeoutMs);
 }
 
 // Auth API helpers
 
 // Check if authentication is required
 export async function isAuthRequired(): Promise<boolean> {
-  const res = await fetch(`${API_BASE}/api/auth/required`);
+  const res = await fetchWithTimeout(`${API_BASE}/api/auth/required`);
   if (!res.ok) {
     return false;
   }
@@ -40,7 +60,7 @@ export async function isAuthRequired(): Promise<boolean> {
 
 // Login with password
 export async function login(password: string): Promise<{ token: string }> {
-  const res = await fetch(`${API_BASE}/api/auth/login`, {
+  const res = await fetchWithTimeout(`${API_BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password }),
@@ -55,7 +75,7 @@ export async function login(password: string): Promise<{ token: string }> {
 }
 
 export async function logout(token: string) {
-  const res = await fetch(`${API_BASE}/api/auth/logout`, {
+  const res = await fetchWithTimeout(`${API_BASE}/api/auth/logout`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -71,7 +91,7 @@ export async function logout(token: string) {
 }
 
 export async function getMe(token: string) {
-  const res = await fetch(`${API_BASE}/api/auth/me`, {
+  const res = await fetchWithTimeout(`${API_BASE}/api/auth/me`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },

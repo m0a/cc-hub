@@ -16,6 +16,61 @@ import { useSessions } from './hooks/useSessions';
 import { authFetch } from './services/api';
 import type { SessionResponse, SessionState, ConversationMessage, SessionTheme } from '../../shared/types';
 
+// Loading screen with phase display and timeout detection
+function LoadingScreen({
+  phase,
+  error,
+  onRetry,
+}: {
+  phase: 'auth' | 'sessions';
+  error: string | null;
+  onRetry: () => void;
+}) {
+  const { t } = useTranslation();
+  const [elapsed, setElapsed] = useState(0);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset timer when phase changes
+  useEffect(() => {
+    setElapsed(0);
+    const start = Date.now();
+    const timer = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [phase]);
+
+  const phaseText = phase === 'auth'
+    ? t('loading.checkingAuth')
+    : t('loading.fetchingSessions');
+
+  return (
+    <div className="flex flex-col items-center justify-center h-screen bg-gray-900 gap-3">
+      {error ? (
+        <>
+          <div className="text-red-400 text-sm">{error}</div>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm transition-colors"
+          >
+            {t('loading.retry')}
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="w-6 h-6 border-2 border-gray-600 border-t-blue-400 rounded-full animate-spin" />
+          <div className="text-gray-400 text-sm">{phaseText}</div>
+          {elapsed >= 5 && (
+            <div className="text-gray-500 text-xs">
+              {t('loading.slow', { seconds: elapsed })}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // Session info type (simplified from SessionTabs)
 interface OpenSession {
   id: string;
@@ -151,6 +206,8 @@ export function App() {
   const [openSessions, setOpenSessions] = useState<OpenSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const [showSessionList, setShowSessionList] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<OpenSession | null>(null);
   const [showOverlay, setShowOverlay] = useState(true);
@@ -284,9 +341,18 @@ export function App() {
     return null;
   };
 
-  // On mount, fetch sessions and restore from localStorage
+  // Retry handler for loading screen
+  const handleRetry = useCallback(() => {
+    setLoadError(null);
+    setIsLoading(true);
+    setRetryCount(c => c + 1);
+  }, []);
+
+  // On mount (and retry), fetch sessions and restore from localStorage
+  // biome-ignore lint/correctness/useExhaustiveDependencies: retryCount triggers re-fetch on retry
   useEffect(() => {
     const fetchAndOpenSession = async () => {
+      setLoadError(null);
       try {
         // Fetch all sessions (including external)
         const sessionsRes = await authFetch(`${API_BASE}/api/sessions`);
@@ -380,15 +446,19 @@ export function App() {
             setShowSessionList(true);
           }
         }
-      } catch {
-        setShowSessionList(true);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          setLoadError(t('loading.connectionFailed'));
+        } else {
+          setShowSessionList(true);
+        }
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchAndOpenSession();
-  }, [createInitialSession]);
+  }, [createInitialSession, retryCount, t]);
 
   // Save to localStorage when sessions change
   useEffect(() => {
@@ -556,9 +626,11 @@ export function App() {
   // Show loading (including auth check)
   if (auth.isLoading || isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-900">
-        <div className="text-gray-400">Loading...</div>
-      </div>
+      <LoadingScreen
+        phase={auth.isLoading ? 'auth' : 'sessions'}
+        error={loadError}
+        onRetry={handleRetry}
+      />
     );
   }
 

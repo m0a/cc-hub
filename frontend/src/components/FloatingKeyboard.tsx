@@ -260,9 +260,9 @@ export function FloatingKeyboard({
         left: position.x,
         top: position.y,
         width: 420,
-        backgroundColor: transparent ? 'rgba(17, 24, 39, 0.35)' : undefined,
-        backdropFilter: transparent ? 'blur(2px)' : undefined,
-        WebkitBackdropFilter: transparent ? 'blur(2px)' : undefined,
+        backgroundColor: transparent ? 'rgba(17, 24, 39, 0.18)' : undefined,
+        backdropFilter: transparent ? 'blur(1px)' : undefined,
+        WebkitBackdropFilter: transparent ? 'blur(1px)' : undefined,
       }}
     >
       {/* Header - drag handle */}

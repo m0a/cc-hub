@@ -296,9 +296,9 @@ export function Keyboard({
     // Get background color
     const getBgColor = () => {
       if (transparent) {
-        if (isActive) return 'bg-blue-600/50';
-        if (keyDef.color === 'red') return 'bg-red-700/40 active:bg-red-600/60';
-        return 'bg-gray-800/30 active:bg-gray-600/40';
+        if (isActive) return 'bg-blue-600/30';
+        if (keyDef.color === 'red') return 'bg-red-700/25 active:bg-red-600/40';
+        return 'bg-gray-800/15 active:bg-gray-600/25';
       }
       if (isActive) return 'bg-blue-600';
       if (keyDef.color === 'green') return 'bg-green-700 active:bg-green-600';
@@ -335,7 +335,7 @@ export function Keyboard({
         onContextMenu={(e) => e.preventDefault()}
         className={`
           ${compact ? 'py-2 text-sm' : 'py-3 text-base'} text-white font-medium active:bg-gray-600 select-none relative
-          border ${transparent ? 'border-gray-600/30' : 'border-gray-700'} rounded m-0.5 flex items-center justify-center
+          border ${transparent ? 'border-gray-600/20' : 'border-gray-700'} rounded m-0.5 flex items-center justify-center
           ${getBgColor()}
           ${keyDef.type === 'modifier' || keyDef.type === 'layer' ? 'text-xs' : ''}
         `}
@@ -365,8 +365,8 @@ export function Keyboard({
 
     const getBgColor = () => {
       if (transparent) {
-        if (keyDef.color === 'red') return 'bg-red-700/40 active:bg-red-600/60';
-        return 'bg-gray-700/30 active:bg-gray-600/40';
+        if (keyDef.color === 'red') return 'bg-red-700/25 active:bg-red-600/40';
+        return 'bg-gray-700/15 active:bg-gray-600/25';
       }
       if (keyDef.color === 'green') return 'bg-green-700 active:bg-green-600';
       if (keyDef.color === 'red') return 'bg-red-700 active:bg-red-600';
@@ -400,7 +400,7 @@ export function Keyboard({
       <button
         onClick={handleClick}
         onContextMenu={(e) => e.preventDefault()}
-        className={`${compact ? 'py-1.5 text-xs' : 'py-2 text-sm'} font-medium select-none border ${transparent ? 'border-gray-600/30' : 'border-gray-700'} rounded m-0.5 text-center text-white ${getBgColor()}`}
+        className={`${compact ? 'py-1.5 text-xs' : 'py-2 text-sm'} font-medium select-none border ${transparent ? 'border-gray-600/20' : 'border-gray-700'} rounded m-0.5 text-center text-white ${getBgColor()}`}
         style={{ flex: width, minWidth: 0 }}
         data-onboarding={getOnboardingAttr()}
       >

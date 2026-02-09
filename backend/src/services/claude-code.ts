@@ -220,6 +220,8 @@ export class ClaudeCodeService {
             if (content.startsWith('<task-notification>')) continue;
             if (content.startsWith('<system-reminder>')) continue;
             if (content.trim().startsWith('<')) continue; // Skip any XML-like content
+            if (content.startsWith('[Image:')) continue; // Skip image references
+            if (content.startsWith('{')) continue; // Skip JSON-like content
             // Return truncated message
             return content.slice(0, 100) + (content.length > 100 ? '...' : '');
           }

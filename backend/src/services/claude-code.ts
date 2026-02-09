@@ -392,6 +392,10 @@ export class ClaudeCodeService {
                 done('(継続セッション)');
                 return;
               }
+              // Skip system-generated messages
+              if (content.trim().startsWith('<')) return;
+              if (content.startsWith('[Image:')) return;
+              if (content.startsWith('{')) return;
               done(content.slice(0, 100) + (content.length > 100 ? '...' : ''));
               return;
             }

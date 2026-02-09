@@ -54,7 +54,7 @@ interface UseSessionsReturn {
 
 export function useSessions(): UseSessionsReturn {
   const [sessions, setSessions] = useState<SessionResponse[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchSessions = useCallback(async (silent = false) => {

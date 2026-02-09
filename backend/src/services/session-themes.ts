@@ -49,6 +49,3 @@ export async function getAllSessionThemes(): Promise<Record<string, SessionTheme
   return data.themes;
 }
 
-export async function deleteSessionTheme(sessionId: string): Promise<void> {
-  await setSessionTheme(sessionId, null);
-}

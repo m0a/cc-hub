@@ -16,19 +16,7 @@ interface SessionListMiniProps {
   onCreateSession?: () => void;
 }
 
-// Get indicator color and icon for session state
-function getIndicatorStyle(state?: IndicatorState): { color: string; icon: string } {
-  switch (state) {
-    case 'processing':
-      return { color: 'bg-green-500 animate-pulse', icon: '' };
-    case 'waiting_input':
-      return { color: 'bg-yellow-500 animate-pulse', icon: '' };
-    case 'idle':
-      return { color: 'bg-blue-500', icon: '' };
-    default:
-      return { color: 'bg-gray-500', icon: '' };
-  }
-}
+
 
 // Compact session item for tablet view
 function SessionMiniItem({
@@ -63,7 +51,6 @@ function SessionMiniItem({
   };
 
   const isClaudeRunning = extSession.currentCommand === 'claude';
-  const indicatorState = extSession.indicatorState || (isClaudeRunning ? 'processing' : 'completed');
   const isWaiting = extSession.waitingForInput;
   const waitingLabel = extSession.waitingToolName === 'AskUserQuestion' ? t('session.waitingQuestionShort')
     : extSession.waitingToolName === 'EnterPlanMode' ? t('session.waitingPlanShort')
@@ -75,8 +62,6 @@ function SessionMiniItem({
   const displayTitle = isClaudeRunning && extSession.paneTitle
     ? extSession.paneTitle.replace(/^[✳★●◆]\s*/, '')  // Remove status icons
     : session.name;
-
-  const { color: indicatorColor } = getIndicatorStyle(indicatorState);
 
   // Show resume button only when Claude is not running and we have a ccSessionId
   const showResumeButton = !isClaudeRunning && extSession.ccSessionId;
@@ -107,7 +92,6 @@ function SessionMiniItem({
       }`}
     >
       <div className="flex items-center gap-2">
-        <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${indicatorColor}`} />
         <span className="text-sm text-white truncate flex-1">{displayTitle}</span>
         {isWaiting && extSession.waitingToolName && (
           <span className="text-[10px] text-yellow-400 bg-yellow-900/50 px-1 rounded shrink-0">{waitingLabel}</span>

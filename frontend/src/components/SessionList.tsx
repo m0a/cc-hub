@@ -50,19 +50,7 @@ async function createDirectory(path: string): Promise<{ path: string; success: b
   return response.json();
 }
 
-// Get indicator color for session state
-function getIndicatorColor(state?: IndicatorState): string {
-  switch (state) {
-    case 'processing':
-      return 'bg-green-500 animate-pulse';
-    case 'waiting_input':
-      return 'bg-yellow-500 animate-pulse';
-    case 'idle':
-      return 'bg-blue-500';
-    default:
-      return 'bg-gray-500';
-  }
-}
+
 
 interface SessionListProps {
   onSelectSession: (session: SessionResponse) => void;
@@ -525,7 +513,6 @@ function SessionItem({
   };
   const isClaudeRunning = extSession.currentCommand === 'claude';
   const themeColor = extSession.theme ? THEME_COLORS[extSession.theme] : null;
-  const indicatorState = extSession.indicatorState || (isClaudeRunning ? 'processing' : 'completed');
   const isWaiting = extSession.waitingForInput;
   const waitingLabel = extSession.waitingToolName === 'AskUserQuestion' ? t('session.waitingQuestion')
     : extSession.waitingToolName === 'EnterPlanMode' ? t('session.waitingPlan')
@@ -589,7 +576,6 @@ function SessionItem({
       }`}
     >
       <div className="flex items-center gap-2">
-        <div className={`w-2 h-2 rounded-full ${getIndicatorColor(indicatorState)}`} />
         <span className={`font-medium truncate flex-1 ${!isClaudeRunning ? 'text-gray-300' : ''}`}>{displayTitle}</span>
         {isWaiting && extSession.waitingToolName && (
           <span className="text-xs text-yellow-400 bg-yellow-900/50 px-1.5 py-0.5 rounded shrink-0 animate-pulse">{waitingLabel}</span>

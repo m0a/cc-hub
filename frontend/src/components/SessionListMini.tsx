@@ -109,7 +109,7 @@ function SessionMiniItem({
       <div className="flex items-center gap-2">
         <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${indicatorColor}`} />
         <span className="text-sm text-white truncate flex-1">{displayTitle}</span>
-        {isWaiting && (
+        {isWaiting && extSession.waitingToolName && (
           <span className="text-[10px] text-yellow-400 bg-yellow-900/50 px-1 rounded shrink-0">{waitingLabel}</span>
         )}
         {isClaudeRunning && !isWaiting && (

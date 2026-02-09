@@ -591,7 +591,7 @@ function SessionItem({
       <div className="flex items-center gap-2">
         <div className={`w-2 h-2 rounded-full ${getIndicatorColor(indicatorState)}`} />
         <span className={`font-medium truncate flex-1 ${!isClaudeRunning ? 'text-gray-300' : ''}`}>{displayTitle}</span>
-        {isWaiting && (
+        {isWaiting && extSession.waitingToolName && (
           <span className="text-xs text-yellow-400 bg-yellow-900/50 px-1.5 py-0.5 rounded shrink-0 animate-pulse">{waitingLabel}</span>
         )}
         {isClaudeRunning && !isWaiting && (

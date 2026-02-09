@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { SessionResponse, SessionTheme } from '../../../shared/types';
-import { authFetch, isTimeoutError } from '../services/api';
+import { authFetch, isTransientNetworkError } from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -73,7 +73,7 @@ export function useSessions(): UseSessionsReturn {
         return newJson === prevJson ? prev : newSessions;
       });
     } catch (err) {
-      if (!silent && !isTimeoutError(err)) {
+      if (!silent && !isTransientNetworkError(err)) {
         setError(err instanceof Error ? err.message : 'Unknown error');
       }
     } finally {
@@ -126,7 +126,7 @@ export function useSessions(): UseSessionsReturn {
       setSessions(prev => prev.filter(s => s.id !== id));
       return true;
     } catch (err) {
-      if (!isTimeoutError(err)) {
+      if (!isTransientNetworkError(err)) {
         setError(err instanceof Error ? err.message : 'Unknown error');
       }
       return false;
@@ -151,7 +151,7 @@ export function useSessions(): UseSessionsReturn {
       setSessions(prev => prev.map(s => s.id === id ? { ...s, theme: theme ?? undefined } : s));
       return true;
     } catch (err) {
-      if (!isTimeoutError(err)) {
+      if (!isTransientNetworkError(err)) {
         setError(err instanceof Error ? err.message : 'Unknown error');
       }
       return false;

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { DashboardResponse } from '../../../shared/types';
-import { authFetch, isTimeoutError } from '../services/api';
+import { authFetch, isTransientNetworkError } from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -28,7 +28,7 @@ export function useDashboard(refreshInterval: number = 60000): UseDashboardRetur
       const result = await response.json();
       setData(result);
     } catch (err) {
-      if (!isTimeoutError(err)) {
+      if (!isTransientNetworkError(err)) {
         setError(err instanceof Error ? err.message : 'Unknown error');
       }
       // Keep previous data on error (don't setData(null))

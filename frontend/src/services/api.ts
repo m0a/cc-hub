@@ -11,11 +11,14 @@ export function getAuthToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
 
-// Check if an error is a timeout AbortError
-export function isTimeoutError(err: unknown): boolean {
-  return err instanceof DOMException && err.name === 'AbortError';
+// Check if an error is a transient network error (timeout or connection failure)
+export function isTransientNetworkError(err: unknown): boolean {
+  // AbortError from fetchWithTimeout
+  if (err instanceof DOMException && err.name === 'AbortError') return true;
+  // TypeError "Failed to fetch" from network/connection failure
+  if (err instanceof TypeError && err.message === 'Failed to fetch') return true;
+  return false;
 }
-
 // Fetch with timeout using AbortController
 export async function fetchWithTimeout(
   url: string,

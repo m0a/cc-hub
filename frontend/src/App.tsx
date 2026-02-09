@@ -13,7 +13,7 @@ import { Onboarding, useOnboarding } from './components/Onboarding';
 import { useSessionHistory } from './hooks/useSessionHistory';
 import { useAuth } from './hooks/useAuth';
 import { useSessions } from './hooks/useSessions';
-import { authFetch, isTimeoutError } from './services/api';
+import { authFetch, isTransientNetworkError } from './services/api';
 import type { SessionResponse, SessionState, ConversationMessage, SessionTheme } from '../../shared/types';
 
 // Loading screen with phase display and timeout detection
@@ -447,7 +447,7 @@ export function App() {
           }
         }
       } catch (err) {
-        if (isTimeoutError(err)) {
+        if (isTransientNetworkError(err)) {
           setLoadError(t('loading.connectionFailed'));
         } else {
           setShowSessionList(true);

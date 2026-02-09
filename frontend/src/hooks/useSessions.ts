@@ -8,6 +8,7 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
 let pendingFetch: Promise<SessionResponse[]> | null = null;
 let cachedSessions: { data: SessionResponse[]; timestamp: number } | null = null;
 const FETCH_CACHE_TTL = 2000; // 2 seconds - matches backend cache TTL
+const FETCH_TIMEOUT = 5000; // 5 seconds timeout per request
 
 async function fetchSessionsShared(): Promise<SessionResponse[]> {
   // Return cached data if still fresh
@@ -22,13 +23,21 @@ async function fetchSessionsShared(): Promise<SessionResponse[]> {
 
   pendingFetch = (async () => {
     try {
-      const response = await authFetch(`${API_BASE}/api/sessions`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch sessions');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+      try {
+        const response = await authFetch(`${API_BASE}/api/sessions`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+          throw new Error('Failed to fetch sessions');
+        }
+        const data = await response.json();
+        cachedSessions = { data: data.sessions, timestamp: Date.now() };
+        return data.sessions as SessionResponse[];
+      } catch (err) {
+        clearTimeout(timeoutId);
+        throw err;
       }
-      const data = await response.json();
-      cachedSessions = { data: data.sessions, timestamp: Date.now() };
-      return data.sessions as SessionResponse[];
     } finally {
       pendingFetch = null;
     }
@@ -54,7 +63,7 @@ interface UseSessionsReturn {
 
 export function useSessions(): UseSessionsReturn {
   const [sessions, setSessions] = useState<SessionResponse[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchSessions = useCallback(async (silent = false) => {
@@ -64,23 +73,31 @@ export function useSessions(): UseSessionsReturn {
       setError(null);
     }
 
-    try {
-      const newSessions = await fetchSessionsShared();
-      // Only update state if data has changed to prevent unnecessary re-renders
-      setSessions(prev => {
-        const newJson = JSON.stringify(newSessions);
-        const prevJson = JSON.stringify(prev);
-        return newJson === prevJson ? prev : newSessions;
-      });
-    } catch (err) {
-      if (!silent && !isTransientNetworkError(err)) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
-      }
-    } finally {
-      if (!silent) {
-        setIsLoading(false);
+    const maxRetries = silent ? 0 : 2;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        invalidateSessionsCache(); // Clear cache before retry
+        const newSessions = await fetchSessionsShared();
+        // Only update state if data has changed to prevent unnecessary re-renders
+        setSessions(prev => {
+          const newJson = JSON.stringify(newSessions);
+          const prevJson = JSON.stringify(prev);
+          return newJson === prevJson ? prev : newSessions;
+        });
+        if (!silent) setIsLoading(false);
+        return;
+      } catch (err) {
+        if (attempt < maxRetries) {
+          // Wait briefly before retry
+          await new Promise(r => setTimeout(r, 500));
+          continue;
+        }
+        if (!silent && !isTransientNetworkError(err)) {
+          setError(err instanceof Error ? err.message : 'Unknown error');
+        }
       }
     }
+    if (!silent) setIsLoading(false);
   }, []);
 
   const createSession = useCallback(async (name?: string, workingDir?: string): Promise<SessionResponse | null> => {

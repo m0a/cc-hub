@@ -462,11 +462,13 @@ export class ClaudeCodeService {
       const filePath = join(projectDir, `${sessionId}.jsonl`);
 
       try {
-        const fileStat = await stat(filePath);
-        const firstPrompt = await this.readFirstPromptFromFile(filePath);
-        const lastUserMessage = await this.readLastUserMessage(filePath);
-        const waitingToolName = await this.checkWaitingState(filePath);
-        const firstMessageId = await this.readFirstMessageId(filePath);
+        const [fileStat, firstPrompt, lastUserMessage, waitingToolName, firstMessageId] = await Promise.all([
+          stat(filePath),
+          this.readFirstPromptFromFile(filePath),
+          this.readLastUserMessage(filePath),
+          this.checkWaitingState(filePath),
+          this.readFirstMessageId(filePath),
+        ]);
 
         return {
           sessionId,
@@ -494,11 +496,13 @@ export class ClaudeCodeService {
         const parentFilePath = join(parentProjectDir, `${sessionId}.jsonl`);
 
         try {
-          const fileStat = await stat(parentFilePath);
-          const firstPrompt = await this.readFirstPromptFromFile(parentFilePath);
-          const lastUserMessage = await this.readLastUserMessage(parentFilePath);
-          const waitingToolName = await this.checkWaitingState(parentFilePath);
-          const firstMessageId = await this.readFirstMessageId(parentFilePath);
+          const [fileStat, firstPrompt, lastUserMessage, waitingToolName, firstMessageId] = await Promise.all([
+            stat(parentFilePath),
+            this.readFirstPromptFromFile(parentFilePath),
+            this.readLastUserMessage(parentFilePath),
+            this.checkWaitingState(parentFilePath),
+            this.readFirstMessageId(parentFilePath),
+          ]);
 
           return {
             sessionId,
@@ -576,9 +580,11 @@ export class ClaudeCodeService {
             // But always check waiting state for accuracy
             if (indexEntry && (latestFile.mtime - (indexEntry.fileMtime || 0)) < 60000) {
               const filePath = join(projectDir, latestFile.name);
-              const waitingToolName = await this.checkWaitingState(filePath);
-              const lastUserMessage = await this.readLastUserMessage(filePath);
-              const firstMessageId = await this.readFirstMessageId(filePath);
+              const [waitingToolName, lastUserMessage, firstMessageId] = await Promise.all([
+                this.checkWaitingState(filePath),
+                this.readLastUserMessage(filePath),
+                this.readFirstMessageId(filePath),
+              ]);
 
               return {
                 sessionId: indexEntry.sessionId,
@@ -596,16 +602,12 @@ export class ClaudeCodeService {
 
             // For active sessions (not in index or much newer), read directly
             const filePath = join(projectDir, latestFile.name);
-            const firstPrompt = await this.readFirstPromptFromFile(filePath);
-
-            // Read the last user message as the current conversation summary
-            const lastUserMessage = await this.readLastUserMessage(filePath);
-
-            // Check if waiting for user input
-            const waitingToolName = await this.checkWaitingState(filePath);
-
-            // Read first messageId for session matching
-            const firstMessageId = await this.readFirstMessageId(filePath);
+            const [firstPrompt, lastUserMessage, waitingToolName, firstMessageId] = await Promise.all([
+              this.readFirstPromptFromFile(filePath),
+              this.readLastUserMessage(filePath),
+              this.checkWaitingState(filePath),
+              this.readFirstMessageId(filePath),
+            ]);
 
             return {
               sessionId,
@@ -710,27 +712,32 @@ export class ClaudeCodeService {
             .sort((a, b) => b.mtime - a.mtime)
             .slice(0, count);
 
-          // Read session info for each file
-          for (const fileStat of validStats) {
-            const sessionId = fileStat.name.replace('.jsonl', '');
-            const filePath = join(projectDir, fileStat.name);
+          // Read session info for each file (in parallel)
+          const sessionResults = await Promise.all(
+            validStats.map(async (fileStat) => {
+              const sessionId = fileStat.name.replace('.jsonl', '');
+              const filePath = join(projectDir, fileStat.name);
 
-            const firstPrompt = await this.readFirstPromptFromFile(filePath);
-            const lastUserMessage = await this.readLastUserMessage(filePath);
-            const waitingToolName = await this.checkWaitingState(filePath);
-            const firstMessageId = await this.readFirstMessageId(filePath);
+              const [firstPrompt, lastUserMessage, waitingToolName, firstMessageId] = await Promise.all([
+                this.readFirstPromptFromFile(filePath),
+                this.readLastUserMessage(filePath),
+                this.checkWaitingState(filePath),
+                this.readFirstMessageId(filePath),
+              ]);
 
-            sessions.push({
-              sessionId,
-              summary: lastUserMessage || undefined,
-              firstPrompt: firstPrompt || undefined,
-              modified: new Date(fileStat.mtime).toISOString(),
-              projectPath: currentPath,
-              waitingForInput: waitingToolName !== null,
-              waitingToolName: waitingToolName || undefined,
-              firstMessageId: firstMessageId || undefined,
-            });
-          }
+              return {
+                sessionId,
+                summary: lastUserMessage || undefined,
+                firstPrompt: firstPrompt || undefined,
+                modified: new Date(fileStat.mtime).toISOString(),
+                projectPath: currentPath,
+                waitingForInput: waitingToolName !== null,
+                waitingToolName: waitingToolName || undefined,
+                firstMessageId: firstMessageId || undefined,
+              };
+            })
+          );
+          sessions.push(...sessionResults);
 
           if (sessions.length >= count) {
             return sessions.slice(0, count);

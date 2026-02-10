@@ -53,7 +53,6 @@ sessions.get('/', async (c) => {
         }
       })
   );
-
   // Get Claude Code session info for sessions running claude
   const claudePaths = tmuxSessions
     .filter((s): s is typeof s & { currentPath: string } => s.currentCommand === 'claude' && !!s.currentPath)

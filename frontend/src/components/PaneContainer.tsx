@@ -691,6 +691,7 @@ function SplitContainer({
     if (isDragging === null) return;
 
     const handleMove = (e: MouseEvent | TouchEvent) => {
+      e.preventDefault(); // Prevent scrolling while dragging
       if (!containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
       const clientPos = 'touches' in e
@@ -729,7 +730,7 @@ function SplitContainer({
 
     document.addEventListener('mousemove', handleMove);
     document.addEventListener('mouseup', handleEnd);
-    document.addEventListener('touchmove', handleMove);
+    document.addEventListener('touchmove', handleMove, { passive: false });
     document.addEventListener('touchend', handleEnd);
 
     return () => {
@@ -742,7 +743,7 @@ function SplitContainer({
 
   const isHorizontal = node.direction === 'horizontal';
 
-  // Divider size: 4px on desktop, 8px on tablet for easier touch
+  // Divider size: 4px on desktop, 8px on tablet
   const dividerSize = isTablet ? 8 : 4;
 
   // Build elements array with panes and dividers interleaved
@@ -783,10 +784,9 @@ function SplitContainer({
       elements.push(
         <div
           key={`divider-${child.id}`}
-          onMouseDown={handleDragStart(index)}
-          onTouchStart={handleDragStart(index)}
           style={{
             [isHorizontal ? 'width' : 'height']: `${dividerSize}px`,
+            position: 'relative',
           }}
           className={`
             ${isHorizontal ? 'h-full cursor-col-resize' : 'w-full cursor-row-resize'}
@@ -794,9 +794,24 @@ function SplitContainer({
             ${isDragging === index ? 'bg-blue-500/70' : ''}
           `}
         >
+          {/* Expanded touch target for easier dragging on tablet */}
+          <div
+            onMouseDown={handleDragStart(index)}
+            onTouchStart={handleDragStart(index)}
+            style={{
+              position: 'absolute',
+              [isHorizontal ? 'left' : 'top']: isTablet ? '-16px' : '0',
+              [isHorizontal ? 'right' : 'bottom']: isTablet ? '-16px' : '0',
+              [isHorizontal ? 'top' : 'left']: '0',
+              [isHorizontal ? 'bottom' : 'right']: '0',
+              touchAction: 'none',
+              zIndex: 20,
+            }}
+            className={isHorizontal ? 'cursor-col-resize' : 'cursor-row-resize'}
+          />
           <div className={`
             ${isHorizontal ? 'w-0.5 h-8' : 'h-0.5 w-8'}
-            bg-gray-500 rounded-full
+            bg-gray-500 rounded-full pointer-events-none
           `} />
         </div>
       );

@@ -36,8 +36,14 @@ try {
 
 const app = new Hono();
 
-// Middleware
-app.use('*', logger());
+// Middleware - custom logger that skips noisy polling endpoints
+app.use('*', logger((message, ...rest) => {
+  // Skip GET /api/sessions polling logs (fired every 5s per client)
+  if (message.includes('GET') && message.includes('/api/sessions') && !message.includes('/api/sessions/')) {
+    return;
+  }
+  console.log(message, ...rest);
+}));
 app.use('*', cors({
   origin: '*',
 }));

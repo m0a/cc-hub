@@ -134,11 +134,8 @@ export class ClaudeCodeService {
       }
 
       if (!processStartTime) {
-        console.log(`[getSessionByTtyStartTime] No process start time found for ${ttyName}`);
         return null;
       }
-
-      console.log(`[getSessionByTtyStartTime] Process start time for ${ttyName}: ${processStartTime.toISOString()}`);
 
       // Find session file modified after process start time
       const projectName = this.pathToProjectName(workingDir);
@@ -168,11 +165,9 @@ export class ClaudeCodeService {
           .filter(s => s.mtime >= processStartTime?.getTime() - 5000) // 5s tolerance
           .sort((a, b) => b.mtime - a.mtime); // Most recently modified first
 
-        console.log(`[getSessionByTtyStartTime] Found ${validStats.length} candidate files for ${ttyName}`);
         if (validStats.length > 0) {
           const sessionFile = validStats[0];
           const sessionId = sessionFile.name.replace('.jsonl', '');
-          console.log(`[getSessionByTtyStartTime] Selected session ${sessionId} (mtime: ${new Date(sessionFile.mtime).toISOString()}) for ${ttyName}`);
           return await this.getSessionById(sessionId, workingDir);
         }
       } catch {

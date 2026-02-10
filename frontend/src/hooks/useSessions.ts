@@ -62,8 +62,8 @@ interface UseSessionsReturn {
 }
 
 export function useSessions(): UseSessionsReturn {
-  const [sessions, setSessions] = useState<SessionResponse[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [sessions, setSessions] = useState<SessionResponse[]>(() => cachedSessions?.data || []);
+  const [isLoading, setIsLoading] = useState(() => !cachedSessions);
   const [error, setError] = useState<string | null>(null);
 
   const fetchSessions = useCallback(async (silent = false) => {
@@ -76,7 +76,7 @@ export function useSessions(): UseSessionsReturn {
     const maxRetries = silent ? 0 : 2;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        invalidateSessionsCache(); // Clear cache before retry
+        if (attempt > 0) invalidateSessionsCache(); // Clear cache only before retry
         const newSessions = await fetchSessionsShared();
         // Only update state if data has changed to prevent unnecessary re-renders
         setSessions(prev => {

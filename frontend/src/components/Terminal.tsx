@@ -1234,27 +1234,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       {/* Bottom overlay when keyboard is hidden (mobile only) */}
       {!hideKeyboard && inputMode === 'hidden' && overlayContent && (
         <div className="fixed bottom-0 left-0 right-0 z-40 bg-black border-t border-gray-700">
-          {/* Overlay content with keyboard button */}
-          <div className="flex items-center">
-            <div className="flex-1">{overlayContent}</div>
-            {/* Keyboard show button */}
-            <button
-              onClick={() => {
-                setInputMode('shortcuts');
-                setShowHint(true);
-                if (hintTimeoutRef.current) clearTimeout(hintTimeoutRef.current);
-                hintTimeoutRef.current = window.setTimeout(() => setShowHint(false), 5000);
-              }}
-              className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors mr-2"
-              title="キーボード表示"
-              data-onboarding="keyboard"
-            >
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <rect x="2" y="6" width="20" height="12" rx="2" />
-                <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
-              </svg>
-            </button>
-          </div>
+          {overlayContent}
 
           {/* Tap area to show overlay when hidden */}
           {!showOverlay && onOverlayTap && (

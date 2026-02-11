@@ -49,7 +49,7 @@ const mainSteps: SpotlightStep[] = [
     position: 'bottom',
   },
   {
-    target: '[data-onboarding="keyboard"]',
+    target: '[data-onboarding="terminal"]',
     titleKey: 'onboarding.step6Title',
     descriptionKey: 'onboarding.step6Description',
     position: 'bottom',

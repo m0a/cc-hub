@@ -572,7 +572,6 @@ export function App() {
     setShowConversation(true);
     setLoadingConversation(true);
     setConversation([]);
-    setShowOverlay(false);
 
     try {
       const messages = await fetchConversation(ccSessionId);
@@ -739,7 +738,6 @@ export function App() {
         <button
           onClick={() => {
             setShowFileViewer(true);
-            setShowOverlay(false);
           }}
           className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
           title="ファイルブラウザ"
@@ -752,7 +750,6 @@ export function App() {
         <button
           onClick={() => {
             handleShowSessionList();
-            setShowOverlay(false);
           }}
           className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
           title={t('session.list')}

@@ -458,6 +458,20 @@ export class TmuxControlSession {
   }
 
   /**
+   * Set the client size immediately (no debounce).
+   * Used for the first resize after connect so initial content is captured at correct size.
+   */
+  async setClientSizeImmediate(cols: number, rows: number): Promise<void> {
+    // Cancel any pending debounced resize
+    if (this.resizeTimer) {
+      clearTimeout(this.resizeTimer);
+      this.resizeTimer = null;
+    }
+    await this.sendCommand(`refresh-client -C ${cols},${rows}`);
+    await this.sendCommand('refresh-client');
+  }
+
+  /**
    * Capture existing pane content (with ANSI escapes).
    */
   async capturePane(paneId: string): Promise<string> {

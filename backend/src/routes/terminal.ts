@@ -15,6 +15,7 @@ interface TerminalData {
   controlMode?: boolean;
   controlSession?: TmuxControlSession;
   cleanupFns?: Array<() => void>;
+  initialContentSent?: boolean;
 }
 
 const tmuxService = new TmuxService();
@@ -379,26 +380,9 @@ async function handleControlOpen(ws: ServerWebSocket<TerminalData>): Promise<voi
       console.error(`[control] Failed to send initial layout:`, err);
     }
 
-    // Send initial pane content
-    try {
-      const panes = await controlSession.listPanes();
-      for (const pane of panes) {
-        try {
-          const content = await controlSession.capturePane(pane.paneId);
-          if (content) {
-            ws.send(JSON.stringify({
-              type: 'initial-content',
-              paneId: pane.paneId,
-              data: Buffer.from(content).toString('base64'),
-            }));
-          }
-        } catch {
-          // Pane may not be available
-        }
-      }
-    } catch {
-      // Failed to list panes
-    }
+    // Initial pane content is deferred until the first resize message
+    // from the client, so that capture-pane runs at the correct terminal size.
+    // See handleControlMessage 'resize' handler.
   } catch (error) {
     console.error(`[control] Failed to create control session:`, error);
     ws.send(JSON.stringify({ type: 'error', message: 'Failed to start control session' }));
@@ -428,7 +412,33 @@ async function handleControlMessage(ws: ServerWebSocket<TerminalData>, message: 
         break;
       }
       case 'resize': {
-        controlSession.setClientSize(msg.cols, msg.rows);
+        if (!ws.data.initialContentSent) {
+          ws.data.initialContentSent = true;
+          // First resize: apply size immediately (no debounce) then send
+          // initial content at the correct terminal dimensions.
+          try {
+            await controlSession.setClientSizeImmediate(msg.cols, msg.rows);
+            const panes = await controlSession.listPanes();
+            for (const pane of panes) {
+              try {
+                const content = await controlSession.capturePane(pane.paneId);
+                if (content) {
+                  ws.send(JSON.stringify({
+                    type: 'initial-content',
+                    paneId: pane.paneId,
+                    data: Buffer.from(content).toString('base64'),
+                  }));
+                }
+              } catch {
+                // Pane may not be available
+              }
+            }
+          } catch (err) {
+            console.error('[control] Failed to send initial content after resize:', err);
+          }
+        } else {
+          controlSession.setClientSize(msg.cols, msg.rows);
+        }
         break;
       }
       case 'split': {

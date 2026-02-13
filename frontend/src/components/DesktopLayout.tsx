@@ -63,19 +63,6 @@ function findPaneById(node: PaneNode, id: string): PaneNode | null {
   return null;
 }
 
-// Find parent of a pane
-function findParent(root: PaneNode, id: string): { parent: Extract<PaneNode, { type: 'split' }>; index: number } | null {
-  if (root.type !== 'split') return null;
-  for (let i = 0; i < root.children.length; i++) {
-    if (root.children[i].id === id) {
-      return { parent: root, index: i };
-    }
-    const found = findParent(root.children[i], id);
-    if (found) return found;
-  }
-  return null;
-}
-
 // Compute total tmux window size by summing pane sizes from the layout tree.
 // tmux needs: horizontal splits → sum cols + borders, vertical → sum rows + borders.
 // When useProposed=true, uses proposeDimensions() (what fits the container) instead of
@@ -125,100 +112,6 @@ function getAllPaneIds(node: PaneNode): string[] {
   }
   // terminal, sessions, dashboard, empty are all leaf nodes
   return [node.id];
-}
-
-// Split a pane (creates a new terminal pane)
-function splitPane(
-  root: PaneNode,
-  paneId: string,
-  direction: 'horizontal' | 'vertical'
-): { newRoot: PaneNode; newPaneId: string } {
-  const newPaneId = generatePaneId();
-  const newPane: PaneNode = { type: 'terminal', sessionId: null, id: newPaneId };
-
-  function splitNode(node: PaneNode): PaneNode {
-    // Split any leaf node (terminal)
-    if (node.id === paneId && node.type !== 'split') {
-      // Create new split containing this pane and new pane
-      return {
-        type: 'split',
-        direction,
-        id: generatePaneId(),
-        children: [node, newPane],
-        ratio: [50, 50],
-      };
-    }
-    if (node.type === 'split') {
-      return {
-        ...node,
-        children: node.children.map(splitNode),
-      };
-    }
-    return node;
-  }
-
-  return { newRoot: splitNode(root), newPaneId };
-}
-
-// Close a pane
-function closePane(root: PaneNode, paneId: string): { newRoot: PaneNode | null; nextPane: string | null } {
-  // Check if root is a leaf node (not split)
-  if (root.type !== 'split') {
-    // Only pane, can't close
-    if (root.id === paneId) {
-      return { newRoot: null, nextPane: null };
-    }
-    return { newRoot: root, nextPane: null };
-  }
-
-  // Find and remove the pane
-  const parent = findParent(root, paneId);
-  if (!parent) {
-    return { newRoot: root, nextPane: null };
-  }
-
-  const { parent: parentNode, index } = parent;
-  const siblings = parentNode.children.filter((_, i) => i !== index);
-
-  if (siblings.length === 0) {
-    return { newRoot: null, nextPane: null };
-  }
-
-  if (siblings.length === 1) {
-    // Replace parent with single remaining child
-    function replaceNode(node: PaneNode): PaneNode {
-      if (node.id === parentNode.id) {
-        return siblings[0];
-      }
-      if (node.type === 'split') {
-        return { ...node, children: node.children.map(replaceNode) };
-      }
-      return node;
-    }
-    const newRoot = replaceNode(root);
-    const allIds = getAllPaneIds(newRoot);
-    return { newRoot, nextPane: allIds[0] || null };
-  }
-
-  // Multiple siblings remain
-  const newRatio = parentNode.ratio.filter((_, i) => i !== index);
-  const ratioSum = newRatio.reduce((a, b) => a + b, 0);
-  const normalizedRatio = newRatio.map(r => (r / ratioSum) * 100);
-
-  function updateNode(node: PaneNode): PaneNode {
-    if (node.id === parentNode.id && node.type === 'split') {
-      return { ...node, children: siblings, ratio: normalizedRatio };
-    }
-    if (node.type === 'split') {
-      return { ...node, children: node.children.map(updateNode) };
-    }
-    return node;
-  }
-
-  const newRoot = updateNode(root);
-  const nextIndex = Math.min(index, siblings.length - 1);
-  const nextPane = getAllPaneIds(siblings[nextIndex])[0] || getAllPaneIds(newRoot)[0];
-  return { newRoot, nextPane };
 }
 
 // Update split ratio in tree
@@ -462,8 +355,6 @@ export function DesktopLayout({
   };
 
   const controlSessionId = getControlSessionId();
-  // Default to ON when a control session is available
-  const [controlEnabled, setControlEnabled] = useState(true);
   const [controlLayout, setControlLayout] = useState<TmuxLayoutNode | null>(null);
 
   // Per-pane output callbacks (paneId -> Set<callbacks>)
@@ -472,17 +363,14 @@ export function DesktopLayout({
   // Buffer for initial content that arrives before Terminal components mount
   const initialContentBufferRef = useRef<Map<string, Uint8Array[]>>(new Map());
 
-  // Save/restore state for control mode transitions
-  const savedDesktopStateRef = useRef<DesktopState | null>(null);
   const desktopStateRef = useRef(desktopState);
   desktopStateRef.current = desktopState;
-  const prevControlEnabledRef = useRef(controlEnabled);
 
   // Timer for applying exact tmux pane sizes after layout-change
   const layoutSizeTimerRef = useRef<number | null>(null);
 
   const controlTerminal = useControlTerminal({
-    sessionId: controlEnabled && controlSessionId ? controlSessionId : '',
+    sessionId: controlSessionId || '',
     onPaneOutput: (paneId, data) => {
       const callbacks = paneCallbacksRef.current.get(paneId);
       if (callbacks) {
@@ -540,18 +428,16 @@ export function DesktopLayout({
   const controlTerminalRef = useRef(controlTerminal);
   controlTerminalRef.current = controlTerminal;
 
-  // Connect/disconnect control mode with state save/restore
+  // Connect/disconnect control mode
   useEffect(() => {
-    if (controlEnabled && controlSessionId) {
-      // Save current state before control mode replaces it
-      savedDesktopStateRef.current = desktopStateRef.current;
+    if (controlSessionId) {
       controlTerminal.connect();
     }
     return () => {
       controlTerminal.disconnect();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [controlEnabled, controlSessionId]);
+  }, [controlSessionId]);
 
   // Control mode resize: compute TOTAL window size from layout tree.
   // tmux refresh-client -C needs cols×rows for the entire window,
@@ -583,24 +469,11 @@ export function DesktopLayout({
     }, 100);
   }, []);
 
-  // Restore saved state when control mode is disabled
-  useEffect(() => {
-    if (prevControlEnabledRef.current && !controlEnabled && savedDesktopStateRef.current) {
-      setDesktopState(savedDesktopStateRef.current);
-      savedDesktopStateRef.current = null;
-      setControlLayout(null);
-      initialContentBufferRef.current.clear();
-      paneCallbacksRef.current.clear();
-      lastSentSizeRef.current = null;
-    }
-    prevControlEnabledRef.current = controlEnabled;
-  }, [controlEnabled]);
-
   // Compute control pane tree synchronously (not via useEffect) to avoid paneId mismatch
   const controlPaneTree = useMemo(() => {
-    if (!controlLayout || !controlEnabled || !controlSessionId) return null;
+    if (!controlLayout || !controlSessionId) return null;
     return tmuxLayoutToPaneNode(controlLayout, controlSessionId);
-  }, [controlLayout, controlEnabled, controlSessionId]);
+  }, [controlLayout, controlSessionId]);
 
   // Update desktopState when control pane tree changes
   useEffect(() => {
@@ -613,9 +486,8 @@ export function DesktopLayout({
   }, [controlPaneTree]);
 
   // Build control mode context for PaneContainer.
-  // Always define when controlEnabled is true (even during reconnection or before
-  // layout arrives) to prevent Terminal from falling back to regular PTY WebSocket.
-  const controlModeContext: ControlModeContext | undefined = controlEnabled ? {
+  // Always defined - Terminal components always use control mode.
+  const controlModeContext: ControlModeContext = {
     getControlConfig: (paneId: string): ControlModeConfig | undefined => {
       return {
         paneId,
@@ -657,33 +529,19 @@ export function DesktopLayout({
     closePane: (paneId: string) => {
       controlTerminalRef.current.closePane(paneId);
     },
-  } : undefined;
+  };
 
   const handleSplit = useCallback((direction: 'horizontal' | 'vertical') => {
-    if (controlEnabled) {
-      const activeId = activePaneRef.current;
-      controlTerminalRef.current.splitPane(activeId, direction === 'horizontal' ? 'h' : 'v');
-      return; // Wait for tmux layout update
-    }
-    setDesktopState(prev => {
-      const { newRoot, newPaneId } = splitPane(prev.root, prev.activePane, direction);
-      return { root: newRoot, activePane: newPaneId };
-    });
-  }, [controlEnabled]);
+    const activeId = activePaneRef.current;
+    controlTerminalRef.current.splitPane(activeId, direction === 'horizontal' ? 'h' : 'v');
+    // Wait for tmux layout update via %layout-change
+  }, []);
 
   const handleClosePane = useCallback((paneId?: string) => {
-    if (controlEnabled) {
-      const targetId = paneId || activePaneRef.current;
-      controlTerminalRef.current.closePane(targetId);
-      return; // Wait for tmux layout update
-    }
-    setDesktopState(prev => {
-      const targetPaneId = paneId || prev.activePane;
-      const { newRoot, nextPane } = closePane(prev.root, targetPaneId);
-      if (!newRoot) return prev; // Can't close last pane
-      return { root: newRoot, activePane: nextPane || prev.activePane };
-    });
-  }, [controlEnabled]);
+    const targetId = paneId || activePaneRef.current;
+    controlTerminalRef.current.closePane(targetId);
+    // Wait for tmux layout update via %layout-change
+  }, []);
 
   // Handle paste (text or image)
   const handlePaste = useCallback(async () => {
@@ -931,37 +789,26 @@ export function DesktopLayout({
 
   const handleFocusPane = useCallback((paneId: string) => {
     setDesktopState(prev => ({ ...prev, activePane: paneId }));
-    if (controlEnabled) {
-      controlTerminalRef.current.selectPane(paneId);
-    }
-  }, [controlEnabled]);
+    controlTerminalRef.current.selectPane(paneId);
+  }, []);
 
   const handleSelectSessionForPane = useCallback((paneId: string, sessionId?: string) => {
     if (!sessionId) return;
 
-    if (controlEnabled) {
-      // In control mode, all panes belong to one tmux session.
-      // Update ALL panes' sessionId so getControlSessionId() returns the new session,
-      // triggering control WebSocket reconnection to the new session.
-      setDesktopState(prev => ({
-        ...prev,
-        root: updateAllSessionIds(prev.root, sessionId),
-        activePane: paneId,
-      }));
-      // Clear stale layout so the new session's layout takes effect
-      setControlLayout(null);
-      // Clear buffered content from old session
-      initialContentBufferRef.current.clear();
-      lastSentSizeRef.current = null;
-    } else {
-      // Non-control mode: update only the specific pane
-      setDesktopState(prev => ({
-        ...prev,
-        root: updateSessionId(prev.root, paneId, sessionId),
-        activePane: paneId,
-      }));
-    }
-  }, [controlEnabled]);
+    // All panes belong to one tmux session.
+    // Update ALL panes' sessionId so getControlSessionId() returns the new session,
+    // triggering control WebSocket reconnection to the new session.
+    setDesktopState(prev => ({
+      ...prev,
+      root: updateAllSessionIds(prev.root, sessionId),
+      activePane: paneId,
+    }));
+    // Clear stale layout so the new session's layout takes effect
+    setControlLayout(null);
+    // Clear buffered content from old session
+    initialContentBufferRef.current.clear();
+    lastSentSizeRef.current = null;
+  }, []);
 
   const handleSplitRatioChange = useCallback((nodeId: string, ratio: number[]) => {
     setDesktopState(prev => ({
@@ -1009,22 +856,6 @@ export function DesktopLayout({
                   </svg>
                 </button>
               </div>
-              <button
-                onClick={() => setControlEnabled(prev => !prev)}
-                className={`p-1 rounded transition-colors ${
-                  controlEnabled
-                    ? 'text-cyan-400 bg-cyan-500/20 hover:bg-cyan-500/30'
-                    : 'text-white/70 hover:text-white hover:bg-white/10'
-                }`}
-                title={controlEnabled ? 'tmux制御モード OFF' : 'tmux制御モード ON'}
-              >
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <rect x="3" y="3" width="8" height="8" rx="1" />
-                  <rect x="13" y="3" width="8" height="8" rx="1" />
-                  <rect x="3" y="13" width="8" height="8" rx="1" />
-                  <rect x="13" y="13" width="8" height="8" rx="1" />
-                </svg>
-              </button>
             </div>
           </div>
         )}
@@ -1062,26 +893,6 @@ export function DesktopLayout({
                   </svg>
                 </button>
               </div>
-
-              {/* Control mode toggle */}
-              {controlSessionId && (
-                <button
-                  onClick={() => setControlEnabled(prev => !prev)}
-                  className={`p-1 rounded transition-colors ${
-                    controlEnabled
-                      ? 'text-cyan-400 bg-cyan-500/20 hover:bg-cyan-500/30'
-                      : 'text-white/70 hover:text-white hover:bg-white/10'
-                  }`}
-                  title={controlEnabled ? 'tmux制御モード OFF' : 'tmux制御モード ON'}
-                >
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <rect x="3" y="3" width="8" height="8" rx="1" />
-                    <rect x="13" y="3" width="8" height="8" rx="1" />
-                    <rect x="3" y="13" width="8" height="8" rx="1" />
-                    <rect x="13" y="13" width="8" height="8" rx="1" />
-                  </svg>
-                </button>
-              )}
 
               {/* Reload all panes */}
               <button

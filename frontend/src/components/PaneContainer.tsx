@@ -58,7 +58,7 @@ interface PaneContainerProps {
   globalReloadKey?: number;
   showSessionListOnboarding?: boolean;
   onCompleteSessionListOnboarding?: () => void;
-  controlModeContext?: ControlModeContext;
+  controlModeContext: ControlModeContext;
 }
 
 export function PaneContainer({
@@ -166,7 +166,7 @@ interface TerminalPaneProps {
   isTablet?: boolean;
   showSessionListOnboarding?: boolean;
   onCompleteSessionListOnboarding?: () => void;
-  controlModeContext?: ControlModeContext;
+  controlModeContext: ControlModeContext;
 }
 
 function TerminalPane({
@@ -470,16 +470,12 @@ function TerminalPane({
             </button>
           )}
           {/* Split buttons - desktop only */}
-          {!isTablet && (onSplit || controlModeContext) && (
+          {!isTablet && (
             <div className="flex items-center" data-onboarding="split-pane">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (controlModeContext) {
-                    controlModeContext.splitPane(paneId, 'h');
-                  } else {
-                    onSplit?.('horizontal');
-                  }
+                  controlModeContext.splitPane(paneId, 'h');
                 }}
                 className="p-1 text-white/50 hover:text-white/80 transition-colors"
                 title="縦分割 (Ctrl+D)"
@@ -493,11 +489,7 @@ function TerminalPane({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (controlModeContext) {
-                    controlModeContext.splitPane(paneId, 'v');
-                  } else {
-                    onSplit?.('vertical');
-                  }
+                  controlModeContext.splitPane(paneId, 'v');
                 }}
                 className="p-1 text-white/50 hover:text-white/80 transition-colors"
                 title="横分割 (Ctrl+Shift+D)"
@@ -565,7 +557,7 @@ function TerminalPane({
               onConnect={handleConnect}
               onDisconnect={handleDisconnect}
               theme={session?.theme}
-              controlMode={controlModeContext?.getControlConfig(paneId)}
+              controlMode={controlModeContext.getControlConfig(paneId)}
             />
           ) : (
             <SessionSelector
@@ -690,7 +682,7 @@ interface SplitContainerProps {
   globalReloadKey?: number;
   showSessionListOnboarding?: boolean;
   onCompleteSessionListOnboarding?: () => void;
-  controlModeContext?: ControlModeContext;
+  controlModeContext: ControlModeContext;
 }
 
 function SplitContainer({

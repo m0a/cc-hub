@@ -50,7 +50,6 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
         <TerminalComponent
           ref={ref}
           sessionId={sessionId}
-          token={token}
           onConnect={handleConnect}
           onDisconnect={handleDisconnect}
           onError={handleError}

@@ -4,7 +4,6 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
-import { useTerminal } from '../hooks/useTerminal';
 import { Keyboard } from './Keyboard';
 import { authFetch } from '../services/api';
 import type { SessionTheme } from '../../../shared/types';
@@ -56,7 +55,6 @@ export interface ControlModeConfig {
 
 interface TerminalProps {
   sessionId: string;
-  token?: string | null;  // Auth token for WebSocket connection
   onConnect?: () => void;
   onDisconnect?: () => void;
   onError?: (error: string) => void;
@@ -88,7 +86,6 @@ export interface TerminalRef {
 
 export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(function TerminalComponent({
   sessionId,
-  token,
   onConnect,
   onDisconnect,
   onError,
@@ -187,32 +184,15 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     setShowPositionToggle(true);
   };
 
-  // In control mode, register data callback; otherwise use useTerminal
   const controlCleanupRef = useRef<(() => void) | null>(null);
 
   // Store controlMode in ref for stable access (avoids re-running effects on every render)
   const controlModeRef = useRef(controlMode);
   controlModeRef.current = controlMode;
 
-  const terminalHook = useTerminal({
-    sessionId,
-    token,
-    onData: controlMode ? undefined : (data) => {
-      terminalRef.current?.write(data);
-    },
-    onConnect: controlMode ? undefined : () => onConnectRef.current?.(),
-    onDisconnect: controlMode ? undefined : () => onDisconnectRef.current?.(),
-    onError: controlMode ? undefined : (err) => onErrorRef.current?.(err),
-  });
-
-  // Stable no-ops for control mode (prevent useEffect re-runs)
-  const noopFn = useCallback(() => {}, []);
-
-  // Stable send function for control mode (reads from ref)
-  // Filters out mouse tracking escape sequences that xterm.js generates on touch/scroll,
-  // since send-keys -H would deliver them as literal text to the shell.
-  const controlSend = useCallback((data: string) => {
-    // Filter SGR mouse (\x1b[<...M/m), normal mouse (\x1b[M...), and SGR pixel mouse
+  // Send function: filters out mouse tracking escape sequences that xterm.js generates
+  // on touch/scroll, since send-keys -H would deliver them as literal text to the shell.
+  const send = useCallback((data: string) => {
     const filtered = data
       .replace(/\x1b\[<[\d;]*[Mm]/g, '')
       .replace(/\x1b\[M[\s\S]{3}/g, '')
@@ -222,17 +202,15 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     }
   }, []);
 
-  // Stable resize function for control mode (reads from ref)
-  const controlResize = useCallback((cols: number, rows: number) => {
+  const resize = useCallback((cols: number, rows: number) => {
     controlModeRef.current?.onResize?.(cols, rows);
   }, []);
 
-  // Control mode: use stable functions, otherwise use hook
-  const isConnected = controlMode ? controlMode.isConnected : terminalHook.isConnected;
-  const connect = controlMode ? noopFn : terminalHook.connect;
-  const send = controlMode ? controlSend : terminalHook.send;
-  const resize = controlMode?.onResize ? controlResize : (controlMode ? noopFn : terminalHook.resize);
-  const refresh = controlMode ? noopFn : terminalHook.refresh;
+  const noopFn = useCallback(() => {}, []);
+
+  const isConnected = controlMode?.isConnected ?? false;
+  const connect = noopFn; // Connection managed by useControlTerminal in DesktopLayout
+  const refresh = noopFn;
 
   // Keep refs updated
   useEffect(() => {
@@ -250,15 +228,9 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       const fit = fitAddonRef.current;
       const term = terminalRef.current;
       if (fit && term) {
-        if (controlModeRef.current) {
-          // Control mode: send resize with proposed dims, don't call fit()
-          const dims = fit.proposeDimensions();
-          if (dims) resizeRef.current(dims.cols, dims.rows);
-        } else {
-          fit.fit();
-          resizeRef.current(term.cols, term.rows);
-          setTimeout(() => refreshRef.current(), 100);
-        }
+        // Compute size that would fit container, send to tmux (don't apply to xterm)
+        const dims = fit.proposeDimensions();
+        if (dims) resizeRef.current(dims.cols, dims.rows);
       }
     },
     extractUrls: () => {
@@ -479,18 +451,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       }
       resizeTimeout = window.setTimeout(() => {
         if (fitAddonRef.current && terminalRef.current) {
-          if (controlModeRef.current) {
-            // Control mode: compute what size would fit the container but do NOT
-            // apply it to xterm. The actual xterm size is set only by setExactSize()
-            // from tmux's %layout-change. This prevents FitAddon from overriding
-            // tmux's pane dimensions.
-            const dims = fitAddonRef.current.proposeDimensions();
-            if (dims && dims.cols > 0 && dims.rows > 0) {
-              resizeRef.current(dims.cols, dims.rows);
-            }
-          } else {
-            fitAddonRef.current.fit();
-            resizeRef.current(terminalRef.current.cols, terminalRef.current.rows);
+          // Compute what size would fit the container but do NOT apply to xterm.
+          // The actual xterm size is set only by setExactSize() from tmux's
+          // %layout-change. This prevents FitAddon from overriding tmux's pane dims.
+          const dims = fitAddonRef.current.proposeDimensions();
+          if (dims && dims.cols > 0 && dims.rows > 0) {
+            resizeRef.current(dims.cols, dims.rows);
           }
         }
       }, 50);
@@ -612,26 +578,15 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             if (lines !== 0) {
               accumulatedDelta = accumulatedDelta % 20; // Keep remainder
 
-              if (controlModeRef.current) {
-                // In control mode, dispatch WheelEvent on xterm viewport for local scrollback.
-                // send-keys -H would deliver mouse wheel escapes as literal text.
-                // Using WheelEvent ensures proper rendering with WebGL renderer.
-                const viewport = container.querySelector('.xterm-viewport');
-                if (viewport) {
-                  viewport.dispatchEvent(new WheelEvent('wheel', {
-                    deltaY: -lines * 50,
-                    deltaMode: WheelEvent.DOM_DELTA_PIXEL,
-                    bubbles: true,
-                  }));
-                }
-              } else {
-                // Send SGR mouse wheel events to tmux (one per line for natural scrolling)
-                // tmux handles scrollback via copy-mode when mouse is on
-                const button = lines > 0 ? 65 : 64;
-                const count = Math.min(Math.abs(lines), 10); // Cap to prevent event flooding
-                for (let i = 0; i < count; i++) {
-                  sendRef.current(`\x1b[<${button};1;1M`);
-                }
+              // Dispatch WheelEvent on xterm viewport for local scrollback.
+              // send-keys -H would deliver mouse wheel escapes as literal text.
+              const viewport = container.querySelector('.xterm-viewport');
+              if (viewport) {
+                viewport.dispatchEvent(new WheelEvent('wheel', {
+                  deltaY: -lines * 50,
+                  deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+                  bubbles: true,
+                }));
               }
             }
           });

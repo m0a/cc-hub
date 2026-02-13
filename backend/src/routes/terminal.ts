@@ -364,6 +364,21 @@ async function handleControlOpen(ws: ServerWebSocket<TerminalData>): Promise<voi
 
     ws.data.cleanupFns = cleanupFns;
 
+    // Send initial layout (tmux doesn't send %layout-change on connect)
+    try {
+      const layoutOutput = await controlSession.sendCommand(
+        `list-windows -F "#{window_layout}"`
+      );
+      const layoutString = layoutOutput.trim().split('\n')[0];
+      if (layoutString) {
+        const { parseTmuxLayout } = await import('../services/tmux-layout-parser');
+        const layout = parseTmuxLayout(layoutString);
+        ws.send(JSON.stringify({ type: 'layout', layout }));
+      }
+    } catch (err) {
+      console.error(`[control] Failed to send initial layout:`, err);
+    }
+
     // Send initial pane content
     try {
       const panes = await controlSession.listPanes();

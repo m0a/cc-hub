@@ -13,6 +13,14 @@ import { parseArgs, runCli, VERSION } from './cli';
 import { conditionalAuthMiddleware } from './middleware/auth';
 import { t } from './i18n';
 
+// Global error handlers to prevent silent crashes
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught exception:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled rejection:', reason);
+});
+
 // Parse CLI arguments
 const args = parseArgs(process.argv.slice(2));
 const cliResult = await runCli(args);

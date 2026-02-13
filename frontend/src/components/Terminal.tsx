@@ -47,6 +47,7 @@ function saveFontSize(sessionId: string, size: number): void {
 
 // Control mode: terminal data comes from control WebSocket instead of useTerminal
 export interface ControlModeConfig {
+  paneId: string;
   sendInput: (data: string) => void;
   registerOnData: (callback: (data: Uint8Array) => void) => () => void;
   isConnected: boolean;
@@ -182,6 +183,10 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   // In control mode, register data callback; otherwise use useTerminal
   const controlCleanupRef = useRef<(() => void) | null>(null);
 
+  // Store controlMode in ref for stable access (avoids re-running effects on every render)
+  const controlModeRef = useRef(controlMode);
+  controlModeRef.current = controlMode;
+
   const terminalHook = useTerminal({
     sessionId,
     token,
@@ -196,26 +201,33 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   // Stable no-ops for control mode (prevent useEffect re-runs)
   const noopFn = useCallback(() => {}, []);
 
-  // Control mode: use provided functions, otherwise use hook
+  // Stable send function for control mode (reads from ref)
+  const controlSend = useCallback((data: string) => {
+    controlModeRef.current?.sendInput(data);
+  }, []);
+
+  // Control mode: use stable functions, otherwise use hook
   const isConnected = controlMode ? controlMode.isConnected : terminalHook.isConnected;
   const connect = controlMode ? noopFn : terminalHook.connect;
-  const send = controlMode ? controlMode.sendInput : terminalHook.send;
+  const send = controlMode ? controlSend : terminalHook.send;
   const resize = controlMode ? noopFn : terminalHook.resize;
   const refresh = controlMode ? noopFn : terminalHook.refresh;
 
   // Register control mode output listener
+  // Re-run when control mode toggles on/off OR when paneId changes
   useEffect(() => {
-    if (!controlMode || !terminalRef.current) return;
-    const cleanup = controlMode.registerOnData((data) => {
+    const cm = controlModeRef.current;
+    if (!cm || !terminalRef.current) return;
+    const cleanup = cm.registerOnData((data) => {
       terminalRef.current?.write(data);
     });
     controlCleanupRef.current = cleanup;
-    onConnectRef.current?.();
     return () => {
       cleanup();
       controlCleanupRef.current = null;
     };
-  }, [controlMode]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!controlMode, controlMode?.paneId]);
 
   // Keep refs updated
   useEffect(() => {

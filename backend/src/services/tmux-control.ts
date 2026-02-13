@@ -49,6 +49,10 @@ export class TmuxControlSession {
   private currentBeginNum: number | null = null;
   private currentOutput: string[] = [];
 
+  // Ready state: resolves after the initial %begin/%end block from tmux attach
+  private resolveReady: (() => void) | null = null;
+  private readyPromise: Promise<void> | null = null;
+
   // Listeners
   private outputListeners = new Map<string, Set<OutputListener>>(); // paneId -> listeners
   private globalOutputListeners = new Set<(paneId: string, data: Buffer) => void>();
@@ -82,28 +86,55 @@ export class TmuxControlSession {
   async start(): Promise<void> {
     if (this.proc) return;
 
+    console.log(`[tmux-control] Starting session: ${this.sessionId}`);
+
+    // Create ready promise - resolved when initial %begin/%end block completes
+    this.readyPromise = new Promise<void>((resolve) => {
+      this.resolveReady = resolve;
+    });
+
     const decoder = new TextDecoder();
 
-    this.proc = Bun.spawn(['tmux', '-CC', 'attach', '-t', this.sessionId], {
-      env: {
-        ...process.env,
-        TERM: 'xterm-256color',
-      },
-      terminal: {
-        cols: 200,
-        rows: 50,
-        data: (_terminal, data) => {
-          // Process control mode output from PTY
-          this.buffer += decoder.decode(new Uint8Array(data), { stream: true });
-          this.processBuffer();
+    try {
+      this.proc = Bun.spawn(['tmux', '-CC', 'attach', '-t', this.sessionId], {
+        env: {
+          ...process.env,
+          TERM: 'xterm-256color',
         },
-      },
-    });
+        terminal: {
+          cols: 200,
+          rows: 50,
+          data: (_terminal, data) => {
+            try {
+              // Process control mode output from PTY
+              this.buffer += decoder.decode(new Uint8Array(data), { stream: true });
+              this.processBuffer();
+            } catch (err) {
+              console.error(`[tmux-control] Error processing PTY data for ${this.sessionId}:`, err);
+            }
+          },
+        },
+      });
+      console.log(`[tmux-control] Process spawned for: ${this.sessionId} (pid=${this.proc.pid})`);
+    } catch (err) {
+      console.error(`[tmux-control] Failed to spawn for ${this.sessionId}:`, err);
+      // Resolve ready promise to prevent deadlock
+      if (this.resolveReady) {
+        this.resolveReady();
+        this.resolveReady = null;
+      }
+      throw err;
+    }
 
     // Handle process exit
-    this.proc.exited.then(() => {
+    this.proc.exited.then((exitCode) => {
+      console.log(`[tmux-control] Process exited for ${this.sessionId} with code ${exitCode}`);
       this.handleExit('process exited');
     });
+
+    // Wait for tmux to complete initial attach notification before allowing commands
+    await this.readyPromise;
+    console.log(`[tmux-control] Session ready: ${this.sessionId}`);
   }
 
   private processBuffer(): void {
@@ -123,24 +154,29 @@ export class TmuxControlSession {
     // Skip empty lines
     if (!line) return;
 
-    if (line.startsWith('%output ')) {
-      this.handleOutput(line);
-    } else if (line.startsWith('%layout-change ')) {
-      this.handleLayoutChange(line);
-    } else if (line.startsWith('%begin ')) {
-      this.handleBegin(line);
-    } else if (line.startsWith('%end ')) {
-      this.handleEnd(line);
-    } else if (line.startsWith('%error ')) {
-      this.handleError(line);
-    } else if (line.startsWith('%exit')) {
-      const reason = line.substring(5).trim() || 'unknown';
-      this.handleExit(reason);
-    } else if (this.currentBeginNum !== null) {
-      // Inside a command response block - accumulate output
-      this.currentOutput.push(line);
+    try {
+      if (line.startsWith('%output ')) {
+        this.handleOutput(line);
+      } else if (line.startsWith('%layout-change ')) {
+        this.handleLayoutChange(line);
+      } else if (line.startsWith('%begin ')) {
+        this.handleBegin(line);
+      } else if (line.startsWith('%end ')) {
+        this.handleEnd(line);
+      } else if (line.startsWith('%error ')) {
+        this.handleError(line);
+      } else if (line.startsWith('%exit')) {
+        const reason = line.substring(5).trim() || 'unknown';
+        this.handleExit(reason);
+      } else if (this.currentBeginNum !== null) {
+        // Inside a command response block - accumulate output
+        this.currentOutput.push(line);
+      }
+      // Other notifications (%session-changed, %window-add, etc.) are ignored for now
+    } catch (err) {
+      console.error(`[tmux-control] Error processing line for ${this.sessionId}:`, err);
+      console.error(`[tmux-control] Line was: "${line.substring(0, 100)}"`);
     }
-    // Other notifications (%session-changed, %window-add, etc.) are ignored for now
   }
 
   /**
@@ -266,6 +302,15 @@ export class TmuxControlSession {
     const match = line.match(/^%end (\d+) (\d+) (\d+)$/);
     if (!match) return;
 
+    // First %end after attach is the initial block - resolve ready promise
+    if (this.resolveReady) {
+      this.resolveReady();
+      this.resolveReady = null;
+      this.currentBeginNum = null;
+      this.currentOutput = [];
+      return;
+    }
+
     // FIFO: resolve the first pending command
     const pending = this.pendingQueue.shift();
     if (pending) {
@@ -282,6 +327,15 @@ export class TmuxControlSession {
     const match = line.match(/^%error (\d+) (\d+) (\d+)$/);
     if (!match) return;
 
+    // First %error after attach is the initial block - resolve ready promise
+    if (this.resolveReady) {
+      this.resolveReady();
+      this.resolveReady = null;
+      this.currentBeginNum = null;
+      this.currentOutput = [];
+      return;
+    }
+
     // FIFO: reject the first pending command
     const pending = this.pendingQueue.shift();
     if (pending) {
@@ -292,6 +346,11 @@ export class TmuxControlSession {
   }
 
   private handleExit(reason: string): void {
+    // Resolve ready promise if still pending (prevent deadlock)
+    if (this.resolveReady) {
+      this.resolveReady();
+      this.resolveReady = null;
+    }
     for (const listener of this.exitListeners) {
       listener(reason);
     }

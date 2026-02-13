@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState, useEffect } from 'react';
+import { useRef, useCallback, useState, useEffect, useMemo } from 'react';
 import { PaneContainer, type PaneNode, type ControlModeContext } from './PaneContainer';
 import { FileViewer } from './files/FileViewer';
 import { FloatingKeyboard } from './FloatingKeyboard';
@@ -398,6 +398,9 @@ export function DesktopLayout({
   // Per-pane output callbacks (paneId -> Set<callbacks>)
   const paneCallbacksRef = useRef<Map<string, Set<(data: Uint8Array) => void>>>(new Map());
 
+  // Buffer for initial content that arrives before Terminal components mount
+  const initialContentBufferRef = useRef<Map<string, Uint8Array[]>>(new Map());
+
   // Save/restore state for control mode transitions
   const savedDesktopStateRef = useRef<DesktopState | null>(null);
   const desktopStateRef = useRef(desktopState);
@@ -419,10 +422,16 @@ export function DesktopLayout({
     },
     onInitialContent: (paneId, data) => {
       const callbacks = paneCallbacksRef.current.get(paneId);
-      if (callbacks) {
+      if (callbacks && callbacks.size > 0) {
         for (const cb of callbacks) {
           cb(data);
         }
+      } else {
+        // Buffer for replay when Terminal component mounts and registers callback
+        if (!initialContentBufferRef.current.has(paneId)) {
+          initialContentBufferRef.current.set(paneId, []);
+        }
+        initialContentBufferRef.current.get(paneId)!.push(data);
       }
     },
     onConnect: () => {
@@ -463,34 +472,51 @@ export function DesktopLayout({
       setDesktopState(savedDesktopStateRef.current);
       savedDesktopStateRef.current = null;
       setControlLayout(null);
+      initialContentBufferRef.current.clear();
+      paneCallbacksRef.current.clear();
     }
     prevControlEnabledRef.current = controlEnabled;
   }, [controlEnabled]);
 
-  // When control layout changes, convert to PaneNode and update tree
-  useEffect(() => {
-    if (!controlLayout || !controlEnabled || !controlSessionId) return;
-
-    const paneTree = tmuxLayoutToPaneNode(controlLayout, controlSessionId);
-    const allPanes = getAllPaneIds(paneTree);
-
-    setDesktopState(prev => ({
-      root: paneTree,
-      activePane: allPanes.includes(prev.activePane) ? prev.activePane : (allPanes[0] || prev.activePane),
-    }));
+  // Compute control pane tree synchronously (not via useEffect) to avoid paneId mismatch
+  const controlPaneTree = useMemo(() => {
+    if (!controlLayout || !controlEnabled || !controlSessionId) return null;
+    return tmuxLayoutToPaneNode(controlLayout, controlSessionId);
   }, [controlLayout, controlEnabled, controlSessionId]);
 
+  // Update desktopState when control pane tree changes
+  useEffect(() => {
+    if (!controlPaneTree) return;
+    const allPanes = getAllPaneIds(controlPaneTree);
+    setDesktopState(prev => ({
+      root: controlPaneTree,
+      activePane: allPanes.includes(prev.activePane) ? prev.activePane : (allPanes[0] || prev.activePane),
+    }));
+  }, [controlPaneTree]);
+
   // Build control mode context for PaneContainer
-  const controlModeContext: ControlModeContext | undefined = controlEnabled ? {
+  // Only define when layout is available (pane IDs must be tmux IDs, not local IDs)
+  const controlModeContext: ControlModeContext | undefined = (controlEnabled && controlPaneTree) ? {
     getControlConfig: (paneId: string): ControlModeConfig | undefined => {
       if (!controlTerminal.isConnected) return undefined;
       return {
+        paneId,
         sendInput: (data: string) => controlTerminal.sendInput(paneId, data),
         registerOnData: (callback: (data: Uint8Array) => void) => {
           if (!paneCallbacksRef.current.has(paneId)) {
             paneCallbacksRef.current.set(paneId, new Set());
           }
           paneCallbacksRef.current.get(paneId)!.add(callback);
+
+          // Replay buffered initial content that arrived before this component mounted
+          const buffered = initialContentBufferRef.current.get(paneId);
+          if (buffered) {
+            for (const data of buffered) {
+              callback(data);
+            }
+            initialContentBufferRef.current.delete(paneId);
+          }
+
           return () => {
             paneCallbacksRef.current.get(paneId)?.delete(callback);
           };

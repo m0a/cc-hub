@@ -15,7 +15,8 @@
  * Commands are sent via stdin (one per line).
  */
 
-import type { Subprocess } from 'bun';
+import type { ChildProcess } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { decodeOctalOutput, encodeHexInput } from './tmux-octal-decoder';
 import { parseTmuxLayout, toFrontendLayout } from './tmux-layout-parser';
 import type { TmuxLayoutNode } from '../../../shared/types';
@@ -40,7 +41,7 @@ type LayoutListener = (layout: TmuxLayoutNode, frontendLayout: ReturnType<typeof
 type ExitListener = (reason: string) => void;
 
 export class TmuxControlSession {
-  private proc: Subprocess | null = null;
+  private proc: ChildProcess | null = null;
   private sessionId: string;
   private buffer = '';
 
@@ -81,7 +82,8 @@ export class TmuxControlSession {
 
   /**
    * Start the tmux -CC process.
-   * Uses PTY (terminal) because tmux -CC requires a TTY for tcgetattr.
+   * Uses `script` to provide a PTY (tmux requires tcgetattr) while
+   * communicating via pipes to avoid PTY echo corrupting the protocol stream.
    */
   async start(): Promise<void> {
     if (this.proc) return;
@@ -93,32 +95,35 @@ export class TmuxControlSession {
       this.resolveReady = resolve;
     });
 
-    const decoder = new TextDecoder();
-
     try {
-      this.proc = Bun.spawn(['tmux', '-CC', 'attach', '-t', this.sessionId], {
-        env: {
-          ...process.env,
-          TERM: 'xterm-256color',
+      // Use `script` to create a PTY for tmux while our I/O stays on pipes.
+      // `stty -echo` prevents the PTY from echoing commands back into stdout.
+      this.proc = spawn(
+        'script',
+        ['-qfc', `stty -echo && exec tmux -CC attach -t ${this.sessionId}`, '/dev/null'],
+        {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: { ...process.env, TERM: 'xterm-256color' },
         },
-        terminal: {
-          cols: 200,
-          rows: 50,
-          data: (_terminal, data) => {
-            try {
-              // Process control mode output from PTY
-              this.buffer += decoder.decode(new Uint8Array(data), { stream: true });
-              this.processBuffer();
-            } catch (err) {
-              console.error(`[tmux-control] Error processing PTY data for ${this.sessionId}:`, err);
-            }
-          },
-        },
-      });
+      );
       console.log(`[tmux-control] Process spawned for: ${this.sessionId} (pid=${this.proc.pid})`);
+
+      // Read stdout line by line
+      this.proc.stdout!.on('data', (chunk: Buffer) => {
+        try {
+          this.buffer += chunk.toString();
+          this.processBuffer();
+        } catch (err) {
+          console.error(`[tmux-control] Error processing data for ${this.sessionId}:`, err);
+        }
+      });
+
+      this.proc.stderr!.on('data', (chunk: Buffer) => {
+        const msg = chunk.toString().trim();
+        if (msg) console.error(`[tmux-control] stderr for ${this.sessionId}: ${msg}`);
+      });
     } catch (err) {
       console.error(`[tmux-control] Failed to spawn for ${this.sessionId}:`, err);
-      // Resolve ready promise to prevent deadlock
       if (this.resolveReady) {
         this.resolveReady();
         this.resolveReady = null;
@@ -127,7 +132,7 @@ export class TmuxControlSession {
     }
 
     // Handle process exit
-    this.proc.exited.then((exitCode) => {
+    this.proc.on('exit', (exitCode) => {
       console.log(`[tmux-control] Process exited for ${this.sessionId} with code ${exitCode}`);
       this.handleExit('process exited');
     });
@@ -373,11 +378,8 @@ export class TmuxControlSession {
       const pending: PendingCommand = { resolve, reject, output: [] };
       this.pendingQueue.push(pending);
 
-      // Write command via PTY terminal
-      const terminal = this.proc!.terminal;
-      if (terminal) {
-        terminal.write(new TextEncoder().encode(`${command}\n`));
-      }
+      // Write command via stdin pipe
+      this.proc!.stdin!.write(`${command}\n`);
 
       // Timeout after 10 seconds
       setTimeout(() => {

@@ -213,22 +213,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const resize = controlMode ? noopFn : terminalHook.resize;
   const refresh = controlMode ? noopFn : terminalHook.refresh;
 
-  // Register control mode output listener
-  // Re-run when control mode toggles on/off OR when paneId changes
-  useEffect(() => {
-    const cm = controlModeRef.current;
-    if (!cm || !terminalRef.current) return;
-    const cleanup = cm.registerOnData((data) => {
-      terminalRef.current?.write(data);
-    });
-    controlCleanupRef.current = cleanup;
-    return () => {
-      cleanup();
-      controlCleanupRef.current = null;
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [!!controlMode, controlMode?.paneId]);
-
   // Keep refs updated
   useEffect(() => {
     sendRef.current = send;
@@ -644,6 +628,24 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, // Connect to WebSocket
     connect, sessionTheme]);
+
+  // Register control mode output listener
+  // IMPORTANT: Must be declared AFTER the main setup useEffect above,
+  // because React runs effects in declaration order. If this ran before
+  // the main setup, terminalRef.current would still be null.
+  useEffect(() => {
+    const cm = controlModeRef.current;
+    if (!cm || !terminalRef.current) return;
+    const cleanup = cm.registerOnData((data) => {
+      terminalRef.current?.write(data);
+    });
+    controlCleanupRef.current = cleanup;
+    return () => {
+      cleanup();
+      controlCleanupRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!controlMode, controlMode?.paneId]);
 
   // Track visual viewport for soft keyboard offset (mobile fullscreen only)
   useEffect(() => {

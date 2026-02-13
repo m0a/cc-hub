@@ -837,7 +837,56 @@ export function DesktopLayout({
     <div className="h-screen flex bg-gray-900">
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Header - tablet only for keyboard toggle */}
+        {/* Header - desktop: minimal control mode bar */}
+        {!isTablet && controlSessionId && (
+          <div className="flex items-center justify-between px-3 py-1 bg-black/50 border-b border-gray-700 shrink-0">
+            <span className="text-white/70 text-sm truncate max-w-[300px]">
+              {activeSession?.name || 'CC Hub'}
+            </span>
+            <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1" data-onboarding="split-pane">
+                <button
+                  onClick={() => handleSplit('horizontal')}
+                  className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                  title="縦分割 (Ctrl+D)"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <line x1="12" y1="3" x2="12" y2="21" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => handleSplit('vertical')}
+                  className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                  title="横分割 (Ctrl+Shift+D)"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                  </svg>
+                </button>
+              </div>
+              <button
+                onClick={() => setControlEnabled(prev => !prev)}
+                className={`p-1 rounded transition-colors ${
+                  controlEnabled
+                    ? 'text-cyan-400 bg-cyan-500/20 hover:bg-cyan-500/30'
+                    : 'text-white/70 hover:text-white hover:bg-white/10'
+                }`}
+                title={controlEnabled ? 'tmux制御モード OFF' : 'tmux制御モード ON'}
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <rect x="3" y="3" width="8" height="8" rx="1" />
+                  <rect x="13" y="3" width="8" height="8" rx="1" />
+                  <rect x="3" y="13" width="8" height="8" rx="1" />
+                  <rect x="13" y="13" width="8" height="8" rx="1" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Header - tablet: full toolbar with keyboard toggle */}
         {isTablet && (
           <div className="flex items-center justify-between px-3 py-1 bg-black/50 border-b border-gray-700 shrink-0">
             {/* Left: Session name */}

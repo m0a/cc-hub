@@ -80,6 +80,8 @@ export interface TerminalRef {
   hideKeyboard: () => void;
   getCellDimensions: () => { width: number; height: number } | null;
   getSize: () => { cols: number; rows: number } | null;
+  /** Get the cols/rows that would fit the current container (without resizing xterm). */
+  getProposedSize: () => { cols: number; rows: number } | null;
   /** Resize xterm to exact cols/rows without triggering resize-back-to-tmux. */
   setExactSize: (cols: number, rows: number) => void;
 }
@@ -245,13 +247,18 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     focus: () => terminalRef.current?.focus(),
     getSelection: () => selectionRef.current,
     refreshTerminal: () => {
-      // Fit terminal and force tmux to redraw
       const fit = fitAddonRef.current;
       const term = terminalRef.current;
       if (fit && term) {
-        fit.fit();
-        resizeRef.current(term.cols, term.rows);
-        setTimeout(() => refreshRef.current(), 100);
+        if (controlModeRef.current) {
+          // Control mode: send resize with proposed dims, don't call fit()
+          const dims = fit.proposeDimensions();
+          if (dims) resizeRef.current(dims.cols, dims.rows);
+        } else {
+          fit.fit();
+          resizeRef.current(term.cols, term.rows);
+          setTimeout(() => refreshRef.current(), 100);
+        }
       }
     },
     extractUrls: () => {
@@ -290,6 +297,13 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       const term = terminalRef.current;
       if (!term || term.cols <= 0 || term.rows <= 0) return null;
       return { cols: term.cols, rows: term.rows };
+    },
+    getProposedSize: () => {
+      const fit = fitAddonRef.current;
+      if (!fit) return null;
+      const dims = fit.proposeDimensions();
+      if (!dims || dims.cols <= 0 || dims.rows <= 0) return null;
+      return { cols: dims.cols, rows: dims.rows };
     },
     setExactSize: (cols: number, rows: number) => {
       const term = terminalRef.current;
@@ -465,8 +479,19 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       }
       resizeTimeout = window.setTimeout(() => {
         if (fitAddonRef.current && terminalRef.current) {
-          fitAddonRef.current.fit();
-          resizeRef.current(terminalRef.current.cols, terminalRef.current.rows);
+          if (controlModeRef.current) {
+            // Control mode: compute what size would fit the container but do NOT
+            // apply it to xterm. The actual xterm size is set only by setExactSize()
+            // from tmux's %layout-change. This prevents FitAddon from overriding
+            // tmux's pane dimensions.
+            const dims = fitAddonRef.current.proposeDimensions();
+            if (dims && dims.cols > 0 && dims.rows > 0) {
+              resizeRef.current(dims.cols, dims.rows);
+            }
+          } else {
+            fitAddonRef.current.fit();
+            resizeRef.current(terminalRef.current.cols, terminalRef.current.rows);
+          }
         }
       }, 50);
     };

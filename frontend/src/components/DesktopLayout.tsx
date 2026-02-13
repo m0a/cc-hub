@@ -78,19 +78,25 @@ function findParent(root: PaneNode, id: string): { parent: Extract<PaneNode, { t
 
 // Compute total tmux window size by summing pane sizes from the layout tree.
 // tmux needs: horizontal splits → sum cols + borders, vertical → sum rows + borders.
+// When useProposed=true, uses proposeDimensions() (what fits the container) instead of
+// actual xterm size. This is needed in control mode where xterm size is set by tmux,
+// not by FitAddon.
 function computeTotalSizeFromTree(
   root: PaneNode,
-  terminalRefs: React.RefObject<Map<string, TerminalRef | null>>
+  terminalRefs: React.RefObject<Map<string, TerminalRef | null>>,
+  useProposed = false,
 ): { cols: number; rows: number } | null {
   if (root.type === 'terminal') {
     const ref = terminalRefs.current?.get(root.id);
-    const size = ref?.getSize?.();
+    const size = useProposed
+      ? (ref?.getProposedSize?.() ?? ref?.getSize?.())
+      : ref?.getSize?.();
     return size ?? null;
   }
 
   if (root.type === 'split') {
     const childSizes = root.children.map(c =>
-      computeTotalSizeFromTree(c, terminalRefs)
+      computeTotalSizeFromTree(c, terminalRefs, useProposed)
     );
     if (childSizes.some(s => s === null)) return null;
     const sizes = childSizes as { cols: number; rows: number }[];
@@ -472,12 +478,6 @@ export function DesktopLayout({
   desktopStateRef.current = desktopState;
   const prevControlEnabledRef = useRef(controlEnabled);
 
-  // Track when layout changes arrive to suppress resize oscillation.
-  // tmux layout-change → CSS ratio update → FitAddon recalc → resize → tmux layout-change → ...
-  // By suppressing resize for 500ms after a layout change, we break the cycle.
-  // The first resize is always allowed (initial setup), only subsequent resizes are throttled.
-  const layoutChangeCooldownRef = useRef(0);
-
   // Timer for applying exact tmux pane sizes after layout-change
   const layoutSizeTimerRef = useRef<number | null>(null);
 
@@ -492,13 +492,12 @@ export function DesktopLayout({
       }
     },
     onLayoutChange: (layout) => {
-      layoutChangeCooldownRef.current = Date.now();
       setControlLayout(layout);
 
-      // After React re-render + ResizeObserver + FitAddon settle,
-      // force each xterm.js to match tmux's exact pane sizes.
-      // This prevents the mismatch where FitAddon computes slightly different
-      // cols/rows than tmux, causing programs' output to display incorrectly.
+      // Force each xterm.js to match tmux's exact pane sizes.
+      // In control mode, FitAddon.fit() is NOT called (proposeDimensions() is used
+      // instead), so xterm size is ONLY set here from tmux's layout-change.
+      // Use a short delay to let React re-render with new CSS ratios first.
       if (layoutSizeTimerRef.current) {
         clearTimeout(layoutSizeTimerRef.current);
       }
@@ -508,7 +507,7 @@ export function DesktopLayout({
           const ref = terminalRefs.current?.get(paneId);
           ref?.setExactSize(size.cols, size.rows);
         }
-      }, 200);
+      }, 100);
     },
     onInitialContent: (paneId, data) => {
       const callbacks = paneCallbacksRef.current.get(paneId);
@@ -568,23 +567,15 @@ export function DesktopLayout({
       if (!controlTerminalRef.current.isConnected) return;
 
       const root = desktopStateRef.current.root;
-      const totalSize = computeTotalSizeFromTree(root, terminalRefs);
+      // Use proposed dimensions (what fits each container) instead of actual
+      // xterm size, since in control mode xterm size is set by tmux layout-change,
+      // not by FitAddon.fit().
+      const totalSize = computeTotalSizeFromTree(root, terminalRefs, true);
       if (totalSize && totalSize.cols > 0 && totalSize.rows > 0) {
         const last = lastSentSizeRef.current;
         // Skip if size hasn't changed
         if (last && last.cols === totalSize.cols && last.rows === totalSize.rows) {
           return;
-        }
-        // Suppress small size changes shortly after a layout change to prevent
-        // oscillation: layout-change → CSS ratio update → FitAddon recalc →
-        // resize → tmux adjusts → layout-change → loop.
-        // Large changes (user window resize, orientation) always pass through.
-        if (last && Date.now() - layoutChangeCooldownRef.current < 500) {
-          const dCols = Math.abs(totalSize.cols - last.cols);
-          const dRows = Math.abs(totalSize.rows - last.rows);
-          if (dCols <= 3 && dRows <= 2) {
-            return;
-          }
         }
         lastSentSizeRef.current = { cols: totalSize.cols, rows: totalSize.rows };
         controlTerminalRef.current.resize(totalSize.cols, totalSize.rows);

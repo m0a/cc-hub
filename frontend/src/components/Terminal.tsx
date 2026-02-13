@@ -51,6 +51,7 @@ export interface ControlModeConfig {
   sendInput: (data: string) => void;
   registerOnData: (callback: (data: Uint8Array) => void) => () => void;
   isConnected: boolean;
+  onResize?: (cols: number, rows: number) => void;
 }
 
 interface TerminalProps {
@@ -205,18 +206,26 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   // Filters out mouse tracking escape sequences that xterm.js generates on touch/scroll,
   // since send-keys -H would deliver them as literal text to the shell.
   const controlSend = useCallback((data: string) => {
-    // Filter SGR mouse (\x1b[<...M or \x1b[<...m) and normal mouse (\x1b[M...)
-    const filtered = data.replace(/\x1b\[<[\d;]*[Mm]/g, '').replace(/\x1b\[M.{3}/g, '');
-    if (filtered) {
+    // Filter SGR mouse (\x1b[<...M/m), normal mouse (\x1b[M...), and SGR pixel mouse
+    const filtered = data
+      .replace(/\x1b\[<[\d;]*[Mm]/g, '')
+      .replace(/\x1b\[M[\s\S]{3}/g, '')
+      .replace(/\x1b\[<[\d;]*[Mm]/g, '');
+    if (filtered.length > 0) {
       controlModeRef.current?.sendInput(filtered);
     }
+  }, []);
+
+  // Stable resize function for control mode (reads from ref)
+  const controlResize = useCallback((cols: number, rows: number) => {
+    controlModeRef.current?.onResize?.(cols, rows);
   }, []);
 
   // Control mode: use stable functions, otherwise use hook
   const isConnected = controlMode ? controlMode.isConnected : terminalHook.isConnected;
   const connect = controlMode ? noopFn : terminalHook.connect;
   const send = controlMode ? controlSend : terminalHook.send;
-  const resize = controlMode ? noopFn : terminalHook.resize;
+  const resize = controlMode?.onResize ? controlResize : (controlMode ? noopFn : terminalHook.resize);
   const refresh = controlMode ? noopFn : terminalHook.refresh;
 
   // Keep refs updated
@@ -551,12 +560,16 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             if (lines !== 0) {
               accumulatedDelta = accumulatedDelta % 20; // Keep remainder
 
-              // Send SGR mouse wheel events to tmux (one per line for natural scrolling)
-              // tmux handles scrollback via copy-mode when mouse is on
-              const button = lines > 0 ? 65 : 64;
-              const count = Math.min(Math.abs(lines), 10); // Cap to prevent event flooding
-              for (let i = 0; i < count; i++) {
-                sendRef.current(`\x1b[<${button};1;1M`);
+              // In control mode, skip sending mouse wheel events since
+              // send-keys -H delivers them as literal text to the shell
+              if (!controlModeRef.current) {
+                // Send SGR mouse wheel events to tmux (one per line for natural scrolling)
+                // tmux handles scrollback via copy-mode when mouse is on
+                const button = lines > 0 ? 65 : 64;
+                const count = Math.min(Math.abs(lines), 10); // Cap to prevent event flooding
+                for (let i = 0; i < count; i++) {
+                  sendRef.current(`\x1b[<${button};1;1M`);
+                }
               }
             }
           });

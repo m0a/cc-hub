@@ -2,15 +2,25 @@
  * tmux control mode octal encoding/decoding utilities.
  *
  * tmux -CC encodes %output data:
- *   - Characters < 32 (control chars) as \NNN (octal, 3 digits)
+ *   - Characters < 32 (control chars) and 0x7F (DEL) as \NNN (octal, 3 digits)
  *   - Backslash as \\
- *   - All other bytes are sent as-is
+ *   - All other bytes (including UTF-8 high bytes 0x80-0xFF) are sent as-is
+ *
+ * Since Node.js decodes the tmux stdout as UTF-8, multi-byte sequences
+ * become single Unicode characters. The decoder must re-encode these
+ * back to UTF-8 bytes.
  *
  * For send-keys -H, input bytes are encoded as space-separated hex pairs.
  */
 
+const textEncoder = new TextEncoder();
+
 /**
  * Decode tmux %output octal-escaped string into a Buffer.
+ *
+ * The input string has already been UTF-8 decoded by Node.js, so
+ * multi-byte characters (e.g. Japanese) appear as single Unicode chars.
+ * We re-encode them to UTF-8 bytes for the output Buffer.
  */
 export function decodeOctalOutput(encoded: string): Buffer {
   const bytes: number[] = [];
@@ -38,8 +48,21 @@ export function decodeOctalOutput(encoded: string): Buffer {
         i++;
       }
     } else {
-      bytes.push(encoded.charCodeAt(i));
-      i++;
+      const code = encoded.charCodeAt(i);
+      if (code < 128) {
+        // ASCII byte - push directly
+        bytes.push(code);
+        i++;
+      } else {
+        // Non-ASCII: re-encode the Unicode character back to UTF-8 bytes.
+        // This handles characters like Japanese that tmux passed as raw
+        // UTF-8 bytes but Node.js decoded into Unicode code points.
+        const utf8 = textEncoder.encode(encoded[i]);
+        for (const b of utf8) {
+          bytes.push(b);
+        }
+        i++;
+      }
     }
   }
 

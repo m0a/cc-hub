@@ -393,7 +393,8 @@ export function DesktopLayout({
   };
 
   const controlSessionId = getControlSessionId();
-  const [controlEnabled, setControlEnabled] = useState(false);
+  // Default to ON when a control session is available
+  const [controlEnabled, setControlEnabled] = useState(true);
   const [controlLayout, setControlLayout] = useState<TmuxLayoutNode | null>(null);
 
   // Per-pane output callbacks (paneId -> Set<callbacks>)
@@ -437,14 +438,8 @@ export function DesktopLayout({
     },
     onConnect: () => {
       console.log('[control-mode] Connected');
-      // Send client size based on pane container dimensions
-      const el = paneContainerRef.current;
-      if (el) {
-        // Use monospace char dimensions (approximate: 8px wide, 17px tall at 14px font)
-        const cols = Math.floor(el.clientWidth / 8);
-        const rows = Math.floor(el.clientHeight / 17);
-        controlTerminal.resize(cols, rows);
-      }
+      // Size will be sent by xterm.js FitAddon via onResize callback
+      // when the Terminal component mounts and fits
     },
     onDisconnect: () => {
       console.log('[control-mode] Disconnected');
@@ -471,21 +466,8 @@ export function DesktopLayout({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controlEnabled, controlSessionId]);
 
-  // Sync container size with tmux client size during control mode
-  useEffect(() => {
-    if (!controlEnabled) return;
-    const el = paneContainerRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver(() => {
-      const cols = Math.floor(el.clientWidth / 8);
-      const rows = Math.floor(el.clientHeight / 17);
-      if (cols > 0 && rows > 0) {
-        controlTerminalRef.current.resize(cols, rows);
-      }
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [controlEnabled]);
+  // Container resize is handled by xterm.js FitAddon's ResizeObserver
+  // which triggers onResize callback with correct cols/rows
 
   // Restore saved state when control mode is disabled
   useEffect(() => {
@@ -543,6 +525,10 @@ export function DesktopLayout({
           };
         },
         isConnected: controlTerminal.isConnected,
+        onResize: (cols: number, rows: number) => {
+          // Send xterm.js's actual cols/rows to tmux via refresh-client -C
+          controlTerminalRef.current.resize(cols, rows);
+        },
       };
     },
     splitPane: (paneId: string, direction: 'h' | 'v') => {

@@ -437,7 +437,6 @@ function SessionItem({
   const startLongPress = () => {
     longPressFiredRef.current = false;
     longPressTimerRef.current = window.setTimeout(() => {
-      console.log('[SessionItem] Long press fired:', session.name);
       longPressFiredRef.current = true;
       onShowMenu(session);
     }, 600);
@@ -451,14 +450,12 @@ function SessionItem({
   };
 
   const handleTouchStart = () => {
-    console.log('[SessionItem] Touch start:', session.name);
     startLongPress();
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
     // Only handle left click
     if (e.button !== 0) return;
-    console.log('[SessionItem] Mouse down:', session.name);
     startLongPress();
   };
 
@@ -482,7 +479,6 @@ function SessionItem({
 
   const handleTouchMove = () => {
     // Cancel long press when touch moves (scrolling)
-    console.log('[SessionItem] Touch move - canceling long press');
     cancelLongPress();
   };
 

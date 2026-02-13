@@ -448,6 +448,8 @@ export class TmuxControlSession {
     this.resizeTimer = setTimeout(async () => {
       try {
         await this.sendCommand(`refresh-client -C ${cols}x${rows}`);
+        // Flush pending output so programs redraw at the new size
+        await this.sendCommand('refresh-client');
       } catch {
         // Ignore resize errors
       }

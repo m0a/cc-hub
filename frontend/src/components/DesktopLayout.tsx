@@ -237,6 +237,17 @@ function updateSessionId(root: PaneNode, paneId: string, sessionId: string): Pan
   return root;
 }
 
+// Update ALL terminal panes' session ID (used for control mode session switching)
+function updateAllSessionIds(root: PaneNode, sessionId: string): PaneNode {
+  if (root.type === 'terminal') {
+    return { ...root, sessionId };
+  }
+  if (root.type === 'split') {
+    return { ...root, children: root.children.map(c => updateAllSessionIds(c, sessionId)) };
+  }
+  return root;
+}
+
 // Convert TmuxLayoutNode to PaneNode with session IDs
 function tmuxLayoutToPaneNode(node: TmuxLayoutNode, sessionId: string): PaneNode {
   if (node.type === 'leaf') {
@@ -264,6 +275,22 @@ function tmuxLayoutToPaneNode(node: TmuxLayoutNode, sessionId: string): PaneNode
     ratio,
     id: `split-${node.x}-${node.y}`,
   };
+}
+
+// Extract per-pane {cols, rows} from a TmuxLayoutNode tree.
+// tmux layout width/height = pane cols/rows.
+function extractPaneSizes(node: TmuxLayoutNode): Map<string, { cols: number; rows: number }> {
+  const sizes = new Map<string, { cols: number; rows: number }>();
+  function walk(n: TmuxLayoutNode) {
+    if (n.type === 'leaf' && n.paneId !== undefined) {
+      sizes.set(`%${n.paneId}`, { cols: n.width, rows: n.height });
+    }
+    if (n.children) {
+      n.children.forEach(walk);
+    }
+  }
+  walk(node);
+  return sizes;
 }
 
 const KEYBOARD_VISIBLE_KEY = 'cchub-floating-keyboard-visible';
@@ -445,6 +472,15 @@ export function DesktopLayout({
   desktopStateRef.current = desktopState;
   const prevControlEnabledRef = useRef(controlEnabled);
 
+  // Track when layout changes arrive to suppress resize oscillation.
+  // tmux layout-change → CSS ratio update → FitAddon recalc → resize → tmux layout-change → ...
+  // By suppressing resize for 500ms after a layout change, we break the cycle.
+  // The first resize is always allowed (initial setup), only subsequent resizes are throttled.
+  const layoutChangeCooldownRef = useRef(0);
+
+  // Timer for applying exact tmux pane sizes after layout-change
+  const layoutSizeTimerRef = useRef<number | null>(null);
+
   const controlTerminal = useControlTerminal({
     sessionId: controlEnabled && controlSessionId ? controlSessionId : '',
     onPaneOutput: (paneId, data) => {
@@ -456,7 +492,23 @@ export function DesktopLayout({
       }
     },
     onLayoutChange: (layout) => {
+      layoutChangeCooldownRef.current = Date.now();
       setControlLayout(layout);
+
+      // After React re-render + ResizeObserver + FitAddon settle,
+      // force each xterm.js to match tmux's exact pane sizes.
+      // This prevents the mismatch where FitAddon computes slightly different
+      // cols/rows than tmux, causing programs' output to display incorrectly.
+      if (layoutSizeTimerRef.current) {
+        clearTimeout(layoutSizeTimerRef.current);
+      }
+      layoutSizeTimerRef.current = window.setTimeout(() => {
+        const sizes = extractPaneSizes(layout);
+        for (const [paneId, size] of sizes) {
+          const ref = terminalRefs.current?.get(paneId);
+          ref?.setExactSize(size.cols, size.rows);
+        }
+      }, 200);
     },
     onInitialContent: (paneId, data) => {
       const callbacks = paneCallbacksRef.current.get(paneId);
@@ -518,16 +570,26 @@ export function DesktopLayout({
       const root = desktopStateRef.current.root;
       const totalSize = computeTotalSizeFromTree(root, terminalRefs);
       if (totalSize && totalSize.cols > 0 && totalSize.rows > 0) {
-        // Skip if size hasn't changed (prevents refresh-client → layout-change → resize loop)
         const last = lastSentSizeRef.current;
+        // Skip if size hasn't changed
         if (last && last.cols === totalSize.cols && last.rows === totalSize.rows) {
           return;
         }
+        // Suppress small size changes shortly after a layout change to prevent
+        // oscillation: layout-change → CSS ratio update → FitAddon recalc →
+        // resize → tmux adjusts → layout-change → loop.
+        // Large changes (user window resize, orientation) always pass through.
+        if (last && Date.now() - layoutChangeCooldownRef.current < 500) {
+          const dCols = Math.abs(totalSize.cols - last.cols);
+          const dRows = Math.abs(totalSize.rows - last.rows);
+          if (dCols <= 3 && dRows <= 2) {
+            return;
+          }
+        }
         lastSentSizeRef.current = { cols: totalSize.cols, rows: totalSize.rows };
-        console.log(`[control-resize] total=${totalSize.cols}x${totalSize.rows}`);
         controlTerminalRef.current.resize(totalSize.cols, totalSize.rows);
       }
-    }, 50);
+    }, 100);
   }, []);
 
   // Restore saved state when control mode is disabled
@@ -559,14 +621,18 @@ export function DesktopLayout({
     }));
   }, [controlPaneTree]);
 
-  // Build control mode context for PaneContainer
-  // Only define when layout is available (pane IDs must be tmux IDs, not local IDs)
-  const controlModeContext: ControlModeContext | undefined = (controlEnabled && controlPaneTree) ? {
+  // Build control mode context for PaneContainer.
+  // Always define when controlEnabled is true (even during reconnection or before
+  // layout arrives) to prevent Terminal from falling back to regular PTY WebSocket.
+  const controlModeContext: ControlModeContext | undefined = controlEnabled ? {
     getControlConfig: (paneId: string): ControlModeConfig | undefined => {
-      if (!controlTerminal.isConnected) return undefined;
       return {
         paneId,
-        sendInput: (data: string) => controlTerminal.sendInput(paneId, data),
+        sendInput: (data: string) => {
+          if (controlTerminalRef.current.isConnected) {
+            controlTerminalRef.current.sendInput(paneId, data);
+          }
+        },
         registerOnData: (callback: (data: Uint8Array) => void) => {
           if (!paneCallbacksRef.current.has(paneId)) {
             paneCallbacksRef.current.set(paneId, new Set());
@@ -595,10 +661,10 @@ export function DesktopLayout({
       };
     },
     splitPane: (paneId: string, direction: 'h' | 'v') => {
-      controlTerminal.splitPane(paneId, direction);
+      controlTerminalRef.current.splitPane(paneId, direction);
     },
     closePane: (paneId: string) => {
-      controlTerminal.closePane(paneId);
+      controlTerminalRef.current.closePane(paneId);
     },
   } : undefined;
 
@@ -880,15 +946,31 @@ export function DesktopLayout({
   }, [controlEnabled]);
 
   const handleSelectSessionForPane = useCallback((paneId: string, sessionId?: string) => {
-    if (sessionId) {
-      // Direct session selection from SessionSelector in pane
+    if (!sessionId) return;
+
+    if (controlEnabled) {
+      // In control mode, all panes belong to one tmux session.
+      // Update ALL panes' sessionId so getControlSessionId() returns the new session,
+      // triggering control WebSocket reconnection to the new session.
+      setDesktopState(prev => ({
+        ...prev,
+        root: updateAllSessionIds(prev.root, sessionId),
+        activePane: paneId,
+      }));
+      // Clear stale layout so the new session's layout takes effect
+      setControlLayout(null);
+      // Clear buffered content from old session
+      initialContentBufferRef.current.clear();
+      lastSentSizeRef.current = null;
+    } else {
+      // Non-control mode: update only the specific pane
       setDesktopState(prev => ({
         ...prev,
         root: updateSessionId(prev.root, paneId, sessionId),
         activePane: paneId,
       }));
     }
-  }, []);
+  }, [controlEnabled]);
 
   const handleSplitRatioChange = useCallback((nodeId: string, ratio: number[]) => {
     setDesktopState(prev => ({

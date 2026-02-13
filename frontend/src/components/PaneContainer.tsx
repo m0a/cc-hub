@@ -600,7 +600,7 @@ function TerminalPane({
           className="flex flex-col shrink-0 overflow-hidden bg-gray-900 -ml-2 border-l border-gray-700"
           style={{
             width: sessionListWidth,
-            touchAction: 'none',
+            touchAction: 'pan-y',
             display: showSessionList ? undefined : 'none',
           }}
           onTouchStart={handleSidebarTouchStart}

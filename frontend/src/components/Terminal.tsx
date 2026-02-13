@@ -80,6 +80,8 @@ export interface TerminalRef {
   hideKeyboard: () => void;
   getCellDimensions: () => { width: number; height: number } | null;
   getSize: () => { cols: number; rows: number } | null;
+  /** Resize xterm to exact cols/rows without triggering resize-back-to-tmux. */
+  setExactSize: (cols: number, rows: number) => void;
 }
 
 export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(function TerminalComponent({
@@ -289,6 +291,15 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       if (!term || term.cols <= 0 || term.rows <= 0) return null;
       return { cols: term.cols, rows: term.rows };
     },
+    setExactSize: (cols: number, rows: number) => {
+      const term = terminalRef.current;
+      if (!term) return;
+      if (term.cols !== cols || term.rows !== rows) {
+        term.resize(cols, rows);
+      }
+      // Note: does NOT trigger resizeRef / sendControlResize.
+      // This is intentional: tmux already knows the correct pane sizes.
+    },
   }), []);
 
   // Fit and resize terminal
@@ -443,7 +454,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       selectionRef.current = term.getSelection();
     });
 
-    // Connect to WebSocket
+    // Connect to WebSocket (noopFn in control mode)
     connect();
 
     // Handle resize with debounce
@@ -576,9 +587,19 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             if (lines !== 0) {
               accumulatedDelta = accumulatedDelta % 20; // Keep remainder
 
-              // In control mode, skip sending mouse wheel events since
-              // send-keys -H delivers them as literal text to the shell
-              if (!controlModeRef.current) {
+              if (controlModeRef.current) {
+                // In control mode, dispatch WheelEvent on xterm viewport for local scrollback.
+                // send-keys -H would deliver mouse wheel escapes as literal text.
+                // Using WheelEvent ensures proper rendering with WebGL renderer.
+                const viewport = container.querySelector('.xterm-viewport');
+                if (viewport) {
+                  viewport.dispatchEvent(new WheelEvent('wheel', {
+                    deltaY: -lines * 50,
+                    deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+                    bubbles: true,
+                  }));
+                }
+              } else {
                 // Send SGR mouse wheel events to tmux (one per line for natural scrolling)
                 // tmux handles scrollback via copy-mode when mouse is on
                 const button = lines > 0 ? 65 : 64;

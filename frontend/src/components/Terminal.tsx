@@ -202,8 +202,14 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const noopFn = useCallback(() => {}, []);
 
   // Stable send function for control mode (reads from ref)
+  // Filters out mouse tracking escape sequences that xterm.js generates on touch/scroll,
+  // since send-keys -H would deliver them as literal text to the shell.
   const controlSend = useCallback((data: string) => {
-    controlModeRef.current?.sendInput(data);
+    // Filter SGR mouse (\x1b[<...M or \x1b[<...m) and normal mouse (\x1b[M...)
+    const filtered = data.replace(/\x1b\[<[\d;]*[Mm]/g, '').replace(/\x1b\[M.{3}/g, '');
+    if (filtered) {
+      controlModeRef.current?.sendInput(filtered);
+    }
   }, []);
 
   // Control mode: use stable functions, otherwise use hook

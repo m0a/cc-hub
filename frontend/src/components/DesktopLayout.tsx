@@ -245,6 +245,7 @@ export function DesktopLayout({
   const terminalRefs = useRef<Map<string, TerminalRef | null>>(new Map());
   const sessionListToggleRefs = useRef<Map<string, () => void>>(new Map());
   const activePaneRef = useRef<string>('');
+  const paneContainerRef = useRef<HTMLDivElement>(null);
 
   // Get latest session info (including theme) from API
   const { sessions: apiSessions, fetchSessions } = useSessions();
@@ -436,10 +437,14 @@ export function DesktopLayout({
     },
     onConnect: () => {
       console.log('[control-mode] Connected');
-      // Send approximate client size based on window dimensions
-      const cols = Math.floor(window.innerWidth / 8);
-      const rows = Math.floor(window.innerHeight / 16);
-      controlTerminal.resize(cols, rows);
+      // Send client size based on pane container dimensions
+      const el = paneContainerRef.current;
+      if (el) {
+        // Use monospace char dimensions (approximate: 8px wide, 17px tall at 14px font)
+        const cols = Math.floor(el.clientWidth / 8);
+        const rows = Math.floor(el.clientHeight / 17);
+        controlTerminal.resize(cols, rows);
+      }
     },
     onDisconnect: () => {
       console.log('[control-mode] Disconnected');
@@ -465,6 +470,22 @@ export function DesktopLayout({
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controlEnabled, controlSessionId]);
+
+  // Sync container size with tmux client size during control mode
+  useEffect(() => {
+    if (!controlEnabled) return;
+    const el = paneContainerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      const cols = Math.floor(el.clientWidth / 8);
+      const rows = Math.floor(el.clientHeight / 17);
+      if (cols > 0 && rows > 0) {
+        controlTerminalRef.current.resize(cols, rows);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [controlEnabled]);
 
   // Restore saved state when control mode is disabled
   useEffect(() => {
@@ -977,7 +998,7 @@ export function DesktopLayout({
         )}
 
         {/* Pane container */}
-        <div className="flex-1 min-h-0" data-onboarding="terminal">
+        <div className="flex-1 min-h-0" data-onboarding="terminal" ref={paneContainerRef}>
           <PaneContainer
             node={desktopState.root}
             activePane={desktopState.activePane}

@@ -1,11 +1,12 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
-import { PaneContainer, type PaneNode } from './PaneContainer';
+import { PaneContainer, type PaneNode, type ControlModeContext } from './PaneContainer';
 import { FileViewer } from './files/FileViewer';
 import { FloatingKeyboard } from './FloatingKeyboard';
 import { authFetch } from '../services/api';
 import { useSessions } from '../hooks/useSessions';
-import type { TerminalRef } from './Terminal';
-import type { SessionState, SessionTheme } from '../../../shared/types';
+import { useControlTerminal } from '../hooks/useControlTerminal';
+import type { TerminalRef, ControlModeConfig } from './Terminal';
+import type { SessionState, SessionTheme, TmuxLayoutNode } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const DESKTOP_STATE_KEY = 'cchub-desktop-state';
@@ -344,6 +345,107 @@ export function DesktopLayout({
     }
   }, [activeSessionId, desktopState.root]);
 
+  // =========================================================================
+  // Control Mode
+  // =========================================================================
+
+  // Find the session ID that should be connected via control mode
+  // For now, use the first terminal pane's session as the control target
+  const getControlSessionId = (): string | null => {
+    const allPanes = getAllPaneIds(desktopState.root);
+    for (const pid of allPanes) {
+      const pane = findPaneById(desktopState.root, pid);
+      if (pane?.type === 'terminal' && pane.sessionId) {
+        return pane.sessionId;
+      }
+    }
+    return null;
+  };
+
+  const controlSessionId = getControlSessionId();
+  const [controlEnabled, setControlEnabled] = useState(false);
+  const [controlLayout, setControlLayout] = useState<TmuxLayoutNode | null>(null);
+
+  // Per-pane output callbacks (paneId -> Set<callbacks>)
+  const paneCallbacksRef = useRef<Map<string, Set<(data: Uint8Array) => void>>>(new Map());
+
+  const controlTerminal = useControlTerminal({
+    sessionId: controlEnabled && controlSessionId ? controlSessionId : '',
+    onPaneOutput: (paneId, data) => {
+      const callbacks = paneCallbacksRef.current.get(paneId);
+      if (callbacks) {
+        for (const cb of callbacks) {
+          cb(data);
+        }
+      }
+    },
+    onLayoutChange: (layout) => {
+      setControlLayout(layout);
+    },
+    onInitialContent: (paneId, data) => {
+      const callbacks = paneCallbacksRef.current.get(paneId);
+      if (callbacks) {
+        for (const cb of callbacks) {
+          cb(data);
+        }
+      }
+    },
+    onConnect: () => {
+      console.log('[control-mode] Connected');
+    },
+    onDisconnect: () => {
+      console.log('[control-mode] Disconnected');
+    },
+    onError: (err) => {
+      console.error('[control-mode] Error:', err);
+    },
+  });
+
+  // Connect/disconnect control mode
+  useEffect(() => {
+    if (controlEnabled && controlSessionId) {
+      controlTerminal.connect();
+    }
+    return () => {
+      controlTerminal.disconnect();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controlEnabled, controlSessionId]);
+
+  // Build control mode context for PaneContainer
+  const controlModeContext: ControlModeContext | undefined = controlEnabled ? {
+    getControlConfig: (paneId: string): ControlModeConfig | undefined => {
+      if (!controlTerminal.isConnected) return undefined;
+      return {
+        sendInput: (data: string) => controlTerminal.sendInput(paneId, data),
+        registerOnData: (callback: (data: Uint8Array) => void) => {
+          if (!paneCallbacksRef.current.has(paneId)) {
+            paneCallbacksRef.current.set(paneId, new Set());
+          }
+          paneCallbacksRef.current.get(paneId)!.add(callback);
+          return () => {
+            paneCallbacksRef.current.get(paneId)?.delete(callback);
+          };
+        },
+        isConnected: controlTerminal.isConnected,
+      };
+    },
+    splitPane: (paneId: string, direction: 'h' | 'v') => {
+      controlTerminal.splitPane(paneId, direction);
+    },
+    closePane: (paneId: string) => {
+      controlTerminal.closePane(paneId);
+    },
+  } : undefined;
+
+  // When control layout changes, update the desktop state tree
+  useEffect(() => {
+    if (!controlLayout || !controlEnabled) return;
+    // Layout updates from tmux are handled via the control WebSocket
+    // The layout is already reflected in the tmux layout notification
+    // For now, we store it for future use in converting to PaneNode
+  }, [controlLayout, controlEnabled]);
+
   const handleSplit = useCallback((direction: 'horizontal' | 'vertical') => {
     setDesktopState(prev => {
       const { newRoot, newPaneId } = splitPane(prev.root, prev.activePane, direction);
@@ -670,6 +772,21 @@ export function DesktopLayout({
                 </button>
               </div>
 
+              {/* Control mode toggle */}
+              <button
+                onClick={() => setControlEnabled(prev => !prev)}
+                className={`p-1 rounded transition-colors ${
+                  controlEnabled
+                    ? 'text-cyan-400 bg-cyan-500/20 hover:bg-cyan-500/30'
+                    : 'text-white/70 hover:text-white hover:bg-white/10'
+                }`}
+                title={controlEnabled ? 'tmux制御モード OFF' : 'tmux制御モード ON'}
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                </svg>
+              </button>
+
               {/* Reload all panes */}
               <button
                 onClick={handleGlobalReload}
@@ -723,6 +840,7 @@ export function DesktopLayout({
             isTablet={isTablet}
             showSessionListOnboarding={showSessionListOnboarding}
             onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
+            controlModeContext={controlModeContext}
           />
         </div>
       </div>

@@ -4,11 +4,17 @@ import { TmuxService } from '../services/tmux';
 import { isAuthRequired, getJwtSecret } from '../middleware/auth';
 import { AuthService } from '../services/auth';
 import { getDataDir } from '../utils/storage';
+import { getOrCreateControlSession, type TmuxControlSession } from '../services/tmux-control';
+import type { ControlClientMessage } from '../../../shared/types';
 
 interface TerminalData {
   sessionId: string;
   visitorId: string;
   process: Subprocess | null;
+  // Control mode fields
+  controlMode?: boolean;
+  controlSession?: TmuxControlSession;
+  cleanupFns?: Array<() => void>;
 }
 
 const tmuxService = new TmuxService();
@@ -25,7 +31,13 @@ const PTY_GRACE_PERIOD_MS = 30_000; // 30 seconds
 
 export const terminalWebSocket = {
   async open(ws: ServerWebSocket<TerminalData>) {
-    const { sessionId } = ws.data;
+    const { sessionId, controlMode } = ws.data;
+
+    if (controlMode) {
+      await handleControlOpen(ws);
+      return;
+    }
+
     console.log(`Terminal WebSocket opened for session: ${sessionId}`);
 
     // Cancel any pending PTY cleanup grace timer (client reconnected in time)
@@ -115,6 +127,11 @@ export const terminalWebSocket = {
   },
 
   async message(ws: ServerWebSocket<TerminalData>, message: string | Buffer) {
+    if (ws.data.controlMode) {
+      await handleControlMessage(ws, message);
+      return;
+    }
+
     const { process, sessionId } = ws.data;
 
     // Handle ping/pong before terminal check (ping doesn't need PTY)
@@ -171,6 +188,11 @@ export const terminalWebSocket = {
   },
 
   close(ws: ServerWebSocket<TerminalData>) {
+    if (ws.data.controlMode) {
+      handleControlClose(ws);
+      return;
+    }
+
     const { sessionId } = ws.data;
     console.log(`Terminal WebSocket closed for session: ${sessionId}`);
 
@@ -210,7 +232,12 @@ export async function handleTerminalUpgrade(
   server: { upgrade: (req: Request, options: { data: TerminalData }) => boolean }
 ): Promise<Response | null> {
   const url = new URL(req.url);
-  const pathMatch = url.pathname.match(/^\/ws\/terminal\/(.+)$/);
+
+  // Match both /ws/terminal/:id and /ws/control/:id
+  const terminalMatch = url.pathname.match(/^\/ws\/terminal\/(.+)$/);
+  const controlMatch = url.pathname.match(/^\/ws\/control\/(.+)$/);
+  const pathMatch = terminalMatch || controlMatch;
+  const isControlMode = !!controlMatch;
 
   if (!pathMatch) {
     return null;
@@ -238,6 +265,7 @@ export async function handleTerminalUpgrade(
       sessionId,
       visitorId: crypto.randomUUID(),
       process: null,
+      controlMode: isControlMode,
     },
   });
 
@@ -246,6 +274,188 @@ export async function handleTerminalUpgrade(
   }
 
   return new Response('WebSocket upgrade failed', { status: 500 });
+}
+
+// =========================================================================
+// Control Mode WebSocket Handlers
+// =========================================================================
+
+// Track active control mode connections per session
+const activeControlConnections = new Map<string, Set<ServerWebSocket<TerminalData>>>();
+
+async function handleControlOpen(ws: ServerWebSocket<TerminalData>): Promise<void> {
+  const { sessionId } = ws.data;
+  console.log(`Control WebSocket opened for session: ${sessionId}`);
+
+  // Check if tmux session exists
+  const exists = await tmuxService.sessionExists(sessionId);
+  if (!exists) {
+    ws.send(JSON.stringify({ type: 'error', message: 'Session not found' }));
+    ws.close();
+    return;
+  }
+
+  try {
+    const controlSession = await getOrCreateControlSession(sessionId);
+    ws.data.controlSession = controlSession;
+    controlSession.addClient();
+
+    // Track connection
+    if (!activeControlConnections.has(sessionId)) {
+      activeControlConnections.set(sessionId, new Set());
+    }
+    activeControlConnections.get(sessionId)!.add(ws);
+
+    // Register listeners
+    const cleanupFns: Array<() => void> = [];
+
+    // Output listener: forward pane output to this client
+    cleanupFns.push(
+      controlSession.onOutput((paneId, data) => {
+        try {
+          ws.send(JSON.stringify({
+            type: 'output',
+            paneId,
+            data: Buffer.from(data).toString('base64'),
+          }));
+        } catch {
+          // Client may have disconnected
+        }
+      })
+    );
+
+    // Layout listener: forward layout changes to this client
+    cleanupFns.push(
+      controlSession.onLayoutChange((layout, _frontendLayout) => {
+        try {
+          ws.send(JSON.stringify({ type: 'layout', layout }));
+        } catch {
+          // Client may have disconnected
+        }
+      })
+    );
+
+    // Exit listener: notify client and clean up
+    cleanupFns.push(
+      controlSession.onExit((reason) => {
+        try {
+          ws.send(JSON.stringify({ type: 'error', message: `Session exited: ${reason}` }));
+          ws.close();
+        } catch {
+          // Already closed
+        }
+      })
+    );
+
+    ws.data.cleanupFns = cleanupFns;
+
+    // Send initial pane content
+    try {
+      const panes = await controlSession.listPanes();
+      for (const pane of panes) {
+        try {
+          const content = await controlSession.capturePane(pane.paneId);
+          if (content) {
+            ws.send(JSON.stringify({
+              type: 'initial-content',
+              paneId: pane.paneId,
+              data: Buffer.from(content).toString('base64'),
+            }));
+          }
+        } catch {
+          // Pane may not be available
+        }
+      }
+    } catch {
+      // Failed to list panes
+    }
+  } catch (error) {
+    console.error(`[control] Failed to create control session:`, error);
+    ws.send(JSON.stringify({ type: 'error', message: 'Failed to start control session' }));
+    ws.close();
+  }
+}
+
+async function handleControlMessage(ws: ServerWebSocket<TerminalData>, message: string | Buffer): Promise<void> {
+  const { controlSession } = ws.data;
+  if (!controlSession) return;
+
+  // Control mode only handles JSON messages
+  if (typeof message !== 'string') return;
+
+  let msg: ControlClientMessage;
+  try {
+    msg = JSON.parse(message);
+  } catch {
+    return;
+  }
+
+  try {
+    switch (msg.type) {
+      case 'input': {
+        const data = Buffer.from(msg.data, 'base64');
+        await controlSession.sendInput(msg.paneId, data);
+        break;
+      }
+      case 'resize': {
+        controlSession.setClientSize(msg.cols, msg.rows);
+        break;
+      }
+      case 'split': {
+        await controlSession.splitPane(msg.paneId, msg.direction);
+        break;
+      }
+      case 'close-pane': {
+        await controlSession.closePane(msg.paneId);
+        break;
+      }
+      case 'resize-pane': {
+        await controlSession.resizePane(msg.paneId, msg.cols, msg.rows);
+        break;
+      }
+      case 'select-pane': {
+        await controlSession.selectPane(msg.paneId);
+        break;
+      }
+      case 'ping': {
+        ws.send(JSON.stringify({ type: 'pong', timestamp: msg.timestamp }));
+        break;
+      }
+      case 'client-info': {
+        // Store device type for future mobile pane separation logic
+        break;
+      }
+    }
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    ws.send(JSON.stringify({ type: 'error', message: errMsg }));
+  }
+}
+
+function handleControlClose(ws: ServerWebSocket<TerminalData>): void {
+  const { sessionId, controlSession, cleanupFns } = ws.data;
+  console.log(`Control WebSocket closed for session: ${sessionId}`);
+
+  // Unregister listeners
+  if (cleanupFns) {
+    for (const fn of cleanupFns) {
+      fn();
+    }
+  }
+
+  // Remove from tracking
+  const connections = activeControlConnections.get(sessionId);
+  if (connections) {
+    connections.delete(ws);
+    if (connections.size === 0) {
+      activeControlConnections.delete(sessionId);
+    }
+  }
+
+  // Notify control session that client disconnected
+  if (controlSession) {
+    controlSession.removeClient();
+  }
 }
 
 export type { TerminalData };

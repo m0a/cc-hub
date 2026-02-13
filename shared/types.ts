@@ -311,3 +311,38 @@ export interface ConversationMessage {
 export interface ConversationResponse {
   messages: ConversationMessage[];
 }
+
+// =============================================================================
+// tmux Control Mode Types
+// =============================================================================
+
+// tmux layout tree node (parsed from layout string)
+export interface TmuxLayoutNode {
+  type: 'leaf' | 'horizontal' | 'vertical';
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+  paneId?: number; // leaf only: pane number
+  children?: TmuxLayoutNode[];
+}
+
+// Client → Server messages
+export type ControlClientMessage =
+  | { type: 'input'; paneId: string; data: string } // base64
+  | { type: 'resize'; cols: number; rows: number }
+  | { type: 'split'; paneId: string; direction: 'h' | 'v' }
+  | { type: 'close-pane'; paneId: string }
+  | { type: 'resize-pane'; paneId: string; cols: number; rows: number }
+  | { type: 'select-pane'; paneId: string }
+  | { type: 'ping'; timestamp: number }
+  | { type: 'client-info'; deviceType: 'mobile' | 'tablet' | 'desktop' };
+
+// Server → Client messages
+export type ControlServerMessage =
+  | { type: 'output'; paneId: string; data: string } // base64
+  | { type: 'layout'; layout: TmuxLayoutNode }
+  | { type: 'initial-content'; paneId: string; data: string } // base64
+  | { type: 'pong'; timestamp: number }
+  | { type: 'error'; message: string; paneId?: string }
+  | { type: 'new-session'; sessionId: string; sessionName: string };

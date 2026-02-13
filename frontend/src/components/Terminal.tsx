@@ -45,6 +45,13 @@ function saveFontSize(sessionId: string, size: number): void {
   localStorage.setItem(FONT_SIZE_KEY_PREFIX + sessionId, String(size));
 }
 
+// Control mode: terminal data comes from control WebSocket instead of useTerminal
+export interface ControlModeConfig {
+  sendInput: (data: string) => void;
+  registerOnData: (callback: (data: Uint8Array) => void) => () => void;
+  isConnected: boolean;
+}
+
 interface TerminalProps {
   sessionId: string;
   token?: string | null;  // Auth token for WebSocket connection
@@ -57,6 +64,7 @@ interface TerminalProps {
   onOverlayTap?: () => void;  // Called when tap area is touched
   showOverlay?: boolean;  // Control overlay visibility
   theme?: SessionTheme;  // Session theme color
+  controlMode?: ControlModeConfig;  // If set, use control mode instead of useTerminal
 }
 
 // Ref interface for external keyboard input
@@ -82,6 +90,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   onOverlayTap,
   showOverlay = true,
   theme: sessionTheme,
+  controlMode,
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -170,16 +179,40 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     setShowPositionToggle(true);
   };
 
-  const { isConnected, connect, send, resize, refresh } = useTerminal({
+  // In control mode, register data callback; otherwise use useTerminal
+  const controlCleanupRef = useRef<(() => void) | null>(null);
+
+  const terminalHook = useTerminal({
     sessionId,
     token,
-    onData: (data) => {
+    onData: controlMode ? undefined : (data) => {
       terminalRef.current?.write(data);
     },
-    onConnect: () => onConnectRef.current?.(),
-    onDisconnect: () => onDisconnectRef.current?.(),
-    onError: (err) => onErrorRef.current?.(err),
+    onConnect: controlMode ? undefined : () => onConnectRef.current?.(),
+    onDisconnect: controlMode ? undefined : () => onDisconnectRef.current?.(),
+    onError: controlMode ? undefined : (err) => onErrorRef.current?.(err),
   });
+
+  // Control mode: use provided functions, otherwise use hook
+  const isConnected = controlMode ? controlMode.isConnected : terminalHook.isConnected;
+  const connect = controlMode ? () => {} : terminalHook.connect;
+  const send = controlMode ? controlMode.sendInput : terminalHook.send;
+  const resize = controlMode ? () => {} : terminalHook.resize;
+  const refresh = controlMode ? () => {} : terminalHook.refresh;
+
+  // Register control mode output listener
+  useEffect(() => {
+    if (!controlMode || !terminalRef.current) return;
+    const cleanup = controlMode.registerOnData((data) => {
+      terminalRef.current?.write(data);
+    });
+    controlCleanupRef.current = cleanup;
+    onConnectRef.current?.();
+    return () => {
+      cleanup();
+      controlCleanupRef.current = null;
+    };
+  }, [controlMode]);
 
   // Keep refs updated
   useEffect(() => {

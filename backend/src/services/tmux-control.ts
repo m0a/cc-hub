@@ -447,10 +447,7 @@ export class TmuxControlSession {
     }
     this.resizeTimer = setTimeout(async () => {
       try {
-        await this.sendCommand(`refresh-client -C ${cols},${rows}`);
-        // Force full screen redraw so tmux re-sends all pane content
-        // at the new size (prevents stale content from old dimensions)
-        await this.sendCommand('refresh-client');
+        await this.sendCommand(`refresh-client -C ${cols}x${rows}`);
       } catch {
         // Ignore resize errors
       }
@@ -467,7 +464,7 @@ export class TmuxControlSession {
       clearTimeout(this.resizeTimer);
       this.resizeTimer = null;
     }
-    await this.sendCommand(`refresh-client -C ${cols},${rows}`);
+    await this.sendCommand(`refresh-client -C ${cols}x${rows}`);
     await this.sendCommand('refresh-client');
   }
 
@@ -626,9 +623,17 @@ export class TmuxControlSession {
     }
     this.pendingQueue.length = 0;
 
-    // Kill process
+    // Kill process tree (script + tmux -CC child)
     if (this.proc && !this.proc.killed) {
-      this.proc.kill();
+      try {
+        // Kill process group to ensure child processes are cleaned up
+        if (this.proc.pid) {
+          process.kill(-this.proc.pid, 'SIGTERM');
+        }
+      } catch {
+        // Process group kill failed, try direct kill
+        try { this.proc.kill('SIGKILL'); } catch { /* already dead */ }
+      }
     }
     this.proc = null;
 
@@ -664,3 +669,13 @@ export async function getOrCreateControlSession(sessionId: string): Promise<Tmux
   await session.start();
   return session;
 }
+
+// Clean up all control sessions on process exit (prevents orphaned tmux -CC processes)
+function cleanupAllSessions(): void {
+  for (const session of controlSessions.values()) {
+    session.destroy();
+  }
+}
+process.on('exit', cleanupAllSessions);
+process.on('SIGTERM', () => { cleanupAllSessions(); process.exit(0); });
+process.on('SIGINT', () => { cleanupAllSessions(); process.exit(0); });

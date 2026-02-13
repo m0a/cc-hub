@@ -414,27 +414,25 @@ async function handleControlMessage(ws: ServerWebSocket<TerminalData>, message: 
       case 'resize': {
         if (!ws.data.initialContentSent) {
           ws.data.initialContentSent = true;
-          // First resize: apply size immediately (no debounce) then send
-          // initial content at the correct terminal dimensions.
+          // First resize: apply size immediately, then trigger redraw.
+          // Instead of capture-pane (which captures stale content from the
+          // old terminal size), send C-l to each pane to trigger a clean
+          // redraw. The %output notifications deliver fresh content via
+          // the normal output channel.
           try {
             await controlSession.setClientSizeImmediate(msg.cols, msg.rows);
+            // Trigger redraw in each pane so programs re-render at the new size
             const panes = await controlSession.listPanes();
             for (const pane of panes) {
               try {
-                const content = await controlSession.capturePane(pane.paneId);
-                if (content) {
-                  ws.send(JSON.stringify({
-                    type: 'initial-content',
-                    paneId: pane.paneId,
-                    data: Buffer.from(content).toString('base64'),
-                  }));
-                }
+                // C-l (form feed) triggers terminal redraw in most programs
+                await controlSession.sendCommand(`send-keys -t ${pane.paneId} C-l`);
               } catch {
                 // Pane may not be available
               }
             }
           } catch (err) {
-            console.error('[control] Failed to send initial content after resize:', err);
+            console.error('[control] Failed to initialize after resize:', err);
           }
         } else {
           controlSession.setClientSize(msg.cols, msg.rows);

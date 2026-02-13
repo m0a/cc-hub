@@ -79,6 +79,7 @@ export interface TerminalRef {
   showKeyboard: () => void;
   hideKeyboard: () => void;
   getCellDimensions: () => { width: number; height: number } | null;
+  getSize: () => { cols: number; rows: number } | null;
 }
 
 export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(function TerminalComponent({
@@ -281,7 +282,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       const core = (term as any)._core;
       const w = core?._renderService?.dimensions?.css?.cell?.width;
       const h = core?._renderService?.dimensions?.css?.cell?.height;
-      return (w && h) ? { width: w, height: h } : null;
+      return (w > 0 && h > 0) ? { width: w, height: h } : null;
+    },
+    getSize: () => {
+      const term = terminalRef.current;
+      if (!term || term.cols <= 0 || term.rows <= 0) return null;
+      return { cols: term.cols, rows: term.rows };
     },
   }), []);
 

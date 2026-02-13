@@ -76,6 +76,42 @@ function findParent(root: PaneNode, id: string): { parent: Extract<PaneNode, { t
   return null;
 }
 
+// Compute total tmux window size by summing pane sizes from the layout tree.
+// tmux needs: horizontal splits → sum cols + borders, vertical → sum rows + borders.
+function computeTotalSizeFromTree(
+  root: PaneNode,
+  terminalRefs: React.RefObject<Map<string, TerminalRef | null>>
+): { cols: number; rows: number } | null {
+  if (root.type === 'terminal') {
+    const ref = terminalRefs.current?.get(root.id);
+    const size = ref?.getSize?.();
+    return size ?? null;
+  }
+
+  if (root.type === 'split') {
+    const childSizes = root.children.map(c =>
+      computeTotalSizeFromTree(c, terminalRefs)
+    );
+    if (childSizes.some(s => s === null)) return null;
+    const sizes = childSizes as { cols: number; rows: number }[];
+
+    if (root.direction === 'horizontal') {
+      // Panes side by side: total cols = sum + borders
+      return {
+        cols: sizes.reduce((sum, s) => sum + s.cols, 0) + (sizes.length - 1),
+        rows: Math.max(...sizes.map(s => s.rows)),
+      };
+    }
+    // Panes stacked: total rows = sum + borders
+    return {
+      cols: Math.max(...sizes.map(s => s.cols)),
+      rows: sizes.reduce((sum, s) => sum + s.rows, 0) + (sizes.length - 1),
+    };
+  }
+
+  return null;
+}
+
 // Get all pane IDs in order (leaf nodes only)
 function getAllPaneIds(node: PaneNode): string[] {
   if (node.type === 'split') {
@@ -466,49 +502,33 @@ export function DesktopLayout({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controlEnabled, controlSessionId]);
 
-  // Control mode resize: compute TOTAL container size (not individual pane size)
-  // tmux refresh-client -C needs the overall window cols/rows, not per-pane
+  // Control mode resize: compute TOTAL window size from layout tree.
+  // tmux refresh-client -C needs cols×rows for the entire window,
+  // which is the sum of individual pane sizes + borders.
   const controlResizeTimerRef = useRef<number | null>(null);
+  const lastSentSizeRef = useRef<{ cols: number; rows: number } | null>(null);
 
   const sendControlResize = useCallback(() => {
     if (controlResizeTimerRef.current) {
       clearTimeout(controlResizeTimerRef.current);
     }
     controlResizeTimerRef.current = window.setTimeout(() => {
-      const container = paneContainerRef.current;
-      if (!container || !controlTerminalRef.current.isConnected) return;
+      if (!controlTerminalRef.current.isConnected) return;
 
-      // Get cell dimensions from any mounted terminal
-      for (const [, ref] of terminalRefs.current) {
-        const dims = ref?.getCellDimensions?.();
-        if (dims && dims.width > 0 && dims.height > 0) {
-          const totalCols = Math.floor(container.clientWidth / dims.width);
-          const totalRows = Math.floor(container.clientHeight / dims.height);
-          if (totalCols > 0 && totalRows > 0) {
-            controlTerminalRef.current.resize(totalCols, totalRows);
-          }
+      const root = desktopStateRef.current.root;
+      const totalSize = computeTotalSizeFromTree(root, terminalRefs);
+      if (totalSize && totalSize.cols > 0 && totalSize.rows > 0) {
+        // Skip if size hasn't changed (prevents refresh-client → layout-change → resize loop)
+        const last = lastSentSizeRef.current;
+        if (last && last.cols === totalSize.cols && last.rows === totalSize.rows) {
           return;
         }
+        lastSentSizeRef.current = { cols: totalSize.cols, rows: totalSize.rows };
+        console.log(`[control-resize] total=${totalSize.cols}x${totalSize.rows}`);
+        controlTerminalRef.current.resize(totalSize.cols, totalSize.rows);
       }
     }, 50);
   }, []);
-
-  // Watch pane container for size changes (rotation, keyboard show/hide, etc.)
-  useEffect(() => {
-    if (!controlEnabled || !paneContainerRef.current) return;
-
-    const observer = new ResizeObserver(() => {
-      sendControlResize();
-    });
-    observer.observe(paneContainerRef.current);
-
-    return () => {
-      observer.disconnect();
-      if (controlResizeTimerRef.current) {
-        clearTimeout(controlResizeTimerRef.current);
-      }
-    };
-  }, [controlEnabled, sendControlResize]);
 
   // Restore saved state when control mode is disabled
   useEffect(() => {
@@ -518,6 +538,7 @@ export function DesktopLayout({
       setControlLayout(null);
       initialContentBufferRef.current.clear();
       paneCallbacksRef.current.clear();
+      lastSentSizeRef.current = null;
     }
     prevControlEnabledRef.current = controlEnabled;
   }, [controlEnabled]);

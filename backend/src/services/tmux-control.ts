@@ -44,10 +44,10 @@ export class TmuxControlSession {
   private sessionId: string;
   private buffer = '';
 
-  // Command response correlation
-  private pendingCommands = new Map<number, PendingCommand>();
-  private commandCounter = 0;
+  // Command response correlation (FIFO queue - tmux uses its own sequence numbers)
+  private pendingQueue: PendingCommand[] = [];
   private currentBeginNum: number | null = null;
+  private currentOutput: string[] = [];
 
   // Listeners
   private outputListeners = new Map<string, Set<OutputListener>>(); // paneId -> listeners
@@ -77,22 +77,28 @@ export class TmuxControlSession {
 
   /**
    * Start the tmux -CC process.
+   * Uses PTY (terminal) because tmux -CC requires a TTY for tcgetattr.
    */
   async start(): Promise<void> {
     if (this.proc) return;
 
+    const decoder = new TextDecoder();
+
     this.proc = Bun.spawn(['tmux', '-CC', 'attach', '-t', this.sessionId], {
-      stdin: 'pipe',
-      stdout: 'pipe',
-      stderr: 'pipe',
       env: {
         ...process.env,
         TERM: 'xterm-256color',
       },
+      terminal: {
+        cols: 200,
+        rows: 50,
+        data: (_terminal, data) => {
+          // Process control mode output from PTY
+          this.buffer += decoder.decode(new Uint8Array(data), { stream: true });
+          this.processBuffer();
+        },
+      },
     });
-
-    // Read stdout line by line
-    this.readStdout();
 
     // Handle process exit
     this.proc.exited.then(() => {
@@ -100,30 +106,14 @@ export class TmuxControlSession {
     });
   }
 
-  private async readStdout(): Promise<void> {
-    const stdout = this.proc?.stdout;
-    if (!stdout || typeof stdout === 'number') return;
-
-    const reader = (stdout as ReadableStream<Uint8Array>).getReader();
-    const decoder = new TextDecoder();
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        this.buffer += decoder.decode(value, { stream: true });
-        this.processBuffer();
-      }
-    } catch {
-      // Stream closed
-    }
-  }
-
   private processBuffer(): void {
     let newlineIndex: number;
     while ((newlineIndex = this.buffer.indexOf('\n')) !== -1) {
-      const line = this.buffer.substring(0, newlineIndex);
+      // Strip \r from PTY output (PTY may add \r\n instead of \n)
+      let line = this.buffer.substring(0, newlineIndex);
+      if (line.endsWith('\r')) {
+        line = line.substring(0, line.length - 1);
+      }
       this.buffer = this.buffer.substring(newlineIndex + 1);
       this.processLine(line);
     }
@@ -148,10 +138,7 @@ export class TmuxControlSession {
       this.handleExit(reason);
     } else if (this.currentBeginNum !== null) {
       // Inside a command response block - accumulate output
-      const pending = this.pendingCommands.get(this.currentBeginNum);
-      if (pending) {
-        pending.output.push(line);
-      }
+      this.currentOutput.push(line);
     }
     // Other notifications (%session-changed, %window-add, etc.) are ignored for now
   }
@@ -269,6 +256,7 @@ export class TmuxControlSession {
     const match = line.match(/^%begin (\d+) (\d+) (\d+)$/);
     if (!match) return;
     this.currentBeginNum = parseInt(match[2], 10);
+    this.currentOutput = [];
   }
 
   /**
@@ -278,13 +266,13 @@ export class TmuxControlSession {
     const match = line.match(/^%end (\d+) (\d+) (\d+)$/);
     if (!match) return;
 
-    const num = parseInt(match[2], 10);
-    const pending = this.pendingCommands.get(num);
+    // FIFO: resolve the first pending command
+    const pending = this.pendingQueue.shift();
     if (pending) {
-      pending.resolve(pending.output.join('\n'));
-      this.pendingCommands.delete(num);
+      pending.resolve(this.currentOutput.join('\n'));
     }
     this.currentBeginNum = null;
+    this.currentOutput = [];
   }
 
   /**
@@ -294,13 +282,13 @@ export class TmuxControlSession {
     const match = line.match(/^%error (\d+) (\d+) (\d+)$/);
     if (!match) return;
 
-    const num = parseInt(match[2], 10);
-    const pending = this.pendingCommands.get(num);
+    // FIFO: reject the first pending command
+    const pending = this.pendingQueue.shift();
     if (pending) {
-      pending.reject(new Error(pending.output.join('\n') || 'tmux command error'));
-      this.pendingCommands.delete(num);
+      pending.reject(new Error(this.currentOutput.join('\n') || 'tmux command error'));
     }
     this.currentBeginNum = null;
+    this.currentOutput = [];
   }
 
   private handleExit(reason: string): void {
@@ -322,23 +310,21 @@ export class TmuxControlSession {
       throw new Error('Control session not active');
     }
 
-    const num = ++this.commandCounter;
-
     return new Promise<string>((resolve, reject) => {
-      this.pendingCommands.set(num, { resolve, reject, output: [] });
+      const pending: PendingCommand = { resolve, reject, output: [] };
+      this.pendingQueue.push(pending);
 
-      // Write command to stdin
-      const stdin = this.proc!.stdin;
-      if (stdin && typeof stdin !== 'number') {
-        (stdin as { write(data: Uint8Array): void }).write(
-          new TextEncoder().encode(`${command}\n`),
-        );
+      // Write command via PTY terminal
+      const terminal = this.proc!.terminal;
+      if (terminal) {
+        terminal.write(new TextEncoder().encode(`${command}\n`));
       }
 
       // Timeout after 10 seconds
       setTimeout(() => {
-        if (this.pendingCommands.has(num)) {
-          this.pendingCommands.delete(num);
+        const idx = this.pendingQueue.indexOf(pending);
+        if (idx !== -1) {
+          this.pendingQueue.splice(idx, 1);
           reject(new Error(`Command timed out: ${command}`));
         }
       }, 10_000);
@@ -557,10 +543,10 @@ export class TmuxControlSession {
     }
 
     // Reject pending commands
-    for (const [, pending] of this.pendingCommands) {
+    for (const pending of this.pendingQueue) {
       pending.reject(new Error('Control session destroyed'));
     }
-    this.pendingCommands.clear();
+    this.pendingQueue.length = 0;
 
     // Kill process
     if (this.proc && !this.proc.killed) {

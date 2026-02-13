@@ -347,6 +347,21 @@ async function handleControlOpen(ws: ServerWebSocket<TerminalData>): Promise<voi
       })
     );
 
+    // New session listener: notify client when a pane is separated (mobile)
+    cleanupFns.push(
+      controlSession.onNewSession((newSessionId, sessionName) => {
+        try {
+          ws.send(JSON.stringify({
+            type: 'new-session',
+            sessionId: newSessionId,
+            sessionName,
+          }));
+        } catch {
+          // Client may have disconnected
+        }
+      })
+    );
+
     ws.data.cleanupFns = cleanupFns;
 
     // Send initial pane content
@@ -422,7 +437,8 @@ async function handleControlMessage(ws: ServerWebSocket<TerminalData>, message: 
         break;
       }
       case 'client-info': {
-        // Store device type for future mobile pane separation logic
+        // Store device type for mobile pane separation logic
+        controlSession.setClientDeviceType(ws.data.visitorId, msg.deviceType);
         break;
       }
     }
@@ -454,6 +470,7 @@ function handleControlClose(ws: ServerWebSocket<TerminalData>): void {
 
   // Notify control session that client disconnected
   if (controlSession) {
+    controlSession.removeClientDeviceType(ws.data.visitorId);
     controlSession.removeClient();
   }
 }

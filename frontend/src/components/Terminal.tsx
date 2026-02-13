@@ -193,12 +193,15 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     onError: controlMode ? undefined : (err) => onErrorRef.current?.(err),
   });
 
+  // Stable no-ops for control mode (prevent useEffect re-runs)
+  const noopFn = useCallback(() => {}, []);
+
   // Control mode: use provided functions, otherwise use hook
   const isConnected = controlMode ? controlMode.isConnected : terminalHook.isConnected;
-  const connect = controlMode ? () => {} : terminalHook.connect;
+  const connect = controlMode ? noopFn : terminalHook.connect;
   const send = controlMode ? controlMode.sendInput : terminalHook.send;
-  const resize = controlMode ? () => {} : terminalHook.resize;
-  const refresh = controlMode ? () => {} : terminalHook.refresh;
+  const resize = controlMode ? noopFn : terminalHook.resize;
+  const refresh = controlMode ? noopFn : terminalHook.refresh;
 
   // Register control mode output listener
   useEffect(() => {

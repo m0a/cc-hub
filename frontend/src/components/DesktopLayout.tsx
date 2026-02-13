@@ -201,6 +201,35 @@ function updateSessionId(root: PaneNode, paneId: string, sessionId: string): Pan
   return root;
 }
 
+// Convert TmuxLayoutNode to PaneNode with session IDs
+function tmuxLayoutToPaneNode(node: TmuxLayoutNode, sessionId: string): PaneNode {
+  if (node.type === 'leaf') {
+    return {
+      type: 'terminal',
+      sessionId,
+      id: `%${node.paneId ?? 0}`,
+    };
+  }
+
+  const children = (node.children || []).map(c => tmuxLayoutToPaneNode(c, sessionId));
+  const isHorizontal = node.type === 'horizontal';
+  const totalSize = (node.children || []).reduce(
+    (sum, c) => sum + (isHorizontal ? c.width : c.height), 0
+  );
+  const ratio = (node.children || []).map(c => {
+    const size = isHorizontal ? c.width : c.height;
+    return totalSize > 0 ? (size / totalSize) * 100 : 100 / (node.children || []).length;
+  });
+
+  return {
+    type: 'split',
+    direction: isHorizontal ? 'horizontal' : 'vertical',
+    children,
+    ratio,
+    id: `split-${node.x}-${node.y}`,
+  };
+}
+
 const KEYBOARD_VISIBLE_KEY = 'cchub-floating-keyboard-visible';
 
 export function DesktopLayout({
@@ -369,6 +398,12 @@ export function DesktopLayout({
   // Per-pane output callbacks (paneId -> Set<callbacks>)
   const paneCallbacksRef = useRef<Map<string, Set<(data: Uint8Array) => void>>>(new Map());
 
+  // Save/restore state for control mode transitions
+  const savedDesktopStateRef = useRef<DesktopState | null>(null);
+  const desktopStateRef = useRef(desktopState);
+  desktopStateRef.current = desktopState;
+  const prevControlEnabledRef = useRef(controlEnabled);
+
   const controlTerminal = useControlTerminal({
     sessionId: controlEnabled && controlSessionId ? controlSessionId : '',
     onPaneOutput: (paneId, data) => {
@@ -392,6 +427,10 @@ export function DesktopLayout({
     },
     onConnect: () => {
       console.log('[control-mode] Connected');
+      // Send approximate client size based on window dimensions
+      const cols = Math.floor(window.innerWidth / 8);
+      const rows = Math.floor(window.innerHeight / 16);
+      controlTerminal.resize(cols, rows);
     },
     onDisconnect: () => {
       console.log('[control-mode] Disconnected');
@@ -401,9 +440,15 @@ export function DesktopLayout({
     },
   });
 
-  // Connect/disconnect control mode
+  // Ref for accessing control terminal in callbacks without deps
+  const controlTerminalRef = useRef(controlTerminal);
+  controlTerminalRef.current = controlTerminal;
+
+  // Connect/disconnect control mode with state save/restore
   useEffect(() => {
     if (controlEnabled && controlSessionId) {
+      // Save current state before control mode replaces it
+      savedDesktopStateRef.current = desktopStateRef.current;
       controlTerminal.connect();
     }
     return () => {
@@ -411,6 +456,29 @@ export function DesktopLayout({
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controlEnabled, controlSessionId]);
+
+  // Restore saved state when control mode is disabled
+  useEffect(() => {
+    if (prevControlEnabledRef.current && !controlEnabled && savedDesktopStateRef.current) {
+      setDesktopState(savedDesktopStateRef.current);
+      savedDesktopStateRef.current = null;
+      setControlLayout(null);
+    }
+    prevControlEnabledRef.current = controlEnabled;
+  }, [controlEnabled]);
+
+  // When control layout changes, convert to PaneNode and update tree
+  useEffect(() => {
+    if (!controlLayout || !controlEnabled || !controlSessionId) return;
+
+    const paneTree = tmuxLayoutToPaneNode(controlLayout, controlSessionId);
+    const allPanes = getAllPaneIds(paneTree);
+
+    setDesktopState(prev => ({
+      root: paneTree,
+      activePane: allPanes.includes(prev.activePane) ? prev.activePane : (allPanes[0] || prev.activePane),
+    }));
+  }, [controlLayout, controlEnabled, controlSessionId]);
 
   // Build control mode context for PaneContainer
   const controlModeContext: ControlModeContext | undefined = controlEnabled ? {
@@ -438,29 +506,31 @@ export function DesktopLayout({
     },
   } : undefined;
 
-  // When control layout changes, update the desktop state tree
-  useEffect(() => {
-    if (!controlLayout || !controlEnabled) return;
-    // Layout updates from tmux are handled via the control WebSocket
-    // The layout is already reflected in the tmux layout notification
-    // For now, we store it for future use in converting to PaneNode
-  }, [controlLayout, controlEnabled]);
-
   const handleSplit = useCallback((direction: 'horizontal' | 'vertical') => {
+    if (controlEnabled) {
+      const activeId = activePaneRef.current;
+      controlTerminalRef.current.splitPane(activeId, direction === 'horizontal' ? 'h' : 'v');
+      return; // Wait for tmux layout update
+    }
     setDesktopState(prev => {
       const { newRoot, newPaneId } = splitPane(prev.root, prev.activePane, direction);
       return { root: newRoot, activePane: newPaneId };
     });
-  }, []);
+  }, [controlEnabled]);
 
   const handleClosePane = useCallback((paneId?: string) => {
+    if (controlEnabled) {
+      const targetId = paneId || activePaneRef.current;
+      controlTerminalRef.current.closePane(targetId);
+      return; // Wait for tmux layout update
+    }
     setDesktopState(prev => {
       const targetPaneId = paneId || prev.activePane;
       const { newRoot, nextPane } = closePane(prev.root, targetPaneId);
       if (!newRoot) return prev; // Can't close last pane
       return { root: newRoot, activePane: nextPane || prev.activePane };
     });
-  }, []);
+  }, [controlEnabled]);
 
   // Handle paste (text or image)
   const handlePaste = useCallback(async () => {
@@ -708,7 +778,10 @@ export function DesktopLayout({
 
   const handleFocusPane = useCallback((paneId: string) => {
     setDesktopState(prev => ({ ...prev, activePane: paneId }));
-  }, []);
+    if (controlEnabled) {
+      controlTerminalRef.current.selectPane(paneId);
+    }
+  }, [controlEnabled]);
 
   const handleSelectSessionForPane = useCallback((paneId: string, sessionId?: string) => {
     if (sessionId) {
@@ -773,19 +846,24 @@ export function DesktopLayout({
               </div>
 
               {/* Control mode toggle */}
-              <button
-                onClick={() => setControlEnabled(prev => !prev)}
-                className={`p-1 rounded transition-colors ${
-                  controlEnabled
-                    ? 'text-cyan-400 bg-cyan-500/20 hover:bg-cyan-500/30'
-                    : 'text-white/70 hover:text-white hover:bg-white/10'
-                }`}
-                title={controlEnabled ? 'tmux制御モード OFF' : 'tmux制御モード ON'}
-              >
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                </svg>
-              </button>
+              {controlSessionId && (
+                <button
+                  onClick={() => setControlEnabled(prev => !prev)}
+                  className={`p-1 rounded transition-colors ${
+                    controlEnabled
+                      ? 'text-cyan-400 bg-cyan-500/20 hover:bg-cyan-500/30'
+                      : 'text-white/70 hover:text-white hover:bg-white/10'
+                  }`}
+                  title={controlEnabled ? 'tmux制御モード OFF' : 'tmux制御モード ON'}
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <rect x="3" y="3" width="8" height="8" rx="1" />
+                    <rect x="13" y="3" width="8" height="8" rx="1" />
+                    <rect x="3" y="13" width="8" height="8" rx="1" />
+                    <rect x="13" y="13" width="8" height="8" rx="1" />
+                  </svg>
+                </button>
+              )}
 
               {/* Reload all panes */}
               <button

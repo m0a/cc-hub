@@ -54,11 +54,16 @@ export class TmuxControlSession {
   private globalOutputListeners = new Set<(paneId: string, data: Buffer) => void>();
   private layoutListeners = new Set<LayoutListener>();
   private exitListeners = new Set<ExitListener>();
+  private newSessionListeners = new Set<(sessionId: string, sessionName: string) => void>();
 
   // Client tracking
   private clientCount = 0;
   private graceTimer: Timer | null = null;
   private destroyed = false;
+
+  // Mobile pane separation
+  private clientDeviceTypes = new Map<string, 'mobile' | 'tablet' | 'desktop'>();
+  private knownPaneIds = new Set<string>();
 
   // Resize debounce
   private resizeTimer: Timer | null = null;
@@ -191,11 +196,69 @@ export class TmuxControlSession {
       const frontendLayout = toFrontendLayout(layout);
       this.currentLayout = layout;
 
+      // Detect new panes for mobile separation
+      const newPaneIds = this.collectPaneIds(layout);
+      const addedPanes = newPaneIds.filter(id => !this.knownPaneIds.has(id));
+
+      // Check for mobile-only clients and auto-separate new panes
+      if (addedPanes.length > 0 && this.shouldSeparateForMobile()) {
+        for (const paneId of addedPanes) {
+          this.separatePaneForMobile(paneId);
+        }
+      }
+
+      // Update known pane IDs
+      this.knownPaneIds.clear();
+      for (const id of newPaneIds) {
+        this.knownPaneIds.add(id);
+      }
+
       for (const listener of this.layoutListeners) {
         listener(layout, frontendLayout);
       }
     } catch (err) {
       console.error(`[tmux-control] Failed to parse layout: ${err}`);
+    }
+  }
+
+  /**
+   * Collect all pane IDs from a layout tree.
+   */
+  private collectPaneIds(node: TmuxLayoutNode): string[] {
+    if (node.type === 'leaf') {
+      return node.paneId !== undefined ? [`%${node.paneId}`] : [];
+    }
+    return (node.children || []).flatMap(c => this.collectPaneIds(c));
+  }
+
+  /**
+   * Check if only mobile clients are connected (no desktop/tablet).
+   */
+  private shouldSeparateForMobile(): boolean {
+    if (this.clientDeviceTypes.size === 0) return false;
+    for (const deviceType of this.clientDeviceTypes.values()) {
+      if (deviceType === 'desktop' || deviceType === 'tablet') return false;
+    }
+    return true; // Only mobile clients
+  }
+
+  /**
+   * Break a pane into a new session for mobile clients.
+   */
+  private async separatePaneForMobile(paneId: string): Promise<void> {
+    try {
+      const newSessionName = `${this.sessionId}-pane-${paneId.replace('%', '')}`;
+      console.log(`[tmux-control] Separating pane ${paneId} to new session: ${newSessionName}`);
+
+      // Break pane to a new window, then move to a new session
+      await this.sendCommand(`break-pane -d -s ${paneId}`);
+
+      // Notify listeners about the new session
+      for (const listener of this.newSessionListeners) {
+        listener(newSessionName, newSessionName);
+      }
+    } catch (err) {
+      console.error(`[tmux-control] Failed to separate pane ${paneId}:`, err);
     }
   }
 
@@ -422,9 +485,33 @@ export class TmuxControlSession {
     };
   }
 
+  /**
+   * Register a listener for new session creation (mobile pane separation).
+   */
+  onNewSession(listener: (sessionId: string, sessionName: string) => void): () => void {
+    this.newSessionListeners.add(listener);
+    return () => {
+      this.newSessionListeners.delete(listener);
+    };
+  }
+
   // =========================================================================
   // Client management (grace period)
   // =========================================================================
+
+  /**
+   * Set the device type for a client (used for mobile pane separation).
+   */
+  setClientDeviceType(clientId: string, deviceType: 'mobile' | 'tablet' | 'desktop'): void {
+    this.clientDeviceTypes.set(clientId, deviceType);
+  }
+
+  /**
+   * Remove a client's device type tracking.
+   */
+  removeClientDeviceType(clientId: string): void {
+    this.clientDeviceTypes.delete(clientId);
+  }
 
   addClient(): void {
     this.clientCount++;
@@ -486,6 +573,9 @@ export class TmuxControlSession {
     this.globalOutputListeners.clear();
     this.layoutListeners.clear();
     this.exitListeners.clear();
+    this.newSessionListeners.clear();
+    this.clientDeviceTypes.clear();
+    this.knownPaneIds.clear();
 
     // Remove from global registry
     controlSessions.delete(this.sessionId);

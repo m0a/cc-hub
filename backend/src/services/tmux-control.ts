@@ -448,6 +448,9 @@ export class TmuxControlSession {
     this.resizeTimer = setTimeout(async () => {
       try {
         await this.sendCommand(`refresh-client -C ${cols},${rows}`);
+        // Force full screen redraw so tmux re-sends all pane content
+        // at the new size (prevents stale content from old dimensions)
+        await this.sendCommand('refresh-client');
       } catch {
         // Ignore resize errors
       }

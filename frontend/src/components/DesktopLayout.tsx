@@ -466,8 +466,49 @@ export function DesktopLayout({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controlEnabled, controlSessionId]);
 
-  // Container resize is handled by xterm.js FitAddon's ResizeObserver
-  // which triggers onResize callback with correct cols/rows
+  // Control mode resize: compute TOTAL container size (not individual pane size)
+  // tmux refresh-client -C needs the overall window cols/rows, not per-pane
+  const controlResizeTimerRef = useRef<number | null>(null);
+
+  const sendControlResize = useCallback(() => {
+    if (controlResizeTimerRef.current) {
+      clearTimeout(controlResizeTimerRef.current);
+    }
+    controlResizeTimerRef.current = window.setTimeout(() => {
+      const container = paneContainerRef.current;
+      if (!container || !controlTerminalRef.current.isConnected) return;
+
+      // Get cell dimensions from any mounted terminal
+      for (const [, ref] of terminalRefs.current) {
+        const dims = ref?.getCellDimensions?.();
+        if (dims && dims.width > 0 && dims.height > 0) {
+          const totalCols = Math.floor(container.clientWidth / dims.width);
+          const totalRows = Math.floor(container.clientHeight / dims.height);
+          if (totalCols > 0 && totalRows > 0) {
+            controlTerminalRef.current.resize(totalCols, totalRows);
+          }
+          return;
+        }
+      }
+    }, 50);
+  }, []);
+
+  // Watch pane container for size changes (rotation, keyboard show/hide, etc.)
+  useEffect(() => {
+    if (!controlEnabled || !paneContainerRef.current) return;
+
+    const observer = new ResizeObserver(() => {
+      sendControlResize();
+    });
+    observer.observe(paneContainerRef.current);
+
+    return () => {
+      observer.disconnect();
+      if (controlResizeTimerRef.current) {
+        clearTimeout(controlResizeTimerRef.current);
+      }
+    };
+  }, [controlEnabled, sendControlResize]);
 
   // Restore saved state when control mode is disabled
   useEffect(() => {
@@ -525,9 +566,10 @@ export function DesktopLayout({
           };
         },
         isConnected: controlTerminal.isConnected,
-        onResize: (cols: number, rows: number) => {
-          // Send xterm.js's actual cols/rows to tmux via refresh-client -C
-          controlTerminalRef.current.resize(cols, rows);
+        onResize: () => {
+          // Individual pane resize triggers total container size calculation.
+          // tmux refresh-client -C needs the TOTAL window size, not per-pane.
+          sendControlResize();
         },
       };
     },

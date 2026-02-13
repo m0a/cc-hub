@@ -78,6 +78,7 @@ export interface TerminalRef {
   refreshTerminal: () => void;
   showKeyboard: () => void;
   hideKeyboard: () => void;
+  getCellDimensions: () => { width: number; height: number } | null;
 }
 
 export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(function TerminalComponent({
@@ -273,6 +274,15 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     },
     showKeyboard: () => showKeyboardRef.current(),
     hideKeyboard: () => closeInputBarRef.current(),
+    getCellDimensions: () => {
+      const term = terminalRef.current;
+      if (!term) return null;
+      // Access xterm.js internal render dimensions (same API used by FitAddon)
+      const core = (term as any)._core;
+      const w = core?._renderService?.dimensions?.css?.cell?.width;
+      const h = core?._renderService?.dimensions?.css?.cell?.height;
+      return (w && h) ? { width: w, height: h } : null;
+    },
   }), []);
 
   // Fit and resize terminal

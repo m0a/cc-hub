@@ -476,12 +476,18 @@ export function DesktopLayout({
       clearTimeout(controlResizeTimerRef.current);
     }
     controlResizeTimerRef.current = window.setTimeout(() => {
-      if (!controlTerminalRef.current.isConnected) return;
+      if (!controlTerminalRef.current.isConnected) {
+        console.log('[Resize] Skipped: not connected');
+        return;
+      }
 
       // Skip while layout change is being processed by React.
       // Container CSS sizes haven't been updated yet, so proposeDimensions()
       // would return stale values and cause size oscillation.
-      if (layoutPendingRef.current) return;
+      if (layoutPendingRef.current) {
+        console.log('[Resize] Skipped: layout pending');
+        return;
+      }
 
       const root = desktopStateRef.current.root;
       // Use proposed dimensions (what fits each container) instead of actual
@@ -490,9 +496,14 @@ export function DesktopLayout({
       const totalSize = computeTotalSizeFromTree(root, terminalRefs, true);
       if (totalSize && totalSize.cols > 0 && totalSize.rows > 0) {
         const last = lastSentSizeRef.current;
-        if (last && last.cols === totalSize.cols && last.rows === totalSize.rows) return;
+        if (last && last.cols === totalSize.cols && last.rows === totalSize.rows) {
+          return; // Same size, skip
+        }
         lastSentSizeRef.current = { cols: totalSize.cols, rows: totalSize.rows };
+        console.log(`[Resize] Sending: ${totalSize.cols}x${totalSize.rows}`);
         controlTerminalRef.current.resize(totalSize.cols, totalSize.rows);
+      } else {
+        console.log(`[Resize] Failed to compute size, root type=${root.type}, totalSize=`, totalSize);
       }
     }, 100);
   }, []);
@@ -548,6 +559,11 @@ export function DesktopLayout({
           // Individual pane resize triggers total container size calculation.
           // tmux refresh-client -C needs the TOTAL window size, not per-pane.
           sendControlResize();
+        },
+        onScroll: (lines: number) => {
+          if (controlTerminalRef.current.isConnected) {
+            controlTerminalRef.current.scrollPane(paneId, lines);
+          }
         },
       };
     },

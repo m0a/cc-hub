@@ -197,6 +197,10 @@ export const terminalWebSocket = {
           await controlSession.selectPane(msg.paneId);
           break;
         }
+        case 'scroll': {
+          await controlSession.scrollPane(msg.paneId, msg.lines);
+          break;
+        }
         case 'ping': {
           ws.send(JSON.stringify({ type: 'pong', timestamp: msg.timestamp }));
           break;

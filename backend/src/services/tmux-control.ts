@@ -439,6 +439,23 @@ export class TmuxControlSession {
   }
 
   /**
+   * Scroll a pane's history buffer via tmux copy-mode.
+   * lines > 0 = scroll up, lines < 0 = scroll down.
+   */
+  async scrollPane(paneId: string, lines: number): Promise<void> {
+    if (lines === 0) return;
+    const absLines = Math.abs(lines);
+    if (lines > 0) {
+      // Scroll up: enter copy-mode (no-op if already in it) then scroll up
+      await this.sendCommand(`copy-mode -t ${paneId}`);
+      await this.sendCommand(`send-keys -t ${paneId} -N ${absLines} -X scroll-up`);
+    } else {
+      // Scroll down
+      await this.sendCommand(`send-keys -t ${paneId} -N ${absLines} -X scroll-down`);
+    }
+  }
+
+  /**
    * Set the client size (debounced).
    */
   setClientSize(cols: number, rows: number): void {

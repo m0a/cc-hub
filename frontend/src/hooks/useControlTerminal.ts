@@ -24,6 +24,7 @@ interface UseControlTerminalReturn {
   closePane: (paneId: string) => void;
   resizePane: (paneId: string, cols: number, rows: number) => void;
   selectPane: (paneId: string) => void;
+  scrollPane: (paneId: string, lines: number) => void;
   sendClientInfo: (deviceType: 'mobile' | 'tablet' | 'desktop') => void;
 }
 
@@ -212,6 +213,10 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
     sendMessage({ type: 'select-pane', paneId });
   }, [sendMessage]);
 
+  const scrollPane = useCallback((paneId: string, lines: number) => {
+    sendMessage({ type: 'scroll', paneId, lines });
+  }, [sendMessage]);
+
   const sendClientInfo = useCallback((deviceType: 'mobile' | 'tablet' | 'desktop') => {
     sendMessage({ type: 'client-info', deviceType });
   }, [sendMessage]);
@@ -242,6 +247,7 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
     closePane,
     resizePane,
     selectPane,
+    scrollPane,
     sendClientInfo,
   };
 }

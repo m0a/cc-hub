@@ -51,6 +51,7 @@ export interface ControlModeConfig {
   registerOnData: (callback: (data: Uint8Array) => void) => () => void;
   isConnected: boolean;
   onResize?: (cols: number, rows: number) => void;
+  onScroll?: (lines: number) => void; // positive = up, negative = down
 }
 
 interface TerminalProps {
@@ -588,9 +589,15 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             if (lines !== 0) {
               accumulatedDelta = accumulatedDelta % 20; // Keep remainder
 
-              // Use xterm.js scrollLines API for reliable scroll on all devices.
-              // Synthetic WheelEvent may not work on some mobile browsers.
-              term.scrollLines(lines);
+              // Send scroll to tmux via control mode (scrolls tmux history buffer).
+              // lines > 0 = scroll up, lines < 0 = scroll down.
+              const cm = controlModeRef.current;
+              if (cm?.onScroll) {
+                cm.onScroll(lines);
+              } else {
+                // Fallback: local xterm.js scroll
+                term.scrollLines(lines);
+              }
             }
           });
         }

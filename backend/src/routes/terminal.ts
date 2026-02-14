@@ -201,6 +201,14 @@ export const terminalWebSocket = {
           await controlSession.scrollPane(msg.paneId, msg.lines);
           break;
         }
+        case 'adjust-pane': {
+          await controlSession.adjustPaneSize(msg.paneId, msg.direction, msg.amount);
+          break;
+        }
+        case 'equalize-panes': {
+          await controlSession.equalizePanes(msg.direction);
+          break;
+        }
         case 'ping': {
           ws.send(JSON.stringify({ type: 'pong', timestamp: msg.timestamp }));
           break;

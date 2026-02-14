@@ -746,6 +746,28 @@ export function DesktopLayout({
         return;
       }
 
+      // Ctrl/Cmd + Alt + Arrow: Resize active pane
+      if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault();
+        const paneId = activePaneRef.current;
+        const dirMap: Record<string, 'L' | 'R' | 'U' | 'D'> = {
+          ArrowLeft: 'L', ArrowRight: 'R', ArrowUp: 'U', ArrowDown: 'D',
+        };
+        const amount = (e.key === 'ArrowLeft' || e.key === 'ArrowRight') ? 5 : 3;
+        controlTerminalRef.current.adjustPane(paneId, dirMap[e.key], amount);
+        return;
+      }
+
+      // Ctrl/Cmd + Alt + =: Equalize pane sizes
+      if (e.altKey && e.key === '=') {
+        e.preventDefault();
+        // Detect direction from current layout root
+        const root = desktopStateRef.current.root;
+        const dir = root.type === 'split' ? (root.direction === 'horizontal' ? 'horizontal' : 'vertical') : 'horizontal';
+        controlTerminalRef.current.equalizePanes(dir);
+        return;
+      }
+
       // Ctrl/Cmd + Arrow: Focus navigation
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault();

@@ -25,6 +25,8 @@ interface UseControlTerminalReturn {
   resizePane: (paneId: string, cols: number, rows: number) => void;
   selectPane: (paneId: string) => void;
   scrollPane: (paneId: string, lines: number) => void;
+  adjustPane: (paneId: string, direction: 'L' | 'R' | 'U' | 'D', amount: number) => void;
+  equalizePanes: (direction: 'horizontal' | 'vertical') => void;
   sendClientInfo: (deviceType: 'mobile' | 'tablet' | 'desktop') => void;
 }
 
@@ -217,6 +219,14 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
     sendMessage({ type: 'scroll', paneId, lines });
   }, [sendMessage]);
 
+  const adjustPane = useCallback((paneId: string, direction: 'L' | 'R' | 'U' | 'D', amount: number) => {
+    sendMessage({ type: 'adjust-pane', paneId, direction, amount });
+  }, [sendMessage]);
+
+  const equalizePanes = useCallback((direction: 'horizontal' | 'vertical') => {
+    sendMessage({ type: 'equalize-panes', direction });
+  }, [sendMessage]);
+
   const sendClientInfo = useCallback((deviceType: 'mobile' | 'tablet' | 'desktop') => {
     sendMessage({ type: 'client-info', deviceType });
   }, [sendMessage]);
@@ -248,6 +258,8 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
     resizePane,
     selectPane,
     scrollPane,
+    adjustPane,
+    equalizePanes,
     sendClientInfo,
   };
 }

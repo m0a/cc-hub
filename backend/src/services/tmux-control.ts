@@ -432,6 +432,21 @@ export class TmuxControlSession {
   }
 
   /**
+   * Adjust pane size relatively (L=narrower, R=wider, U=shorter, D=taller).
+   */
+  async adjustPaneSize(paneId: string, direction: 'L' | 'R' | 'U' | 'D', amount: number): Promise<void> {
+    await this.sendCommand(`resize-pane -t ${paneId} -${direction} ${amount}`);
+  }
+
+  /**
+   * Equalize all pane sizes in the current window.
+   */
+  async equalizePanes(direction: 'horizontal' | 'vertical'): Promise<void> {
+    const layout = direction === 'horizontal' ? 'even-horizontal' : 'even-vertical';
+    await this.sendCommand(`select-layout ${layout}`);
+  }
+
+  /**
    * Select (focus) a pane.
    */
   async selectPane(paneId: string): Promise<void> {

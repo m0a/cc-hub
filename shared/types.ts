@@ -337,7 +337,9 @@ export type ControlClientMessage =
   | { type: 'select-pane'; paneId: string }
   | { type: 'ping'; timestamp: number }
   | { type: 'client-info'; deviceType: 'mobile' | 'tablet' | 'desktop' }
-  | { type: 'scroll'; paneId: string; lines: number }; // positive = up, negative = down
+  | { type: 'scroll'; paneId: string; lines: number } // positive = up, negative = down
+  | { type: 'adjust-pane'; paneId: string; direction: 'L' | 'R' | 'U' | 'D'; amount: number }
+  | { type: 'equalize-panes'; direction: 'horizontal' | 'vertical' };
 
 // Server → Client messages
 export type ControlServerMessage =

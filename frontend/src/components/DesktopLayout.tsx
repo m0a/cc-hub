@@ -496,8 +496,13 @@ export function DesktopLayout({
       const totalSize = computeTotalSizeFromTree(root, terminalRefs, true);
       if (totalSize && totalSize.cols > 0 && totalSize.rows > 0) {
         const last = lastSentSizeRef.current;
-        if (last && last.cols === totalSize.cols && last.rows === totalSize.rows) {
-          return; // Same size, skip
+        // Tolerate ±1 difference to prevent resize oscillation.
+        // proposeDimensions() and tmux can disagree by 1 col/row due to
+        // integer rounding of pane border allocation.
+        if (last
+          && Math.abs(last.cols - totalSize.cols) <= 1
+          && Math.abs(last.rows - totalSize.rows) <= 1) {
+          return; // Within tolerance, skip
         }
         lastSentSizeRef.current = { cols: totalSize.cols, rows: totalSize.rows };
         console.log(`[Resize] Sending: ${totalSize.cols}x${totalSize.rows}`);
@@ -854,12 +859,35 @@ export function DesktopLayout({
     lastSentSizeRef.current = null;
   }, []);
 
+  // Debounced per-pane resize after drag: sends resize-pane to tmux for each pane
+  const paneResizeTimerRef = useRef<number | null>(null);
+
+  const sendPaneResizes = useCallback(() => {
+    if (paneResizeTimerRef.current) {
+      clearTimeout(paneResizeTimerRef.current);
+    }
+    paneResizeTimerRef.current = window.setTimeout(() => {
+      if (!controlTerminalRef.current.isConnected) return;
+      const root = desktopStateRef.current.root;
+      const allPanes = getAllPaneIds(root);
+      for (const paneId of allPanes) {
+        const ref = terminalRefs.current?.get(paneId);
+        const proposed = ref?.getProposedSize?.();
+        if (proposed && proposed.cols > 0 && proposed.rows > 0) {
+          controlTerminalRef.current.resizePane(paneId, proposed.cols, proposed.rows);
+        }
+      }
+    }, 200);
+  }, []);
+
   const handleSplitRatioChange = useCallback((nodeId: string, ratio: number[]) => {
     setDesktopState(prev => ({
       ...prev,
       root: updateRatio(prev.root, nodeId, ratio),
     }));
-  }, []);
+    // After CSS ratio changes, tell tmux to resize individual panes
+    sendPaneResizes();
+  }, [sendPaneResizes]);
 
   // Get active session for file viewer
   const activePane = findPaneById(desktopState.root, desktopState.activePane);

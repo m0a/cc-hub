@@ -17,8 +17,7 @@
 
 import type { ChildProcess } from 'node:child_process';
 import { spawn } from 'node:child_process';
-import { StringDecoder } from 'node:string_decoder';
-import { decodeOctalOutput, encodeHexInput } from './tmux-octal-decoder';
+import { decodeOctalOutput, decodeOctalOutputRaw, encodeHexInput } from './tmux-octal-decoder';
 import { parseTmuxLayout, toFrontendLayout } from './tmux-layout-parser';
 import type { TmuxLayoutNode } from '../../../shared/types';
 
@@ -44,10 +43,12 @@ type ExitListener = (reason: string) => void;
 export class TmuxControlSession {
   private proc: ChildProcess | null = null;
   private sessionId: string;
-  private buffer = '';
-  // StringDecoder properly handles UTF-8 sequences split across stdout chunks.
-  // Without it, chunk.toString() would produce U+FFFD for partial multi-byte chars.
-  private stdoutDecoder = new StringDecoder('utf8');
+  // Raw byte buffer for stdout processing.
+  // We intentionally avoid StringDecoder because tmux may split multi-byte
+  // UTF-8 sequences across %output lines.  Processing raw bytes preserves
+  // the original byte stream, letting the browser's TextDecoder (with
+  // stream: true) handle UTF-8 reassembly correctly.
+  private rawBuffer: Buffer = Buffer.alloc(0);
 
   // Command response correlation (FIFO queue - tmux uses its own sequence numbers)
   private pendingQueue: PendingCommand[] = [];
@@ -112,10 +113,11 @@ export class TmuxControlSession {
       );
       console.log(`[tmux-control] Process spawned for: ${this.sessionId} (pid=${this.proc.pid})`);
 
-      // Read stdout line by line
+      // Read stdout as raw bytes (no StringDecoder) to preserve byte-level
+      // fidelity for %output data that may contain split UTF-8 sequences.
       this.proc.stdout!.on('data', (chunk: Buffer) => {
         try {
-          this.buffer += this.stdoutDecoder.write(chunk);
+          this.rawBuffer = Buffer.concat([this.rawBuffer, chunk]);
           this.processBuffer();
         } catch (err) {
           console.error(`[tmux-control] Error processing data for ${this.sessionId}:`, err);
@@ -164,27 +166,56 @@ export class TmuxControlSession {
     }
   }
 
+  // ASCII prefix bytes for fast raw-byte matching
+  private static readonly OUTPUT_PREFIX = Buffer.from('%output ');
+  private static readonly LF = 0x0a;
+  private static readonly CR = 0x0d;
+
   private processBuffer(): void {
     let newlineIndex: number;
-    while ((newlineIndex = this.buffer.indexOf('\n')) !== -1) {
+    while ((newlineIndex = this.rawBuffer.indexOf(TmuxControlSession.LF)) !== -1) {
+      let lineEnd = newlineIndex;
       // Strip \r from PTY output (PTY may add \r\n instead of \n)
-      let line = this.buffer.substring(0, newlineIndex);
-      if (line.endsWith('\r')) {
-        line = line.substring(0, line.length - 1);
+      if (lineEnd > 0 && this.rawBuffer[lineEnd - 1] === TmuxControlSession.CR) {
+        lineEnd--;
       }
-      this.buffer = this.buffer.substring(newlineIndex + 1);
-      this.processLine(line);
+      const rawLine = this.rawBuffer.subarray(0, lineEnd);
+      this.rawBuffer = this.rawBuffer.subarray(newlineIndex + 1);
+      this.processRawLine(rawLine);
     }
   }
 
-  private processLine(line: string): void {
-    // Skip empty lines
-    if (!line) return;
+  /**
+   * Process a single raw byte line from tmux stdout.
+   *
+   * For %output lines, we extract the data as raw bytes and decode
+   * octal escapes directly - this avoids UTF-8 corruption when tmux
+   * splits a multi-byte sequence across two %output lines.
+   *
+   * For all other lines (notifications, command responses), we decode
+   * as UTF-8 string since they contain only ASCII or complete UTF-8.
+   */
+  private processRawLine(rawLine: Buffer): void {
+    if (rawLine.length === 0) return;
 
     try {
-      if (line.startsWith('%output ')) {
-        this.handleOutput(line);
-      } else if (line.startsWith('%layout-change ')) {
+      // Fast check: %output lines are the most frequent and must be
+      // processed as raw bytes to avoid UTF-8 corruption.
+      const prefix = TmuxControlSession.OUTPUT_PREFIX;
+      if (rawLine.length > prefix.length &&
+          rawLine[0] === 0x25 && // '%'
+          rawLine[1] === 0x6f && // 'o'
+          rawLine.subarray(0, prefix.length).equals(prefix)) {
+        this.handleOutputRaw(rawLine);
+        return;
+      }
+
+      // All other lines: decode as UTF-8 string.
+      // These lines contain ASCII-only protocol data or complete UTF-8
+      // (session names, layout strings, etc.), so decoding is safe.
+      const line = rawLine.toString('utf-8');
+
+      if (line.startsWith('%layout-change ')) {
         this.handleLayoutChange(line);
       } else if (line.startsWith('%begin ')) {
         this.handleBegin(line);
@@ -202,21 +233,42 @@ export class TmuxControlSession {
       // Other notifications (%session-changed, %window-add, etc.) are ignored for now
     } catch (err) {
       console.error(`[tmux-control] Error processing line for ${this.sessionId}:`, err);
-      console.error(`[tmux-control] Line was: "${line.substring(0, 100)}"`);
+      console.error(`[tmux-control] Line was: "${rawLine.subarray(0, 100).toString('utf-8')}"`);
     }
   }
 
   /**
-   * Handle %output %<paneId> <octal-encoded-data>
+   * Handle %output from raw bytes.
+   *
+   * Format: %output %N <octal-encoded-data>
+   * The data portion is extracted as raw bytes and decoded without
+   * UTF-8 conversion, preserving multi-byte sequences that may be
+   * split across consecutive %output lines.
    */
-  private handleOutput(line: string): void {
-    // Format: %output %N data
-    const match = line.match(/^%output %(\d+) (.*)$/);
-    if (!match) return;
+  private handleOutputRaw(rawLine: Buffer): void {
+    // Skip past "%output " (8 bytes)
+    let offset = 8;
 
-    const paneId = `%${match[1]}`;
-    const encodedData = match[2];
-    const decoded = decodeOctalOutput(encodedData);
+    // Expect "%" (0x25) before pane ID
+    if (offset >= rawLine.length || rawLine[offset] !== 0x25) return;
+    offset++;
+
+    // Read pane number (ASCII digits 0x30-0x39)
+    const paneIdStart = offset;
+    while (offset < rawLine.length && rawLine[offset] >= 0x30 && rawLine[offset] <= 0x39) {
+      offset++;
+    }
+    if (offset === paneIdStart) return; // No digits found
+
+    const paneId = `%${rawLine.subarray(paneIdStart, offset).toString('ascii')}`;
+
+    // Expect space (0x20) after pane ID
+    if (offset >= rawLine.length || rawLine[offset] !== 0x20) return;
+    offset++;
+
+    // Extract data portion as raw bytes and decode octal escapes
+    const rawData = rawLine.subarray(offset);
+    const decoded = decodeOctalOutputRaw(rawData);
 
     // Notify pane-specific listeners
     const listeners = this.outputListeners.get(paneId);
@@ -338,10 +390,15 @@ export class TmuxControlSession {
       return;
     }
 
-    // FIFO: resolve the first pending command
+    // FIFO: resolve the first pending command.
+    // Command response lines are also octal-encoded by tmux (e.g. \033 for ESC,
+    // \\ for backslash). Decode each line so callers get proper ANSI escapes.
     const pending = this.pendingQueue.shift();
     if (pending) {
-      pending.resolve(this.currentOutput.join('\n'));
+      const decoded = this.currentOutput.map(line =>
+        decodeOctalOutput(line).toString('utf-8')
+      ).join('\n');
+      pending.resolve(decoded);
     }
     this.currentBeginNum = null;
     this.currentOutput = [];

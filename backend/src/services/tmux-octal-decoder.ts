@@ -77,6 +77,59 @@ export function decodeOctalOutput(encoded: string): Buffer {
 }
 
 /**
+ * Decode tmux octal-escaped RAW BYTES into a Buffer.
+ *
+ * Unlike decodeOctalOutput() which works on a UTF-8 decoded string, this
+ * function operates directly on raw bytes from tmux stdout.  This is
+ * critical for %output data because tmux may split multi-byte UTF-8
+ * sequences across %output lines.  Processing raw bytes avoids the
+ * StringDecoder UTF-8 corruption that occurs when a 3/4-byte sequence
+ * is interrupted by a newline.
+ *
+ * The function only interprets octal escapes (\NNN) and backslash
+ * escapes (\\).  All other bytes (including raw UTF-8 high bytes
+ * 0x80-0xFF) pass through as-is.
+ */
+export function decodeOctalOutputRaw(data: Buffer): Buffer {
+  const result: number[] = [];
+  let i = 0;
+
+  while (i < data.length) {
+    if (data[i] === 0x5c && i + 1 < data.length) {
+      // Backslash (0x5C)
+      if (data[i + 1] === 0x5c) {
+        // Escaped backslash: \\ → \
+        result.push(0x5c);
+        i += 2;
+      } else if (
+        i + 3 < data.length &&
+        data[i + 1] >= 0x30 && data[i + 1] <= 0x33 && // '0'-'3'
+        data[i + 2] >= 0x30 && data[i + 2] <= 0x37 && // '0'-'7'
+        data[i + 3] >= 0x30 && data[i + 3] <= 0x37    // '0'-'7'
+      ) {
+        // Octal escape \NNN → single byte
+        const value =
+          (data[i + 1] - 0x30) * 64 +
+          (data[i + 2] - 0x30) * 8 +
+          (data[i + 3] - 0x30);
+        result.push(value);
+        i += 4;
+      } else {
+        // Not a valid escape, pass through
+        result.push(data[i]);
+        i++;
+      }
+    } else {
+      // All other bytes pass through as-is (including 0x80-0xFF raw UTF-8)
+      result.push(data[i]);
+      i++;
+    }
+  }
+
+  return Buffer.from(result);
+}
+
+/**
  * Encode a Buffer into hex pairs for `tmux send-keys -H`.
  * Returns space-separated hex values, e.g. "61 62 63" for "abc".
  */

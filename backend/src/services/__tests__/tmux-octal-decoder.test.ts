@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { decodeOctalOutput, encodeHexInput } from '../tmux-octal-decoder';
+import { decodeOctalOutput, decodeOctalOutputRaw, encodeHexInput } from '../tmux-octal-decoder';
 
 describe('decodeOctalOutput', () => {
   test('plain ASCII text unchanged', () => {
@@ -86,6 +86,69 @@ describe('decodeOctalOutput', () => {
   test('arrows and mathematical symbols (BMP)', () => {
     const result = decodeOctalOutput('→ ← ↑ ↓ ≈ ≠');
     expect(result.toString('utf-8')).toBe('→ ← ↑ ↓ ≈ ≠');
+  });
+});
+
+describe('decodeOctalOutputRaw', () => {
+  test('plain ASCII bytes unchanged', () => {
+    const input = Buffer.from('hello world');
+    const result = decodeOctalOutputRaw(input);
+    expect(result.toString()).toBe('hello world');
+  });
+
+  test('escaped backslash', () => {
+    // Raw bytes: path \\ to \\ file
+    const input = Buffer.from('path\\\\to\\\\file');
+    const result = decodeOctalOutputRaw(input);
+    expect(result.toString()).toBe('path\\to\\file');
+  });
+
+  test('octal escape for ESC', () => {
+    // Raw bytes: \033[31mred\033[0m
+    const input = Buffer.from('\\033[31mred\\033[0m');
+    const result = decodeOctalOutputRaw(input);
+    expect(result).toEqual(Buffer.from('\x1b[31mred\x1b[0m'));
+  });
+
+  test('raw UTF-8 bytes pass through (Japanese)', () => {
+    // "コミット" in UTF-8: E3 82 B3 E3 83 9F E3 83 83 E3 83 88
+    const input = Buffer.from([0xe3, 0x82, 0xb3, 0xe3, 0x83, 0x9f, 0xe3, 0x83, 0x83, 0xe3, 0x83, 0x88]);
+    const result = decodeOctalOutputRaw(input);
+    expect(result).toEqual(input); // Raw bytes preserved as-is
+    expect(result.toString('utf-8')).toBe('コミット');
+  });
+
+  test('partial UTF-8 bytes pass through (split multi-byte)', () => {
+    // Simulate tmux splitting "ミ" (E3 83 9F) across two %output lines.
+    // First output: ends with E3 83 (incomplete sequence)
+    const part1 = Buffer.from([0x61, 0xe3, 0x83]); // 'a' + first 2 bytes of ミ
+    const result1 = decodeOctalOutputRaw(part1);
+    expect(result1).toEqual(part1); // Raw bytes preserved, NOT converted to U+FFFD
+
+    // Second output: starts with 9F (continuation byte)
+    const part2 = Buffer.from([0x9f, 0x62]); // last byte of ミ + 'b'
+    const result2 = decodeOctalOutputRaw(part2);
+    expect(result2).toEqual(part2); // Raw bytes preserved
+
+    // When concatenated and decoded as UTF-8, we get the correct text
+    const combined = Buffer.concat([result1, result2]);
+    expect(combined.toString('utf-8')).toBe('aミb');
+  });
+
+  test('mixed octal escapes and raw high bytes', () => {
+    // \033[4m followed by raw UTF-8 for "下線" then \033[0m
+    const input = Buffer.concat([
+      Buffer.from('\\033[4m'),
+      Buffer.from('下線', 'utf-8'), // raw UTF-8 bytes
+      Buffer.from('\\033[0m'),
+    ]);
+    const result = decodeOctalOutputRaw(input);
+    expect(result.toString('utf-8')).toBe('\x1b[4m下線\x1b[0m');
+  });
+
+  test('empty buffer', () => {
+    const result = decodeOctalOutputRaw(Buffer.alloc(0));
+    expect(result.length).toBe(0);
   });
 });
 

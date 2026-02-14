@@ -35,11 +35,22 @@
       <p id="fallback-log" style="color:#666;font-size:12px;margin-top:24px;"></p>
     </div>
     <script>
+      // Capture JS errors for fallback display
+      var _fbErrors = [];
+      window.addEventListener('error', function(e) {
+        _fbErrors.push(e.message + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : ''));
+      });
+      window.addEventListener('unhandledrejection', function(e) {
+        _fbErrors.push('Promise: ' + (e.reason && e.reason.message || e.reason || 'unknown'));
+      });
       // Show fallback if React doesn't mount within 4 seconds
       var _fbTimer = setTimeout(function() {
         var root = document.getElementById('root');
         if (!root || !root.hasChildNodes()) {
           document.getElementById('fallback').style.display = 'block';
+          if (_fbErrors.length > 0) {
+            document.getElementById('fallback-log').textContent = 'Errors: ' + _fbErrors.join(' | ');
+          }
         }
       }, 4000);
       // Cancel fallback timer once React mounts

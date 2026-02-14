@@ -385,6 +385,13 @@ export function DesktopLayout({
     },
     onLayoutChange: (layout) => {
       setControlLayout(layout);
+      // "Last-write-wins": if the tmux window size (from layout root) differs
+      // significantly from what we last sent, another client changed it.
+      // Clear lastSentSizeRef so the next user interaction re-sends our size.
+      const last = lastSentSizeRef.current;
+      if (last && (Math.abs(last.cols - layout.width) > 3 || Math.abs(last.rows - layout.height) > 3)) {
+        lastSentSizeRef.current = null;
+      }
       // Suppress sendControlResize while React re-renders with new CSS ratios.
       // Without this, ResizeObserver fires with OLD container sizes → stale
       // proposed dimensions → wrong total sent to tmux → size oscillation.
@@ -407,18 +414,15 @@ export function DesktopLayout({
             const ref = terminalRefs.current?.get(paneId);
             ref?.setExactSize(size.cols, size.rows);
           }
-          // Re-enable sendControlResize now that DOM is up to date,
-          // then immediately send a resize with the correct proposed sizes.
+          // Re-enable sendControlResize but do NOT send one here.
+          // The layout-change is tmux's response to our resize — sending
+          // another resize creates a feedback loop (223→221→223→…).
           layoutPendingRef.current = false;
-          sendControlResize();
         });
         // Safety timeout: ensure layoutPending is cleared even if rAF doesn't fire
         // (e.g. tab in background, browser throttling)
         setTimeout(() => {
-          if (layoutPendingRef.current) {
-            layoutPendingRef.current = false;
-            sendControlResize();
-          }
+          layoutPendingRef.current = false;
         }, 500);
       }, 50);
     },
@@ -496,12 +500,12 @@ export function DesktopLayout({
       const totalSize = computeTotalSizeFromTree(root, terminalRefs, true);
       if (totalSize && totalSize.cols > 0 && totalSize.rows > 0) {
         const last = lastSentSizeRef.current;
-        // Tolerate ±1 difference to prevent resize oscillation.
-        // proposeDimensions() and tmux can disagree by 1 col/row due to
-        // integer rounding of pane border allocation.
+        // Tolerate ±3 difference to prevent resize oscillation.
+        // proposeDimensions() and tmux can disagree by 2-3 col/row due to
+        // integer rounding of pane border allocation and CSS layout differences.
         if (last
-          && Math.abs(last.cols - totalSize.cols) <= 1
-          && Math.abs(last.rows - totalSize.rows) <= 1) {
+          && Math.abs(last.cols - totalSize.cols) <= 3
+          && Math.abs(last.rows - totalSize.rows) <= 3) {
           return; // Within tolerance, skip
         }
         lastSentSizeRef.current = { cols: totalSize.cols, rows: totalSize.rows };
@@ -674,8 +678,9 @@ export function DesktopLayout({
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-      const modifier = isMac ? e.metaKey : e.ctrlKey;
+      // Accept both Ctrl and Cmd (Meta) for all shortcuts.
+      // This supports Mac keyboards on Linux and vice versa.
+      const modifier = e.ctrlKey || e.metaKey;
 
       if (!modifier) return;
 
@@ -764,6 +769,16 @@ export function DesktopLayout({
         const root = desktopStateRef.current.root;
         const dir = root.type === 'split' ? (root.direction === 'horizontal' ? 'horizontal' : 'vertical') : 'horizontal';
         controlTerminalRef.current.equalizePanes(dir);
+        return;
+      }
+
+      // Ctrl/Cmd + Shift + F5: Cache clear & reload
+      if (e.shiftKey && e.key === 'F5') {
+        e.preventDefault();
+        Promise.all([
+          navigator.serviceWorker?.getRegistrations().then(regs => Promise.all(regs.map(r => r.unregister()))),
+          caches?.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))),
+        ].filter(Boolean)).then(() => location.reload());
         return;
       }
 
@@ -920,42 +935,9 @@ export function DesktopLayout({
     <div className="h-screen flex bg-gray-900">
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Header - desktop: minimal control mode bar */}
-        {!isTablet && controlSessionId && (
-          <div className="flex items-center justify-between px-3 py-1 bg-black/50 border-b border-gray-700 shrink-0">
-            <span className="text-white/70 text-sm truncate max-w-[300px]">
-              {activeSession?.name || 'CC Hub'}
-            </span>
-            <div className="flex items-center gap-1">
-              <div className="flex items-center gap-1" data-onboarding="split-pane">
-                <button
-                  onClick={() => handleSplit('horizontal')}
-                  className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-                  title="縦分割 (Ctrl+D)"
-                >
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                    <line x1="12" y1="3" x2="12" y2="21" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => handleSplit('vertical')}
-                  className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-                  title="横分割 (Ctrl+Shift+D)"
-                >
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                    <line x1="3" y1="12" x2="21" y2="12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Header - tablet: full toolbar with keyboard toggle */}
         {isTablet && (
-          <div className="flex items-center justify-between px-3 py-1.5 bg-black/50 border-b border-gray-700 shrink-0">
+          <div className="flex items-center justify-between px-3 py-1.5 bg-black/50 border-b border-gray-700 shrink-0 select-none">
             {/* Left: Session name */}
             <span className="text-white/70 text-sm truncate max-w-[300px]">
               {activeSession?.name || 'CC Hub - Desktop'}

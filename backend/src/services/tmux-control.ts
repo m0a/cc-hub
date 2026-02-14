@@ -17,6 +17,7 @@
 
 import type { ChildProcess } from 'node:child_process';
 import { spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 import { decodeOctalOutput, encodeHexInput } from './tmux-octal-decoder';
 import { parseTmuxLayout, toFrontendLayout } from './tmux-layout-parser';
 import type { TmuxLayoutNode } from '../../../shared/types';
@@ -44,6 +45,9 @@ export class TmuxControlSession {
   private proc: ChildProcess | null = null;
   private sessionId: string;
   private buffer = '';
+  // StringDecoder properly handles UTF-8 sequences split across stdout chunks.
+  // Without it, chunk.toString() would produce U+FFFD for partial multi-byte chars.
+  private stdoutDecoder = new StringDecoder('utf8');
 
   // Command response correlation (FIFO queue - tmux uses its own sequence numbers)
   private pendingQueue: PendingCommand[] = [];
@@ -111,7 +115,7 @@ export class TmuxControlSession {
       // Read stdout line by line
       this.proc.stdout!.on('data', (chunk: Buffer) => {
         try {
-          this.buffer += chunk.toString();
+          this.buffer += this.stdoutDecoder.write(chunk);
           this.processBuffer();
         } catch (err) {
           console.error(`[tmux-control] Error processing data for ${this.sessionId}:`, err);
@@ -140,6 +144,24 @@ export class TmuxControlSession {
     // Wait for tmux to complete initial attach notification before allowing commands
     await this.readyPromise;
     console.log(`[tmux-control] Session ready: ${this.sessionId}`);
+
+    // Disable mouse mode for this session to prevent accidental copy-mode
+    // entry from mouse escape sequences. Mouse events are handled by the
+    // browser UI instead. Also exit copy-mode on any panes that may be stuck.
+    try {
+      await this.sendCommand(`set-option -t ${this.sessionId} mouse off`);
+      const panes = await this.listPanes();
+      for (const pane of panes) {
+        // Exit copy-mode if active (send 'q' key)
+        try {
+          await this.sendCommand(`send-keys -t ${pane.paneId} -X cancel`);
+        } catch {
+          // Not in copy-mode, ignore
+        }
+      }
+    } catch {
+      // Non-critical
+    }
   }
 
   private processBuffer(): void {
@@ -465,8 +487,12 @@ export class TmuxControlSession {
       await this.sendCommand(`copy-mode -t ${paneId}`);
       await this.sendCommand(`send-keys -t ${paneId} -N ${absLines} -X scroll-up`);
     } else {
-      // Scroll down
-      await this.sendCommand(`send-keys -t ${paneId} -N ${absLines} -X scroll-down`);
+      // Scroll down: must be in copy-mode, silently ignore if not
+      try {
+        await this.sendCommand(`send-keys -t ${paneId} -N ${absLines} -X scroll-down`);
+      } catch {
+        // "not in a mode" - pane is at bottom / not in copy-mode, ignore
+      }
     }
   }
 
@@ -608,6 +634,24 @@ export class TmuxControlSession {
    */
   removeClientDeviceType(clientId: string): void {
     this.clientDeviceTypes.delete(clientId);
+  }
+
+  /**
+   * Get a client's device type.
+   */
+  getClientDeviceType(clientId: string): 'mobile' | 'tablet' | 'desktop' | undefined {
+    return this.clientDeviceTypes.get(clientId);
+  }
+
+  /**
+   * Check if there are any desktop or tablet clients (excluding a specific client).
+   */
+  hasDesktopOrTabletClients(excludeClientId?: string): boolean {
+    for (const [clientId, deviceType] of this.clientDeviceTypes) {
+      if (clientId === excludeClientId) continue;
+      if (deviceType === 'desktop' || deviceType === 'tablet') return true;
+    }
+    return false;
   }
 
   addClient(): void {

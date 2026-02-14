@@ -462,12 +462,17 @@ export function Onboarding({ onComplete, type = 'main', onStepAction }: Onboardi
 
 export function useOnboarding() {
   // Check localStorage synchronously to avoid flash
+  // ?skipOnboarding=true query parameter skips onboarding (for automated testing)
+  const skipParam = new URLSearchParams(window.location.search).get('skipOnboarding') === 'true';
+
   const [showOnboarding, setShowOnboarding] = useState(() => {
+    if (skipParam) return false;
     const completed = localStorage.getItem(ONBOARDING_KEY);
     return !completed;
   });
 
   const [showSessionListOnboarding, setShowSessionListOnboarding] = useState(() => {
+    if (skipParam) return false;
     const completed = localStorage.getItem(ONBOARDING_SESSIONLIST_KEY);
     return !completed;
   });

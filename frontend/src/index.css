@@ -28,3 +28,12 @@ html, body {
   flex-direction: column;
   overflow: hidden;
 }
+
+/* Hide xterm.js native scrollbar - scrolling is handled via touch gestures and wheel events */
+.xterm-viewport {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+.xterm-viewport::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/Android */
+}

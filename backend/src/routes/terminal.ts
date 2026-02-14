@@ -164,7 +164,7 @@ export const terminalWebSocket = {
                     // Convert \n to \r\n for xterm.js line rendering
                     const termContent = content.split('\n').join('\r\n');
                     ws.send(JSON.stringify({
-                      type: 'output',
+                      type: 'initial-content',
                       paneId: pane.paneId,
                       data: Buffer.from(termContent).toString('base64'),
                     }));
@@ -177,6 +177,7 @@ export const terminalWebSocket = {
               console.error('[control] Failed to initialize after resize:', err);
             }
           } else {
+            // Last-write-wins: any client's resize is applied immediately
             controlSession.setClientSize(msg.cols, msg.rows);
           }
           break;

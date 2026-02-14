@@ -7,6 +7,7 @@ import '@xterm/xterm/css/xterm.css';
 import { Keyboard } from './Keyboard';
 import { authFetch } from '../services/api';
 import type { SessionTheme } from '../../../shared/types';
+import { filterMouseTrackingInput, filterMouseTrackingOutput, shouldInterceptKeyEvent } from '../utils/terminal-filters';
 
 // Terminal theme colors based on session theme
 const TERMINAL_THEMES: Record<SessionTheme | 'default', { background: string; accent: string }> = {
@@ -118,6 +119,8 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const [isAnimating, setIsAnimating] = useState(false);
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [showFontSizeIndicator, setShowFontSizeIndicator] = useState(false);
+  const [scrollIndicator, setScrollIndicator] = useState<string | null>(null);
+  const scrollIndicatorTimerRef = useRef<number | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [detectedUrls, setDetectedUrls] = useState<string[]>([]);
   const [showUrlMenu, setShowUrlMenu] = useState(false);
@@ -191,15 +194,36 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const controlModeRef = useRef(controlMode);
   controlModeRef.current = controlMode;
 
+  // Track hideKeyboard prop in ref for use in effect closures
+  const hideKeyboardRef = useRef(hideKeyboard);
+  hideKeyboardRef.current = hideKeyboard;
+
   // Send function: filters out mouse tracking escape sequences that xterm.js generates
   // on touch/scroll, since send-keys -H would deliver them as literal text to the shell.
+  // Throttle: re-send container size to tmux at most once per 2s during input.
+  // This implements "last-write-wins" without disrupting display on every keystroke.
+  const lastResendTimeRef = useRef(0);
   const send = useCallback((data: string) => {
-    const filtered = data
-      .replace(/\x1b\[<[\d;]*[Mm]/g, '')
-      .replace(/\x1b\[M[\s\S]{3}/g, '')
-      .replace(/\x1b\[<[\d;]*[Mm]/g, '');
+    const filtered = filterMouseTrackingInput(data);
     if (filtered.length > 0) {
+      // Clear stale selection when user sends input
+      terminalRef.current?.clearSelection();
       controlModeRef.current?.sendInput(filtered);
+      // Auto-scroll to bottom when user sends input (e.g. after scrolling up)
+      terminalRef.current?.scrollToBottom();
+      // "Last-write-wins": periodically re-send this client's container size.
+      // Only sends to tmux (no term.resize) to avoid display disruption.
+      const now = Date.now();
+      if (now - lastResendTimeRef.current > 2000) {
+        lastResendTimeRef.current = now;
+        const fit = fitAddonRef.current;
+        if (fit) {
+          const dims = fit.proposeDimensions();
+          if (dims && dims.cols > 0 && dims.rows > 0) {
+            resizeRef.current(dims.cols, dims.rows);
+          }
+        }
+      }
     }
   }, []);
 
@@ -298,6 +322,10 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       // overriding tmux's pane sizes
       const dims = fit.proposeDimensions();
       if (dims && dims.cols > 0 && dims.rows > 0) {
+        // Resize xterm.js grid to match the container
+        if (term.cols !== dims.cols || term.rows !== dims.rows) {
+          term.resize(dims.cols, dims.rows);
+        }
         resizeRef.current(dims.cols, dims.rows);
       }
     }
@@ -357,6 +385,21 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     term.loadAddon(fitAddon);
 
     term.open(container);
+
+    // Hide xterm.js native scrollbar - we handle scrolling via touch gestures / wheel events.
+    // Use scrollbar-width (standard) and inject a <style> for WebKit (Chrome/Safari/Android).
+    // Do NOT set overflow:hidden as xterm.js needs overflow-y:scroll internally.
+    const xtermViewport = container.querySelector('.xterm-viewport') as HTMLElement;
+    if (xtermViewport) {
+      (xtermViewport.style as any).scrollbarWidth = 'none';
+      const styleId = 'xterm-hide-scrollbar';
+      if (!document.getElementById(styleId)) {
+        const style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = '.xterm-viewport::-webkit-scrollbar { display: none !important; }';
+        document.head.appendChild(style);
+      }
+    }
 
     // Prevent OS keyboard on touch devices by modifying xterm's internal textarea
     // Only apply on touch devices to preserve Japanese IME input on desktop
@@ -428,14 +471,19 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     setIsInitialized(true);
     console.log(`[Terminal] Initialized for session ${sessionId}, size: ${term.cols}x${term.rows}`);
 
-    // Handle Shift+Enter for Claude Code multiline input
+    // Handle special key combinations
     term.attachCustomKeyEventHandler((e) => {
-      if (e.type === 'keydown' && e.shiftKey && e.key === 'Enter') {
+      const action = shouldInterceptKeyEvent(e);
+      if (action === 'shift-enter') {
         e.preventDefault();
         sendRef.current('\\\r');
-        return false; // Prevent default xterm handling
+        return false;
       }
-      return true; // Let xterm handle other keys
+      if (action === 'paste') {
+        e.preventDefault();
+        return false;
+      }
+      return true;
     });
 
     // Handle keyboard input - register once, use ref for send
@@ -459,11 +507,17 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       }
       resizeTimeout = window.setTimeout(() => {
         if (fitAddonRef.current && terminalRef.current) {
-          // Compute what size would fit the container but do NOT apply to xterm.
-          // The actual xterm size is set only by setExactSize() from tmux's
-          // %layout-change. This prevents FitAddon from overriding tmux's pane dims.
           const dims = fitAddonRef.current.proposeDimensions();
           if (dims && dims.cols > 0 && dims.rows > 0) {
+            // On mobile: resize xterm.js grid to match container (keyboard appears/disappears).
+            // On desktop: skip term.resize() — xterm.js grid size is controlled exclusively
+            // by setExactSize() from tmux's %layout-change to match tmux pane dimensions.
+            if (!hideKeyboardRef.current) {
+              const t = terminalRef.current;
+              if (t.cols !== dims.cols || t.rows !== dims.rows) {
+                t.resize(dims.cols, dims.rows);
+              }
+            }
             resizeRef.current(dims.cols, dims.rows);
           }
         }
@@ -555,9 +609,10 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           const clampedSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, newSize));
           term.options.fontSize = clampedSize;
           setFontSize(clampedSize);
-          // After font size change, compute proposed size and send to tmux
+          // After font size change, compute proposed size, resize xterm grid, and send to tmux
           const dims = fitAddonRef.current?.proposeDimensions();
           if (dims && dims.cols > 0 && dims.rows > 0) {
+            term.resize(dims.cols, dims.rows);
             resizeRef.current(dims.cols, dims.rows);
           }
         }
@@ -589,14 +644,19 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             if (lines !== 0) {
               accumulatedDelta = accumulatedDelta % 20; // Keep remainder
 
-              // Send scroll to tmux via control mode (scrolls tmux history buffer).
-              // lines > 0 = scroll up, lines < 0 = scroll down.
-              const cm = controlModeRef.current;
-              if (cm?.onScroll) {
-                cm.onScroll(lines);
+              // Scroll xterm.js buffer directly.
+              // Natural scrolling: swipe up (lines > 0) = scroll down (newer content).
+              term.scrollLines(lines);
+
+              // Show scroll position indicator
+              const buf = term.buffer.active;
+              if (buf.viewportY < buf.baseY) {
+                const pos = buf.baseY - buf.viewportY;
+                setScrollIndicator(`[${pos}/${buf.baseY}]`);
+                if (scrollIndicatorTimerRef.current) clearTimeout(scrollIndicatorTimerRef.current);
+                scrollIndicatorTimerRef.current = window.setTimeout(() => setScrollIndicator(null), 3000);
               } else {
-                // Fallback: local xterm.js scroll
-                term.scrollLines(lines);
+                setScrollIndicator(null);
               }
             }
           });
@@ -642,7 +702,33 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       e.preventDefault();
     };
 
+    // Mouse wheel scroll: xterm.js v6 viewport scroll area may not sync with
+    // internal buffer, so we intercept wheel events and call scrollLines() directly.
+    const handleWheel = (e: WheelEvent) => {
+      const term = terminalRef.current;
+      if (!term) return;
+      e.preventDefault();
+      // deltaY > 0 = wheel down (scroll toward newer content)
+      // scrollLines: positive = scroll down, negative = scroll up
+      const lines = Math.ceil(Math.abs(e.deltaY) / 40);
+      term.scrollLines(e.deltaY > 0 ? lines : -lines);
+
+      // Show tmux-style scroll position indicator
+      const buf = term.buffer.active;
+      if (buf.viewportY < buf.baseY) {
+        const scrollback = buf.baseY;
+        const pos = buf.baseY - buf.viewportY;
+        setScrollIndicator(`[${pos}/${scrollback}]`);
+        if (scrollIndicatorTimerRef.current) clearTimeout(scrollIndicatorTimerRef.current);
+        scrollIndicatorTimerRef.current = window.setTimeout(() => setScrollIndicator(null), 3000);
+      } else {
+        setScrollIndicator(null);
+        if (scrollIndicatorTimerRef.current) clearTimeout(scrollIndicatorTimerRef.current);
+      }
+    };
+
     if (container) {
+      container.addEventListener('wheel', handleWheel, { passive: false });
       container.addEventListener('touchstart', handleTouchStart, { passive: true });
       container.addEventListener('touchmove', handleTouchMove, { passive: false });
       container.addEventListener('touchend', handleTouchEnd);
@@ -658,6 +744,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         container.removeEventListener('touchmove', handleTouchMove);
         container.removeEventListener('touchend', handleTouchEnd);
         container.removeEventListener('contextmenu', handleContextMenu);
+        container.removeEventListener('wheel', handleWheel);
       }
       if (resizeTimeout) {
         clearTimeout(resizeTimeout);
@@ -682,11 +769,21 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   useEffect(() => {
     const cm = controlModeRef.current;
     if (!cm || !terminalRef.current) return;
+    // Persistent decoder with stream: true to handle UTF-8 sequences split
+    // across WebSocket chunks (e.g. multi-byte Japanese characters).
+    const decoder = new TextDecoder('utf-8', { fatal: false });
     const cleanup = cm.registerOnData((data) => {
-      terminalRef.current?.write(data);
+      // stream: true keeps partial multi-byte sequences in decoder buffer
+      const str = decoder.decode(data, { stream: true });
+      const filtered = filterMouseTrackingOutput(str);
+      if (filtered.length > 0) {
+        terminalRef.current?.write(filtered);
+      }
     });
     controlCleanupRef.current = cleanup;
     return () => {
+      // Flush any remaining bytes in decoder
+      decoder.decode(new Uint8Array(0), { stream: false });
       cleanup();
       controlCleanupRef.current = null;
     };
@@ -938,12 +1035,9 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     setInputValue('');
     // Refit terminal after bar is hidden
     setTimeout(() => {
-      const dims = fitAddonRef.current?.proposeDimensions();
-      if (dims && dims.cols > 0 && dims.rows > 0) {
-        resizeRef.current(dims.cols, dims.rows);
-      }
+      fitTerminal();
     }, 50);
-  }, []);
+  }, [fitTerminal]);
 
   // Update ref for use in touch handlers
   closeInputBarRef.current = handleCloseInputBar;
@@ -951,10 +1045,14 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   // Show keyboard function for touch handlers
   const handleShowKeyboard = useCallback(() => {
     setInputMode('shortcuts');
+    // Scroll to bottom when keyboard appears (user wants to interact with latest output)
+    terminalRef.current?.scrollToBottom();
+    // "Last-write-wins": re-send this client's size on first interaction
+    fitTerminal();
     setShowHint(true);
     if (hintTimeoutRef.current) clearTimeout(hintTimeoutRef.current);
     hintTimeoutRef.current = window.setTimeout(() => setShowHint(false), 5000);
-  }, []);
+  }, [fitTerminal]);
   showKeyboardRef.current = handleShowKeyboard;
 
   // Swipe handling for input bar
@@ -994,8 +1092,9 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             inputRef.current?.focus();
             // Refit after animation completes
             fitTerminal();
-            // Refit again after soft keyboard appears
+            // Refit again after soft keyboard animation (Android ~200-300ms)
             setTimeout(fitTerminal, 300);
+            setTimeout(fitTerminal, 600);
           }, 350);
         }
       } else {
@@ -1008,6 +1107,8 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           setTimeout(() => {
             setIsAnimating(false);
             fitTerminal();
+            // Refit after native keyboard dismissal animation
+            setTimeout(fitTerminal, 300);
           }, 350);
         }
       }
@@ -1059,6 +1160,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         {showFontSizeIndicator && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 bg-black/70 px-4 py-2 rounded-lg pointer-events-none">
             <span className="text-white text-lg font-medium">{fontSize}px</span>
+          </div>
+        )}
+        {/* Scroll position indicator (tmux-style) */}
+        {scrollIndicator && (
+          <div className="absolute top-2 right-2 z-30 bg-black/70 px-2 py-1 rounded text-xs text-yellow-400/80 pointer-events-none font-mono">
+            {scrollIndicator}
           </div>
         )}
         {/* URL menu */}
@@ -1217,6 +1324,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                           inputRef.current?.focus();
                           fitTerminal();
                           setTimeout(fitTerminal, 300);
+                          setTimeout(fitTerminal, 600);
                         }, 350);
                       }}
                       isUploading={isUploading}
@@ -1267,6 +1375,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                       inputRef.current?.focus();
                       fitTerminal();
                       setTimeout(fitTerminal, 300);
+                      setTimeout(fitTerminal, 600);
                     }, 350);
                   }}
                   isUploading={isUploading}
@@ -1316,6 +1425,8 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                   setTimeout(() => {
                     setIsAnimating(false);
                     fitTerminal();
+                    // Refit after native keyboard dismissal animation
+                    setTimeout(fitTerminal, 300);
                   }, 350);
                 }}
                 className="px-3 py-2 bg-gray-700 hover:bg-gray-600 active:bg-gray-500 rounded text-white font-medium"

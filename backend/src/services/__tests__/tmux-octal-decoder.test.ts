@@ -49,6 +49,44 @@ describe('decodeOctalOutput', () => {
     expect(result[1]).toBe(0x5b);
     expect(result[2]).toBe(0x41);
   });
+
+  test('BMP Japanese characters (passed as-is by tmux)', () => {
+    const result = decodeOctalOutput('こんにちは');
+    expect(result.toString('utf-8')).toBe('こんにちは');
+  });
+
+  test('non-BMP emoji (surrogate pair in JS string)', () => {
+    // Emoji "🎉" (U+1F389) is a non-BMP character stored as surrogate pair
+    const result = decodeOctalOutput('🎉');
+    expect(result).toEqual(Buffer.from([0xF0, 0x9F, 0x8E, 0x89]));
+    expect(result.toString('utf-8')).toBe('🎉');
+  });
+
+  test('multiple non-BMP emoji', () => {
+    const result = decodeOctalOutput('🎉🚀✅');
+    expect(result.toString('utf-8')).toBe('🎉🚀✅');
+  });
+
+  test('mixed ASCII, Japanese and emoji', () => {
+    const result = decodeOctalOutput('Hello 🌍 こんにちは!');
+    expect(result.toString('utf-8')).toBe('Hello 🌍 こんにちは!');
+  });
+
+  test('emoji with octal escapes', () => {
+    // Mix of emoji (non-BMP) and octal-encoded control chars
+    const result = decodeOctalOutput('🎉\\012done');
+    expect(result.toString('utf-8')).toBe('🎉\ndone');
+  });
+
+  test('skin tone modifier emoji (ZWJ sequence)', () => {
+    const result = decodeOctalOutput('👍🏽');
+    expect(result.toString('utf-8')).toBe('👍🏽');
+  });
+
+  test('arrows and mathematical symbols (BMP)', () => {
+    const result = decodeOctalOutput('→ ← ↑ ↓ ≈ ≠');
+    expect(result.toString('utf-8')).toBe('→ ← ↑ ↓ ≈ ≠');
+  });
 });
 
 describe('encodeHexInput', () => {

@@ -57,11 +57,18 @@ export function decodeOctalOutput(encoded: string): Buffer {
         // Non-ASCII: re-encode the Unicode character back to UTF-8 bytes.
         // This handles characters like Japanese that tmux passed as raw
         // UTF-8 bytes but Node.js decoded into Unicode code points.
-        const utf8 = textEncoder.encode(encoded[i]);
+        //
+        // Use codePointAt() to correctly handle non-BMP characters (emoji,
+        // rare CJK, etc.) which are stored as surrogate pairs in JS strings.
+        // encoded[i] alone would be a lone surrogate → TextEncoder produces
+        // U+FFFD (replacement character).
+        const codePoint = encoded.codePointAt(i)!;
+        const utf8 = textEncoder.encode(String.fromCodePoint(codePoint));
         for (const b of utf8) {
           bytes.push(b);
         }
-        i++;
+        // Advance 1 for BMP (single code unit), 2 for non-BMP (surrogate pair)
+        i += codePoint > 0xFFFF ? 2 : 1;
       }
     }
   }

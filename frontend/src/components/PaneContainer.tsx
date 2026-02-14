@@ -177,7 +177,7 @@ function TerminalPane({
   onSelectSession,
   onSessionStateChange,
   onClose,
-  onSplit,
+  onSplit: _onSplit,
   sessions,
   terminalRefs,
   sessionListToggleRefs,
@@ -413,11 +413,11 @@ function TerminalPane({
   return (
     <div
       ref={containerRef}
-      className={`h-full flex flex-col bg-gray-900 relative ${isActive ? 'ring-2 ring-blue-500' : ''}`}
+      className={`h-full flex flex-col bg-gray-900 relative select-none ${isActive ? 'ring-2 ring-blue-500' : ''}`}
       onMouseDown={onFocus}
     >
       {/* Pane header - overlay on tablet, normal on desktop */}
-      <div className={`flex items-center px-2 py-1 text-xs ${
+      <div className={`flex items-center px-2 py-1 text-xs select-none ${
         isTablet
           ? 'absolute top-0 right-0 z-50 justify-end pointer-events-auto bg-black/60 backdrop-blur-sm rounded-bl-lg'
           : 'justify-between bg-black/50 border-b border-gray-700 shrink-0'
@@ -466,6 +466,28 @@ function TerminalPane({
             >
               <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+          )}
+          {/* Cache clear & reload button */}
+          {!isTablet && (
+            <button
+              onClick={async (e) => {
+                e.stopPropagation();
+                await Promise.all([
+                  navigator.serviceWorker?.getRegistrations().then(regs => Promise.all(regs.map(r => r.unregister()))),
+                  caches?.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))),
+                ].filter(Boolean));
+                location.reload();
+              }}
+              className="p-1 text-yellow-500/70 hover:text-yellow-400 transition-colors"
+              title="キャッシュクリア & リロード (Ctrl+Shift+F5)"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                <path d="M21 21v-5h-5" />
               </svg>
             </button>
           )}
@@ -705,63 +727,97 @@ function SplitContainer({
 }: SplitContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState<number | null>(null);
+  const draggingRef = useRef<number | null>(null);
 
-  const handleDragStart = useCallback((index: number) => (e: React.MouseEvent | React.TouchEvent) => {
+  // Pointer-capture based drag: all pointer events go to the captured element
+  const handlePointerDown = useCallback((index: number) => (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setIsDragging(index);
+    draggingRef.current = index;
+  }, []);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    const dragIndex = draggingRef.current;
+    if (dragIndex === null) return;
+    e.preventDefault();
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const clientPos = node.direction === 'horizontal' ? e.clientX : e.clientY;
+    const containerSize = node.direction === 'horizontal' ? rect.width : rect.height;
+    const offset = node.direction === 'horizontal' ? rect.left : rect.top;
+
+    const newRatio = [...node.ratio];
+    const beforeSum = node.ratio.slice(0, dragIndex + 1).reduce((a, b) => a + b, 0);
+    const afterSum = node.ratio.slice(dragIndex + 1).reduce((a, b) => a + b, 0);
+    const position = ((clientPos - offset) / containerSize) * 100;
+    const minRatio = 10;
+    const newBefore = Math.max(minRatio, Math.min(beforeSum + afterSum - minRatio, position));
+    const diff = newBefore - beforeSum;
+
+    if (newRatio[dragIndex] !== undefined && newRatio[dragIndex + 1] !== undefined) {
+      newRatio[dragIndex] = newRatio[dragIndex] + diff;
+      newRatio[dragIndex + 1] = newRatio[dragIndex + 1] - diff;
+      if (newRatio[dragIndex] >= minRatio && newRatio[dragIndex + 1] >= minRatio) {
+        onSplitRatioChange(node.id, newRatio);
+      }
+    }
+  }, [node, onSplitRatioChange]);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    if (draggingRef.current === null) return;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    setIsDragging(null);
+    draggingRef.current = null;
+  }, []);
+
+  // Touch fallback for devices that don't support pointer capture well
+  const handleTouchStart = useCallback((index: number) => (e: React.TouchEvent) => {
     e.preventDefault();
     setIsDragging(index);
+    draggingRef.current = index;
   }, []);
 
   useEffect(() => {
-    if (isDragging === null) return;
+    const dragIndex = draggingRef.current;
+    if (dragIndex === null) return;
 
-    const handleMove = (e: MouseEvent | TouchEvent) => {
-      e.preventDefault(); // Prevent scrolling while dragging
+    const handleTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
       if (!containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
-      const clientPos = 'touches' in e
-        ? (node.direction === 'horizontal' ? e.touches[0].clientX : e.touches[0].clientY)
-        : (node.direction === 'horizontal' ? e.clientX : e.clientY);
-
+      const clientPos = node.direction === 'horizontal' ? e.touches[0].clientX : e.touches[0].clientY;
       const containerSize = node.direction === 'horizontal' ? rect.width : rect.height;
       const offset = node.direction === 'horizontal' ? rect.left : rect.top;
 
-      // Calculate new ratios
       const newRatio = [...node.ratio];
-      const beforeSum = node.ratio.slice(0, isDragging + 1).reduce((a, b) => a + b, 0);
-      const afterSum = node.ratio.slice(isDragging + 1).reduce((a, b) => a + b, 0);
-
+      const beforeSum = node.ratio.slice(0, dragIndex + 1).reduce((a, b) => a + b, 0);
+      const afterSum = node.ratio.slice(dragIndex + 1).reduce((a, b) => a + b, 0);
       const position = ((clientPos - offset) / containerSize) * 100;
-      const minRatio = 10; // 10% minimum
-
-      // Adjust ratio at drag point
+      const minRatio = 10;
       const newBefore = Math.max(minRatio, Math.min(beforeSum + afterSum - minRatio, position));
       const diff = newBefore - beforeSum;
 
-      if (newRatio[isDragging] !== undefined && newRatio[isDragging + 1] !== undefined) {
-        newRatio[isDragging] = newRatio[isDragging] + diff;
-        newRatio[isDragging + 1] = newRatio[isDragging + 1] - diff;
-
-        // Clamp values
-        if (newRatio[isDragging] >= minRatio && newRatio[isDragging + 1] >= minRatio) {
+      if (newRatio[dragIndex] !== undefined && newRatio[dragIndex + 1] !== undefined) {
+        newRatio[dragIndex] = newRatio[dragIndex] + diff;
+        newRatio[dragIndex + 1] = newRatio[dragIndex + 1] - diff;
+        if (newRatio[dragIndex] >= minRatio && newRatio[dragIndex + 1] >= minRatio) {
           onSplitRatioChange(node.id, newRatio);
         }
       }
     };
 
-    const handleEnd = () => {
+    const handleTouchEnd = () => {
       setIsDragging(null);
+      draggingRef.current = null;
     };
 
-    document.addEventListener('mousemove', handleMove);
-    document.addEventListener('mouseup', handleEnd);
-    document.addEventListener('touchmove', handleMove, { passive: false });
-    document.addEventListener('touchend', handleEnd);
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('touchend', handleTouchEnd);
 
     return () => {
-      document.removeEventListener('mousemove', handleMove);
-      document.removeEventListener('mouseup', handleEnd);
-      document.removeEventListener('touchmove', handleMove);
-      document.removeEventListener('touchend', handleEnd);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
     };
   }, [isDragging, node, onSplitRatioChange]);
 
@@ -819,14 +875,16 @@ function SplitContainer({
             ${isDragging === index ? 'bg-blue-500/70' : ''}
           `}
         >
-          {/* Expanded touch target for easier dragging on tablet */}
+          {/* Expanded touch/click target for easier dragging */}
           <div
-            onMouseDown={handleDragStart(index)}
-            onTouchStart={handleDragStart(index)}
+            onPointerDown={handlePointerDown(index)}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onTouchStart={handleTouchStart(index)}
             style={{
               position: 'absolute',
-              [isHorizontal ? 'left' : 'top']: isTablet ? '-16px' : '0',
-              [isHorizontal ? 'right' : 'bottom']: isTablet ? '-16px' : '0',
+              [isHorizontal ? 'left' : 'top']: isTablet ? '-16px' : '-8px',
+              [isHorizontal ? 'right' : 'bottom']: isTablet ? '-16px' : '-8px',
               [isHorizontal ? 'top' : 'left']: '0',
               [isHorizontal ? 'bottom' : 'right']: '0',
               touchAction: 'none',
@@ -846,7 +904,7 @@ function SplitContainer({
   return (
     <div
       ref={containerRef}
-      className={`h-full w-full flex ${isHorizontal ? 'flex-row' : 'flex-col'}`}
+      className={`h-full w-full flex select-none ${isHorizontal ? 'flex-row' : 'flex-col'}`}
     >
       {elements}
     </div>

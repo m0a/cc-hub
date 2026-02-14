@@ -1,11 +1,12 @@
-import { useRef, useCallback, useState, useEffect } from 'react';
-import { PaneContainer, type PaneNode } from './PaneContainer';
+import { useRef, useCallback, useState, useEffect, useMemo } from 'react';
+import { PaneContainer, type PaneNode, type ControlModeContext } from './PaneContainer';
 import { FileViewer } from './files/FileViewer';
 import { FloatingKeyboard } from './FloatingKeyboard';
 import { authFetch } from '../services/api';
 import { useSessions } from '../hooks/useSessions';
-import type { TerminalRef } from './Terminal';
-import type { SessionState, SessionTheme } from '../../../shared/types';
+import { useControlTerminal } from '../hooks/useControlTerminal';
+import type { TerminalRef, ControlModeConfig } from './Terminal';
+import type { SessionState, SessionTheme, TmuxLayoutNode } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const DESKTOP_STATE_KEY = 'cchub-desktop-state';
@@ -62,16 +63,45 @@ function findPaneById(node: PaneNode, id: string): PaneNode | null {
   return null;
 }
 
-// Find parent of a pane
-function findParent(root: PaneNode, id: string): { parent: Extract<PaneNode, { type: 'split' }>; index: number } | null {
-  if (root.type !== 'split') return null;
-  for (let i = 0; i < root.children.length; i++) {
-    if (root.children[i].id === id) {
-      return { parent: root, index: i };
-    }
-    const found = findParent(root.children[i], id);
-    if (found) return found;
+// Compute total tmux window size by summing pane sizes from the layout tree.
+// tmux needs: horizontal splits → sum cols + borders, vertical → sum rows + borders.
+// When useProposed=true, uses proposeDimensions() (what fits the container) instead of
+// actual xterm size. This is needed in control mode where xterm size is set by tmux,
+// not by FitAddon.
+function computeTotalSizeFromTree(
+  root: PaneNode,
+  terminalRefs: React.RefObject<Map<string, TerminalRef | null>>,
+  useProposed = false,
+): { cols: number; rows: number } | null {
+  if (root.type === 'terminal') {
+    const ref = terminalRefs.current?.get(root.id);
+    const size = useProposed
+      ? (ref?.getProposedSize?.() ?? ref?.getSize?.())
+      : ref?.getSize?.();
+    return size ?? null;
   }
+
+  if (root.type === 'split') {
+    const childSizes = root.children.map(c =>
+      computeTotalSizeFromTree(c, terminalRefs, useProposed)
+    );
+    if (childSizes.some(s => s === null)) return null;
+    const sizes = childSizes as { cols: number; rows: number }[];
+
+    if (root.direction === 'horizontal') {
+      // Panes side by side: total cols = sum + borders
+      return {
+        cols: sizes.reduce((sum, s) => sum + s.cols, 0) + (sizes.length - 1),
+        rows: Math.max(...sizes.map(s => s.rows)),
+      };
+    }
+    // Panes stacked: total rows = sum + borders
+    return {
+      cols: Math.max(...sizes.map(s => s.cols)),
+      rows: sizes.reduce((sum, s) => sum + s.rows, 0) + (sizes.length - 1),
+    };
+  }
+
   return null;
 }
 
@@ -82,100 +112,6 @@ function getAllPaneIds(node: PaneNode): string[] {
   }
   // terminal, sessions, dashboard, empty are all leaf nodes
   return [node.id];
-}
-
-// Split a pane (creates a new terminal pane)
-function splitPane(
-  root: PaneNode,
-  paneId: string,
-  direction: 'horizontal' | 'vertical'
-): { newRoot: PaneNode; newPaneId: string } {
-  const newPaneId = generatePaneId();
-  const newPane: PaneNode = { type: 'terminal', sessionId: null, id: newPaneId };
-
-  function splitNode(node: PaneNode): PaneNode {
-    // Split any leaf node (terminal)
-    if (node.id === paneId && node.type !== 'split') {
-      // Create new split containing this pane and new pane
-      return {
-        type: 'split',
-        direction,
-        id: generatePaneId(),
-        children: [node, newPane],
-        ratio: [50, 50],
-      };
-    }
-    if (node.type === 'split') {
-      return {
-        ...node,
-        children: node.children.map(splitNode),
-      };
-    }
-    return node;
-  }
-
-  return { newRoot: splitNode(root), newPaneId };
-}
-
-// Close a pane
-function closePane(root: PaneNode, paneId: string): { newRoot: PaneNode | null; nextPane: string | null } {
-  // Check if root is a leaf node (not split)
-  if (root.type !== 'split') {
-    // Only pane, can't close
-    if (root.id === paneId) {
-      return { newRoot: null, nextPane: null };
-    }
-    return { newRoot: root, nextPane: null };
-  }
-
-  // Find and remove the pane
-  const parent = findParent(root, paneId);
-  if (!parent) {
-    return { newRoot: root, nextPane: null };
-  }
-
-  const { parent: parentNode, index } = parent;
-  const siblings = parentNode.children.filter((_, i) => i !== index);
-
-  if (siblings.length === 0) {
-    return { newRoot: null, nextPane: null };
-  }
-
-  if (siblings.length === 1) {
-    // Replace parent with single remaining child
-    function replaceNode(node: PaneNode): PaneNode {
-      if (node.id === parentNode.id) {
-        return siblings[0];
-      }
-      if (node.type === 'split') {
-        return { ...node, children: node.children.map(replaceNode) };
-      }
-      return node;
-    }
-    const newRoot = replaceNode(root);
-    const allIds = getAllPaneIds(newRoot);
-    return { newRoot, nextPane: allIds[0] || null };
-  }
-
-  // Multiple siblings remain
-  const newRatio = parentNode.ratio.filter((_, i) => i !== index);
-  const ratioSum = newRatio.reduce((a, b) => a + b, 0);
-  const normalizedRatio = newRatio.map(r => (r / ratioSum) * 100);
-
-  function updateNode(node: PaneNode): PaneNode {
-    if (node.id === parentNode.id && node.type === 'split') {
-      return { ...node, children: siblings, ratio: normalizedRatio };
-    }
-    if (node.type === 'split') {
-      return { ...node, children: node.children.map(updateNode) };
-    }
-    return node;
-  }
-
-  const newRoot = updateNode(root);
-  const nextIndex = Math.min(index, siblings.length - 1);
-  const nextPane = getAllPaneIds(siblings[nextIndex])[0] || getAllPaneIds(newRoot)[0];
-  return { newRoot, nextPane };
 }
 
 // Update split ratio in tree
@@ -200,6 +136,62 @@ function updateSessionId(root: PaneNode, paneId: string, sessionId: string): Pan
   return root;
 }
 
+// Update ALL terminal panes' session ID (used for control mode session switching)
+function updateAllSessionIds(root: PaneNode, sessionId: string): PaneNode {
+  if (root.type === 'terminal') {
+    return { ...root, sessionId };
+  }
+  if (root.type === 'split') {
+    return { ...root, children: root.children.map(c => updateAllSessionIds(c, sessionId)) };
+  }
+  return root;
+}
+
+// Convert TmuxLayoutNode to PaneNode with session IDs
+function tmuxLayoutToPaneNode(node: TmuxLayoutNode, sessionId: string): PaneNode {
+  if (node.type === 'leaf') {
+    return {
+      type: 'terminal',
+      sessionId,
+      id: `%${node.paneId ?? 0}`,
+    };
+  }
+
+  const children = (node.children || []).map(c => tmuxLayoutToPaneNode(c, sessionId));
+  const isHorizontal = node.type === 'horizontal';
+  const totalSize = (node.children || []).reduce(
+    (sum, c) => sum + (isHorizontal ? c.width : c.height), 0
+  );
+  const ratio = (node.children || []).map(c => {
+    const size = isHorizontal ? c.width : c.height;
+    return totalSize > 0 ? (size / totalSize) * 100 : 100 / (node.children || []).length;
+  });
+
+  return {
+    type: 'split',
+    direction: isHorizontal ? 'horizontal' : 'vertical',
+    children,
+    ratio,
+    id: `split-${node.x}-${node.y}`,
+  };
+}
+
+// Extract per-pane {cols, rows} from a TmuxLayoutNode tree.
+// tmux layout width/height = pane cols/rows.
+function extractPaneSizes(node: TmuxLayoutNode): Map<string, { cols: number; rows: number }> {
+  const sizes = new Map<string, { cols: number; rows: number }>();
+  function walk(n: TmuxLayoutNode) {
+    if (n.type === 'leaf' && n.paneId !== undefined) {
+      sizes.set(`%${n.paneId}`, { cols: n.width, rows: n.height });
+    }
+    if (n.children) {
+      n.children.forEach(walk);
+    }
+  }
+  walk(node);
+  return sizes;
+}
+
 const KEYBOARD_VISIBLE_KEY = 'cchub-floating-keyboard-visible';
 
 export function DesktopLayout({
@@ -215,6 +207,7 @@ export function DesktopLayout({
   const terminalRefs = useRef<Map<string, TerminalRef | null>>(new Map());
   const sessionListToggleRefs = useRef<Map<string, () => void>>(new Map());
   const activePaneRef = useRef<string>('');
+  const paneContainerRef = useRef<HTMLDivElement>(null);
 
   // Get latest session info (including theme) from API
   const { sessions: apiSessions, fetchSessions } = useSessions();
@@ -344,20 +337,210 @@ export function DesktopLayout({
     }
   }, [activeSessionId, desktopState.root]);
 
+  // =========================================================================
+  // Control Mode
+  // =========================================================================
+
+  // Find the session ID that should be connected via control mode
+  // For now, use the first terminal pane's session as the control target
+  const getControlSessionId = (): string | null => {
+    const allPanes = getAllPaneIds(desktopState.root);
+    for (const pid of allPanes) {
+      const pane = findPaneById(desktopState.root, pid);
+      if (pane?.type === 'terminal' && pane.sessionId) {
+        return pane.sessionId;
+      }
+    }
+    return null;
+  };
+
+  const controlSessionId = getControlSessionId();
+  const [controlLayout, setControlLayout] = useState<TmuxLayoutNode | null>(null);
+
+  // Per-pane output callbacks (paneId -> Set<callbacks>)
+  const paneCallbacksRef = useRef<Map<string, Set<(data: Uint8Array) => void>>>(new Map());
+
+  // Buffer for initial content that arrives before Terminal components mount
+  const initialContentBufferRef = useRef<Map<string, Uint8Array[]>>(new Map());
+
+  const desktopStateRef = useRef(desktopState);
+  desktopStateRef.current = desktopState;
+
+  // Timer for applying exact tmux pane sizes after layout-change
+  const layoutSizeTimerRef = useRef<number | null>(null);
+
+  const controlTerminal = useControlTerminal({
+    sessionId: controlSessionId || '',
+    onPaneOutput: (paneId, data) => {
+      const callbacks = paneCallbacksRef.current.get(paneId);
+      if (callbacks) {
+        for (const cb of callbacks) {
+          cb(data);
+        }
+      }
+    },
+    onLayoutChange: (layout) => {
+      setControlLayout(layout);
+
+      // Force each xterm.js to match tmux's exact pane sizes.
+      // In control mode, FitAddon.fit() is NOT called (proposeDimensions() is used
+      // instead), so xterm size is ONLY set here from tmux's layout-change.
+      // Use a short delay to let React re-render with new CSS ratios first.
+      if (layoutSizeTimerRef.current) {
+        clearTimeout(layoutSizeTimerRef.current);
+      }
+      layoutSizeTimerRef.current = window.setTimeout(() => {
+        const sizes = extractPaneSizes(layout);
+        for (const [paneId, size] of sizes) {
+          const ref = terminalRefs.current?.get(paneId);
+          ref?.setExactSize(size.cols, size.rows);
+        }
+      }, 100);
+    },
+    onInitialContent: (paneId, data) => {
+      const callbacks = paneCallbacksRef.current.get(paneId);
+      if (callbacks && callbacks.size > 0) {
+        for (const cb of callbacks) {
+          cb(data);
+        }
+      } else {
+        // Buffer for replay when Terminal component mounts and registers callback
+        if (!initialContentBufferRef.current.has(paneId)) {
+          initialContentBufferRef.current.set(paneId, []);
+        }
+        initialContentBufferRef.current.get(paneId)!.push(data);
+      }
+    },
+    onConnect: () => {
+      console.log('[control-mode] Connected');
+      // Size will be sent by xterm.js FitAddon via onResize callback
+      // when the Terminal component mounts and fits
+    },
+    onDisconnect: () => {
+      console.log('[control-mode] Disconnected');
+    },
+    onError: (err) => {
+      console.error('[control-mode] Error:', err);
+    },
+  });
+
+  // Ref for accessing control terminal in callbacks without deps
+  const controlTerminalRef = useRef(controlTerminal);
+  controlTerminalRef.current = controlTerminal;
+
+  // Connect/disconnect control mode
+  useEffect(() => {
+    if (controlSessionId) {
+      controlTerminal.connect();
+    }
+    return () => {
+      controlTerminal.disconnect();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controlSessionId]);
+
+  // Control mode resize: compute TOTAL window size from layout tree.
+  // tmux refresh-client -C needs cols×rows for the entire window,
+  // which is the sum of individual pane sizes + borders.
+  const controlResizeTimerRef = useRef<number | null>(null);
+  const lastSentSizeRef = useRef<{ cols: number; rows: number } | null>(null);
+
+  const sendControlResize = useCallback(() => {
+    if (controlResizeTimerRef.current) {
+      clearTimeout(controlResizeTimerRef.current);
+    }
+    controlResizeTimerRef.current = window.setTimeout(() => {
+      if (!controlTerminalRef.current.isConnected) return;
+
+      const root = desktopStateRef.current.root;
+      // Use proposed dimensions (what fits each container) instead of actual
+      // xterm size, since in control mode xterm size is set by tmux layout-change,
+      // not by FitAddon.fit().
+      const totalSize = computeTotalSizeFromTree(root, terminalRefs, true);
+      if (totalSize && totalSize.cols > 0 && totalSize.rows > 0) {
+        const last = lastSentSizeRef.current;
+        // Skip if size hasn't changed
+        if (last && last.cols === totalSize.cols && last.rows === totalSize.rows) {
+          return;
+        }
+        lastSentSizeRef.current = { cols: totalSize.cols, rows: totalSize.rows };
+        controlTerminalRef.current.resize(totalSize.cols, totalSize.rows);
+      }
+    }, 100);
+  }, []);
+
+  // Compute control pane tree synchronously (not via useEffect) to avoid paneId mismatch
+  const controlPaneTree = useMemo(() => {
+    if (!controlLayout || !controlSessionId) return null;
+    return tmuxLayoutToPaneNode(controlLayout, controlSessionId);
+  }, [controlLayout, controlSessionId]);
+
+  // Update desktopState when control pane tree changes
+  useEffect(() => {
+    if (!controlPaneTree) return;
+    const allPanes = getAllPaneIds(controlPaneTree);
+    setDesktopState(prev => ({
+      root: controlPaneTree,
+      activePane: allPanes.includes(prev.activePane) ? prev.activePane : (allPanes[0] || prev.activePane),
+    }));
+  }, [controlPaneTree]);
+
+  // Build control mode context for PaneContainer.
+  // Always defined - Terminal components always use control mode.
+  const controlModeContext: ControlModeContext = {
+    getControlConfig: (paneId: string): ControlModeConfig | undefined => {
+      return {
+        paneId,
+        sendInput: (data: string) => {
+          if (controlTerminalRef.current.isConnected) {
+            controlTerminalRef.current.sendInput(paneId, data);
+          }
+        },
+        registerOnData: (callback: (data: Uint8Array) => void) => {
+          if (!paneCallbacksRef.current.has(paneId)) {
+            paneCallbacksRef.current.set(paneId, new Set());
+          }
+          paneCallbacksRef.current.get(paneId)!.add(callback);
+
+          // Replay buffered initial content that arrived before this component mounted
+          const buffered = initialContentBufferRef.current.get(paneId);
+          if (buffered) {
+            for (const data of buffered) {
+              callback(data);
+            }
+            initialContentBufferRef.current.delete(paneId);
+          }
+
+          return () => {
+            paneCallbacksRef.current.get(paneId)?.delete(callback);
+          };
+        },
+        isConnected: controlTerminal.isConnected,
+        onResize: () => {
+          // Individual pane resize triggers total container size calculation.
+          // tmux refresh-client -C needs the TOTAL window size, not per-pane.
+          sendControlResize();
+        },
+      };
+    },
+    splitPane: (paneId: string, direction: 'h' | 'v') => {
+      controlTerminalRef.current.splitPane(paneId, direction);
+    },
+    closePane: (paneId: string) => {
+      controlTerminalRef.current.closePane(paneId);
+    },
+  };
+
   const handleSplit = useCallback((direction: 'horizontal' | 'vertical') => {
-    setDesktopState(prev => {
-      const { newRoot, newPaneId } = splitPane(prev.root, prev.activePane, direction);
-      return { root: newRoot, activePane: newPaneId };
-    });
+    const activeId = activePaneRef.current;
+    controlTerminalRef.current.splitPane(activeId, direction === 'horizontal' ? 'h' : 'v');
+    // Wait for tmux layout update via %layout-change
   }, []);
 
   const handleClosePane = useCallback((paneId?: string) => {
-    setDesktopState(prev => {
-      const targetPaneId = paneId || prev.activePane;
-      const { newRoot, nextPane } = closePane(prev.root, targetPaneId);
-      if (!newRoot) return prev; // Can't close last pane
-      return { root: newRoot, activePane: nextPane || prev.activePane };
-    });
+    const targetId = paneId || activePaneRef.current;
+    controlTerminalRef.current.closePane(targetId);
+    // Wait for tmux layout update via %layout-change
   }, []);
 
   // Handle paste (text or image)
@@ -606,17 +789,25 @@ export function DesktopLayout({
 
   const handleFocusPane = useCallback((paneId: string) => {
     setDesktopState(prev => ({ ...prev, activePane: paneId }));
+    controlTerminalRef.current.selectPane(paneId);
   }, []);
 
   const handleSelectSessionForPane = useCallback((paneId: string, sessionId?: string) => {
-    if (sessionId) {
-      // Direct session selection from SessionSelector in pane
-      setDesktopState(prev => ({
-        ...prev,
-        root: updateSessionId(prev.root, paneId, sessionId),
-        activePane: paneId,
-      }));
-    }
+    if (!sessionId) return;
+
+    // All panes belong to one tmux session.
+    // Update ALL panes' sessionId so getControlSessionId() returns the new session,
+    // triggering control WebSocket reconnection to the new session.
+    setDesktopState(prev => ({
+      ...prev,
+      root: updateAllSessionIds(prev.root, sessionId),
+      activePane: paneId,
+    }));
+    // Clear stale layout so the new session's layout takes effect
+    setControlLayout(null);
+    // Clear buffered content from old session
+    initialContentBufferRef.current.clear();
+    lastSentSizeRef.current = null;
   }, []);
 
   const handleSplitRatioChange = useCallback((nodeId: string, ratio: number[]) => {
@@ -636,7 +827,40 @@ export function DesktopLayout({
     <div className="h-screen flex bg-gray-900">
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Header - tablet only for keyboard toggle */}
+        {/* Header - desktop: minimal control mode bar */}
+        {!isTablet && controlSessionId && (
+          <div className="flex items-center justify-between px-3 py-1 bg-black/50 border-b border-gray-700 shrink-0">
+            <span className="text-white/70 text-sm truncate max-w-[300px]">
+              {activeSession?.name || 'CC Hub'}
+            </span>
+            <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1" data-onboarding="split-pane">
+                <button
+                  onClick={() => handleSplit('horizontal')}
+                  className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                  title="縦分割 (Ctrl+D)"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <line x1="12" y1="3" x2="12" y2="21" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => handleSplit('vertical')}
+                  className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                  title="横分割 (Ctrl+Shift+D)"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Header - tablet: full toolbar with keyboard toggle */}
         {isTablet && (
           <div className="flex items-center justify-between px-3 py-1 bg-black/50 border-b border-gray-700 shrink-0">
             {/* Left: Session name */}
@@ -707,7 +931,7 @@ export function DesktopLayout({
         )}
 
         {/* Pane container */}
-        <div className="flex-1 min-h-0" data-onboarding="terminal">
+        <div className="flex-1 min-h-0" data-onboarding="terminal" ref={paneContainerRef}>
           <PaneContainer
             node={desktopState.root}
             activePane={desktopState.activePane}
@@ -723,6 +947,7 @@ export function DesktopLayout({
             isTablet={isTablet}
             showSessionListOnboarding={showSessionListOnboarding}
             onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
+            controlModeContext={controlModeContext}
           />
         </div>
       </div>

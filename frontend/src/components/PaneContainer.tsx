@@ -7,6 +7,7 @@ import { SessionList } from './SessionList';
 import { Onboarding } from './Onboarding';
 import { authFetch } from '../services/api';
 import type { SessionState, ConversationMessage, SessionTheme } from '../../../shared/types';
+import type { ControlModeConfig } from './Terminal';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const SESSION_LIST_WIDTH_KEY = 'cchub-session-list-width';
@@ -34,6 +35,13 @@ interface ExtendedSession {
   theme?: SessionTheme;
 }
 
+// Control mode context passed through the pane tree
+export interface ControlModeContext {
+  getControlConfig: (paneId: string) => ControlModeConfig | undefined;
+  splitPane: (paneId: string, direction: 'h' | 'v') => void;
+  closePane: (paneId: string) => void;
+}
+
 interface PaneContainerProps {
   node: PaneNode;
   activePane: string;
@@ -50,6 +58,7 @@ interface PaneContainerProps {
   globalReloadKey?: number;
   showSessionListOnboarding?: boolean;
   onCompleteSessionListOnboarding?: () => void;
+  controlModeContext: ControlModeContext;
 }
 
 export function PaneContainer({
@@ -68,6 +77,7 @@ export function PaneContainer({
   globalReloadKey = 0,
   showSessionListOnboarding = false,
   onCompleteSessionListOnboarding,
+  controlModeContext,
 }: PaneContainerProps) {
   if (node.type === 'terminal') {
     return (
@@ -87,6 +97,7 @@ export function PaneContainer({
         isTablet={isTablet}
         showSessionListOnboarding={showSessionListOnboarding}
         onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
+        controlModeContext={controlModeContext}
       />
     );
   }
@@ -109,6 +120,7 @@ export function PaneContainer({
         globalReloadKey={globalReloadKey}
         showSessionListOnboarding={showSessionListOnboarding}
         onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
+        controlModeContext={controlModeContext}
       />
     );
   }
@@ -133,6 +145,7 @@ export function PaneContainer({
       isTablet={isTablet}
       showSessionListOnboarding={showSessionListOnboarding}
       onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
+      controlModeContext={controlModeContext}
     />
   );
 }
@@ -153,6 +166,7 @@ interface TerminalPaneProps {
   isTablet?: boolean;
   showSessionListOnboarding?: boolean;
   onCompleteSessionListOnboarding?: () => void;
+  controlModeContext: ControlModeContext;
 }
 
 function TerminalPane({
@@ -171,6 +185,7 @@ function TerminalPane({
   isTablet = false,
   showSessionListOnboarding = false,
   onCompleteSessionListOnboarding,
+  controlModeContext,
 }: TerminalPaneProps) {
   const { t } = useTranslation();
   const terminalRef = useRef<TerminalRef>(null);
@@ -455,10 +470,13 @@ function TerminalPane({
             </button>
           )}
           {/* Split buttons - desktop only */}
-          {!isTablet && onSplit && (
+          {!isTablet && (
             <div className="flex items-center" data-onboarding="split-pane">
               <button
-                onClick={(e) => { e.stopPropagation(); onSplit('horizontal'); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  controlModeContext.splitPane(paneId, 'h');
+                }}
                 className="p-1 text-white/50 hover:text-white/80 transition-colors"
                 title="縦分割 (Ctrl+D)"
                 data-onboarding="split-pane"
@@ -469,7 +487,10 @@ function TerminalPane({
                 </svg>
               </button>
               <button
-                onClick={(e) => { e.stopPropagation(); onSplit('vertical'); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  controlModeContext.splitPane(paneId, 'v');
+                }}
                 className="p-1 text-white/50 hover:text-white/80 transition-colors"
                 title="横分割 (Ctrl+Shift+D)"
               >
@@ -536,6 +557,7 @@ function TerminalPane({
               onConnect={handleConnect}
               onDisconnect={handleDisconnect}
               theme={session?.theme}
+              controlMode={controlModeContext.getControlConfig(paneId)}
             />
           ) : (
             <SessionSelector
@@ -570,7 +592,7 @@ function TerminalPane({
           className="flex flex-col shrink-0 overflow-hidden bg-gray-900 -ml-2 border-l border-gray-700"
           style={{
             width: sessionListWidth,
-            touchAction: 'none',
+            touchAction: 'pan-y',
             display: showSessionList ? undefined : 'none',
           }}
           onTouchStart={handleSidebarTouchStart}
@@ -660,6 +682,7 @@ interface SplitContainerProps {
   globalReloadKey?: number;
   showSessionListOnboarding?: boolean;
   onCompleteSessionListOnboarding?: () => void;
+  controlModeContext: ControlModeContext;
 }
 
 function SplitContainer({
@@ -678,6 +701,7 @@ function SplitContainer({
   globalReloadKey = 0,
   showSessionListOnboarding = false,
   onCompleteSessionListOnboarding,
+  controlModeContext,
 }: SplitContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState<number | null>(null);
@@ -775,6 +799,7 @@ function SplitContainer({
           globalReloadKey={globalReloadKey}
           showSessionListOnboarding={showSessionListOnboarding}
           onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
+          controlModeContext={controlModeContext}
         />
       </div>
     );

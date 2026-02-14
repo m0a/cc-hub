@@ -7,6 +7,14 @@ import './index.css';
 // Initialize remote logging first
 initRemoteLogger();
 
+// Log app version and device info for debugging
+console.log(`[CC Hub] App loaded - ${new Date().toISOString()}`);
+console.log(`[CC Hub] UA: ${navigator.userAgent}`);
+console.log(`[CC Hub] Screen: ${screen.width}x${screen.height} DPR:${devicePixelRatio}`);
+console.log(`[CC Hub] Viewport: ${window.innerWidth}x${window.innerHeight}`);
+console.log(`[CC Hub] WebGL: ${(() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch { return false; } })()}`);
+console.log(`[CC Hub] SW: ${('serviceWorker' in navigator) ? 'supported' : 'unsupported'}`);
+
 // Handle visual viewport changes (soft keyboard)
 const updateViewportHeight = () => {
   const vh = window.visualViewport?.height ?? window.innerHeight;

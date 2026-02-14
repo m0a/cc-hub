@@ -373,11 +373,13 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     try {
       const webglAddon = new WebglAddon();
       webglAddon.onContextLoss(() => {
+        console.warn('[Terminal] WebGL context lost, falling back to canvas renderer');
         webglAddon.dispose();
       });
       term.loadAddon(webglAddon);
-    } catch {
-      // WebGL not available, use default canvas renderer
+      console.log('[Terminal] WebGL renderer loaded');
+    } catch (e) {
+      console.warn('[Terminal] WebGL not available, using canvas renderer:', e);
     }
 
     // Load web links addon for URL detection
@@ -423,6 +425,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
     setIsInitialized(true);
+    console.log(`[Terminal] Initialized for session ${sessionId}, size: ${term.cols}x${term.rows}`);
 
     // Handle Shift+Enter for Claude Code multiline input
     term.attachCustomKeyEventHandler((e) => {

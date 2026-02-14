@@ -25,6 +25,14 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Force SW update check on every page load -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(regs) {
+          regs.forEach(function(reg) { reg.update(); });
+        });
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

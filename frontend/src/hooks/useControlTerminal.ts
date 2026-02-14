@@ -88,12 +88,10 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
       wsUrl += `?token=${encodeURIComponent(authToken)}`;
     }
 
-    console.error(`[ws-debug] Connecting to ${wsUrl}`);
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.error(`[ws-debug] onopen fired, waiting for ready signal`);
       // Don't set isConnected yet - wait for 'ready' message from server.
       // The server sends 'ready' after the async open handler completes
       // (control session created, initial layout sent).
@@ -142,7 +140,6 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
           break;
         }
         case 'ready': {
-          console.error(`[ws-debug] ready signal received, setting connected`);
           setIsConnected(true);
           onConnectRef.current?.();
           break;
@@ -155,7 +152,6 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
     };
 
     ws.onclose = (event) => {
-      console.error(`[ws-debug] onclose code=${event.code} reason=${event.reason} wasClean=${event.wasClean}`);
       setIsConnected(false);
       wsRef.current = null;
       if (pingIntervalRef.current) {

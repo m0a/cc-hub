@@ -129,10 +129,7 @@ export const terminalWebSocket = {
 
   async message(ws: ServerWebSocket<TerminalData>, message: string | Buffer) {
     const { controlSession } = ws.data;
-    if (!controlSession) {
-      console.log(`[ws] message received but no controlSession yet`);
-      return;
-    }
+    if (!controlSession) return;
 
     // Control mode only handles JSON messages
     if (typeof message !== 'string') return;
@@ -144,7 +141,6 @@ export const terminalWebSocket = {
       return;
     }
 
-    console.log(`[ws] msg type=${msg.type}${msg.type === 'resize' ? ` ${(msg as any).cols}x${(msg as any).rows} initial=${!ws.data.initialContentSent}` : ''}`);
 
     try {
       switch (msg.type) {

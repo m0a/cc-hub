@@ -25,6 +25,49 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Fallback UI: if React fails to mount within 4s, show cache clear button -->
+    <div id="fallback" style="display:none;position:fixed;inset:0;z-index:99999;background:#1a1a1a;color:#fff;font-family:system-ui;padding:40px 20px;text-align:center;">
+      <h2 style="margin-bottom:12px;">CC Hub</h2>
+      <p style="color:#999;margin-bottom:24px;">アプリの読み込みに問題が発生しています</p>
+      <button onclick="clearCacheAndReload()" style="padding:14px 28px;font-size:16px;background:#3b82f6;color:#fff;border:none;border-radius:8px;cursor:pointer;margin:8px;min-width:200px;">キャッシュクリア &amp; リロード</button>
+      <br>
+      <button onclick="location.reload()" style="padding:14px 28px;font-size:16px;background:#4b5563;color:#fff;border:none;border-radius:8px;cursor:pointer;margin:8px;min-width:200px;">リロードのみ</button>
+      <p id="fallback-log" style="color:#666;font-size:12px;margin-top:24px;"></p>
+    </div>
+    <script>
+      // Show fallback if React doesn't mount within 4 seconds
+      var _fbTimer = setTimeout(function() {
+        var root = document.getElementById('root');
+        if (!root || !root.hasChildNodes()) {
+          document.getElementById('fallback').style.display = 'block';
+        }
+      }, 4000);
+      // Cancel fallback timer once React mounts
+      var _fbObs = new MutationObserver(function() {
+        clearTimeout(_fbTimer);
+        _fbObs.disconnect();
+      });
+      _fbObs.observe(document.getElementById('root'), { childList: true });
+
+      function clearCacheAndReload() {
+        var log = document.getElementById('fallback-log');
+        log.textContent = 'クリア中...';
+        Promise.all([
+          navigator.serviceWorker ? navigator.serviceWorker.getRegistrations().then(function(regs) {
+            return Promise.all(regs.map(function(r) { return r.unregister(); }));
+          }) : Promise.resolve(),
+          caches ? caches.keys().then(function(keys) {
+            return Promise.all(keys.map(function(k) { return caches.delete(k); }));
+          }) : Promise.resolve()
+        ]).then(function() {
+          log.textContent = 'クリア完了、リロード中...';
+          setTimeout(function() { location.reload(); }, 500);
+        }).catch(function(e) {
+          log.textContent = 'エラー: ' + e;
+          setTimeout(function() { location.reload(); }, 2000);
+        });
+      }
+    </script>
     <!-- Force SW update check on every page load -->
     <script>
       if ('serviceWorker' in navigator) {

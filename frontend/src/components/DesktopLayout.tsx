@@ -369,6 +369,10 @@ export function DesktopLayout({
   // Timer for applying exact tmux pane sizes after layout-change
   const layoutSizeTimerRef = useRef<number | null>(null);
 
+  // Flag: true while a layout change is being processed (React re-render pending).
+  // While true, sendControlResize is suppressed to avoid sending stale proposed sizes.
+  const layoutPendingRef = useRef(false);
+
   const controlTerminal = useControlTerminal({
     sessionId: controlSessionId || '',
     onPaneOutput: (paneId, data) => {
@@ -381,21 +385,42 @@ export function DesktopLayout({
     },
     onLayoutChange: (layout) => {
       setControlLayout(layout);
+      // Suppress sendControlResize while React re-renders with new CSS ratios.
+      // Without this, ResizeObserver fires with OLD container sizes → stale
+      // proposed dimensions → wrong total sent to tmux → size oscillation.
+      layoutPendingRef.current = true;
 
       // Force each xterm.js to match tmux's exact pane sizes.
       // In control mode, FitAddon.fit() is NOT called (proposeDimensions() is used
       // instead), so xterm size is ONLY set here from tmux's layout-change.
-      // Use a short delay to let React re-render with new CSS ratios first.
+      //
+      // We must wait for React to re-render with updated CSS ratios AND for the
+      // browser to paint (layout reflow). Use requestAnimationFrame to ensure
+      // the DOM update has completed before applying sizes.
       if (layoutSizeTimerRef.current) {
         clearTimeout(layoutSizeTimerRef.current);
       }
       layoutSizeTimerRef.current = window.setTimeout(() => {
-        const sizes = extractPaneSizes(layout);
-        for (const [paneId, size] of sizes) {
-          const ref = terminalRefs.current?.get(paneId);
-          ref?.setExactSize(size.cols, size.rows);
-        }
-      }, 100);
+        requestAnimationFrame(() => {
+          const sizes = extractPaneSizes(layout);
+          for (const [paneId, size] of sizes) {
+            const ref = terminalRefs.current?.get(paneId);
+            ref?.setExactSize(size.cols, size.rows);
+          }
+          // Re-enable sendControlResize now that DOM is up to date,
+          // then immediately send a resize with the correct proposed sizes.
+          layoutPendingRef.current = false;
+          sendControlResize();
+        });
+        // Safety timeout: ensure layoutPending is cleared even if rAF doesn't fire
+        // (e.g. tab in background, browser throttling)
+        setTimeout(() => {
+          if (layoutPendingRef.current) {
+            layoutPendingRef.current = false;
+            sendControlResize();
+          }
+        }, 500);
+      }, 50);
     },
     onInitialContent: (paneId, data) => {
       const callbacks = paneCallbacksRef.current.get(paneId);
@@ -412,13 +437,14 @@ export function DesktopLayout({
       }
     },
     onConnect: () => {
-      console.log('[control-mode] Connected');
-      // Size will be sent by xterm.js FitAddon via onResize callback
-      // when the Terminal component mounts and fits
+      // Terminal components may not have mounted yet (especially after session switch).
+      // Retry sendControlResize with increasing delays to catch when refs are ready.
+      const delays = [100, 300, 600, 1000];
+      for (const delay of delays) {
+        setTimeout(() => sendControlResize(), delay);
+      }
     },
-    onDisconnect: () => {
-      console.log('[control-mode] Disconnected');
-    },
+    onDisconnect: () => {},
     onError: (err) => {
       console.error('[control-mode] Error:', err);
     },
@@ -452,6 +478,11 @@ export function DesktopLayout({
     controlResizeTimerRef.current = window.setTimeout(() => {
       if (!controlTerminalRef.current.isConnected) return;
 
+      // Skip while layout change is being processed by React.
+      // Container CSS sizes haven't been updated yet, so proposeDimensions()
+      // would return stale values and cause size oscillation.
+      if (layoutPendingRef.current) return;
+
       const root = desktopStateRef.current.root;
       // Use proposed dimensions (what fits each container) instead of actual
       // xterm size, since in control mode xterm size is set by tmux layout-change,
@@ -459,10 +490,7 @@ export function DesktopLayout({
       const totalSize = computeTotalSizeFromTree(root, terminalRefs, true);
       if (totalSize && totalSize.cols > 0 && totalSize.rows > 0) {
         const last = lastSentSizeRef.current;
-        // Skip if size hasn't changed
-        if (last && last.cols === totalSize.cols && last.rows === totalSize.rows) {
-          return;
-        }
+        if (last && last.cols === totalSize.cols && last.rows === totalSize.rows) return;
         lastSentSizeRef.current = { cols: totalSize.cols, rows: totalSize.rows };
         controlTerminalRef.current.resize(totalSize.cols, totalSize.rows);
       }

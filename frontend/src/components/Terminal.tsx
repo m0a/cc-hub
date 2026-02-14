@@ -288,15 +288,19 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     },
   }), []);
 
-  // Fit and resize terminal
-  const fitTerminal = () => {
+  // Fit and resize terminal (memoized to avoid re-creating on every render)
+  const fitTerminal = useCallback(() => {
     const fit = fitAddonRef.current;
     const term = terminalRef.current;
     if (fit && term) {
-      fit.fit();
-      resizeRef.current(term.cols, term.rows);
+      // In control mode, use proposeDimensions instead of fit() to avoid
+      // overriding tmux's pane sizes
+      const dims = fit.proposeDimensions();
+      if (dims && dims.cols > 0 && dims.rows > 0) {
+        resizeRef.current(dims.cols, dims.rows);
+      }
     }
-  };
+  }, []);
 
   // Notify parent when ready and trigger resize on connect
   useEffect(() => {
@@ -547,8 +551,11 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           const clampedSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, newSize));
           term.options.fontSize = clampedSize;
           setFontSize(clampedSize);
-          fitAddonRef.current?.fit();
-          resizeRef.current(term.cols, term.rows);
+          // After font size change, compute proposed size and send to tmux
+          const dims = fitAddonRef.current?.proposeDimensions();
+          if (dims && dims.cols > 0 && dims.rows > 0) {
+            resizeRef.current(dims.cols, dims.rows);
+          }
         }
         return;
       }
@@ -928,9 +935,9 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     setInputValue('');
     // Refit terminal after bar is hidden
     setTimeout(() => {
-      fitAddonRef.current?.fit();
-      if (terminalRef.current) {
-        resizeRef.current(terminalRef.current.cols, terminalRef.current.rows);
+      const dims = fitAddonRef.current?.proposeDimensions();
+      if (dims && dims.cols > 0 && dims.rows > 0) {
+        resizeRef.current(dims.cols, dims.rows);
       }
     }, 50);
   }, []);

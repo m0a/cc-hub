@@ -28,7 +28,7 @@ export const terminalWebSocket = {
     const exists = await tmuxService.sessionExists(sessionId);
     if (!exists) {
       ws.send(JSON.stringify({ type: 'error', message: 'Session not found' }));
-      ws.close();
+      ws.close(4004, 'Session not found');
       return;
     }
 
@@ -116,18 +116,23 @@ export const terminalWebSocket = {
         console.error(`[control] Failed to send initial layout:`, err);
       }
 
-      // Initial pane content is deferred until the first resize message
-      // from the client, so that capture-pane runs at the correct terminal size.
+      // Signal that backend is ready for commands.
+      // The client should wait for this before sending resize to avoid
+      // messages being dropped during async open handler.
+      ws.send(JSON.stringify({ type: 'ready' }));
     } catch (error) {
       console.error(`[control] Failed to create control session:`, error);
       ws.send(JSON.stringify({ type: 'error', message: 'Failed to start control session' }));
-      ws.close();
+      ws.close(4500, 'Control session failed');
     }
   },
 
   async message(ws: ServerWebSocket<TerminalData>, message: string | Buffer) {
     const { controlSession } = ws.data;
-    if (!controlSession) return;
+    if (!controlSession) {
+      console.log(`[ws] message received but no controlSession yet`);
+      return;
+    }
 
     // Control mode only handles JSON messages
     if (typeof message !== 'string') return;
@@ -139,6 +144,8 @@ export const terminalWebSocket = {
       return;
     }
 
+    console.log(`[ws] msg type=${msg.type}${msg.type === 'resize' ? ` ${(msg as any).cols}x${(msg as any).rows} initial=${!ws.data.initialContentSent}` : ''}`);
+
     try {
       switch (msg.type) {
         case 'input': {
@@ -149,14 +156,23 @@ export const terminalWebSocket = {
         case 'resize': {
           if (!ws.data.initialContentSent) {
             ws.data.initialContentSent = true;
-            // First resize: apply size immediately, then trigger redraw.
+            // First resize: apply size, then capture current pane content.
             try {
               await controlSession.setClientSizeImmediate(msg.cols, msg.rows);
-              // Trigger redraw in each pane so programs re-render at the new size
+              // Capture current pane content and send to client
               const panes = await controlSession.listPanes();
               for (const pane of panes) {
                 try {
-                  await controlSession.sendCommand(`send-keys -t ${pane.paneId} C-l`);
+                  const content = await controlSession.capturePane(pane.paneId);
+                  if (content) {
+                    // Convert \n to \r\n for xterm.js line rendering
+                    const termContent = content.split('\n').join('\r\n');
+                    ws.send(JSON.stringify({
+                      type: 'output',
+                      paneId: pane.paneId,
+                      data: Buffer.from(termContent).toString('base64'),
+                    }));
+                  }
                 } catch {
                   // Pane may not be available
                 }
@@ -201,9 +217,9 @@ export const terminalWebSocket = {
     }
   },
 
-  close(ws: ServerWebSocket<TerminalData>) {
+  close(ws: ServerWebSocket<TerminalData>, code: number, reason: string) {
     const { sessionId, controlSession, cleanupFns } = ws.data;
-    console.log(`Control WebSocket closed for session: ${sessionId}`);
+    console.log(`Control WebSocket closed for session: ${sessionId} (code=${code}, reason=${reason})`);
 
     // Unregister listeners
     if (cleanupFns) {

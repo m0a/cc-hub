@@ -343,6 +343,7 @@ export type ControlServerMessage =
   | { type: 'output'; paneId: string; data: string } // base64
   | { type: 'layout'; layout: TmuxLayoutNode }
   | { type: 'initial-content'; paneId: string; data: string } // base64
+  | { type: 'ready' }
   | { type: 'pong'; timestamp: number }
   | { type: 'error'; message: string; paneId?: string }
   | { type: 'new-session'; sessionId: string; sessionName: string };

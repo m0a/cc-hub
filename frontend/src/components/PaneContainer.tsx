@@ -427,12 +427,12 @@ function TerminalPane({
             {showConversation ? t('conversation.history') : (session?.name || t('pane.noSession'))}
           </span>
         )}
-        <div className={`flex items-center ${isTablet ? 'gap-2' : 'gap-1.5'}`}>
+        <div className={`flex items-center ${isTablet ? 'gap-0' : 'gap-1.5'}`}>
           {/* Conversation toggle button - show for Claude sessions */}
           {(hasCcSessionId || session?.currentCommand === 'claude') && (
             <button
               onClick={handleToggleConversation}
-              className={`${isTablet ? 'p-1.5' : 'p-1'} transition-colors ${
+              className={`${isTablet ? 'p-2.5' : 'p-1'} transition-colors ${
                 showConversation
                   ? 'text-blue-400 hover:text-blue-300'
                   : 'text-white/50 hover:text-white/80'
@@ -448,7 +448,7 @@ function TerminalPane({
           {session?.currentPath && !showConversation && (
             <button
               onClick={handleOpenFileViewer}
-              className={`${isTablet ? 'p-1.5' : 'p-1'} text-white/50 hover:text-white/80 transition-colors`}
+              className={`${isTablet ? 'p-2.5' : 'p-1'} text-white/50 hover:text-white/80 transition-colors`}
               title={t('files.title')}
               data-onboarding="file-browser"
             >
@@ -461,7 +461,7 @@ function TerminalPane({
           {sessionId && !showConversation && (
             <button
               onClick={handleReload}
-              className={`${isTablet ? 'p-1.5' : 'p-1'} text-white/50 hover:text-white/80 transition-colors`}
+              className={`${isTablet ? 'p-2.5' : 'p-1'} text-white/50 hover:text-white/80 transition-colors`}
               title={t('files.reload')}
             >
               <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -507,7 +507,7 @@ function TerminalPane({
               e.stopPropagation();
               setShowSessionList(!showSessionList);
             }}
-            className={`${isTablet ? 'p-1.5' : 'p-1'} transition-colors ${
+            className={`${isTablet ? 'p-2.5' : 'p-1'} transition-colors ${
               showSessionList
                 ? 'text-blue-400 hover:text-blue-300'
                 : 'text-white/50 hover:text-white/80'
@@ -522,7 +522,7 @@ function TerminalPane({
           {/* Close button */}
           <button
             onClick={(e) => { e.stopPropagation(); onClose(); }}
-            className={`${isTablet ? 'p-1.5' : 'p-1'} text-white/50 hover:text-red-400 transition-colors`}
+            className={`${isTablet ? 'p-2.5' : 'p-1'} text-white/50 hover:text-red-400 transition-colors`}
             title={t('common.close')}
           >
             <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">

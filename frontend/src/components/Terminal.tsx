@@ -334,7 +334,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       cursorStyle: 'block',
       cursorBlink: false, // Disable cursor blink for performance
       cursorInactiveStyle: 'outline',
-      scrollback: 1000, // Reduced scrollback for performance
+      scrollback: 5000, // Keep enough scrollback for capture-pane -S - content
       smoothScrollDuration: 0, // Disable smooth scroll
       scrollSensitivity: 3,
       allowProposedApi: true,
@@ -585,16 +585,9 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             if (lines !== 0) {
               accumulatedDelta = accumulatedDelta % 20; // Keep remainder
 
-              // Dispatch WheelEvent on xterm viewport for local scrollback.
-              // send-keys -H would deliver mouse wheel escapes as literal text.
-              const viewport = container.querySelector('.xterm-viewport');
-              if (viewport) {
-                viewport.dispatchEvent(new WheelEvent('wheel', {
-                  deltaY: -lines * 50,
-                  deltaMode: WheelEvent.DOM_DELTA_PIXEL,
-                  bubbles: true,
-                }));
-              }
+              // Use xterm.js scrollLines API for reliable scroll on all devices.
+              // Synthetic WheelEvent may not work on some mobile browsers.
+              term.scrollLines(lines);
             }
           });
         }

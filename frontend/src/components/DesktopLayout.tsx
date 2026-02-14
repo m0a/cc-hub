@@ -890,19 +890,19 @@ export function DesktopLayout({
 
         {/* Header - tablet: full toolbar with keyboard toggle */}
         {isTablet && (
-          <div className="flex items-center justify-between px-3 py-1 bg-black/50 border-b border-gray-700 shrink-0">
+          <div className="flex items-center justify-between px-3 py-1.5 bg-black/50 border-b border-gray-700 shrink-0">
             {/* Left: Session name */}
             <span className="text-white/70 text-sm truncate max-w-[300px]">
               {activeSession?.name || 'CC Hub - Desktop'}
             </span>
 
-            {/* Right: Action buttons */}
-            <div className="flex items-center gap-1">
+            {/* Right: Action buttons - min 44px touch targets per Apple HIG */}
+            <div className="flex items-center gap-0">
               {/* Split buttons */}
-              <div className="flex items-center gap-1" data-onboarding="split-pane">
+              <div className="flex items-center" data-onboarding="split-pane">
                 <button
                   onClick={() => handleSplit('horizontal')}
-                  className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                  className="p-2.5 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
                   title="縦分割 (Ctrl+D)"
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -912,7 +912,7 @@ export function DesktopLayout({
                 </button>
                 <button
                   onClick={() => handleSplit('vertical')}
-                  className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                  className="p-2.5 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
                   title="横分割 (Ctrl+Shift+D)"
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -925,7 +925,7 @@ export function DesktopLayout({
               {/* Reload all panes */}
               <button
                 onClick={handleGlobalReload}
-                className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                className="p-2.5 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
                 title="全ペインをリロード"
                 data-onboarding="reload"
               >
@@ -937,7 +937,7 @@ export function DesktopLayout({
               {/* Keyboard toggle */}
               <button
                 onClick={() => setShowKeyboard(prev => !prev)}
-                className={`p-1 rounded transition-colors ${
+                className={`p-2.5 rounded transition-colors ${
                   showKeyboard
                     ? 'text-green-400 bg-green-500/20 hover:bg-green-500/30'
                     : 'text-white/70 hover:text-white hover:bg-white/10'

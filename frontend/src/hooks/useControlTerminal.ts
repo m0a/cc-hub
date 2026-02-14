@@ -155,6 +155,11 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
     };
 
     ws.onclose = (event) => {
+      // Guard: only update state if this WS is still the active one.
+      // During session switch, disconnect() → connect() creates a new WS
+      // before the old one's onclose fires asynchronously.
+      if (wsRef.current !== ws) return;
+
       setIsConnected(false);
       wsRef.current = null;
       if (pingIntervalRef.current) {

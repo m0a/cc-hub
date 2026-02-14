@@ -458,6 +458,14 @@ export function DesktopLayout({
   const controlTerminalRef = useRef(controlTerminal);
   controlTerminalRef.current = controlTerminal;
 
+  // Reset control mode state when session changes
+  useEffect(() => {
+    setControlLayout(null);
+    initialContentBufferRef.current.clear();
+    paneCallbacksRef.current.clear();
+    lastSentSizeRef.current = null;
+  }, [controlSessionId]);
+
   // Connect/disconnect control mode
   useEffect(() => {
     if (controlSessionId) {

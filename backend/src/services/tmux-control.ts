@@ -760,15 +760,24 @@ export class TmuxControlSession {
     }
     this.pendingQueue.length = 0;
 
+    // Cleanly detach from tmux before killing the process.
+    // Without this, the tmux -CC client stays attached as an orphan and its
+    // stale size constrains the window layout (tmux window-size=latest).
+    if (this.proc?.stdin?.writable) {
+      try {
+        this.proc.stdin.write('detach\n');
+      } catch {
+        // stdin may already be closed
+      }
+    }
+
     // Kill process tree (script + tmux -CC child)
     if (this.proc && !this.proc.killed) {
       try {
-        // Kill process group to ensure child processes are cleaned up
         if (this.proc.pid) {
           process.kill(-this.proc.pid, 'SIGTERM');
         }
       } catch {
-        // Process group kill failed, try direct kill
         try { this.proc.kill('SIGKILL'); } catch { /* already dead */ }
       }
     }

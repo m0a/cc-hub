@@ -53,7 +53,7 @@ export const terminalWebSocket = {
             ws.send(JSON.stringify({
               type: 'output',
               paneId,
-              data: Buffer.from(data).toString('base64'),
+              data: data.toString('base64'),
             }));
           } catch {
             // Client may have disconnected

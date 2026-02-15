@@ -200,9 +200,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
   // Send function: filters out mouse tracking escape sequences that xterm.js generates
   // on touch/scroll, since send-keys -H would deliver them as literal text to the shell.
-  // Throttle: re-send container size to tmux at most once per 2s during input.
-  // This implements "last-write-wins" without disrupting display on every keystroke.
-  const lastResendTimeRef = useRef(0);
   const send = useCallback((data: string) => {
     const filtered = filterMouseTrackingInput(data);
     if (filtered.length > 0) {
@@ -211,19 +208,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       controlModeRef.current?.sendInput(filtered);
       // Auto-scroll to bottom when user sends input (e.g. after scrolling up)
       terminalRef.current?.scrollToBottom();
-      // "Last-write-wins": periodically re-send this client's container size.
-      // Only sends to tmux (no term.resize) to avoid display disruption.
-      const now = Date.now();
-      if (now - lastResendTimeRef.current > 2000) {
-        lastResendTimeRef.current = now;
-        const fit = fitAddonRef.current;
-        if (fit) {
-          const dims = fit.proposeDimensions();
-          if (dims && dims.cols > 0 && dims.rows > 0) {
-            resizeRef.current(dims.cols, dims.rows);
-          }
-        }
-      }
     }
   }, []);
 
@@ -335,12 +319,8 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   useEffect(() => {
     if (isConnected) {
       onReadyRef.current?.(send);
-      // Send initial resize after connection with small delay for layout
-      setTimeout(() => {
-        fitTerminal();
-        // Force tmux to redraw after resize to prevent display corruption
-        setTimeout(() => refreshRef.current(), 100);
-      }, 100);
+      // Send initial resize after connection with small delay for layout to settle
+      setTimeout(() => fitTerminal(), 150);
     }
   }, [isConnected, send, fitTerminal]);
 
@@ -1116,11 +1096,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           setTimeout(() => {
             setIsAnimating(false);
             inputRef.current?.focus();
-            // Refit after animation completes
             fitTerminal();
-            // Refit again after soft keyboard animation (Android ~200-300ms)
-            setTimeout(fitTerminal, 300);
-            setTimeout(fitTerminal, 600);
           }, 350);
         }
       } else {
@@ -1129,12 +1105,9 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           setIsAnimating(true);
           setInputMode('shortcuts');
           setInputValue('');
-          // Refit after animation and keyboard dismissal
           setTimeout(() => {
             setIsAnimating(false);
             fitTerminal();
-            // Refit after native keyboard dismissal animation
-            setTimeout(fitTerminal, 300);
           }, 350);
         }
       }
@@ -1349,8 +1322,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                           setIsAnimating(false);
                           inputRef.current?.focus();
                           fitTerminal();
-                          setTimeout(fitTerminal, 300);
-                          setTimeout(fitTerminal, 600);
                         }, 350);
                       }}
                       isUploading={isUploading}
@@ -1400,8 +1371,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                       setIsAnimating(false);
                       inputRef.current?.focus();
                       fitTerminal();
-                      setTimeout(fitTerminal, 300);
-                      setTimeout(fitTerminal, 600);
                     }, 350);
                   }}
                   isUploading={isUploading}
@@ -1451,8 +1420,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                   setTimeout(() => {
                     setIsAnimating(false);
                     fitTerminal();
-                    // Refit after native keyboard dismissal animation
-                    setTimeout(fitTerminal, 300);
                   }, 350);
                 }}
                 className="px-3 py-2 bg-gray-700 hover:bg-gray-600 active:bg-gray-500 rounded text-white font-medium"

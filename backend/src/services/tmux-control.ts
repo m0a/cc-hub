@@ -561,8 +561,10 @@ export class TmuxControlSession {
       this.lastClientSize = { cols, rows };
       try {
         await this.sendCommand(`refresh-client -C ${cols}x${rows}`);
-        // Flush pending output so programs redraw at the new size
-        await this.sendCommand('refresh-client');
+        // Do NOT send bare `refresh-client` here.
+        // It forces tmux to re-output the entire screen, which interleaves
+        // with application output causing visual corruption.  Programs
+        // redraw on their own via SIGWINCH from the size change.
       } catch {
         // Ignore resize errors
       }
@@ -581,7 +583,6 @@ export class TmuxControlSession {
     }
     this.lastClientSize = { cols, rows };
     await this.sendCommand(`refresh-client -C ${cols}x${rows}`);
-    await this.sendCommand('refresh-client');
   }
 
   /**

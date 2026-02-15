@@ -535,6 +535,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     let accumulatedDelta = 0;
     let scrollRafId: number | null = null;
 
+    // Momentum scroll state
+    let momentumRafId: number | null = null;
+    let lastTouchY = 0;
+    let lastTouchTime = 0;
+    const velocityHistory: Array<{ v: number; t: number }> = [];
+
     // Pinch zoom state
     let initialPinchDistance: number | null = null;
     let initialFontSizeOnPinch: number = initialFontSize;
@@ -544,13 +550,42 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     let longPressTriggered = false;
     const LONG_PRESS_DURATION = 400; // ms
 
+    // Update scroll indicator
+    const updateScrollIndicator = () => {
+      const buf = term.buffer.active;
+      if (buf.viewportY < buf.baseY) {
+        const pos = buf.baseY - buf.viewportY;
+        setScrollIndicator(`[${pos}/${buf.baseY}]`);
+        if (scrollIndicatorTimerRef.current) clearTimeout(scrollIndicatorTimerRef.current);
+        scrollIndicatorTimerRef.current = window.setTimeout(() => setScrollIndicator(null), 3000);
+      } else {
+        setScrollIndicator(null);
+      }
+    };
+
+    // Stop momentum animation
+    const stopMomentum = () => {
+      if (momentumRafId !== null) {
+        cancelAnimationFrame(momentumRafId);
+        momentumRafId = null;
+      }
+    };
+
     const getPinchDistance = (touches: TouchList): number => {
       const dx = touches[0].clientX - touches[1].clientX;
       const dy = touches[0].clientY - touches[1].clientY;
       return Math.sqrt(dx * dx + dy * dy);
     };
 
+    let stoppedMomentum = false;
+
     const handleTouchStart = (e: TouchEvent) => {
+      // Stop any ongoing momentum scroll - treat as consumed tap
+      stoppedMomentum = momentumRafId !== null;
+      if (stoppedMomentum) {
+        stopMomentum();
+      }
+
       if (e.touches.length === 2) {
         // Pinch start - cancel long press
         if (longPressTimer) {
@@ -563,9 +598,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       } else if (e.touches.length === 1) {
         // Scroll start
         touchStartY = e.touches[0].clientY;
+        lastTouchY = e.touches[0].clientY;
+        lastTouchTime = e.timeStamp;
         touchMoved = false;
         longPressTriggered = false;
         accumulatedDelta = 0;
+        velocityHistory.length = 0;
 
         // Start long press timer
         longPressTimer = window.setTimeout(() => {
@@ -620,6 +658,21 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         }
         touchMoved = true;
         e.preventDefault();
+
+        // Track velocity for momentum (px/ms)
+        const now = e.timeStamp;
+        const dt = now - lastTouchTime;
+        const dy = lastTouchY - currentY;
+        if (dt > 0) {
+          velocityHistory.push({ v: dy / dt, t: now });
+          // Keep only last 100ms of samples
+          while (velocityHistory.length > 0 && now - velocityHistory[0].t > 100) {
+            velocityHistory.shift();
+          }
+        }
+        lastTouchY = currentY;
+        lastTouchTime = now;
+
         touchStartY = currentY;
         accumulatedDelta += deltaY;
 
@@ -627,24 +680,11 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         if (scrollRafId === null) {
           scrollRafId = requestAnimationFrame(() => {
             scrollRafId = null;
-            const lines = Math.round(accumulatedDelta / 20);
+            const lines = Math.round(accumulatedDelta / 8);
             if (lines !== 0) {
-              accumulatedDelta = accumulatedDelta % 20; // Keep remainder
-
-              // Scroll xterm.js buffer directly.
-              // Natural scrolling: swipe up (lines > 0) = scroll down (newer content).
+              accumulatedDelta = accumulatedDelta % 8;
               term.scrollLines(lines);
-
-              // Show scroll position indicator
-              const buf = term.buffer.active;
-              if (buf.viewportY < buf.baseY) {
-                const pos = buf.baseY - buf.viewportY;
-                setScrollIndicator(`[${pos}/${buf.baseY}]`);
-                if (scrollIndicatorTimerRef.current) clearTimeout(scrollIndicatorTimerRef.current);
-                scrollIndicatorTimerRef.current = window.setTimeout(() => setScrollIndicator(null), 3000);
-              } else {
-                setScrollIndicator(null);
-              }
+              updateScrollIndicator();
             }
           });
         }
@@ -658,7 +698,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         longPressTimer = null;
       }
 
-      // Cancel pending scroll
+      // Cancel pending scroll RAF
       if (scrollRafId !== null) {
         cancelAnimationFrame(scrollRafId);
         scrollRafId = null;
@@ -672,16 +712,54 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         initialPinchDistance = null;
       }
 
-      // Only show keyboard if it was a tap (no movement, no long press)
-      if (!touchMoved && !longPressTriggered) {
+      // Start momentum scroll if finger was moving fast enough
+      if (touchMoved && velocityHistory.length > 0) {
+        const sum = velocityHistory.reduce((acc, s) => acc + s.v, 0);
+        let vel = sum / velocityHistory.length; // px/ms
+
+        if (Math.abs(vel) > 0.3) {
+          const FRICTION = 0.97;
+          const MIN_VEL = 0.02; // px/ms
+          let residual = 0;
+
+          let lastFrame = performance.now();
+          const animate = (now: number) => {
+            const dt = now - lastFrame;
+            lastFrame = now;
+            vel *= FRICTION;
+
+            if (Math.abs(vel) < MIN_VEL) {
+              momentumRafId = null;
+              updateScrollIndicator();
+              return;
+            }
+
+            residual += vel * dt;
+            const lines = Math.trunc(residual / 8);
+            if (lines !== 0) {
+              residual -= lines * 8;
+              term.scrollLines(lines);
+              updateScrollIndicator();
+            }
+
+            momentumRafId = requestAnimationFrame(animate);
+          };
+          momentumRafId = requestAnimationFrame(animate);
+        }
+      }
+
+      // Only show keyboard if it was a tap (no movement, no long press, not stopping momentum)
+      if (!touchMoved && !longPressTriggered && !stoppedMomentum) {
         // Show custom keyboard on tap
         showKeyboardRef.current();
       }
 
       touchStartY = null;
       touchMoved = false;
+      stoppedMomentum = false;
       longPressTriggered = false;
       accumulatedDelta = 0;
+      velocityHistory.length = 0;
     };
 
     // Prevent context menu on long press

@@ -76,6 +76,16 @@ export const LoginSchema = z.object({
 });
 
 
+// Pane ID validation (e.g., "%0", "%1")
+export const PaneIdSchema = z.string().regex(/^%\d+$/, 'Invalid pane ID');
+
+export interface PaneInfo {
+  paneId: string;          // "%0", "%1"
+  currentCommand?: string;
+  currentPath?: string;
+  isActive: boolean;
+}
+
 export const CreateSessionSchema = z.object({
   name: z.string().min(1).max(64).optional(),
   workingDir: z.string().optional(),
@@ -259,6 +269,7 @@ export interface ExtendedSessionResponse extends SessionResponse {
   ccFirstPrompt?: string;
   waitingForInput?: boolean;
   waitingToolName?: string;
+  panes?: PaneInfo[];
 }
 
 // =============================================================================
@@ -339,7 +350,9 @@ export type ControlClientMessage =
   | { type: 'client-info'; deviceType: 'mobile' | 'tablet' | 'desktop' }
   | { type: 'scroll'; paneId: string; lines: number } // positive = up, negative = down
   | { type: 'adjust-pane'; paneId: string; direction: 'L' | 'R' | 'U' | 'D'; amount: number }
-  | { type: 'equalize-panes'; direction: 'horizontal' | 'vertical' };
+  | { type: 'equalize-panes'; direction: 'horizontal' | 'vertical' }
+  | { type: 'request-content'; paneId: string }
+  | { type: 'zoom-pane'; paneId: string };
 
 // Server → Client messages
 export type ControlServerMessage =

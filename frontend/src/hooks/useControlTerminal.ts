@@ -28,6 +28,8 @@ interface UseControlTerminalReturn {
   adjustPane: (paneId: string, direction: 'L' | 'R' | 'U' | 'D', amount: number) => void;
   equalizePanes: (direction: 'horizontal' | 'vertical') => void;
   sendClientInfo: (deviceType: 'mobile' | 'tablet' | 'desktop') => void;
+  requestContent: (paneId: string) => void;
+  zoomPane: (paneId: string) => void;
 }
 
 // Use same origin WebSocket
@@ -236,6 +238,14 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
     sendMessage({ type: 'client-info', deviceType });
   }, [sendMessage]);
 
+  const requestContent = useCallback((paneId: string) => {
+    sendMessage({ type: 'request-content', paneId });
+  }, [sendMessage]);
+
+  const zoomPane = useCallback((paneId: string) => {
+    sendMessage({ type: 'zoom-pane', paneId });
+  }, [sendMessage]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -266,6 +276,8 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
     adjustPane,
     equalizePanes,
     sendClientInfo,
+    requestContent,
+    zoomPane,
   };
 }
 

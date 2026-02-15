@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { SessionResponse, IndicatorState, ConversationMessage, FileInfo, SessionTheme } from '../../../shared/types';
+import type { SessionResponse, IndicatorState, ConversationMessage, FileInfo, SessionTheme, PaneInfo } from '../../../shared/types';
 import { useSessions } from '../hooks/useSessions';
 
 // Theme color mapping
@@ -54,6 +54,7 @@ async function createDirectory(path: string): Promise<{ path: string; success: b
 
 interface SessionListProps {
   onSelectSession: (session: SessionResponse) => void;
+  onSelectPane?: (session: SessionResponse, paneId: string) => void;
   onBack?: () => void;
   inline?: boolean;  // true for side panel, false for fullscreen
   contentScale?: number;  // Scale factor for content (tabs remain fixed)
@@ -421,15 +422,19 @@ function CreateSessionModal({
 function SessionItem({
   session,
   onSelect,
+  onSelectPane,
   onShowMenu,
   onResume,
   onShowConversation,
+  onPaneAction,
 }: {
   session: SessionResponse;
   onSelect: (session: SessionResponse) => void;
+  onSelectPane?: (session: SessionResponse, paneId: string) => void;
   onShowMenu: (session: SessionResponse) => void;
   onResume?: (sessionId: string, ccSessionId?: string) => void;
   onShowConversation?: (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => void;
+  onPaneAction?: (sessionId: string, action: 'focus' | 'close' | 'split', paneId: string, direction?: 'h' | 'v') => void;
 }) {
   const { t } = useTranslation();
   const longPressTimerRef = useRef<number | null>(null);
@@ -488,11 +493,23 @@ function SessionItem({
     longPressFiredRef.current = false;
   };
 
+  const [panesExpanded, setPanesExpanded] = useState(false);
+
   const handleClick = () => {
-    if (!longPressFiredRef.current) {
-      onSelect(session);
+    if (longPressFiredRef.current) {
+      longPressFiredRef.current = false;
+      return;
     }
     longPressFiredRef.current = false;
+
+    // Multi-pane session: toggle pane list only when pane selection is available (mobile)
+    const extSess = session as SessionResponse & { panes?: PaneInfo[] };
+    if (onSelectPane && extSess.panes && extSess.panes.length > 1) {
+      setPanesExpanded(prev => !prev);
+      return;
+    }
+
+    onSelect(session);
   };
 
   // Get extra session info
@@ -507,6 +524,7 @@ function SessionItem({
     indicatorState?: IndicatorState;
     ccSessionId?: string;
     theme?: SessionTheme;
+    panes?: PaneInfo[];
   };
   const isClaudeRunning = extSession.currentCommand === 'claude';
   const themeColor = extSession.theme ? THEME_COLORS[extSession.theme] : null;
@@ -574,6 +592,11 @@ function SessionItem({
     >
       <div className="flex items-center gap-2">
         <span className={`font-medium truncate flex-1 ${!isClaudeRunning ? 'text-gray-300' : ''}`}>{displayTitle}</span>
+        {extSession.panes && extSession.panes.length > 1 && (
+          <span className="text-xs text-cyan-400 bg-cyan-900/50 px-1.5 py-0.5 rounded shrink-0">
+            {t('pane.panes', { count: extSession.panes.length })}
+          </span>
+        )}
         {isWaiting && extSession.waitingToolName && (
           <span className="text-xs text-yellow-400 bg-yellow-900/50 px-1.5 py-0.5 rounded shrink-0 animate-pulse">{waitingLabel}</span>
         )}
@@ -623,11 +646,52 @@ function SessionItem({
           {t('session.longPressHint')}
         </div>
       </div>
+
+      {/* Pane selection list (expandable, only when onSelectPane is available) */}
+      {onSelectPane && panesExpanded && extSession.panes && extSession.panes.length > 1 && (
+        <div
+          className="mt-2 pt-2 border-t border-gray-700 space-y-1"
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+        >
+          {extSession.panes.map((pane) => {
+            const cmd = pane.currentCommand || 'shell';
+            const isClaudePane = cmd === 'claude';
+            const shortPath = pane.currentPath?.replace(/^\/home\/[^/]+\//, '~/') || '';
+            return (
+              <button
+                key={pane.paneId}
+                onClick={() => {
+                  if (onSelectPane) {
+                    onSelectPane(session, pane.paneId);
+                  } else {
+                    onSelect(session);
+                  }
+                }}
+                className={`w-full flex items-center gap-2 px-3 py-2.5 rounded text-left transition-colors active:scale-[0.98] ${
+                  isClaudePane
+                    ? 'bg-green-900/30 active:bg-green-800/40'
+                    : 'bg-gray-700/40 active:bg-gray-600/50'
+                }`}
+              >
+                <span className={`text-sm font-medium ${isClaudePane ? 'text-green-300' : 'text-gray-200'}`}>
+                  {cmd}
+                </span>
+                <span className="text-gray-500 text-xs truncate flex-1">{shortPath}</span>
+                <svg className="w-4 h-4 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-export function SessionList({ onSelectSession, onBack, inline = false, contentScale, isOnboarding = false, hideDashboardTab = false }: SessionListProps) {
+export function SessionList({ onSelectSession, onSelectPane, onBack, inline = false, contentScale, isOnboarding = false, hideDashboardTab = false }: SessionListProps) {
   const { t } = useTranslation();
   const {
     sessions,
@@ -710,6 +774,29 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
       console.error('Failed to refresh conversation:', err);
     }
   }, [viewingConversation, fetchConversation]);
+
+  // Pane operations
+  const handlePaneAction = useCallback(async (sessionId: string, action: 'focus' | 'close' | 'split', paneId: string, direction?: 'h' | 'v') => {
+    try {
+      const endpoint = action === 'split'
+        ? `${API_BASE}/api/sessions/${sessionId}/panes/split`
+        : `${API_BASE}/api/sessions/${sessionId}/panes/${action}`;
+      const body = action === 'split'
+        ? { paneId, direction }
+        : { paneId };
+      const response = await authFetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (response.ok) {
+        // Refresh sessions after pane operation
+        setTimeout(() => fetchSessions(true), 500);
+      }
+    } catch (err) {
+      console.error(`Pane ${action} failed:`, err);
+    }
+  }, [fetchSessions]);
 
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -802,9 +889,11 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
                       <SessionItem
                         session={session}
                         onSelect={onSelectSession}
+                        onSelectPane={onSelectPane}
                         onShowMenu={handleShowMenu}
                         onResume={handleResume}
                         onShowConversation={handleShowConversation}
+                        onPaneAction={handlePaneAction}
                       />
                     </div>
                   ))}

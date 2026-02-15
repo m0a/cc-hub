@@ -210,6 +210,27 @@ export const terminalWebSocket = {
           await controlSession.equalizePanes(msg.direction);
           break;
         }
+        case 'request-content': {
+          // Re-capture pane content and send as initial-content
+          try {
+            const content = await controlSession.capturePane(msg.paneId);
+            if (content) {
+              const termContent = content.split('\n').join('\r\n');
+              ws.send(JSON.stringify({
+                type: 'initial-content',
+                paneId: msg.paneId,
+                data: Buffer.from(termContent).toString('base64'),
+              }));
+            }
+          } catch {
+            // Pane may not be available
+          }
+          break;
+        }
+        case 'zoom-pane': {
+          await controlSession.zoomPane(msg.paneId);
+          break;
+        }
         case 'ping': {
           ws.send(JSON.stringify({ type: 'pong', timestamp: msg.timestamp }));
           break;

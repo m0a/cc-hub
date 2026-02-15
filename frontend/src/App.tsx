@@ -220,6 +220,10 @@ export function App() {
   const [conversation, setConversation] = useState<ConversationMessage[]>([]);
   const [loadingConversation, setLoadingConversation] = useState(false);
 
+  // Mobile pane tabs state
+  const [mobilePanes, setMobilePanes] = useState<{ paneId: string; width: number; height: number }[]>([]);
+  const [mobileActivePaneId, setMobileActivePaneId] = useState<string | null>(null);
+
   // Session API state (for theme updates in mobile view)
   const { sessions: apiSessions, fetchSessions: fetchApiSessions } = useSessions();
 
@@ -495,6 +499,29 @@ export function App() {
       setActiveSessionId(session.id);
     }
     setShowSessionList(false);
+    setMobileActivePaneId(null);
+  }, [openSessions]);
+
+  // Select a specific pane within a session (mobile)
+  const handleSelectPane = useCallback((session: SessionResponse, paneId: string) => {
+    // Open session without resetting paneId (handleSelectSession sets it to null)
+    const existing = openSessions.find(s => s.id === session.id);
+    if (!existing) {
+      const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string; theme?: SessionTheme };
+      setOpenSessions(prev => [...prev, {
+        id: extSession.id,
+        name: extSession.name,
+        state: extSession.state,
+        currentPath: extSession.currentPath,
+        ccSessionId: extSession.ccSessionId,
+        currentCommand: extSession.currentCommand,
+        theme: extSession.theme,
+      }]);
+    }
+    setActiveSessionId(session.id);
+    setShowSessionList(false);
+    // Set pane directly - don't go through handleSelectSession which resets it
+    setMobileActivePaneId(paneId);
   }, [openSessions]);
 
   const handleCloseSession = useCallback((id: string) => {
@@ -655,6 +682,7 @@ export function App() {
       <>
         <SessionList
           onSelectSession={handleSelectSession}
+          onSelectPane={handleSelectPane}
           onBack={openSessions.length > 0 ? handleBackFromList : undefined}
           isOnboarding={showSessionListOnboarding}
         />
@@ -779,7 +807,45 @@ export function App() {
             onOverlayTap={handleShowOverlay}
             showOverlay={showOverlay}
             theme={activeSession.theme}
+            onPanesChange={(panes) => {
+              setMobilePanes(panes);
+              // If active pane was removed, clear it so TerminalPage picks the first
+              if (mobileActivePaneId && !panes.some(p => p.paneId === mobileActivePaneId)) {
+                setMobileActivePaneId(null);
+              }
+            }}
+            externalActivePaneId={mobileActivePaneId}
           />
+          {/* Pane tab bar - only shown when multiple panes exist */}
+          {mobilePanes.length > 1 && (() => {
+            // Get pane command info from API sessions data
+            const apiSession = apiSessions.find(s => s.id === activeSessionId);
+            const apiPanes = (apiSession as SessionResponse & { panes?: Array<{ paneId: string; currentCommand?: string }> })?.panes;
+            return (
+              <div className="flex bg-gray-800 border-t border-gray-700 shrink-0 overflow-x-auto">
+                {mobilePanes.map((pane) => {
+                  const isActive = mobileActivePaneId
+                    ? pane.paneId === mobileActivePaneId
+                    : pane.paneId === mobilePanes[0]?.paneId;
+                  const apiPane = apiPanes?.find(p => p.paneId === pane.paneId);
+                  const label = apiPane?.currentCommand || pane.paneId;
+                  return (
+                    <button
+                      key={pane.paneId}
+                      onClick={() => setMobileActivePaneId(pane.paneId)}
+                      className={`px-3 py-1.5 text-xs font-mono whitespace-nowrap transition-colors ${
+                        isActive
+                          ? 'text-white bg-gray-700 border-t-2 border-blue-500'
+                          : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center" data-onboarding="terminal">

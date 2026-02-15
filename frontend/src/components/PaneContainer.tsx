@@ -30,6 +30,8 @@ export interface ControlModeContext {
   getControlConfig: (paneId: string) => ControlModeConfig | undefined;
   splitPane: (paneId: string, direction: 'h' | 'v') => void;
   closePane: (paneId: string) => void;
+  zoomPane?: (paneId: string) => void;
+  isZoomed?: boolean;
 }
 
 interface PaneContainerProps {
@@ -166,6 +168,8 @@ function TerminalPane({
   const [isClaudeRunning, setIsClaudeRunning] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [showFileViewer, setShowFileViewer] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const confirmCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Refresh terminal display (force tmux redraw without remounting)
   const handleReload = useCallback((e: React.MouseEvent) => {
@@ -182,6 +186,15 @@ function TerminalPane({
   const handleOpenFileViewer = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     setShowFileViewer(true);
+  }, []);
+
+  // Cleanup confirm close timer on unmount
+  useEffect(() => {
+    return () => {
+      if (confirmCloseTimerRef.current) {
+        clearTimeout(confirmCloseTimerRef.current);
+      }
+    };
   }, []);
 
   // Register terminal ref
@@ -327,6 +340,31 @@ function TerminalPane({
               </svg>
             </button>
           )}
+          {/* Zoom button */}
+          {sessionId && !showConversation && controlModeContext.zoomPane && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                controlModeContext.zoomPane?.(paneId);
+              }}
+              className={`${isTablet ? 'p-2.5' : 'p-1'} transition-colors ${
+                controlModeContext.isZoomed
+                  ? 'text-blue-400 hover:text-blue-300'
+                  : 'text-white/50 hover:text-white/80'
+              }`}
+              title={controlModeContext.isZoomed ? 'Unzoom' : 'Zoom'}
+            >
+              {controlModeContext.isZoomed ? (
+                <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 4H4m0 0v5m0-5l5 5m6-5h5m0 0v5m0-5l-5 5M9 20H4m0 0v-5m0 5l5-5m6 5h5m0 0v-5m0 5l-5-5" />
+                </svg>
+              ) : (
+                <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+              )}
+            </button>
+          )}
           {/* Cache clear & reload button */}
           {!isTablet && (
             <button
@@ -381,15 +419,43 @@ function TerminalPane({
               </button>
             </div>
           )}
-          {/* Close button */}
+          {/* Close button with confirmation */}
           <button
-            onClick={(e) => { e.stopPropagation(); onClose(); }}
-            className={`${isTablet ? 'p-2.5' : 'p-1'} text-white/50 hover:text-red-400 transition-colors`}
-            title={t('common.close')}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (confirmClose) {
+                // Second tap: actually close
+                if (confirmCloseTimerRef.current) {
+                  clearTimeout(confirmCloseTimerRef.current);
+                  confirmCloseTimerRef.current = null;
+                }
+                setConfirmClose(false);
+                onClose();
+              } else {
+                // First tap: show warning
+                setConfirmClose(true);
+                confirmCloseTimerRef.current = setTimeout(() => {
+                  setConfirmClose(false);
+                  confirmCloseTimerRef.current = null;
+                }, 3000);
+              }
+            }}
+            className={`${isTablet ? 'p-2.5' : 'p-1'} transition-colors ${
+              confirmClose
+                ? 'text-red-400 bg-red-900/50 rounded'
+                : 'text-white/50 hover:text-red-400'
+            }`}
+            title={confirmClose ? t('pane.confirmClose') : t('common.close')}
           >
-            <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            {confirmClose ? (
+              <span className={`${isTablet ? 'text-xs' : 'text-[10px]'} font-bold whitespace-nowrap`}>
+                {t('pane.confirmClose')}
+              </span>
+            ) : (
+              <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            )}
           </button>
         </div>
       </div>

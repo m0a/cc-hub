@@ -77,6 +77,7 @@ export class TmuxControlSession {
 
   // Resize debounce
   private resizeTimer: Timer | null = null;
+  private lastClientSize: { cols: number; rows: number } | null = null;
 
   // Current layout
   private currentLayout: TmuxLayoutNode | null = null;
@@ -299,18 +300,8 @@ export class TmuxControlSession {
       const frontendLayout = toFrontendLayout(layout);
       this.currentLayout = layout;
 
-      // Detect new panes for mobile separation
+      // Track known pane IDs (for future use)
       const newPaneIds = this.collectPaneIds(layout);
-      const addedPanes = newPaneIds.filter(id => !this.knownPaneIds.has(id));
-
-      // Check for mobile-only clients and auto-separate new panes
-      if (addedPanes.length > 0 && this.shouldSeparateForMobile()) {
-        for (const paneId of addedPanes) {
-          this.separatePaneForMobile(paneId);
-        }
-      }
-
-      // Update known pane IDs
       this.knownPaneIds.clear();
       for (const id of newPaneIds) {
         this.knownPaneIds.add(id);
@@ -334,36 +325,10 @@ export class TmuxControlSession {
     return (node.children || []).flatMap(c => this.collectPaneIds(c));
   }
 
-  /**
-   * Check if only mobile clients are connected (no desktop/tablet).
-   */
-  private shouldSeparateForMobile(): boolean {
-    if (this.clientDeviceTypes.size === 0) return false;
-    for (const deviceType of this.clientDeviceTypes.values()) {
-      if (deviceType === 'desktop' || deviceType === 'tablet') return false;
-    }
-    return true; // Only mobile clients
-  }
-
-  /**
-   * Break a pane into a new session for mobile clients.
-   */
-  private async separatePaneForMobile(paneId: string): Promise<void> {
-    try {
-      const newSessionName = `${this.sessionId}-pane-${paneId.replace('%', '')}`;
-      console.log(`[tmux-control] Separating pane ${paneId} to new session: ${newSessionName}`);
-
-      // Break pane to a new window, then move to a new session
-      await this.sendCommand(`break-pane -d -s ${paneId}`);
-
-      // Notify listeners about the new session
-      for (const listener of this.newSessionListeners) {
-        listener(newSessionName, newSessionName);
-      }
-    } catch (err) {
-      console.error(`[tmux-control] Failed to separate pane ${paneId}:`, err);
-    }
-  }
+  // Mobile pane separation is disabled - Phase 2 uses frontend-only pane switching.
+  // The break-pane approach caused infinite layout-change loops when multiple panes
+  // existed, as each break-pane triggered layout changes that made the other pane
+  // appear "new", creating an endless cycle.
 
   /**
    * Handle %begin <time> <num> <flags>
@@ -534,6 +499,30 @@ export class TmuxControlSession {
   }
 
   /**
+   * Toggle zoom on a pane.
+   * - If the target pane is already zoomed: unzoom (restore multi-pane layout)
+   * - If a different pane is zoomed: switch zoom to target
+   * - If not zoomed: zoom the target pane
+   */
+  async zoomPane(paneId: string): Promise<void> {
+    const zoomFlag = await this.sendCommand('display-message -p "#{window_zoomed_flag}"');
+    const isZoomed = zoomFlag.trim() === '1';
+    if (isZoomed) {
+      // Check if the requested pane is already the zoomed one
+      const activePaneId = await this.sendCommand('display-message -p "#{pane_id}"');
+      if (activePaneId.trim() === paneId) {
+        // Same pane: toggle off (unzoom)
+        await this.sendCommand('resize-pane -Z');
+        return;
+      }
+      // Different pane: unzoom, then zoom target
+      await this.sendCommand('resize-pane -Z');
+    }
+    await this.sendCommand(`select-pane -t ${paneId}`);
+    await this.sendCommand('resize-pane -Z');
+  }
+
+  /**
    * Scroll a pane's history buffer via tmux copy-mode.
    * lines > 0 = scroll up, lines < 0 = scroll down.
    */
@@ -556,12 +545,20 @@ export class TmuxControlSession {
 
   /**
    * Set the client size (debounced).
+   * Skips if dimensions haven't changed to avoid unnecessary tmux redraws.
    */
   setClientSize(cols: number, rows: number): void {
     if (this.resizeTimer) {
       clearTimeout(this.resizeTimer);
     }
     this.resizeTimer = setTimeout(async () => {
+      // Skip if dimensions haven't changed
+      if (this.lastClientSize
+        && this.lastClientSize.cols === cols
+        && this.lastClientSize.rows === rows) {
+        return;
+      }
+      this.lastClientSize = { cols, rows };
       try {
         await this.sendCommand(`refresh-client -C ${cols}x${rows}`);
         // Flush pending output so programs redraw at the new size
@@ -582,6 +579,7 @@ export class TmuxControlSession {
       clearTimeout(this.resizeTimer);
       this.resizeTimer = null;
     }
+    this.lastClientSize = { cols, rows };
     await this.sendCommand(`refresh-client -C ${cols}x${rows}`);
     await this.sendCommand('refresh-client');
   }

@@ -356,6 +356,11 @@ export function DesktopLayout({
   const controlSessionId = getControlSessionId();
   const [controlLayout, setControlLayout] = useState<TmuxLayoutNode | null>(null);
 
+  // Zoom state: when a pane is zoomed, show only that pane full-screen
+  const [zoomedPaneId, setZoomedPaneId] = useState<string | null>(null);
+  const zoomedPaneIdRef = useRef<string | null>(null);
+  zoomedPaneIdRef.current = zoomedPaneId;
+
   // Per-pane output callbacks (paneId -> Set<callbacks>)
   const paneCallbacksRef = useRef<Map<string, Set<(data: Uint8Array) => void>>>(new Map());
 
@@ -457,9 +462,18 @@ export function DesktopLayout({
   const controlTerminalRef = useRef(controlTerminal);
   controlTerminalRef.current = controlTerminal;
 
-  // Reset control mode state when session changes
+  // Reset control mode state when session changes (but NOT on initial mount).
+  // On initial mount, child Terminal components register callbacks before this
+  // parent effect runs (React runs child effects first). Clearing on initial mount
+  // would wipe those callbacks, causing initial-content to be lost.
+  const controlSessionInitializedRef = useRef(false);
   useEffect(() => {
+    if (!controlSessionInitializedRef.current) {
+      controlSessionInitializedRef.current = true;
+      return; // Skip initial mount - refs are fresh/empty
+    }
     setControlLayout(null);
+    setZoomedPaneId(null);
     initialContentBufferRef.current.clear();
     paneCallbacksRef.current.clear();
     lastSentSizeRef.current = null;
@@ -500,7 +514,12 @@ export function DesktopLayout({
         return;
       }
 
-      const root = desktopStateRef.current.root;
+      // When zoomed, compute size from the zoomed pane only (it fills the screen).
+      // When not zoomed, compute from the full tree.
+      const zoomedId = zoomedPaneIdRef.current;
+      const root = zoomedId
+        ? (findPaneById(desktopStateRef.current.root, zoomedId) || desktopStateRef.current.root)
+        : desktopStateRef.current.root;
       // Use proposed dimensions (what fits each container) instead of actual
       // xterm size, since in control mode xterm size is set by tmux layout-change,
       // not by FitAddon.fit().
@@ -538,6 +557,8 @@ export function DesktopLayout({
       root: controlPaneTree,
       activePane: allPanes.includes(prev.activePane) ? prev.activePane : (allPanes[0] || prev.activePane),
     }));
+    // Note: tmux zoom does NOT change %layout-change notifications.
+    // Zoom state is tracked purely in frontend via zoomedPaneId.
   }, [controlPaneTree]);
 
   // Build control mode context for PaneContainer.
@@ -589,6 +610,33 @@ export function DesktopLayout({
     closePane: (paneId: string) => {
       controlTerminalRef.current.closePane(paneId);
     },
+    zoomPane: (paneId: string) => {
+      console.log(`[zoom] ${paneId} (current=${zoomedPaneId})`);
+      const isUnzooming = zoomedPaneId === paneId;
+      if (isUnzooming) {
+        // Same pane: toggle off (unzoom)
+        setZoomedPaneId(null);
+      } else {
+        // Zoom this pane
+        setZoomedPaneId(paneId);
+      }
+      // Tell tmux to zoom/unzoom too (for consistent pane dimensions)
+      controlTerminalRef.current.zoomPane(paneId);
+      // After zoom state change, recalculate resize with delay for re-render
+      setTimeout(() => {
+        sendControlResize();
+        // When unzooming, request content for all re-mounted panes
+        if (isUnzooming) {
+          const allPanes = getAllPaneIds(desktopStateRef.current.root);
+          for (const pid of allPanes) {
+            if (pid !== paneId) {
+              controlTerminalRef.current.requestContent(pid);
+            }
+          }
+        }
+      }, 300);
+    },
+    isZoomed: zoomedPaneId !== null,
   };
 
   const handleSplit = useCallback((direction: 'horizontal' | 'vertical') => {
@@ -938,6 +986,20 @@ export function DesktopLayout({
     sendPaneResizes();
   }, [sendPaneResizes]);
 
+  // Compute the display root: when zoomed, show only the zoomed pane full-screen.
+  // tmux zoom does NOT change %layout-change notifications, so we handle zoom
+  // purely in the frontend by overriding the rendered tree.
+  const displayRoot = useMemo(() => {
+    if (zoomedPaneId) {
+      const zoomedPane = findPaneById(desktopState.root, zoomedPaneId);
+      if (zoomedPane) {
+        return zoomedPane;
+      }
+      // Zoomed pane no longer exists (was closed) - fall back to full tree
+    }
+    return desktopState.root;
+  }, [desktopState.root, zoomedPaneId]);
+
   // Get active session for file viewer
   const activePane = findPaneById(desktopState.root, desktopState.activePane);
   const activeSession = activePane?.type === 'terminal' && activePane.sessionId
@@ -1058,7 +1120,7 @@ export function DesktopLayout({
         {/* Pane container */}
         <div className="flex-1 min-h-0" data-onboarding="terminal" ref={paneContainerRef}>
           <PaneContainer
-            node={desktopState.root}
+            node={displayRoot}
             activePane={desktopState.activePane}
             onFocusPane={handleFocusPane}
             onSelectSession={handleSelectSessionForPane}

@@ -501,6 +501,8 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
     // Handle resize with debounce
     let resizeTimeout: number | null = null;
+    let lastSentCols = 0;
+    let lastSentRows = 0;
     const doResize = () => {
       if (resizeTimeout) {
         clearTimeout(resizeTimeout);
@@ -518,7 +520,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                 t.resize(dims.cols, dims.rows);
               }
             }
-            resizeRef.current(dims.cols, dims.rows);
+            // Only send resize to tmux if dimensions actually changed
+            if (dims.cols !== lastSentCols || dims.rows !== lastSentRows) {
+              lastSentCols = dims.cols;
+              lastSentRows = dims.rows;
+              resizeRef.current(dims.cols, dims.rows);
+            }
           }
         }
       }, 50);
@@ -766,9 +773,28 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   // IMPORTANT: Must be declared AFTER the main setup useEffect above,
   // because React runs effects in declaration order. If this ran before
   // the main setup, terminalRef.current would still be null.
+  // Track previous paneId to detect actual pane switches (vs initial mount or session change)
+  const prevControlPaneIdRef = useRef<string | null>(null);
+  const prevSessionIdRef = useRef(sessionId);
+
+  // Reset pane tracking when session changes - prevents spurious clear/reset
+  // when switching between sessions (different pane IDs are from different sessions, not a pane switch)
+  if (prevSessionIdRef.current !== sessionId) {
+    prevSessionIdRef.current = sessionId;
+    prevControlPaneIdRef.current = null;
+  }
+
   useEffect(() => {
     const cm = controlModeRef.current;
     if (!cm || !terminalRef.current) return;
+
+    // Only clear terminal on actual pane SWITCH within the same session
+    if (prevControlPaneIdRef.current !== null && prevControlPaneIdRef.current !== cm.paneId) {
+      terminalRef.current.clear();
+      terminalRef.current.reset();
+    }
+    prevControlPaneIdRef.current = cm.paneId;
+
     // Persistent decoder with stream: true to handle UTF-8 sequences split
     // across WebSocket chunks (e.g. multi-byte Japanese characters).
     const decoder = new TextDecoder('utf-8', { fatal: false });

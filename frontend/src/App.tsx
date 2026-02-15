@@ -14,7 +14,7 @@ import { useSessionHistory } from './hooks/useSessionHistory';
 import { useAuth } from './hooks/useAuth';
 import { useSessions } from './hooks/useSessions';
 import { authFetch, isTransientNetworkError } from './services/api';
-import type { SessionResponse, SessionState, ConversationMessage, SessionTheme } from '../../shared/types';
+import type { SessionResponse, SessionState, ConversationMessage, SessionTheme, PaneInfo } from '../../shared/types';
 
 // Loading screen with phase display and timeout detection
 function LoadingScreen({
@@ -820,7 +820,14 @@ export function App() {
           {mobilePanes.length > 1 && (() => {
             // Get pane command info from API sessions data
             const apiSession = apiSessions.find(s => s.id === activeSessionId);
-            const apiPanes = (apiSession as SessionResponse & { panes?: Array<{ paneId: string; currentCommand?: string }> })?.panes;
+            const apiPanes = (apiSession as SessionResponse & { panes?: PaneInfo[] })?.panes;
+            // Agent color to Tailwind text class
+            const agentColorClass: Record<string, string> = {
+              red: 'text-red-400', orange: 'text-orange-400', amber: 'text-amber-400',
+              green: 'text-green-400', teal: 'text-teal-400', blue: 'text-blue-400',
+              cyan: 'text-cyan-400', indigo: 'text-indigo-400', purple: 'text-purple-400',
+              pink: 'text-pink-400',
+            };
             return (
               <div className="flex bg-gray-800 border-t border-gray-700 shrink-0 overflow-x-auto">
                 {mobilePanes.map((pane) => {
@@ -828,15 +835,18 @@ export function App() {
                     ? pane.paneId === mobileActivePaneId
                     : pane.paneId === mobilePanes[0]?.paneId;
                   const apiPane = apiPanes?.find(p => p.paneId === pane.paneId);
-                  const label = apiPane?.currentCommand || pane.paneId;
+                  // Priority: agentName > paneTitle (stripped) > command > paneId
+                  const paneTitle = apiPane?.title?.replace(/^[✳★●◆⠂⠈⠐⠠⠄⠁✻✽⏳]\s*/, '').trim();
+                  const label = apiPane?.agentName || paneTitle || apiPane?.currentCommand || pane.paneId;
+                  const colorCls = apiPane?.agentColor && agentColorClass[apiPane.agentColor];
                   return (
                     <button
                       key={pane.paneId}
                       onClick={() => setMobileActivePaneId(pane.paneId)}
                       className={`px-3 py-1.5 text-xs font-mono whitespace-nowrap transition-colors ${
                         isActive
-                          ? 'text-white bg-gray-700 border-t-2 border-blue-500'
-                          : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
+                          ? `${colorCls || 'text-white'} bg-gray-700 border-t-2 border-blue-500`
+                          : `${colorCls || 'text-gray-400'} hover:text-gray-200 hover:bg-gray-700/50`
                       }`}
                     >
                       {label}

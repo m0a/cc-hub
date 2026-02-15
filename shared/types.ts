@@ -83,6 +83,9 @@ export interface PaneInfo {
   paneId: string;          // "%0", "%1"
   currentCommand?: string;
   currentPath?: string;
+  title?: string;          // pane_title set by Claude Code (task description)
+  agentName?: string;      // Team agent name from --agent-name process arg
+  agentColor?: string;     // Team agent color from --agent-color process arg
   isActive: boolean;
 }
 

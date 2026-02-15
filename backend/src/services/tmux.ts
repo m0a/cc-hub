@@ -280,6 +280,51 @@ export class TmuxService {
   }
 
   /**
+   * Batch get team agent info from process args for TTYs (single ps call)
+   * Returns a Map of tty name → { agentName, agentColor }
+   */
+  async batchGetAgentInfo(ttyNames: string[]): Promise<Map<string, { agentName: string; agentColor?: string }>> {
+    const result = new Map<string, { agentName: string; agentColor?: string }>();
+    if (ttyNames.length === 0) return result;
+
+    try {
+      const proc = Bun.spawn(['ps', '-eo', 'tty,args', '--no-headers'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const output = await new Response(proc.stdout).text();
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) return result;
+
+      const ttySet = new Set(ttyNames);
+      for (const line of output.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        // First field is TTY, rest is args
+        const spaceIdx = trimmed.indexOf(' ');
+        if (spaceIdx === -1) continue;
+        const tty = trimmed.substring(0, spaceIdx);
+        if (!ttySet.has(tty)) continue;
+        const args = trimmed.substring(spaceIdx + 1);
+        if (!args.includes('--agent-name')) continue;
+
+        const nameMatch = args.match(/--agent-name\s+(\S+)/);
+        const colorMatch = args.match(/--agent-color\s+(\S+)/);
+        if (nameMatch) {
+          result.set(tty, {
+            agentName: nameMatch[1],
+            agentColor: colorMatch?.[1],
+          });
+        }
+      }
+    } catch {
+      // Fall back silently
+    }
+    return result;
+  }
+
+  /**
    * Check if 'claude' process is running on a given TTY
    * This is the most reliable way to detect Claude Code on macOS
    * where pane_current_command returns version number instead of 'claude'

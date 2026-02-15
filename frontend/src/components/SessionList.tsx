@@ -657,8 +657,21 @@ function SessionItem({
         >
           {extSession.panes.map((pane) => {
             const cmd = pane.currentCommand || 'shell';
-            const isClaudePane = cmd === 'claude';
-            const shortPath = pane.currentPath?.replace(/^\/home\/[^/]+\//, '~/') || '';
+            const isClaudePane = cmd === 'claude' || !!pane.agentName;
+            // Use pane title (set by Claude Code) for display, strip status icons
+            const paneTitle = pane.title?.replace(/^[✳★●◆⠂⠈⠐⠠⠄⠁✻✽⏳]\s*/, '').trim();
+            // Priority: agentName > paneTitle > command
+            const displayName = pane.agentName || paneTitle || cmd;
+            // Agent color mapping
+            const agentColorMap: Record<string, string> = {
+              red: 'text-red-300', orange: 'text-orange-300', amber: 'text-amber-300',
+              green: 'text-green-300', teal: 'text-teal-300', blue: 'text-blue-300',
+              cyan: 'text-cyan-300', indigo: 'text-indigo-300', purple: 'text-purple-300',
+              pink: 'text-pink-300',
+            };
+            const nameColor = pane.agentColor && agentColorMap[pane.agentColor]
+              ? agentColorMap[pane.agentColor]
+              : isClaudePane ? 'text-green-300' : 'text-gray-200';
             return (
               <button
                 key={pane.paneId}
@@ -675,10 +688,18 @@ function SessionItem({
                     : 'bg-gray-700/40 active:bg-gray-600/50'
                 }`}
               >
-                <span className={`text-sm font-medium ${isClaudePane ? 'text-green-300' : 'text-gray-200'}`}>
-                  {cmd}
+                <span className={`text-sm font-medium truncate ${nameColor}`}>
+                  {displayName}
                 </span>
-                <span className="text-gray-500 text-xs truncate flex-1">{shortPath}</span>
+                {pane.agentName && paneTitle && (
+                  <span className="text-gray-500 text-xs truncate flex-1">{paneTitle}</span>
+                )}
+                {!pane.agentName && !paneTitle && (
+                  <span className="text-gray-500 text-xs truncate flex-1" />
+                )}
+                {pane.isActive && (
+                  <span className="text-[10px] text-cyan-400 bg-cyan-900/40 px-1 rounded shrink-0">active</span>
+                )}
                 <svg className="w-4 h-4 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>

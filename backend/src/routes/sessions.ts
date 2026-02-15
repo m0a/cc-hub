@@ -67,6 +67,17 @@ sessions.get('/', async (c) => {
     .map(s => (s.paneTty as string).replace('/dev/', ''));
   const processRunningByTty = await tmuxService.batchCheckProcessRunning(claudeTtys);
 
+  // Batch get team agent info for all pane TTYs (for agent name display)
+  const allPaneTtys: string[] = [];
+  for (const s of tmuxSessions) {
+    if (s.panes) {
+      for (const p of s.panes) {
+        if (p.tty) allPaneTtys.push(p.tty.replace('/dev/', ''));
+      }
+    }
+  }
+  const agentInfoByTty = await tmuxService.batchGetAgentInfo(allPaneTtys);
+
   const sessions = await Promise.all(tmuxSessions.map(async (s) => {
     let ccSession: Awaited<ReturnType<typeof claudeCodeService.getSessionForPath>> | undefined;
 
@@ -163,12 +174,20 @@ sessions.get('/', async (c) => {
       durationMinutes: includeClaudeInfo ? durationMinutes : undefined,
       firstMessageId: includeClaudeInfo ? ccSession?.firstMessageId : undefined,
       theme: sessionThemes[s.id],
-      panes: s.panes && s.panes.length > 1 ? s.panes.map((p: { paneId: string; command: string; path: string; isActive: boolean }): PaneInfo => ({
-        paneId: p.paneId,
-        currentCommand: p.command,
-        currentPath: p.path,
-        isActive: p.isActive,
-      })) : undefined,
+      panes: s.panes && s.panes.length > 1 ? s.panes.map((p: { paneId: string; command: string; path: string; title: string; tty: string; isActive: boolean }) => {
+        const ttyName = p.tty?.replace('/dev/', '');
+        const agentInfo = ttyName ? agentInfoByTty.get(ttyName) : undefined;
+        const pane: PaneInfo = {
+          paneId: p.paneId,
+          currentCommand: p.command,
+          currentPath: p.path,
+          title: p.title || undefined,
+          agentName: agentInfo?.agentName,
+          agentColor: agentInfo?.agentColor,
+          isActive: p.isActive,
+        };
+        return pane;
+      }) : undefined,
     };
   }));
 

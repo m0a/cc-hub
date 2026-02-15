@@ -5,6 +5,9 @@
  * of the React component and xterm.js runtime.
  */
 
+// ESC character used in terminal escape sequences
+const ESC = String.fromCharCode(0x1b);
+
 /**
  * Filter mouse tracking escape sequences from terminal INPUT data.
  *
@@ -13,10 +16,13 @@
  * occur. These must be stripped before sending to tmux via `send-keys -H`,
  * since tmux would deliver them as literal bytes to the shell.
  */
+const SGR_MOUSE_RE = new RegExp(`${ESC}\\[<[\\d;]*[Mm]`, 'g');
+const LEGACY_MOUSE_RE = new RegExp(`${ESC}\\[M[\\s\\S]{3}`, 'g');
+
 export function filterMouseTrackingInput(data: string): string {
   return data
-    .replace(/\x1b\[<[\d;]*[Mm]/g, '')    // SGR mouse reports
-    .replace(/\x1b\[M[\s\S]{3}/g, '');     // Legacy X10 mouse reports
+    .replace(SGR_MOUSE_RE, '')    // SGR mouse reports
+    .replace(LEGACY_MOUSE_RE, '');     // Legacy X10 mouse reports
 }
 
 /**
@@ -27,7 +33,7 @@ export function filterMouseTrackingInput(data: string): string {
  * tracking mode and clicks generate escape sequences instead of normal
  * text selection behaviour.
  */
-const MOUSE_TRACKING_OUTPUT_RE = /\x1b\[\?(?:1000|1002|1003|1005|1006|1015)[hl]/g;
+const MOUSE_TRACKING_OUTPUT_RE = new RegExp(`${ESC}\\[\\?(?:1000|1002|1003|1005|1006|1015)[hl]`, 'g');
 
 export function filterMouseTrackingOutput(data: string): string {
   return data.replace(MOUSE_TRACKING_OUTPUT_RE, '');

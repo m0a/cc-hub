@@ -172,8 +172,8 @@ export class TmuxControlSession {
   private static readonly CR = 0x0d;
 
   private processBuffer(): void {
-    let newlineIndex: number;
-    while ((newlineIndex = this.rawBuffer.indexOf(TmuxControlSession.LF)) !== -1) {
+    let newlineIndex: number = this.rawBuffer.indexOf(TmuxControlSession.LF);
+    while (newlineIndex !== -1) {
       let lineEnd = newlineIndex;
       // Strip \r from PTY output (PTY may add \r\n instead of \n)
       if (lineEnd > 0 && this.rawBuffer[lineEnd - 1] === TmuxControlSession.CR) {
@@ -182,6 +182,7 @@ export class TmuxControlSession {
       const rawLine = this.rawBuffer.subarray(0, lineEnd);
       this.rawBuffer = this.rawBuffer.subarray(newlineIndex + 1);
       this.processRawLine(rawLine);
+      newlineIndex = this.rawBuffer.indexOf(TmuxControlSession.LF);
     }
   }
 

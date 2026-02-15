@@ -56,13 +56,14 @@ function splitHighlightedHtml(html: string): string[] {
     // Track open/close span tags
     const tags: string[] = [];
     const tagRe = /<(\/?)span([^>]*)>/g;
-    let m: RegExpExecArray | null;
-    while ((m = tagRe.exec(line)) !== null) {
+    let m: RegExpExecArray | null = tagRe.exec(line);
+    while (m !== null) {
       if (m[1] === '/') {
         if (tags.length > 0) tags.pop();
       } else {
         tags.push(m[0]);
       }
+      m = tagRe.exec(line);
     }
 
     // Close unclosed tags at end of line

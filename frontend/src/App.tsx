@@ -674,8 +674,6 @@ export function App() {
           activeSessionId={activeSessionId}
           onSessionStateChange={updateSessionState}
           onReload={handleReload}
-          showSessionListOnboarding={showSessionListOnboarding}
-          onCompleteSessionListOnboarding={completeSessionListOnboarding}
         />
         {showOnboarding && <Onboarding onComplete={completeOnboarding} />}
       </>
@@ -692,8 +690,6 @@ export function App() {
           onSessionStateChange={updateSessionState}
           onReload={handleReload}
           isTablet={true}
-          showSessionListOnboarding={showSessionListOnboarding}
-          onCompleteSessionListOnboarding={completeSessionListOnboarding}
           keyboardControlRef={keyboardControlRef}
         />
         {showOnboarding && <Onboarding onComplete={completeOnboarding} onStepAction={onboardingStepAction} />}

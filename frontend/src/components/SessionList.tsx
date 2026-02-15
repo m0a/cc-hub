@@ -58,6 +58,7 @@ interface SessionListProps {
   inline?: boolean;  // true for side panel, false for fullscreen
   contentScale?: number;  // Scale factor for content (tabs remain fixed)
   isOnboarding?: boolean;  // Show dummy session for onboarding
+  hideDashboardTab?: boolean;  // Hide dashboard tab (used in modal)
 }
 
 // Session menu dialog (color change + delete)
@@ -626,7 +627,7 @@ function SessionItem({
   );
 }
 
-export function SessionList({ onSelectSession, onBack, inline = false, contentScale, isOnboarding = false }: SessionListProps) {
+export function SessionList({ onSelectSession, onBack, inline = false, contentScale, isOnboarding = false, hideDashboardTab = false }: SessionListProps) {
   const { t } = useTranslation();
   const {
     sessions,
@@ -885,17 +886,19 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
           >
             {t('history.title')}
           </button>
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`flex-1 min-w-0 px-1 py-2 text-xs font-medium truncate transition-colors ${
-              activeTab === 'dashboard'
-                ? 'text-white bg-gray-800 border-t-2 border-blue-500'
-                : 'text-gray-400 hover:text-gray-300'
-            }`}
-            data-onboarding="dashboard-tab"
-          >
-            {t('dashboard.title')}
-          </button>
+          {!hideDashboardTab && (
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`flex-1 min-w-0 px-1 py-2 text-xs font-medium truncate transition-colors ${
+                activeTab === 'dashboard'
+                  ? 'text-white bg-gray-800 border-t-2 border-blue-500'
+                  : 'text-gray-400 hover:text-gray-300'
+              }`}
+              data-onboarding="dashboard-tab"
+            >
+              {t('dashboard.title')}
+            </button>
+          )}
         </div>
       </div>
 

@@ -3,21 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { TerminalComponent, type TerminalRef } from './Terminal';
 import { ConversationViewer } from './ConversationViewer';
 import { FileViewer } from './files/FileViewer';
-import { SessionList } from './SessionList';
-import { Onboarding } from './Onboarding';
 import { authFetch } from '../services/api';
 import type { SessionState, ConversationMessage, SessionTheme } from '../../../shared/types';
 import type { ControlModeConfig } from './Terminal';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
-const SESSION_LIST_WIDTH_KEY = 'cchub-session-list-width';
-const DEFAULT_SESSION_LIST_WIDTH = 256; // 256px = w-64
-const MIN_SESSION_LIST_WIDTH = 150;
-const MAX_SESSION_LIST_WIDTH = 500;
-const SESSION_LIST_SCALE_KEY = 'cchub-session-list-scale';
-const DEFAULT_SESSION_LIST_SCALE = 1;
-const MIN_SESSION_LIST_SCALE = 0.5;
-const MAX_SESSION_LIST_SCALE = 2;
 
 // ペインノード型定義
 export type PaneNode =
@@ -53,11 +43,8 @@ interface PaneContainerProps {
   onSplit?: (direction: 'horizontal' | 'vertical') => void;
   sessions: ExtendedSession[];
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
-  sessionListToggleRefs?: React.RefObject<Map<string, () => void>>;
   isTablet?: boolean;
   globalReloadKey?: number;
-  showSessionListOnboarding?: boolean;
-  onCompleteSessionListOnboarding?: () => void;
   controlModeContext: ControlModeContext;
 }
 
@@ -72,11 +59,8 @@ export function PaneContainer({
   onSplit,
   sessions,
   terminalRefs,
-  sessionListToggleRefs,
   isTablet = false,
   globalReloadKey = 0,
-  showSessionListOnboarding = false,
-  onCompleteSessionListOnboarding,
   controlModeContext,
 }: PaneContainerProps) {
   if (node.type === 'terminal') {
@@ -92,11 +76,8 @@ export function PaneContainer({
         onSplit={onSplit}
         sessions={sessions}
         terminalRefs={terminalRefs}
-        sessionListToggleRefs={sessionListToggleRefs}
         globalReloadKey={globalReloadKey}
         isTablet={isTablet}
-        showSessionListOnboarding={showSessionListOnboarding}
-        onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
         controlModeContext={controlModeContext}
       />
     );
@@ -115,11 +96,8 @@ export function PaneContainer({
         onSplit={onSplit}
         sessions={sessions}
         terminalRefs={terminalRefs}
-        sessionListToggleRefs={sessionListToggleRefs}
         isTablet={isTablet}
         globalReloadKey={globalReloadKey}
-        showSessionListOnboarding={showSessionListOnboarding}
-        onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
         controlModeContext={controlModeContext}
       />
     );
@@ -140,11 +118,8 @@ export function PaneContainer({
       onSplit={onSplit}
       sessions={sessions}
       terminalRefs={terminalRefs}
-      sessionListToggleRefs={sessionListToggleRefs}
       globalReloadKey={globalReloadKey}
       isTablet={isTablet}
-      showSessionListOnboarding={showSessionListOnboarding}
-      onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
       controlModeContext={controlModeContext}
     />
   );
@@ -161,11 +136,8 @@ interface TerminalPaneProps {
   onSplit?: (direction: 'horizontal' | 'vertical') => void;
   sessions: ExtendedSession[];
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
-  sessionListToggleRefs?: React.RefObject<Map<string, () => void>>;
   globalReloadKey?: number;
   isTablet?: boolean;
-  showSessionListOnboarding?: boolean;
-  onCompleteSessionListOnboarding?: () => void;
   controlModeContext: ControlModeContext;
 }
 
@@ -180,11 +152,8 @@ function TerminalPane({
   onSplit: _onSplit,
   sessions,
   terminalRefs,
-  sessionListToggleRefs,
   globalReloadKey = 0,
   isTablet = false,
-  showSessionListOnboarding = false,
-  onCompleteSessionListOnboarding,
   controlModeContext,
 }: TerminalPaneProps) {
   const { t } = useTranslation();
@@ -197,107 +166,6 @@ function TerminalPane({
   const [isClaudeRunning, setIsClaudeRunning] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [showFileViewer, setShowFileViewer] = useState(false);
-  const [showSessionList, setShowSessionList] = useState(false);
-
-  // Session list sidebar width (resizable by drag)
-  const [sessionListWidth, setSessionListWidth] = useState(() => {
-    try {
-      const saved = localStorage.getItem(SESSION_LIST_WIDTH_KEY);
-      return saved ? parseInt(saved, 10) : DEFAULT_SESSION_LIST_WIDTH;
-    } catch {
-      return DEFAULT_SESSION_LIST_WIDTH;
-    }
-  });
-  const [isDraggingSidebar, setIsDraggingSidebar] = useState(false);
-
-  // Session list scale (pinch zoom)
-  const [sessionListScale, setSessionListScale] = useState(() => {
-    try {
-      const saved = localStorage.getItem(SESSION_LIST_SCALE_KEY);
-      return saved ? parseFloat(saved) : DEFAULT_SESSION_LIST_SCALE;
-    } catch {
-      return DEFAULT_SESSION_LIST_SCALE;
-    }
-  });
-
-  // Save session list width and scale to localStorage
-  useEffect(() => {
-    localStorage.setItem(SESSION_LIST_WIDTH_KEY, String(sessionListWidth));
-  }, [sessionListWidth]);
-
-  useEffect(() => {
-    localStorage.setItem(SESSION_LIST_SCALE_KEY, String(sessionListScale));
-  }, [sessionListScale]);
-
-  // Handle sidebar resize drag
-  useEffect(() => {
-    if (!isDraggingSidebar) return;
-
-    const handleMove = (e: MouseEvent | TouchEvent) => {
-      e.preventDefault();
-      if (!containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-      // Calculate width from right edge
-      const newWidth = rect.right - clientX;
-      setSessionListWidth(Math.max(MIN_SESSION_LIST_WIDTH, Math.min(MAX_SESSION_LIST_WIDTH, newWidth)));
-    };
-
-    const handleEnd = () => {
-      setIsDraggingSidebar(false);
-    };
-
-    document.addEventListener('mousemove', handleMove);
-    document.addEventListener('mouseup', handleEnd);
-    document.addEventListener('touchmove', handleMove, { passive: false });
-    document.addEventListener('touchend', handleEnd);
-
-    return () => {
-      document.removeEventListener('mousemove', handleMove);
-      document.removeEventListener('mouseup', handleEnd);
-      document.removeEventListener('touchmove', handleMove);
-      document.removeEventListener('touchend', handleEnd);
-    };
-  }, [isDraggingSidebar]);
-
-  const handleSidebarDragStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    e.preventDefault();
-    setIsDraggingSidebar(true);
-  }, []);
-
-  // Pinch gesture for content scale (zoom)
-  const pinchStartRef = useRef<{ distance: number; scale: number } | null>(null);
-
-  const getTouchDistance = (touches: React.TouchList | TouchList): number => {
-    if (touches.length < 2) return 0;
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  };
-
-  const handleSidebarTouchStart = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2) {
-      e.preventDefault();
-      pinchStartRef.current = {
-        distance: getTouchDistance(e.touches),
-        scale: sessionListScale,
-      };
-    }
-  }, [sessionListScale]);
-
-  const handleSidebarTouchMove = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2 && pinchStartRef.current) {
-      e.preventDefault();
-      const currentDistance = getTouchDistance(e.touches);
-      const ratio = currentDistance / pinchStartRef.current.distance;
-      const newScale = pinchStartRef.current.scale * ratio;
-      setSessionListScale(Math.max(MIN_SESSION_LIST_SCALE, Math.min(MAX_SESSION_LIST_SCALE, newScale)));
-    }
-  }, []);
-
-  const handleSidebarTouchEnd = useCallback(() => {
-    pinchStartRef.current = null;
-  }, []);
 
   // Refresh terminal display (force tmux redraw without remounting)
   const handleReload = useCallback((e: React.MouseEvent) => {
@@ -325,16 +193,6 @@ function TerminalPane({
       terminalRefs.current.delete(paneId);
     };
   }, [paneId, sessionId, terminalRefs]);
-
-  // Register session list toggle function
-  useEffect(() => {
-    if (sessionListToggleRefs?.current) {
-      sessionListToggleRefs.current.set(paneId, () => setShowSessionList(prev => !prev));
-    }
-    return () => {
-      sessionListToggleRefs?.current?.delete(paneId);
-    };
-  }, [paneId, sessionListToggleRefs]);
 
   const handleConnect = useCallback(() => {
     if (sessionId) {
@@ -523,24 +381,6 @@ function TerminalPane({
               </button>
             </div>
           )}
-          {/* Session list toggle button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowSessionList(!showSessionList);
-            }}
-            className={`${isTablet ? 'p-2.5' : 'p-1'} transition-colors ${
-              showSessionList
-                ? 'text-blue-400 hover:text-blue-300'
-                : 'text-white/50 hover:text-white/80'
-            }`}
-            title={showSessionList ? t('session.hideList') : t('session.showList')}
-            data-onboarding="session-list"
-          >
-            <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-            </svg>
-          </button>
           {/* Close button */}
           <button
             onClick={(e) => { e.stopPropagation(); onClose(); }}
@@ -554,89 +394,39 @@ function TerminalPane({
         </div>
       </div>
 
-      {/* Terminal, conversation, or session selector - with optional session list sidebar */}
-      <div className="flex-1 min-h-0 flex relative">
-        {/* Main content */}
-        <div className={`${showSessionList ? 'flex-1' : 'w-full'} min-w-0`}>
-          {showConversation && currentCcSessionId ? (
-            <ConversationViewer
-              title="会話履歴"
-              subtitle={session?.name}
-              messages={messages}
-              isLoading={isLoadingMessages}
-              onClose={() => setShowConversation(false)}
-              inline={true}
-              scrollToBottom={true}
-              isActive={isClaudeRunning}
-              onRefresh={() => fetchConversation(currentCcSessionId || undefined)}
-            />
-          ) : sessionId ? (
-            <TerminalComponent
-              key={`${sessionId}-${reloadKey}-${globalReloadKey}`}
-              ref={terminalRef}
-              sessionId={sessionId}
-              hideKeyboard={true}
-              onConnect={handleConnect}
-              onDisconnect={handleDisconnect}
-              theme={session?.theme}
-              controlMode={controlModeContext.getControlConfig(paneId)}
-            />
-          ) : (
-            <SessionSelector
-              sessions={sessions}
-              onSelect={(sess) => {
-                // Directly set session ID via callback
-                onSelectSession(sess.id);
-              }}
-            />
-          )}
-        </div>
-
-        {/* Resize handle - absolute, overlaying the border between terminal and sidebar */}
-        <div
-          onMouseDown={handleSidebarDragStart}
-          onTouchStart={handleSidebarDragStart}
-          className={`absolute top-0 h-full cursor-col-resize z-10 flex items-center justify-center ${
-            isDraggingSidebar ? 'bg-blue-500/20' : ''
-          }`}
-          style={{
-            width: isTablet ? 24 : 12,
-            right: sessionListWidth - 8 - (isTablet ? 12 : 6),
-            touchAction: 'none',
-            display: showSessionList ? undefined : 'none',
-          }}
-        >
-          <div className={`w-0.5 h-8 rounded-full transition-colors ${isDraggingSidebar ? 'bg-blue-400' : 'bg-gray-500'}`} />
-        </div>
-
-        {/* Session list sidebar - kept mounted, hidden via CSS to preserve state and polling */}
-        <div
-          className="flex flex-col shrink-0 overflow-hidden bg-gray-900 -ml-2 border-l border-gray-700"
-          style={{
-            width: sessionListWidth,
-            touchAction: 'pan-y',
-            display: showSessionList ? undefined : 'none',
-          }}
-          onTouchStart={handleSidebarTouchStart}
-          onTouchMove={handleSidebarTouchMove}
-          onTouchEnd={handleSidebarTouchEnd}
-        >
-          <div className={`px-2 py-1 bg-black/30 border-b border-gray-700 text-xs text-white/70 flex items-center justify-between shrink-0 ${isTablet ? 'mt-10' : ''}`}>
-            <span>{t('session.list')}</span>
-            <span className="text-white/40">{Math.round(sessionListScale * 100)}%</span>
-          </div>
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <SessionList
-              onSelectSession={(sess) => {
-                onSelectSession(sess.id);
-                // Keep session list open after selection
-              }}
-              inline={true}
-              contentScale={sessionListScale}
-              isOnboarding={showSessionListOnboarding}
-            />
-          </div>
-        </div>
+      {/* Terminal, conversation, or session selector */}
+      <div className="flex-1 min-h-0">
+        {showConversation && currentCcSessionId ? (
+          <ConversationViewer
+            title="会話履歴"
+            subtitle={session?.name}
+            messages={messages}
+            isLoading={isLoadingMessages}
+            onClose={() => setShowConversation(false)}
+            inline={true}
+            scrollToBottom={true}
+            isActive={isClaudeRunning}
+            onRefresh={() => fetchConversation(currentCcSessionId || undefined)}
+          />
+        ) : sessionId ? (
+          <TerminalComponent
+            key={`${sessionId}-${reloadKey}-${globalReloadKey}`}
+            ref={terminalRef}
+            sessionId={sessionId}
+            hideKeyboard={true}
+            onConnect={handleConnect}
+            onDisconnect={handleDisconnect}
+            theme={session?.theme}
+            controlMode={controlModeContext.getControlConfig(paneId)}
+          />
+        ) : (
+          <SessionSelector
+            sessions={sessions}
+            onSelect={(sess) => {
+              onSelectSession(sess.id);
+            }}
+          />
+        )}
       </div>
 
       {/* File Viewer Modal */}
@@ -645,11 +435,6 @@ function TerminalPane({
           sessionWorkingDir={session.currentPath}
           onClose={() => setShowFileViewer(false)}
         />
-      )}
-
-      {/* Session list onboarding (for first-time users) */}
-      {showSessionListOnboarding && showSessionList && onCompleteSessionListOnboarding && (
-        <Onboarding type="sessionList" onComplete={onCompleteSessionListOnboarding} />
       )}
     </div>
   );
@@ -699,11 +484,8 @@ interface SplitContainerProps {
   onSplit?: (direction: 'horizontal' | 'vertical') => void;
   sessions: ExtendedSession[];
   terminalRefs: React.RefObject<Map<string, TerminalRef | null>>;
-  sessionListToggleRefs?: React.RefObject<Map<string, () => void>>;
   isTablet?: boolean;
   globalReloadKey?: number;
-  showSessionListOnboarding?: boolean;
-  onCompleteSessionListOnboarding?: () => void;
   controlModeContext: ControlModeContext;
 }
 
@@ -718,11 +500,8 @@ function SplitContainer({
   onSplit,
   sessions,
   terminalRefs,
-  sessionListToggleRefs,
   isTablet = false,
   globalReloadKey = 0,
-  showSessionListOnboarding = false,
-  onCompleteSessionListOnboarding,
   controlModeContext,
 }: SplitContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -850,11 +629,8 @@ function SplitContainer({
           onSplit={onSplit}
           sessions={sessions}
           terminalRefs={terminalRefs}
-          sessionListToggleRefs={sessionListToggleRefs}
           isTablet={isTablet}
           globalReloadKey={globalReloadKey}
-          showSessionListOnboarding={showSessionListOnboarding}
-          onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
           controlModeContext={controlModeContext}
         />
       </div>

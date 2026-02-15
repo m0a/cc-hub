@@ -2,6 +2,8 @@ import { useRef, useCallback, useState, useEffect, useMemo } from 'react';
 import { PaneContainer, type PaneNode, type ControlModeContext } from './PaneContainer';
 import { FileViewer } from './files/FileViewer';
 import { FloatingKeyboard } from './FloatingKeyboard';
+import { SessionModal } from './SessionModal';
+import { DashboardPanel } from './DashboardPanel';
 import { authFetch } from '../services/api';
 import { useSessions } from '../hooks/useSessions';
 import { useControlTerminal } from '../hooks/useControlTerminal';
@@ -31,8 +33,6 @@ interface DesktopLayoutProps {
   onSessionStateChange: (id: string, state: SessionState) => void;
   onReload: () => void;
   isTablet?: boolean;
-  showSessionListOnboarding?: boolean;
-  onCompleteSessionListOnboarding?: () => void;
   keyboardControlRef?: React.RefObject<{ open: () => void; close: () => void } | null>;
 }
 
@@ -200,12 +200,9 @@ export function DesktopLayout({
   onSessionStateChange,
   onReload,
   isTablet = false,
-  showSessionListOnboarding = false,
-  onCompleteSessionListOnboarding,
   keyboardControlRef,
 }: DesktopLayoutProps) {
   const terminalRefs = useRef<Map<string, TerminalRef | null>>(new Map());
-  const sessionListToggleRefs = useRef<Map<string, () => void>>(new Map());
   const activePaneRef = useRef<string>('');
   const paneContainerRef = useRef<HTMLDivElement>(null);
 
@@ -238,6 +235,8 @@ export function DesktopLayout({
       })
     : propSessions;
   const [showFileViewer, setShowFileViewer] = useState(false);
+  const [showSessionModal, setShowSessionModal] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
 
   // Floating keyboard state (for tablet mode)
   const [showKeyboard, setShowKeyboard] = useState(() => {
@@ -751,11 +750,17 @@ export function DesktopLayout({
         return;
       }
 
-      // Ctrl/Cmd + B: Toggle session list in active pane
+      // Ctrl/Cmd + B: Toggle session modal
       if (!e.shiftKey && e.key.toLowerCase() === 'b') {
         e.preventDefault();
-        const toggleFn = sessionListToggleRefs.current.get(activePaneRef.current);
-        toggleFn?.();
+        setShowSessionModal(prev => !prev);
+        return;
+      }
+
+      // Ctrl/Cmd + Shift + B: Toggle dashboard panel
+      if (e.shiftKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setShowDashboard(prev => !prev);
         return;
       }
 
@@ -939,6 +944,12 @@ export function DesktopLayout({
     ? sessions.find(s => s.id === activePane.sessionId)
     : null;
 
+  // Handle session selection from modal
+  const handleModalSelectSession = useCallback((session: { id: string }) => {
+    const paneId = activePaneRef.current;
+    handleSelectSessionForPane(paneId, session.id);
+  }, [handleSelectSessionForPane]);
+
   return (
     <div className="h-screen flex bg-gray-900">
       {/* Main content */}
@@ -953,6 +964,37 @@ export function DesktopLayout({
 
             {/* Right: Action buttons - min 44px touch targets per Apple HIG */}
             <div className="flex items-center gap-0">
+              {/* Session list */}
+              <button
+                onClick={() => setShowSessionModal(prev => !prev)}
+                className={`p-2.5 rounded transition-colors ${
+                  showSessionModal
+                    ? 'text-blue-400 bg-blue-500/20 hover:bg-blue-500/30'
+                    : 'text-white/70 hover:text-white hover:bg-white/10'
+                }`}
+                title="セッション一覧"
+                data-onboarding="session-list"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                </svg>
+              </button>
+
+              {/* Dashboard */}
+              <button
+                onClick={() => setShowDashboard(prev => !prev)}
+                className={`p-2.5 rounded transition-colors ${
+                  showDashboard
+                    ? 'text-blue-400 bg-blue-500/20 hover:bg-blue-500/30'
+                    : 'text-white/70 hover:text-white hover:bg-white/10'
+                }`}
+                title="ダッシュボード"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1v-2zM14 13a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1h-4a1 1 0 01-1-1v-5z" />
+                </svg>
+              </button>
+
               {/* Split buttons */}
               <div className="flex items-center" data-onboarding="split-pane">
                 <button
@@ -1026,15 +1068,24 @@ export function DesktopLayout({
             onSplit={handleSplit}
             sessions={sessions}
             terminalRefs={terminalRefs}
-            sessionListToggleRefs={sessionListToggleRefs}
             isTablet={isTablet}
-            showSessionListOnboarding={showSessionListOnboarding}
-            onCompleteSessionListOnboarding={onCompleteSessionListOnboarding}
             controlModeContext={controlModeContext}
           />
         </div>
       </div>
 
+      {/* Dashboard side panel */}
+      <DashboardPanel
+        isOpen={showDashboard}
+        onClose={() => setShowDashboard(false)}
+      />
+
+      {/* Session modal */}
+      <SessionModal
+        isOpen={showSessionModal}
+        onClose={() => setShowSessionModal(false)}
+        onSelectSession={handleModalSelectSession}
+      />
 
       {/* File Viewer Modal */}
       {showFileViewer && activeSession?.currentPath && (

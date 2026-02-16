@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { CreateSessionSchema, type IndicatorState, } from '../../../shared/types';
+import { CreateSessionSchema, PaneIdSchema, type IndicatorState, type PaneInfo } from '../../../shared/types';
 import { TmuxService } from '../services/tmux';
 import { ClaudeCodeService } from '../services/claude-code';
 import { SessionHistoryService } from '../services/session-history';
@@ -66,6 +66,17 @@ sessions.get('/', async (c) => {
     .filter(s => s.currentCommand === 'claude' && s.paneTty)
     .map(s => (s.paneTty as string).replace('/dev/', ''));
   const processRunningByTty = await tmuxService.batchCheckProcessRunning(claudeTtys);
+
+  // Batch get team agent info for all pane TTYs (for agent name display)
+  const allPaneTtys: string[] = [];
+  for (const s of tmuxSessions) {
+    if (s.panes) {
+      for (const p of s.panes) {
+        if (p.tty) allPaneTtys.push(p.tty.replace('/dev/', ''));
+      }
+    }
+  }
+  const agentInfoByTty = await tmuxService.batchGetAgentInfo(allPaneTtys);
 
   const sessions = await Promise.all(tmuxSessions.map(async (s) => {
     let ccSession: Awaited<ReturnType<typeof claudeCodeService.getSessionForPath>> | undefined;
@@ -163,6 +174,20 @@ sessions.get('/', async (c) => {
       durationMinutes: includeClaudeInfo ? durationMinutes : undefined,
       firstMessageId: includeClaudeInfo ? ccSession?.firstMessageId : undefined,
       theme: sessionThemes[s.id],
+      panes: s.panes && s.panes.length > 1 ? s.panes.map((p: { paneId: string; command: string; path: string; title: string; tty: string; isActive: boolean }) => {
+        const ttyName = p.tty?.replace('/dev/', '');
+        const agentInfo = ttyName ? agentInfoByTty.get(ttyName) : undefined;
+        const pane: PaneInfo = {
+          paneId: p.paneId,
+          currentCommand: p.command,
+          currentPath: p.path,
+          title: p.title || undefined,
+          agentName: agentInfo?.agentName,
+          agentColor: agentInfo?.agentColor,
+          isActive: p.isActive,
+        };
+        return pane;
+      }) : undefined,
     };
   }));
 
@@ -518,6 +543,135 @@ sessions.put('/:id/theme', async (c) => {
     return c.json({ success: true, theme: parsed.data.theme });
   } catch (_error) {
     return c.json({ error: 'Failed to update theme' }, 500);
+  }
+});
+
+// =============================================================================
+// Pane Operations
+// =============================================================================
+
+const PaneFocusSchema = z.object({
+  paneId: PaneIdSchema,
+});
+
+const PaneCloseSchema = z.object({
+  paneId: PaneIdSchema,
+});
+
+const PaneSplitSchema = z.object({
+  paneId: PaneIdSchema,
+  direction: z.enum(['h', 'v']),
+});
+
+// POST /sessions/:id/panes/focus - Focus a specific pane
+sessions.post('/:id/panes/focus', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = PaneFocusSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid pane ID' }, 400);
+  }
+
+  const exists = await tmuxService.sessionExists(id);
+  if (!exists) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+
+  try {
+    const proc = Bun.spawn(['tmux', 'select-pane', '-t', parsed.data.paneId], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      const error = await new Response(proc.stderr).text();
+      return c.json({ error: `Failed to focus pane: ${error}` }, 500);
+    }
+    tmuxService.invalidateCache();
+    return c.json({ success: true });
+  } catch (_error) {
+    return c.json({ error: 'Failed to focus pane' }, 500);
+  }
+});
+
+// POST /sessions/:id/panes/close - Close a specific pane
+sessions.post('/:id/panes/close', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = PaneCloseSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid pane ID' }, 400);
+  }
+
+  const exists = await tmuxService.sessionExists(id);
+  if (!exists) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+
+  // Check pane count - don't allow closing the last pane
+  try {
+    const countProc = Bun.spawn(['tmux', 'list-panes', '-t', id, '-F', '#{pane_id}'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const countText = await new Response(countProc.stdout).text();
+    await countProc.exited;
+    const paneCount = countText.trim().split('\n').filter(l => l.length > 0).length;
+    if (paneCount <= 1) {
+      return c.json({ error: 'Cannot close the last pane' }, 400);
+    }
+  } catch {
+    // If we can't count panes, proceed cautiously
+  }
+
+  try {
+    const proc = Bun.spawn(['tmux', 'kill-pane', '-t', parsed.data.paneId], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      const error = await new Response(proc.stderr).text();
+      return c.json({ error: `Failed to close pane: ${error}` }, 500);
+    }
+    tmuxService.invalidateCache();
+    return c.json({ success: true });
+  } catch (_error) {
+    return c.json({ error: 'Failed to close pane' }, 500);
+  }
+});
+
+// POST /sessions/:id/panes/split - Split a pane
+sessions.post('/:id/panes/split', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = PaneSplitSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid request' }, 400);
+  }
+
+  const exists = await tmuxService.sessionExists(id);
+  if (!exists) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+
+  try {
+    const proc = Bun.spawn(['tmux', 'split-window', parsed.data.direction === 'h' ? '-h' : '-v', '-t', parsed.data.paneId], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      const error = await new Response(proc.stderr).text();
+      return c.json({ error: `Failed to split pane: ${error}` }, 500);
+    }
+    tmuxService.invalidateCache();
+    return c.json({ success: true });
+  } catch (_error) {
+    return c.json({ error: 'Failed to split pane' }, 500);
   }
 });
 

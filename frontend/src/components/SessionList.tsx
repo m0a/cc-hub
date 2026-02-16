@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { SessionResponse, IndicatorState, ConversationMessage, FileInfo, SessionTheme } from '../../../shared/types';
+import type { SessionResponse, IndicatorState, ConversationMessage, FileInfo, SessionTheme, PaneInfo } from '../../../shared/types';
 import { useSessions } from '../hooks/useSessions';
 
 // Theme color mapping
@@ -54,10 +54,12 @@ async function createDirectory(path: string): Promise<{ path: string; success: b
 
 interface SessionListProps {
   onSelectSession: (session: SessionResponse) => void;
+  onSelectPane?: (session: SessionResponse, paneId: string) => void;
   onBack?: () => void;
   inline?: boolean;  // true for side panel, false for fullscreen
   contentScale?: number;  // Scale factor for content (tabs remain fixed)
   isOnboarding?: boolean;  // Show dummy session for onboarding
+  hideDashboardTab?: boolean;  // Hide dashboard tab (used in modal)
 }
 
 // Session menu dialog (color change + delete)
@@ -420,15 +422,19 @@ function CreateSessionModal({
 function SessionItem({
   session,
   onSelect,
+  onSelectPane,
   onShowMenu,
   onResume,
   onShowConversation,
+  onPaneAction,
 }: {
   session: SessionResponse;
   onSelect: (session: SessionResponse) => void;
+  onSelectPane?: (session: SessionResponse, paneId: string) => void;
   onShowMenu: (session: SessionResponse) => void;
   onResume?: (sessionId: string, ccSessionId?: string) => void;
   onShowConversation?: (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => void;
+  onPaneAction?: (sessionId: string, action: 'focus' | 'close' | 'split', paneId: string, direction?: 'h' | 'v') => void;
 }) {
   const { t } = useTranslation();
   const longPressTimerRef = useRef<number | null>(null);
@@ -437,7 +443,6 @@ function SessionItem({
   const startLongPress = () => {
     longPressFiredRef.current = false;
     longPressTimerRef.current = window.setTimeout(() => {
-      console.log('[SessionItem] Long press fired:', session.name);
       longPressFiredRef.current = true;
       onShowMenu(session);
     }, 600);
@@ -451,14 +456,12 @@ function SessionItem({
   };
 
   const handleTouchStart = () => {
-    console.log('[SessionItem] Touch start:', session.name);
     startLongPress();
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
     // Only handle left click
     if (e.button !== 0) return;
-    console.log('[SessionItem] Mouse down:', session.name);
     startLongPress();
   };
 
@@ -482,7 +485,6 @@ function SessionItem({
 
   const handleTouchMove = () => {
     // Cancel long press when touch moves (scrolling)
-    console.log('[SessionItem] Touch move - canceling long press');
     cancelLongPress();
   };
 
@@ -491,11 +493,23 @@ function SessionItem({
     longPressFiredRef.current = false;
   };
 
+  const [panesExpanded, setPanesExpanded] = useState(false);
+
   const handleClick = () => {
-    if (!longPressFiredRef.current) {
-      onSelect(session);
+    if (longPressFiredRef.current) {
+      longPressFiredRef.current = false;
+      return;
     }
     longPressFiredRef.current = false;
+
+    // Multi-pane session: toggle pane list only when pane selection is available (mobile)
+    const extSess = session as SessionResponse & { panes?: PaneInfo[] };
+    if (onSelectPane && extSess.panes && extSess.panes.length > 1) {
+      setPanesExpanded(prev => !prev);
+      return;
+    }
+
+    onSelect(session);
   };
 
   // Get extra session info
@@ -510,6 +524,7 @@ function SessionItem({
     indicatorState?: IndicatorState;
     ccSessionId?: string;
     theme?: SessionTheme;
+    panes?: PaneInfo[];
   };
   const isClaudeRunning = extSession.currentCommand === 'claude';
   const themeColor = extSession.theme ? THEME_COLORS[extSession.theme] : null;
@@ -577,6 +592,11 @@ function SessionItem({
     >
       <div className="flex items-center gap-2">
         <span className={`font-medium truncate flex-1 ${!isClaudeRunning ? 'text-gray-300' : ''}`}>{displayTitle}</span>
+        {extSession.panes && extSession.panes.length > 1 && (
+          <span className="text-xs text-cyan-400 bg-cyan-900/50 px-1.5 py-0.5 rounded shrink-0">
+            {t('pane.panes', { count: extSession.panes.length })}
+          </span>
+        )}
         {isWaiting && extSession.waitingToolName && (
           <span className="text-xs text-yellow-400 bg-yellow-900/50 px-1.5 py-0.5 rounded shrink-0 animate-pulse">{waitingLabel}</span>
         )}
@@ -626,11 +646,73 @@ function SessionItem({
           {t('session.longPressHint')}
         </div>
       </div>
+
+      {/* Pane selection list (expandable, only when onSelectPane is available) */}
+      {onSelectPane && panesExpanded && extSession.panes && extSession.panes.length > 1 && (
+        <div
+          className="mt-2 pt-2 border-t border-gray-700 space-y-1"
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+        >
+          {extSession.panes.map((pane) => {
+            const cmd = pane.currentCommand || 'shell';
+            const isClaudePane = cmd === 'claude' || !!pane.agentName;
+            // Use pane title (set by Claude Code) for display, strip status icons
+            const paneTitle = pane.title?.replace(/^[✳★●◆⠂⠈⠐⠠⠄⠁✻✽⏳]\s*/, '').trim();
+            // Priority: agentName > paneTitle > command
+            const displayName = pane.agentName || paneTitle || cmd;
+            // Agent color mapping
+            const agentColorMap: Record<string, string> = {
+              red: 'text-red-300', orange: 'text-orange-300', amber: 'text-amber-300',
+              green: 'text-green-300', teal: 'text-teal-300', blue: 'text-blue-300',
+              cyan: 'text-cyan-300', indigo: 'text-indigo-300', purple: 'text-purple-300',
+              pink: 'text-pink-300',
+            };
+            const nameColor = pane.agentColor && agentColorMap[pane.agentColor]
+              ? agentColorMap[pane.agentColor]
+              : isClaudePane ? 'text-green-300' : 'text-gray-200';
+            return (
+              <button
+                key={pane.paneId}
+                onClick={() => {
+                  if (onSelectPane) {
+                    onSelectPane(session, pane.paneId);
+                  } else {
+                    onSelect(session);
+                  }
+                }}
+                className={`w-full flex items-center gap-2 px-3 py-2.5 rounded text-left transition-colors active:scale-[0.98] ${
+                  isClaudePane
+                    ? 'bg-green-900/30 active:bg-green-800/40'
+                    : 'bg-gray-700/40 active:bg-gray-600/50'
+                }`}
+              >
+                <span className={`text-sm font-medium truncate ${nameColor}`}>
+                  {displayName}
+                </span>
+                {pane.agentName && paneTitle && (
+                  <span className="text-gray-500 text-xs truncate flex-1">{paneTitle}</span>
+                )}
+                {!pane.agentName && !paneTitle && (
+                  <span className="text-gray-500 text-xs truncate flex-1" />
+                )}
+                {pane.isActive && (
+                  <span className="text-[10px] text-cyan-400 bg-cyan-900/40 px-1 rounded shrink-0">active</span>
+                )}
+                <svg className="w-4 h-4 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-export function SessionList({ onSelectSession, onBack, inline = false, contentScale, isOnboarding = false }: SessionListProps) {
+export function SessionList({ onSelectSession, onSelectPane, onBack, inline = false, contentScale, isOnboarding = false, hideDashboardTab = false }: SessionListProps) {
   const { t } = useTranslation();
   const {
     sessions,
@@ -713,6 +795,29 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
       console.error('Failed to refresh conversation:', err);
     }
   }, [viewingConversation, fetchConversation]);
+
+  // Pane operations
+  const handlePaneAction = useCallback(async (sessionId: string, action: 'focus' | 'close' | 'split', paneId: string, direction?: 'h' | 'v') => {
+    try {
+      const endpoint = action === 'split'
+        ? `${API_BASE}/api/sessions/${sessionId}/panes/split`
+        : `${API_BASE}/api/sessions/${sessionId}/panes/${action}`;
+      const body = action === 'split'
+        ? { paneId, direction }
+        : { paneId };
+      const response = await authFetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (response.ok) {
+        // Refresh sessions after pane operation
+        setTimeout(() => fetchSessions(true), 500);
+      }
+    } catch (err) {
+      console.error(`Pane ${action} failed:`, err);
+    }
+  }, [fetchSessions]);
 
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -805,9 +910,11 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
                       <SessionItem
                         session={session}
                         onSelect={onSelectSession}
+                        onSelectPane={onSelectPane}
                         onShowMenu={handleShowMenu}
                         onResume={handleResume}
                         onShowConversation={handleShowConversation}
+                        onPaneAction={handlePaneAction}
                       />
                     </div>
                   ))}
@@ -817,7 +924,7 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
           )}
 
           {activeTab === 'history' && (
-            <div className="h-full overflow-hidden">
+            <div className="h-full overflow-y-auto">
               <SessionHistory
                 onSelectSession={onSelectSession}
                 onSessionResumed={() => {
@@ -889,17 +996,19 @@ export function SessionList({ onSelectSession, onBack, inline = false, contentSc
           >
             {t('history.title')}
           </button>
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`flex-1 min-w-0 px-1 py-2 text-xs font-medium truncate transition-colors ${
-              activeTab === 'dashboard'
-                ? 'text-white bg-gray-800 border-t-2 border-blue-500'
-                : 'text-gray-400 hover:text-gray-300'
-            }`}
-            data-onboarding="dashboard-tab"
-          >
-            {t('dashboard.title')}
-          </button>
+          {!hideDashboardTab && (
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`flex-1 min-w-0 px-1 py-2 text-xs font-medium truncate transition-colors ${
+                activeTab === 'dashboard'
+                  ? 'text-white bg-gray-800 border-t-2 border-blue-500'
+                  : 'text-gray-400 hover:text-gray-300'
+              }`}
+              data-onboarding="dashboard-tab"
+            >
+              {t('dashboard.title')}
+            </button>
+          )}
         </div>
       </div>
 

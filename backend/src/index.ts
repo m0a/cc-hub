@@ -13,6 +13,14 @@ import { parseArgs, runCli, VERSION } from './cli';
 import { conditionalAuthMiddleware } from './middleware/auth';
 import { t } from './i18n';
 
+// Global error handlers to prevent silent crashes
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught exception:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled rejection:', reason);
+});
+
 // Parse CLI arguments
 const args = parseArgs(process.argv.slice(2));
 const cliResult = await runCli(args);
@@ -50,6 +58,40 @@ app.use('*', cors({
 
 // Health check
 app.get('/health', (c) => c.json({ status: 'ok', version: VERSION }));
+
+// Cache clear page - unregisters SW and clears all caches
+app.get('/clear-cache', (c) => {
+  return c.html(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CC Hub - Clear Cache</title>
+<style>body{background:#1a1a1a;color:#fff;font-family:system-ui;padding:20px;text-align:center}
+.status{margin:20px 0;padding:15px;border-radius:8px;background:#333}
+.ok{color:#4ade80}.err{color:#f87171}button{padding:12px 24px;font-size:16px;
+background:#3b82f6;color:#fff;border:none;border-radius:8px;cursor:pointer;margin:10px}
+button:active{background:#2563eb}</style></head>
+<body><h1>CC Hub Cache Clear</h1><div id="log"></div>
+<button onclick="clearAll()">Clear Cache & Reload</button>
+<script>
+var log=document.getElementById('log');
+function addLog(msg,ok){var d=document.createElement('div');d.className='status '+(ok?'ok':'err');d.textContent=msg;log.appendChild(d);}
+async function clearAll(){
+  log.innerHTML='';
+  try{
+    var regs=await navigator.serviceWorker.getRegistrations();
+    for(var r of regs){await r.unregister();addLog('SW unregistered: '+r.scope,true);}
+    if(!regs.length)addLog('No SW registered',true);
+  }catch(e){addLog('SW error: '+e,false);}
+  try{
+    var keys=await caches.keys();
+    for(var k of keys){await caches.delete(k);addLog('Cache deleted: '+k,true);}
+    if(!keys.length)addLog('No caches found',true);
+  }catch(e){addLog('Cache error: '+e,false);}
+  addLog('Reloading in 2s...',true);
+  setTimeout(function(){location.href='/';},2000);
+}
+addLog('Version: ${VERSION}',true);
+</script></body></html>`);
+});
 
 // Auth routes (no auth required for login/required check)
 app.route('/api/auth', auth);

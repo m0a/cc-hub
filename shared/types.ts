@@ -76,6 +76,19 @@ export const LoginSchema = z.object({
 });
 
 
+// Pane ID validation (e.g., "%0", "%1")
+export const PaneIdSchema = z.string().regex(/^%\d+$/, 'Invalid pane ID');
+
+export interface PaneInfo {
+  paneId: string;          // "%0", "%1"
+  currentCommand?: string;
+  currentPath?: string;
+  title?: string;          // pane_title set by Claude Code (task description)
+  agentName?: string;      // Team agent name from --agent-name process arg
+  agentColor?: string;     // Team agent color from --agent-color process arg
+  isActive: boolean;
+}
+
 export const CreateSessionSchema = z.object({
   name: z.string().min(1).max(64).optional(),
   workingDir: z.string().optional(),
@@ -259,6 +272,7 @@ export interface ExtendedSessionResponse extends SessionResponse {
   ccFirstPrompt?: string;
   waitingForInput?: boolean;
   waitingToolName?: string;
+  panes?: PaneInfo[];
 }
 
 // =============================================================================
@@ -311,3 +325,44 @@ export interface ConversationMessage {
 export interface ConversationResponse {
   messages: ConversationMessage[];
 }
+
+// =============================================================================
+// tmux Control Mode Types
+// =============================================================================
+
+// tmux layout tree node (parsed from layout string)
+export interface TmuxLayoutNode {
+  type: 'leaf' | 'horizontal' | 'vertical';
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+  paneId?: number; // leaf only: pane number
+  children?: TmuxLayoutNode[];
+}
+
+// Client → Server messages
+export type ControlClientMessage =
+  | { type: 'input'; paneId: string; data: string } // base64
+  | { type: 'resize'; cols: number; rows: number }
+  | { type: 'split'; paneId: string; direction: 'h' | 'v' }
+  | { type: 'close-pane'; paneId: string }
+  | { type: 'resize-pane'; paneId: string; cols: number; rows: number }
+  | { type: 'select-pane'; paneId: string }
+  | { type: 'ping'; timestamp: number }
+  | { type: 'client-info'; deviceType: 'mobile' | 'tablet' | 'desktop' }
+  | { type: 'scroll'; paneId: string; lines: number } // positive = up, negative = down
+  | { type: 'adjust-pane'; paneId: string; direction: 'L' | 'R' | 'U' | 'D'; amount: number }
+  | { type: 'equalize-panes'; direction: 'horizontal' | 'vertical' }
+  | { type: 'request-content'; paneId: string }
+  | { type: 'zoom-pane'; paneId: string };
+
+// Server → Client messages
+export type ControlServerMessage =
+  | { type: 'output'; paneId: string; data: string } // base64
+  | { type: 'layout'; layout: TmuxLayoutNode }
+  | { type: 'initial-content'; paneId: string; data: string } // base64
+  | { type: 'ready' }
+  | { type: 'pong'; timestamp: number }
+  | { type: 'error'; message: string; paneId?: string }
+  | { type: 'new-session'; sessionId: string; sessionName: string };

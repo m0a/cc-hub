@@ -14,7 +14,7 @@ import { useSessionHistory } from './hooks/useSessionHistory';
 import { useAuth } from './hooks/useAuth';
 import { useSessions } from './hooks/useSessions';
 import { authFetch, isTransientNetworkError } from './services/api';
-import type { SessionResponse, SessionState, ConversationMessage, SessionTheme } from '../../shared/types';
+import type { SessionResponse, SessionState, ConversationMessage, SessionTheme, PaneInfo } from '../../shared/types';
 
 // Loading screen with phase display and timeout detection
 function LoadingScreen({
@@ -219,6 +219,10 @@ export function App() {
   const [showConversation, setShowConversation] = useState(false);
   const [conversation, setConversation] = useState<ConversationMessage[]>([]);
   const [loadingConversation, setLoadingConversation] = useState(false);
+
+  // Mobile pane tabs state
+  const [mobilePanes, setMobilePanes] = useState<{ paneId: string; width: number; height: number }[]>([]);
+  const [mobileActivePaneId, setMobileActivePaneId] = useState<string | null>(null);
 
   // Session API state (for theme updates in mobile view)
   const { sessions: apiSessions, fetchSessions: fetchApiSessions } = useSessions();
@@ -495,6 +499,29 @@ export function App() {
       setActiveSessionId(session.id);
     }
     setShowSessionList(false);
+    setMobileActivePaneId(null);
+  }, [openSessions]);
+
+  // Select a specific pane within a session (mobile)
+  const handleSelectPane = useCallback((session: SessionResponse, paneId: string) => {
+    // Open session without resetting paneId (handleSelectSession sets it to null)
+    const existing = openSessions.find(s => s.id === session.id);
+    if (!existing) {
+      const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string; theme?: SessionTheme };
+      setOpenSessions(prev => [...prev, {
+        id: extSession.id,
+        name: extSession.name,
+        state: extSession.state,
+        currentPath: extSession.currentPath,
+        ccSessionId: extSession.ccSessionId,
+        currentCommand: extSession.currentCommand,
+        theme: extSession.theme,
+      }]);
+    }
+    setActiveSessionId(session.id);
+    setShowSessionList(false);
+    // Set pane directly - don't go through handleSelectSession which resets it
+    setMobileActivePaneId(paneId);
   }, [openSessions]);
 
   const handleCloseSession = useCallback((id: string) => {
@@ -622,6 +649,11 @@ export function App() {
     };
   }, [showOverlay, showSessionList, isLoading, startOverlayTimer]);
 
+  // Diagnostic: log render state for debugging black screen issues
+  useEffect(() => {
+    console.log(`[App] Render state: device=${deviceType} authLoading=${auth.isLoading} loading=${isLoading} authRequired=${auth.authRequired} authenticated=${auth.isAuthenticated} sessions=${openSessions.length} active=${activeSessionId} showList=${showSessionList}`);
+  }, [deviceType, auth.isLoading, isLoading, auth.authRequired, auth.isAuthenticated, openSessions.length, activeSessionId, showSessionList]);
+
   // Show loading (including auth check)
   if (auth.isLoading || isLoading) {
     return (
@@ -650,6 +682,7 @@ export function App() {
       <>
         <SessionList
           onSelectSession={handleSelectSession}
+          onSelectPane={handleSelectPane}
           onBack={openSessions.length > 0 ? handleBackFromList : undefined}
           isOnboarding={showSessionListOnboarding}
         />
@@ -669,8 +702,6 @@ export function App() {
           activeSessionId={activeSessionId}
           onSessionStateChange={updateSessionState}
           onReload={handleReload}
-          showSessionListOnboarding={showSessionListOnboarding}
-          onCompleteSessionListOnboarding={completeSessionListOnboarding}
         />
         {showOnboarding && <Onboarding onComplete={completeOnboarding} />}
       </>
@@ -687,8 +718,6 @@ export function App() {
           onSessionStateChange={updateSessionState}
           onReload={handleReload}
           isTablet={true}
-          showSessionListOnboarding={showSessionListOnboarding}
-          onCompleteSessionListOnboarding={completeSessionListOnboarding}
           keyboardControlRef={keyboardControlRef}
         />
         {showOnboarding && <Onboarding onComplete={completeOnboarding} onStepAction={onboardingStepAction} />}
@@ -778,7 +807,55 @@ export function App() {
             onOverlayTap={handleShowOverlay}
             showOverlay={showOverlay}
             theme={activeSession.theme}
+            onPanesChange={(panes) => {
+              setMobilePanes(panes);
+              // If active pane was removed, clear it so TerminalPage picks the first
+              if (mobileActivePaneId && !panes.some(p => p.paneId === mobileActivePaneId)) {
+                setMobileActivePaneId(null);
+              }
+            }}
+            externalActivePaneId={mobileActivePaneId}
           />
+          {/* Pane tab bar - only shown when multiple panes exist */}
+          {mobilePanes.length > 1 && (() => {
+            // Get pane command info from API sessions data
+            const apiSession = apiSessions.find(s => s.id === activeSessionId);
+            const apiPanes = (apiSession as SessionResponse & { panes?: PaneInfo[] })?.panes;
+            // Agent color to Tailwind text class
+            const agentColorClass: Record<string, string> = {
+              red: 'text-red-400', orange: 'text-orange-400', amber: 'text-amber-400',
+              green: 'text-green-400', teal: 'text-teal-400', blue: 'text-blue-400',
+              cyan: 'text-cyan-400', indigo: 'text-indigo-400', purple: 'text-purple-400',
+              pink: 'text-pink-400',
+            };
+            return (
+              <div className="flex bg-gray-800 border-t border-gray-700 shrink-0 overflow-x-auto">
+                {mobilePanes.map((pane) => {
+                  const isActive = mobileActivePaneId
+                    ? pane.paneId === mobileActivePaneId
+                    : pane.paneId === mobilePanes[0]?.paneId;
+                  const apiPane = apiPanes?.find(p => p.paneId === pane.paneId);
+                  // Priority: agentName > paneTitle (stripped) > command > paneId
+                  const paneTitle = apiPane?.title?.replace(/^[✳★●◆⠂⠈⠐⠠⠄⠁✻✽⏳]\s*/, '').trim();
+                  const label = apiPane?.agentName || paneTitle || apiPane?.currentCommand || pane.paneId;
+                  const colorCls = apiPane?.agentColor && agentColorClass[apiPane.agentColor];
+                  return (
+                    <button
+                      key={pane.paneId}
+                      onClick={() => setMobileActivePaneId(pane.paneId)}
+                      className={`px-3 py-1.5 text-xs font-mono whitespace-nowrap transition-colors ${
+                        isActive
+                          ? `${colorCls || 'text-white'} bg-gray-700 border-t-2 border-blue-500`
+                          : `${colorCls || 'text-gray-400'} hover:text-gray-200 hover:bg-gray-700/50`
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center" data-onboarding="terminal">

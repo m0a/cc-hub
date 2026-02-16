@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDashboard } from '../../hooks/useDashboard';
 import { UsageLimits } from './UsageLimits';
@@ -20,6 +20,25 @@ export function Dashboard({ className = '' }: DashboardProps) {
   const { t } = useTranslation();
   const { data, isLoading, error } = useDashboard(300000);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [cacheClearing, setCacheClearing] = useState(false);
+
+  const handleClearCache = useCallback(async () => {
+    setCacheClearing(true);
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+      if (typeof caches !== 'undefined') {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+      setTimeout(() => location.reload(), 500);
+    } catch (e) {
+      console.error('Cache clear failed:', e);
+      setCacheClearing(false);
+    }
+  }, []);
 
   const handleResetOnboarding = () => {
     localStorage.removeItem(ONBOARDING_KEY);
@@ -63,6 +82,15 @@ export function Dashboard({ className = '' }: DashboardProps) {
             {t('onboarding.resetTutorial')}
           </button>
           <LanguageSwitcher />
+        </div>
+        <div className="flex items-center justify-center px-2 pt-2">
+          <button
+            onClick={handleClearCache}
+            disabled={cacheClearing}
+            className="text-xs text-gray-500 hover:text-red-400 transition-colors disabled:opacity-50"
+          >
+            {cacheClearing ? 'クリア中...' : 'キャッシュクリア & リロード'}
+          </button>
         </div>
         {data?.version && (
           <div className="text-center text-gray-600 text-xs pt-2">

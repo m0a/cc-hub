@@ -394,7 +394,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col">
       {/* Search input */}
       <form onSubmit={handleSearchSubmit} className="p-2 border-b border-gray-700">
         <div className="relative">
@@ -435,7 +435,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div>
         {/* Search results */}
         {searchQuery ? (
           <div>

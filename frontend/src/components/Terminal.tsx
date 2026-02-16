@@ -4,10 +4,10 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
-import { useTerminal } from '../hooks/useTerminal';
 import { Keyboard } from './Keyboard';
 import { authFetch } from '../services/api';
 import type { SessionTheme } from '../../../shared/types';
+import { filterMouseTrackingInput, filterMouseTrackingOutput, shouldInterceptKeyEvent } from '../utils/terminal-filters';
 
 // Terminal theme colors based on session theme
 const TERMINAL_THEMES: Record<SessionTheme | 'default', { background: string; accent: string }> = {
@@ -45,9 +45,18 @@ function saveFontSize(sessionId: string, size: number): void {
   localStorage.setItem(FONT_SIZE_KEY_PREFIX + sessionId, String(size));
 }
 
+// Control mode: terminal data comes from control WebSocket instead of useTerminal
+export interface ControlModeConfig {
+  paneId: string;
+  sendInput: (data: string) => void;
+  registerOnData: (callback: (data: Uint8Array) => void) => () => void;
+  isConnected: boolean;
+  onResize?: (cols: number, rows: number) => void;
+  onScroll?: (lines: number) => void; // positive = up, negative = down
+}
+
 interface TerminalProps {
   sessionId: string;
-  token?: string | null;  // Auth token for WebSocket connection
   onConnect?: () => void;
   onDisconnect?: () => void;
   onError?: (error: string) => void;
@@ -57,6 +66,7 @@ interface TerminalProps {
   onOverlayTap?: () => void;  // Called when tap area is touched
   showOverlay?: boolean;  // Control overlay visibility
   theme?: SessionTheme;  // Session theme color
+  controlMode?: ControlModeConfig;  // If set, use control mode instead of useTerminal
 }
 
 // Ref interface for external keyboard input
@@ -65,14 +75,20 @@ export interface TerminalRef {
   focus: () => void;
   extractUrls: () => string[];
   getSelection: () => string;
+  clearSelection: () => void;
   refreshTerminal: () => void;
   showKeyboard: () => void;
   hideKeyboard: () => void;
+  getCellDimensions: () => { width: number; height: number } | null;
+  getSize: () => { cols: number; rows: number } | null;
+  /** Get the cols/rows that would fit the current container (without resizing xterm). */
+  getProposedSize: () => { cols: number; rows: number } | null;
+  /** Resize xterm to exact cols/rows without triggering resize-back-to-tmux. */
+  setExactSize: (cols: number, rows: number) => void;
 }
 
 export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(function TerminalComponent({
   sessionId,
-  token,
   onConnect,
   onDisconnect,
   onError,
@@ -82,6 +98,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   onOverlayTap,
   showOverlay = true,
   theme: sessionTheme,
+  controlMode,
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -103,6 +120,8 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const [isAnimating, setIsAnimating] = useState(false);
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [showFontSizeIndicator, setShowFontSizeIndicator] = useState(false);
+  const [scrollIndicator, setScrollIndicator] = useState<string | null>(null);
+  const scrollIndicatorTimerRef = useRef<number | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [detectedUrls, setDetectedUrls] = useState<string[]>([]);
   const [showUrlMenu, setShowUrlMenu] = useState(false);
@@ -170,16 +189,38 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     setShowPositionToggle(true);
   };
 
-  const { isConnected, connect, send, resize, refresh } = useTerminal({
-    sessionId,
-    token,
-    onData: (data) => {
-      terminalRef.current?.write(data);
-    },
-    onConnect: () => onConnectRef.current?.(),
-    onDisconnect: () => onDisconnectRef.current?.(),
-    onError: (err) => onErrorRef.current?.(err),
-  });
+  const controlCleanupRef = useRef<(() => void) | null>(null);
+
+  // Store controlMode in ref for stable access (avoids re-running effects on every render)
+  const controlModeRef = useRef(controlMode);
+  controlModeRef.current = controlMode;
+
+  // Track hideKeyboard prop in ref for use in effect closures
+  const hideKeyboardRef = useRef(hideKeyboard);
+  hideKeyboardRef.current = hideKeyboard;
+
+  // Send function: filters out mouse tracking escape sequences that xterm.js generates
+  // on touch/scroll, since send-keys -H would deliver them as literal text to the shell.
+  const send = useCallback((data: string) => {
+    const filtered = filterMouseTrackingInput(data);
+    if (filtered.length > 0) {
+      // Clear stale selection when user sends input
+      terminalRef.current?.clearSelection();
+      controlModeRef.current?.sendInput(filtered);
+      // Auto-scroll to bottom when user sends input (e.g. after scrolling up)
+      terminalRef.current?.scrollToBottom();
+    }
+  }, []);
+
+  const resize = useCallback((cols: number, rows: number) => {
+    controlModeRef.current?.onResize?.(cols, rows);
+  }, []);
+
+  const noopFn = useCallback(() => {}, []);
+
+  const isConnected = controlMode?.isConnected ?? false;
+  const connect = noopFn; // Connection managed by useControlTerminal in DesktopLayout
+  const refresh = noopFn;
 
   // Keep refs updated
   useEffect(() => {
@@ -193,14 +234,14 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     sendInput: (char: string) => sendRef.current(char),
     focus: () => terminalRef.current?.focus(),
     getSelection: () => selectionRef.current,
+    clearSelection: () => terminalRef.current?.clearSelection(),
     refreshTerminal: () => {
-      // Fit terminal and force tmux to redraw
       const fit = fitAddonRef.current;
       const term = terminalRef.current;
       if (fit && term) {
-        fit.fit();
-        resizeRef.current(term.cols, term.rows);
-        setTimeout(() => refreshRef.current(), 100);
+        // Compute size that would fit container, send to tmux (don't apply to xterm)
+        const dims = fit.proposeDimensions();
+        if (dims) resizeRef.current(dims.cols, dims.rows);
       }
     },
     extractUrls: () => {
@@ -226,28 +267,62 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     },
     showKeyboard: () => showKeyboardRef.current(),
     hideKeyboard: () => closeInputBarRef.current(),
+    getCellDimensions: () => {
+      const term = terminalRef.current;
+      if (!term) return null;
+      // Access xterm.js internal render dimensions (same API used by FitAddon)
+      const core = (term as any)._core;
+      const w = core?._renderService?.dimensions?.css?.cell?.width;
+      const h = core?._renderService?.dimensions?.css?.cell?.height;
+      return (w > 0 && h > 0) ? { width: w, height: h } : null;
+    },
+    getSize: () => {
+      const term = terminalRef.current;
+      if (!term || term.cols <= 0 || term.rows <= 0) return null;
+      return { cols: term.cols, rows: term.rows };
+    },
+    getProposedSize: () => {
+      const fit = fitAddonRef.current;
+      if (!fit) return null;
+      const dims = fit.proposeDimensions();
+      if (!dims || dims.cols <= 0 || dims.rows <= 0) return null;
+      return { cols: dims.cols, rows: dims.rows };
+    },
+    setExactSize: (cols: number, rows: number) => {
+      const term = terminalRef.current;
+      if (!term) return;
+      if (term.cols !== cols || term.rows !== rows) {
+        term.resize(cols, rows);
+      }
+      // Note: does NOT trigger resizeRef / sendControlResize.
+      // This is intentional: tmux already knows the correct pane sizes.
+    },
   }), []);
 
-  // Fit and resize terminal
-  const fitTerminal = () => {
+  // Fit and resize terminal (memoized to avoid re-creating on every render)
+  const fitTerminal = useCallback(() => {
     const fit = fitAddonRef.current;
     const term = terminalRef.current;
     if (fit && term) {
-      fit.fit();
-      resizeRef.current(term.cols, term.rows);
+      // In control mode, use proposeDimensions instead of fit() to avoid
+      // overriding tmux's pane sizes
+      const dims = fit.proposeDimensions();
+      if (dims && dims.cols > 0 && dims.rows > 0) {
+        // Resize xterm.js grid to match the container
+        if (term.cols !== dims.cols || term.rows !== dims.rows) {
+          term.resize(dims.cols, dims.rows);
+        }
+        resizeRef.current(dims.cols, dims.rows);
+      }
     }
-  };
+  }, []);
 
   // Notify parent when ready and trigger resize on connect
   useEffect(() => {
     if (isConnected) {
       onReadyRef.current?.(send);
-      // Send initial resize after connection with small delay for layout
-      setTimeout(() => {
-        fitTerminal();
-        // Force tmux to redraw after resize to prevent display corruption
-        setTimeout(() => refreshRef.current(), 100);
-      }, 100);
+      // Send initial resize after connection with small delay for layout to settle
+      setTimeout(() => fitTerminal(), 150);
     }
   }, [isConnected, send, fitTerminal]);
 
@@ -270,7 +345,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       cursorStyle: 'block',
       cursorBlink: false, // Disable cursor blink for performance
       cursorInactiveStyle: 'outline',
-      scrollback: 1000, // Reduced scrollback for performance
+      scrollback: 5000, // Keep enough scrollback for capture-pane -S - content
       smoothScrollDuration: 0, // Disable smooth scroll
       scrollSensitivity: 3,
       allowProposedApi: true,
@@ -293,6 +368,21 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
     term.open(container);
 
+    // Hide xterm.js native scrollbar - we handle scrolling via touch gestures / wheel events.
+    // Use scrollbar-width (standard) and inject a <style> for WebKit (Chrome/Safari/Android).
+    // Do NOT set overflow:hidden as xterm.js needs overflow-y:scroll internally.
+    const xtermViewport = container.querySelector('.xterm-viewport') as HTMLElement;
+    if (xtermViewport) {
+      (xtermViewport.style as any).scrollbarWidth = 'none';
+      const styleId = 'xterm-hide-scrollbar';
+      if (!document.getElementById(styleId)) {
+        const style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = '.xterm-viewport::-webkit-scrollbar { display: none !important; }';
+        document.head.appendChild(style);
+      }
+    }
+
     // Prevent OS keyboard on touch devices by modifying xterm's internal textarea
     // Only apply on touch devices to preserve Japanese IME input on desktop
     const isCoarseTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0)
@@ -309,11 +399,13 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     try {
       const webglAddon = new WebglAddon();
       webglAddon.onContextLoss(() => {
+        console.warn('[Terminal] WebGL context lost, falling back to canvas renderer');
         webglAddon.dispose();
       });
       term.loadAddon(webglAddon);
-    } catch {
-      // WebGL not available, use default canvas renderer
+      console.log('[Terminal] WebGL renderer loaded');
+    } catch (e) {
+      console.warn('[Terminal] WebGL not available, using canvas renderer:', e);
     }
 
     // Load web links addon for URL detection
@@ -359,15 +451,21 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
     setIsInitialized(true);
+    console.log(`[Terminal] Initialized for session ${sessionId}, size: ${term.cols}x${term.rows}`);
 
-    // Handle Shift+Enter for Claude Code multiline input
+    // Handle special key combinations
     term.attachCustomKeyEventHandler((e) => {
-      if (e.type === 'keydown' && e.shiftKey && e.key === 'Enter') {
+      const action = shouldInterceptKeyEvent(e);
+      if (action === 'shift-enter') {
         e.preventDefault();
         sendRef.current('\\\r');
-        return false; // Prevent default xterm handling
+        return false;
       }
-      return true; // Let xterm handle other keys
+      if (action === 'paste') {
+        e.preventDefault();
+        return false;
+      }
+      return true;
     });
 
     // Handle keyboard input - register once, use ref for send
@@ -380,19 +478,37 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       selectionRef.current = term.getSelection();
     });
 
-    // Connect to WebSocket
+    // Connect to WebSocket (noopFn in control mode)
     connect();
 
     // Handle resize with debounce
     let resizeTimeout: number | null = null;
+    let lastSentCols = 0;
+    let lastSentRows = 0;
     const doResize = () => {
       if (resizeTimeout) {
         clearTimeout(resizeTimeout);
       }
       resizeTimeout = window.setTimeout(() => {
         if (fitAddonRef.current && terminalRef.current) {
-          fitAddonRef.current.fit();
-          resizeRef.current(terminalRef.current.cols, terminalRef.current.rows);
+          const dims = fitAddonRef.current.proposeDimensions();
+          if (dims && dims.cols > 0 && dims.rows > 0) {
+            // On mobile: resize xterm.js grid to match container (keyboard appears/disappears).
+            // On desktop: skip term.resize() — xterm.js grid size is controlled exclusively
+            // by setExactSize() from tmux's %layout-change to match tmux pane dimensions.
+            if (!hideKeyboardRef.current) {
+              const t = terminalRef.current;
+              if (t.cols !== dims.cols || t.rows !== dims.rows) {
+                t.resize(dims.cols, dims.rows);
+              }
+            }
+            // Only send resize to tmux if dimensions actually changed
+            if (dims.cols !== lastSentCols || dims.rows !== lastSentRows) {
+              lastSentCols = dims.cols;
+              lastSentRows = dims.rows;
+              resizeRef.current(dims.cols, dims.rows);
+            }
+          }
         }
       }, 50);
     };
@@ -421,6 +537,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     let accumulatedDelta = 0;
     let scrollRafId: number | null = null;
 
+    // Momentum scroll state
+    let momentumRafId: number | null = null;
+    let lastTouchY = 0;
+    let lastTouchTime = 0;
+    const velocityHistory: Array<{ v: number; t: number }> = [];
+
     // Pinch zoom state
     let initialPinchDistance: number | null = null;
     let initialFontSizeOnPinch: number = initialFontSize;
@@ -430,13 +552,45 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     let longPressTriggered = false;
     const LONG_PRESS_DURATION = 400; // ms
 
+    // Update scroll indicator
+    const updateScrollIndicator = () => {
+      const buf = term.buffer.active;
+      if (buf.viewportY < buf.baseY) {
+        const pos = buf.baseY - buf.viewportY;
+        setScrollIndicator(`[${pos}/${buf.baseY}]`);
+        if (scrollIndicatorTimerRef.current) clearTimeout(scrollIndicatorTimerRef.current);
+        scrollIndicatorTimerRef.current = window.setTimeout(() => setScrollIndicator(null), 3000);
+      } else {
+        setScrollIndicator(null);
+      }
+    };
+
+    // Stop momentum animation
+    const stopMomentum = () => {
+      if (momentumRafId !== null) {
+        cancelAnimationFrame(momentumRafId);
+        momentumRafId = null;
+      }
+    };
+
     const getPinchDistance = (touches: TouchList): number => {
       const dx = touches[0].clientX - touches[1].clientX;
       const dy = touches[0].clientY - touches[1].clientY;
       return Math.sqrt(dx * dx + dy * dy);
     };
 
+    let stoppedMomentum = false;
+
     const handleTouchStart = (e: TouchEvent) => {
+      // Clear any xterm.js selection on touch to prevent accidental selection
+      term.clearSelection();
+
+      // Stop any ongoing momentum scroll - treat as consumed tap
+      stoppedMomentum = momentumRafId !== null;
+      if (stoppedMomentum) {
+        stopMomentum();
+      }
+
       if (e.touches.length === 2) {
         // Pinch start - cancel long press
         if (longPressTimer) {
@@ -449,9 +603,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       } else if (e.touches.length === 1) {
         // Scroll start
         touchStartY = e.touches[0].clientY;
+        lastTouchY = e.touches[0].clientY;
+        lastTouchTime = e.timeStamp;
         touchMoved = false;
         longPressTriggered = false;
         accumulatedDelta = 0;
+        velocityHistory.length = 0;
 
         // Start long press timer
         longPressTimer = window.setTimeout(() => {
@@ -482,8 +639,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           const clampedSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, newSize));
           term.options.fontSize = clampedSize;
           setFontSize(clampedSize);
-          fitAddonRef.current?.fit();
-          resizeRef.current(term.cols, term.rows);
+          // After font size change, compute proposed size, resize xterm grid, and send to tmux
+          const dims = fitAddonRef.current?.proposeDimensions();
+          if (dims && dims.cols > 0 && dims.rows > 0) {
+            term.resize(dims.cols, dims.rows);
+            resizeRef.current(dims.cols, dims.rows);
+          }
         }
         return;
       }
@@ -502,6 +663,21 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         }
         touchMoved = true;
         e.preventDefault();
+
+        // Track velocity for momentum (px/ms)
+        const now = e.timeStamp;
+        const dt = now - lastTouchTime;
+        const dy = lastTouchY - currentY;
+        if (dt > 0) {
+          velocityHistory.push({ v: dy / dt, t: now });
+          // Keep only last 100ms of samples
+          while (velocityHistory.length > 0 && now - velocityHistory[0].t > 100) {
+            velocityHistory.shift();
+          }
+        }
+        lastTouchY = currentY;
+        lastTouchTime = now;
+
         touchStartY = currentY;
         accumulatedDelta += deltaY;
 
@@ -509,17 +685,11 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         if (scrollRafId === null) {
           scrollRafId = requestAnimationFrame(() => {
             scrollRafId = null;
-            const lines = Math.round(accumulatedDelta / 20);
+            const lines = Math.round(accumulatedDelta / 8);
             if (lines !== 0) {
-              accumulatedDelta = accumulatedDelta % 20; // Keep remainder
-
-              // Send SGR mouse wheel events to tmux (one per line for natural scrolling)
-              // tmux handles scrollback via copy-mode when mouse is on
-              const button = lines > 0 ? 65 : 64;
-              const count = Math.min(Math.abs(lines), 10); // Cap to prevent event flooding
-              for (let i = 0; i < count; i++) {
-                sendRef.current(`\x1b[<${button};1;1M`);
-              }
+              accumulatedDelta = accumulatedDelta % 8;
+              term.scrollLines(lines);
+              updateScrollIndicator();
             }
           });
         }
@@ -533,7 +703,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         longPressTimer = null;
       }
 
-      // Cancel pending scroll
+      // Cancel pending scroll RAF
       if (scrollRafId !== null) {
         cancelAnimationFrame(scrollRafId);
         scrollRafId = null;
@@ -547,16 +717,54 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         initialPinchDistance = null;
       }
 
-      // Only show keyboard if it was a tap (no movement, no long press)
-      if (!touchMoved && !longPressTriggered) {
+      // Start momentum scroll if finger was moving fast enough
+      if (touchMoved && velocityHistory.length > 0) {
+        const sum = velocityHistory.reduce((acc, s) => acc + s.v, 0);
+        let vel = sum / velocityHistory.length; // px/ms
+
+        if (Math.abs(vel) > 0.3) {
+          const FRICTION = 0.97;
+          const MIN_VEL = 0.02; // px/ms
+          let residual = 0;
+
+          let lastFrame = performance.now();
+          const animate = (now: number) => {
+            const dt = now - lastFrame;
+            lastFrame = now;
+            vel *= FRICTION;
+
+            if (Math.abs(vel) < MIN_VEL) {
+              momentumRafId = null;
+              updateScrollIndicator();
+              return;
+            }
+
+            residual += vel * dt;
+            const lines = Math.trunc(residual / 8);
+            if (lines !== 0) {
+              residual -= lines * 8;
+              term.scrollLines(lines);
+              updateScrollIndicator();
+            }
+
+            momentumRafId = requestAnimationFrame(animate);
+          };
+          momentumRafId = requestAnimationFrame(animate);
+        }
+      }
+
+      // Only show keyboard if it was a tap (no movement, no long press, not stopping momentum)
+      if (!touchMoved && !longPressTriggered && !stoppedMomentum) {
         // Show custom keyboard on tap
         showKeyboardRef.current();
       }
 
       touchStartY = null;
       touchMoved = false;
+      stoppedMomentum = false;
       longPressTriggered = false;
       accumulatedDelta = 0;
+      velocityHistory.length = 0;
     };
 
     // Prevent context menu on long press
@@ -564,7 +772,33 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       e.preventDefault();
     };
 
+    // Mouse wheel scroll: xterm.js v6 viewport scroll area may not sync with
+    // internal buffer, so we intercept wheel events and call scrollLines() directly.
+    const handleWheel = (e: WheelEvent) => {
+      const term = terminalRef.current;
+      if (!term) return;
+      e.preventDefault();
+      // deltaY > 0 = wheel down (scroll toward newer content)
+      // scrollLines: positive = scroll down, negative = scroll up
+      const lines = Math.ceil(Math.abs(e.deltaY) / 40);
+      term.scrollLines(e.deltaY > 0 ? lines : -lines);
+
+      // Show tmux-style scroll position indicator
+      const buf = term.buffer.active;
+      if (buf.viewportY < buf.baseY) {
+        const scrollback = buf.baseY;
+        const pos = buf.baseY - buf.viewportY;
+        setScrollIndicator(`[${pos}/${scrollback}]`);
+        if (scrollIndicatorTimerRef.current) clearTimeout(scrollIndicatorTimerRef.current);
+        scrollIndicatorTimerRef.current = window.setTimeout(() => setScrollIndicator(null), 3000);
+      } else {
+        setScrollIndicator(null);
+        if (scrollIndicatorTimerRef.current) clearTimeout(scrollIndicatorTimerRef.current);
+      }
+    };
+
     if (container) {
+      container.addEventListener('wheel', handleWheel, { passive: false });
       container.addEventListener('touchstart', handleTouchStart, { passive: true });
       container.addEventListener('touchmove', handleTouchMove, { passive: false });
       container.addEventListener('touchend', handleTouchEnd);
@@ -580,6 +814,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         container.removeEventListener('touchmove', handleTouchMove);
         container.removeEventListener('touchend', handleTouchEnd);
         container.removeEventListener('contextmenu', handleContextMenu);
+        container.removeEventListener('wheel', handleWheel);
       }
       if (resizeTimeout) {
         clearTimeout(resizeTimeout);
@@ -596,6 +831,54 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, // Connect to WebSocket
     connect, sessionTheme]);
+
+  // Register control mode output listener
+  // IMPORTANT: Must be declared AFTER the main setup useEffect above,
+  // because React runs effects in declaration order. If this ran before
+  // the main setup, terminalRef.current would still be null.
+  // Track previous paneId to detect actual pane switches (vs initial mount or session change)
+  const prevControlPaneIdRef = useRef<string | null>(null);
+  const prevSessionIdRef = useRef(sessionId);
+
+  // Reset pane tracking when session changes - prevents spurious clear/reset
+  // when switching between sessions (different pane IDs are from different sessions, not a pane switch)
+  if (prevSessionIdRef.current !== sessionId) {
+    prevSessionIdRef.current = sessionId;
+    prevControlPaneIdRef.current = null;
+  }
+
+  useEffect(() => {
+    const cm = controlModeRef.current;
+    if (!cm || !terminalRef.current) return;
+
+    // Only clear terminal on actual pane SWITCH within the same session
+    if (prevControlPaneIdRef.current !== null && prevControlPaneIdRef.current !== cm.paneId) {
+      terminalRef.current.clearSelection();
+      terminalRef.current.clear();
+      terminalRef.current.reset();
+    }
+    prevControlPaneIdRef.current = cm.paneId;
+
+    // Persistent decoder with stream: true to handle UTF-8 sequences split
+    // across WebSocket chunks (e.g. multi-byte Japanese characters).
+    const decoder = new TextDecoder('utf-8', { fatal: false });
+    const cleanup = cm.registerOnData((data) => {
+      // stream: true keeps partial multi-byte sequences in decoder buffer
+      const str = decoder.decode(data, { stream: true });
+      const filtered = filterMouseTrackingOutput(str);
+      if (filtered.length > 0) {
+        terminalRef.current?.write(filtered);
+      }
+    });
+    controlCleanupRef.current = cleanup;
+    return () => {
+      // Flush any remaining bytes in decoder
+      decoder.decode(new Uint8Array(0), { stream: false });
+      cleanup();
+      controlCleanupRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!controlMode, controlMode?.paneId]);
 
   // Track visual viewport for soft keyboard offset (mobile fullscreen only)
   useEffect(() => {
@@ -842,12 +1125,9 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     setInputValue('');
     // Refit terminal after bar is hidden
     setTimeout(() => {
-      fitAddonRef.current?.fit();
-      if (terminalRef.current) {
-        resizeRef.current(terminalRef.current.cols, terminalRef.current.rows);
-      }
+      fitTerminal();
     }, 50);
-  }, []);
+  }, [fitTerminal]);
 
   // Update ref for use in touch handlers
   closeInputBarRef.current = handleCloseInputBar;
@@ -855,10 +1135,14 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   // Show keyboard function for touch handlers
   const handleShowKeyboard = useCallback(() => {
     setInputMode('shortcuts');
+    // Scroll to bottom when keyboard appears (user wants to interact with latest output)
+    terminalRef.current?.scrollToBottom();
+    // "Last-write-wins": re-send this client's size on first interaction
+    fitTerminal();
     setShowHint(true);
     if (hintTimeoutRef.current) clearTimeout(hintTimeoutRef.current);
     hintTimeoutRef.current = window.setTimeout(() => setShowHint(false), 5000);
-  }, []);
+  }, [fitTerminal]);
   showKeyboardRef.current = handleShowKeyboard;
 
   // Swipe handling for input bar
@@ -896,10 +1180,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           setTimeout(() => {
             setIsAnimating(false);
             inputRef.current?.focus();
-            // Refit after animation completes
             fitTerminal();
-            // Refit again after soft keyboard appears
-            setTimeout(fitTerminal, 300);
           }, 350);
         }
       } else {
@@ -908,7 +1189,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           setIsAnimating(true);
           setInputMode('shortcuts');
           setInputValue('');
-          // Refit after animation and keyboard dismissal
           setTimeout(() => {
             setIsAnimating(false);
             fitTerminal();
@@ -928,12 +1208,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
   return (
     <div
-      className="h-full w-full flex flex-col overflow-hidden"
+      className="h-full w-full flex flex-col overflow-hidden select-none"
       style={containerStyle}
     >
       {/* Terminal area - shrinks when input bar is shown */}
       <div
-        className="flex-1 relative min-h-0"
+        className="flex-1 relative min-h-0 select-none"
         onMouseUp={(e) => e.stopPropagation()}
       >
         {/* Terminal container */}
@@ -963,6 +1243,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         {showFontSizeIndicator && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 bg-black/70 px-4 py-2 rounded-lg pointer-events-none">
             <span className="text-white text-lg font-medium">{fontSize}px</span>
+          </div>
+        )}
+        {/* Scroll position indicator (tmux-style) */}
+        {scrollIndicator && (
+          <div className="absolute top-2 right-2 z-30 bg-black/70 px-2 py-1 rounded text-xs text-yellow-400/80 pointer-events-none font-mono">
+            {scrollIndicator}
           </div>
         )}
         {/* URL menu */}
@@ -1120,7 +1406,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                           setIsAnimating(false);
                           inputRef.current?.focus();
                           fitTerminal();
-                          setTimeout(fitTerminal, 300);
                         }, 350);
                       }}
                       isUploading={isUploading}
@@ -1170,7 +1455,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                       setIsAnimating(false);
                       inputRef.current?.focus();
                       fitTerminal();
-                      setTimeout(fitTerminal, 300);
                     }, 350);
                   }}
                   isUploading={isUploading}

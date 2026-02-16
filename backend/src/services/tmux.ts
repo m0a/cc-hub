@@ -1,6 +1,15 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+interface TmuxPaneInfo {
+  paneId: string;          // "%0", "%1"
+  command: string;
+  path: string;
+  title: string;
+  tty: string;
+  isActive: boolean;
+}
+
 interface TmuxSessionInfo {
   id: string;
   name: string;
@@ -12,6 +21,7 @@ interface TmuxSessionInfo {
   paneTty?: string;
   preview?: string;
   waitingForInput?: boolean;
+  panes?: TmuxPaneInfo[];
 }
 
 const CCHUB_TMUX_CONFIG = `# CC Hub tmux configuration
@@ -114,9 +124,9 @@ export class TmuxService {
           };
         });
 
-      // Get pane info for each session (command, path, title, tty)
+      // Get pane info for each session (command, path, title, tty, pane_id, active)
       // Use | as separator since path can contain :
-      const panesProc = Bun.spawn(['tmux', 'list-panes', '-a', '-F', '#{session_name}|#{pane_current_command}|#{pane_title}|#{pane_tty}|#{pane_current_path}'], {
+      const panesProc = Bun.spawn(['tmux', 'list-panes', '-a', '-F', '#{session_name}|#{pane_id}|#{pane_current_command}|#{pane_title}|#{pane_tty}|#{pane_active}|#{pane_current_path}'], {
         stdout: 'pipe',
         stderr: 'pipe',
       });
@@ -124,7 +134,8 @@ export class TmuxService {
       const panesText = await new Response(panesProc.stdout).text();
       const panesExitCode = await panesProc.exited;
 
-      const paneInfo = new Map<string, { command: string; path: string; title: string; tty: string }>();
+      // Store all panes per session
+      const allPanes = new Map<string, TmuxPaneInfo[]>();
       if (panesExitCode === 0) {
         panesText
           .trim()
@@ -132,16 +143,43 @@ export class TmuxService {
           .filter((line) => line.length > 0)
           .forEach((line) => {
             const parts = line.split('|');
-            if (parts.length >= 5) {
-              const [sessionName, command, title, tty, ...pathParts] = parts;
+            if (parts.length >= 7) {
+              const [sessionName, paneId, command, title, tty, active, ...pathParts] = parts;
               // Path might contain |, so join the rest
-              const path = pathParts.join('|');
-              // Only store first pane info per session
-              if (!paneInfo.has(sessionName)) {
-                paneInfo.set(sessionName, { command, path, title, tty });
+              const panePath = pathParts.join('|');
+              const isActive = active === '1';
+
+              // Collect all panes (pane_id already includes % prefix)
+              if (!allPanes.has(sessionName)) {
+                allPanes.set(sessionName, []);
               }
+              allPanes.get(sessionName)!.push({
+                paneId,
+                command,
+                path: panePath,
+                title,
+                tty,
+                isActive,
+              });
             }
           });
+      }
+
+      // Derive session-level pane info from all panes (backward compatibility).
+      // Priority: pane running 'claude' > first pane (matches old behavior).
+      const paneInfo = new Map<string, { command: string; path: string; title: string; tty: string }>();
+      for (const [sessionName, panes] of allPanes) {
+        // Prefer claude pane for session-level info (important for claude detection via TTY)
+        const claudePane = panes.find(p => p.command === 'claude');
+        const bestPane = claudePane || panes[0];
+        if (bestPane) {
+          paneInfo.set(sessionName, {
+            command: bestPane.command,
+            path: bestPane.path,
+            title: bestPane.title,
+            tty: bestPane.tty,
+          });
+        }
       }
 
       // Batch check: which TTYs have claude running (single ps call for all TTYs)
@@ -187,6 +225,7 @@ export class TmuxService {
         // Claude Code detection: Check if 'claude' process exists on the TTY
         const isClaudeRunning = claudeOnTty.get(session.id) || false;
         const currentCommand = isClaudeRunning ? 'claude' : info?.command;
+        const sessionPanes = allPanes.get(session.id);
         return {
           ...session,
           currentCommand,
@@ -195,6 +234,7 @@ export class TmuxService {
           paneTty: info?.tty,
           preview: previews.get(session.id),
           waitingForInput: waitingStatus.get(session.id),
+          panes: sessionPanes,
         };
       });
 
@@ -231,6 +271,51 @@ export class TmuxService {
         const parts = line.trim().split(/\s+/);
         if (parts.length >= 2 && parts[1] === 'claude' && ttySet.has(parts[0])) {
           result.add(parts[0]);
+        }
+      }
+    } catch {
+      // Fall back silently
+    }
+    return result;
+  }
+
+  /**
+   * Batch get team agent info from process args for TTYs (single ps call)
+   * Returns a Map of tty name → { agentName, agentColor }
+   */
+  async batchGetAgentInfo(ttyNames: string[]): Promise<Map<string, { agentName: string; agentColor?: string }>> {
+    const result = new Map<string, { agentName: string; agentColor?: string }>();
+    if (ttyNames.length === 0) return result;
+
+    try {
+      const proc = Bun.spawn(['ps', '-eo', 'tty,args', '--no-headers'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const output = await new Response(proc.stdout).text();
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) return result;
+
+      const ttySet = new Set(ttyNames);
+      for (const line of output.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        // First field is TTY, rest is args
+        const spaceIdx = trimmed.indexOf(' ');
+        if (spaceIdx === -1) continue;
+        const tty = trimmed.substring(0, spaceIdx);
+        if (!ttySet.has(tty)) continue;
+        const args = trimmed.substring(spaceIdx + 1);
+        if (!args.includes('--agent-name')) continue;
+
+        const nameMatch = args.match(/--agent-name\s+(\S+)/);
+        const colorMatch = args.match(/--agent-color\s+(\S+)/);
+        if (nameMatch) {
+          result.set(tty, {
+            agentName: nameMatch[1],
+            agentColor: colorMatch?.[1],
+          });
         }
       }
     } catch {

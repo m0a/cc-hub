@@ -167,7 +167,16 @@
   "pane": {
     "selectSession": "Please select a session",
     "noSession": "No session selected",
-    "closeTab": "Close tab"
+    "closeTab": "Close tab",
+    "panes": "{{count}} panes",
+    "focus": "Focus",
+    "closePaneConfirm": "Close this pane?",
+    "splitH": "Split H",
+    "splitV": "Split V",
+    "active": "Active",
+    "confirmClose": "Close?",
+    "cannotCloseLast": "Cannot close the last pane",
+    "paneTab": "Pane {{id}}"
   },
   "url": {
     "noUrls": "No URLs found",

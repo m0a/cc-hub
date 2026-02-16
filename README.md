@@ -7,9 +7,12 @@ A web-based terminal manager for remotely managing Claude Code sessions. Control
 ## Features
 
 - **Multi-session Management** - Run and switch between multiple Claude Code sessions
+- **Multi-pane Terminals** - Split panes horizontally/vertically with real-time layout sync across all clients via tmux control mode
+- **Pane Operations** - Zoom, resize, focus, close panes via keyboard shortcuts or session modal UI
+- **Team Agent Display** - Shows agent names and colors in pane list and mobile tab bar
 - **Session Color Themes** - Assign colors to sessions for visual distinction
 - **Tablet-optimized UI** - Split layout, floating keyboard, pinch-to-zoom
-- **Mobile Support** - Tap/long-press for custom keyboard, no OS keyboard needed
+- **Mobile Support** - Tap/long-press for custom keyboard, pane tab bar for multi-pane switching, momentum scrolling
 - **File Viewer** - Syntax-highlighted code, image and HTML preview
 - **Change Tracking** - View file diffs from Claude Code edits and git changes (toggle between Claude/Git mode)
 - **Browser Back Navigation** - Navigate back through FileViewer states with browser back gesture
@@ -21,8 +24,6 @@ A web-based terminal manager for remotely managing Claude Code sessions. Control
 - **Session History** - Browse and resume past Claude Code sessions
 - **Conversation Viewer** - Markdown rendering, image display, system summary distinction
 - **Onboarding Walkthrough** - Spotlight-style guide for first-time users
-- **Split Panes** - Split terminal into multiple panes with per-pane session list sidebar
-- **Terminal Refresh** - Lightweight recovery from display corruption via WebSocket
 
 ## Installation
 
@@ -175,11 +176,30 @@ Assign colors to sessions for visual distinction:
 
 Settings are saved to `~/.cchub/session-themes.json` and persist across restarts.
 
+### Pane Operations
+
+CC Hub uses tmux control mode (`tmux -CC`) for real-time pane synchronization. All connected clients see the same pane layout.
+
+**Keyboard Shortcuts**:
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+D` | Split pane vertically (right) |
+| `Ctrl+Shift+D` | Split pane horizontally (bottom) |
+| `Ctrl+W` | Close pane |
+| `Ctrl+B` | Toggle session modal |
+| `Ctrl+Shift+B` | Toggle dashboard panel |
+| `Ctrl+Shift+Arrow` | Resize active pane |
+| `Ctrl+Shift+=` | Equalize pane sizes |
+| `Ctrl+Arrow` | Navigate between panes |
+| `Ctrl+1-9` | Switch to session by number |
+
+**Session Modal** (`Ctrl+B`): Shows session list with pane count badges. Expand to see individual panes with focus/close/split actions.
+
 ### Tablet Mode
 
 Automatically switches to tablet layout when screen width ≥ 640px and height ≥ 500px:
 - Left: Terminal with split pane support (pinch-to-zoom supported)
-- Per-pane session list sidebar (resizable by drag, pinch-to-zoom)
+- Session modal (`Ctrl+B`) for session switching
 - Floating keyboard (draggable, minimizable)
 
 **Pinch Zoom**: Pinch with two fingers on the terminal to zoom. UI controls are not affected by zoom.
@@ -242,7 +262,7 @@ bun run lint
 
 - **Backend**: Bun, Hono, WebSocket
 - **Frontend**: React 19, Vite, Tailwind CSS v4, xterm.js
-- **Terminal**: tmux, PTY
+- **Terminal**: tmux control mode (`tmux -CC`)
 
 ## License
 

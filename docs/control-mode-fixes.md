@@ -77,6 +77,31 @@
 - **修正**: パディングを `p-1`/`p-1.5` → `p-2.5` に変更し、40px に拡大
 - **影響ファイル**: `DesktopLayout.tsx`, `PaneContainer.tsx`
 
+### 16. PTY 0x0 サイズ修正
+- **問題**: `script -qfc` で作成されたPTYがデフォルト 0x0 サイズで、接続直後のターミナル表示が崩壊
+- **修正**: `stty -echo rows 24 cols 80` でPTYの初期サイズを明示的に設定
+- **影響ファイル**: `tmux-control.ts`
+
+### 17. zoom-pane 二重コンテンツ修正
+- **問題**: ズーム時にtmuxのリフローで `%output` が発生し、initial-contentと二重表示
+- **修正**: `readyForOutput` フラグでズーム中の `%output` を抑制、try/finallyで確実に復帰
+- **影響ファイル**: `terminal.ts`
+
+### 18. orphan control client クリーンアップ
+- **問題**: 破棄されたcontrol clientがtmuxに残り、異なるサイズで出力が崩壊
+- **修正**: destroyで `detach` コマンドを送信、新規接続時に `cleanupOrphanClients()` を実行
+- **影響ファイル**: `tmux-control.ts`
+
+### 19. テキスト選択防止
+- **問題**: タブレットでタッチ操作時にブラウザ選択とxterm.js選択が発生
+- **修正**: CSS `select-none` + ペイン切り替え時に全terminalの `clearSelection()` を実行
+- **影響ファイル**: `Terminal.tsx`, `DesktopLayout.tsx`, `TerminalPage.tsx`
+
+### 20. 履歴タブスクロール修正
+- **問題**: `max-h-[80vh]` でflex heightチェーンが解決せず、スクロールが効かない
+- **修正**: `h-[80vh]` に変更しflex heightを確定、SessionHistoryの内部スクロールを親に委譲
+- **影響ファイル**: `SessionModal.tsx`, `SessionList.tsx`, `SessionHistory.tsx`
+
 ## 既知の問題
 - リサイズ振動: サイドバー開閉時にサイズが変動するのは正常動作（ユーザー操作起因）
 - タッチターゲット: 40pxは44px推奨より少し小さいが、実用的な大きさ

@@ -40,7 +40,11 @@ shared/      # Shared types and Zod schemas
 
 ### Backend Services
 
-- **TmuxService** (`services/tmux.ts`) - Manages tmux sessions, spawns Claude Code processes, handles terminal resize, PTY-based session identification
+- **TmuxControlSession** (`services/tmux-control.ts`) - Core service for tmux `-CC` control mode. Manages subprocess lifecycle, processes structured protocol messages (`%output`, `%layout-change`, `%begin`/`%end`/`%error`, `%exit`), handles raw byte streams for UTF-8 preservation, command queuing with FIFO correlation, per-pane output routing, client lifecycle with 30s grace period
+- **TmuxService** (`services/tmux.ts`) - Manages tmux sessions, spawns Claude Code processes, collects all pane info per session, batch agent info extraction
+- **TmuxLayoutParser** (`services/tmux-layout-parser.ts`) - Parses tmux layout strings into `TmuxLayoutNode` tree for frontend rendering
+- **TmuxOctalDecoder** (`services/tmux-octal-decoder.ts`) - Decodes tmux octal-encoded output, raw byte processing for split UTF-8 sequences, hex encoding for `send-keys -H`
+- **TerminalFilterUtils** (`services/terminal-filter-utils.ts`) - Filters mouse escape sequences and control characters from terminal I/O
 - **ClaudeCodeService** (`services/claude-code.ts`) - Monitors Claude Code state from `.jsonl` files, PTY-based session matching
 - **SessionHistoryService** (`services/session-history.ts`) - Reads past Claude Code session history and conversations
 - **PromptHistoryService** (`services/prompt-history.ts`) - Searches prompt history across sessions
@@ -54,11 +58,14 @@ shared/      # Shared types and Zod schemas
 ### Key API Routes
 
 **Sessions** (`/api/sessions`):
-- `GET /` - List all tmux sessions with Claude Code state
+- `GET /` - List all tmux sessions with Claude Code state and pane info
 - `POST /` - Create new Claude Code session
 - `GET /:id` - Get session details
 - `DELETE /:id` - Close session
 - `POST /:id/resume` - Resume Claude Code session with `claude -r`
+- `POST /:id/panes/focus` - Focus a pane (`{ paneId }`)
+- `POST /:id/panes/close` - Close a pane (`{ paneId }`, rejects last pane)
+- `POST /:id/panes/split` - Split a pane (`{ paneId, direction: 'h'|'v' }`)
 - `GET /:id/copy-mode` - Get tmux copy mode selection
 - `GET /clipboard` - Get clipboard content
 - `GET /prompts/search` - Search prompt history
@@ -82,6 +89,11 @@ shared/      # Shared types and Zod schemas
 - `GET /language` - Detect file language
 - `POST /mkdir` - Create directory
 
+**Terminal WebSocket** (`/ws/control/:id`):
+- Real-time pane I/O via JSON protocol
+- Client messages: `input`, `resize`, `split`, `close-pane`, `resize-pane`, `select-pane`, `scroll`, `adjust-pane`, `equalize-panes`, `zoom-pane`, `request-content`, `ping`, `client-info`
+- Server messages: `output`, `layout`, `initial-content`, `ready`, `pong`, `error`, `new-session`
+
 **Other**:
 - `GET /api/dashboard` - Dashboard data (usage limits, statistics, cost estimates)
 - `POST /api/upload/image` - Upload image file
@@ -93,19 +105,18 @@ shared/      # Shared types and Zod schemas
 ### Frontend Components
 
 **Layout**:
-- **DesktopLayout.tsx** - Main layout with split panes, supports desktop and tablet modes (`isTablet` prop). Header with split/reload/keyboard buttons (tablet only)
-- **TabletLayout.tsx** - Alternative tablet-specific layout with built-in keyboard
-- **PaneContainer.tsx** - Tree-based pane system with per-pane session list sidebar (resizable, pinch-to-zoom), split buttons (desktop), file viewer, conversation viewer
+- **DesktopLayout.tsx** - Main layout with tmux control mode integration, pane tree management, keyboard shortcuts (Ctrl+B session modal, Ctrl+Shift+B dashboard, Ctrl+D/Shift+D split, Ctrl+W close, Ctrl+Shift+Arrow resize, Ctrl+Shift+= equalize). Supports desktop and tablet modes
+- **PaneContainer.tsx** - Tree-based pane renderer with `ControlModeContext` for tmux pane operations (split, close, zoom, resize)
+- **SessionModal.tsx** - Session picker modal (Ctrl+B) with pane count badges and expandable pane list
 
 **Onboarding**:
 - **Onboarding.tsx** - Spotlight-style walkthrough for new users with `beforeAction` support for triggering UI before showing steps
 
 **Terminal**:
-- **Terminal.tsx** - xterm.js terminal with WebGL rendering, fit addon, web links addon
+- **Terminal.tsx** - xterm.js terminal with WebGL rendering, `ControlModeConfig` for tmux size sync (`proposeDimensions()` instead of `fit()`, `setExactSize()` from tmux layout)
 
 **Session Management**:
-- **SessionList.tsx** - Full session list with tabs (Active/History/Dashboard), pinch-to-zoom support via `contentScale` prop
-- **SessionListMini.tsx** - Compact session list for TabletLayout
+- **SessionList.tsx** - Full session list with tabs (Active/History/Dashboard), pane list with focus/close/split actions, pinch-to-zoom support
 - **SessionHistory.tsx** - Past session browser with project grouping
 - **ConversationViewer.tsx** - Markdown-rendered conversation display with image support
 
@@ -121,6 +132,9 @@ shared/      # Shared types and Zod schemas
 - **ImageViewer.tsx** - Image preview with zoom
 - **MarkdownViewer.tsx** - Markdown rendering
 
+**Hooks** (`hooks/`):
+- **useControlTerminal.ts** - WebSocket connection to `/ws/control/:sessionId` for tmux control mode. Handles auto-reconnect, keepalive pings, `ready` signal handshake, base64 I/O encoding. Returns `sendInput`, `resize`, `splitPane`, `closePane`, `zoomPane`, `scrollPane`, `adjustPane`, `equalizePanes` etc.
+
 **Dashboard** (`components/dashboard/`):
 - **Dashboard.tsx** - Main dashboard container
 - **UsageLimits.tsx** - 5-hour/7-day usage cycle display with progress bars
@@ -133,10 +147,16 @@ shared/      # Shared types and Zod schemas
 ### Terminal Communication
 
 ```
-Browser <--WebSocket--> Hono Server <--PTY--> tmux <--pipe--> Claude Code
+Browser <--WebSocket (JSON)--> Hono Server <--tmux -CC (control mode)--> tmux <--pipe--> Claude Code
 ```
 
-The backend upgrades HTTP to WebSocket for terminal connections, creates a PTY, and attaches it to tmux.
+The backend upgrades HTTP to WebSocket at `/ws/control/:sessionId`. A `TmuxControlSession` manages the `tmux -CC attach` subprocess, parsing structured protocol messages (`%output`, `%layout-change`, `%begin/%end/%error`, `%exit`). Terminal I/O is multiplexed per-pane over a single WebSocket connection using JSON messages (`ControlClientMessage` / `ControlServerMessage` types in `shared/types.ts`).
+
+Key behaviors:
+- **Layout sync**: `%layout-change` events update all connected clients in real-time
+- **Size management**: Client sends container size, tmux determines pane dimensions, xterm.js uses `setExactSize()` from layout
+- **Initial content**: Deferred until first resize for correct terminal dimensions (`capture-pane -e -p -S -`)
+- **UTF-8**: Raw byte processing to handle split multi-byte sequences across `%output` lines
 
 ## CLI Commands
 

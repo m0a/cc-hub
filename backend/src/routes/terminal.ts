@@ -12,6 +12,7 @@ interface TerminalData {
   controlSession?: TmuxControlSession;
   cleanupFns?: Array<() => void>;
   initialContentSent?: boolean;
+  readyForOutput?: boolean; // true after initial-content has been delivered
 }
 
 const tmuxService = new TmuxService();
@@ -47,8 +48,10 @@ export const terminalWebSocket = {
       const cleanupFns: Array<() => void> = [];
 
       // Output listener: forward pane output to this client
+      // Suppressed until initial-content has been delivered to prevent duplicate content
       cleanupFns.push(
         controlSession.onOutput((paneId, data) => {
+          if (!ws.data.readyForOutput) return;
           try {
             ws.send(JSON.stringify({
               type: 'output',
@@ -153,6 +156,8 @@ export const terminalWebSocket = {
           if (!ws.data.initialContentSent) {
             ws.data.initialContentSent = true;
             // First resize: apply size, then capture current pane content.
+            // %output is suppressed (readyForOutput=false) until initial-content is sent,
+            // preventing duplicate content from tmux reflow during resize.
             try {
               await controlSession.setClientSizeImmediate(msg.cols, msg.rows);
               // Capture current pane content and send to client
@@ -176,6 +181,8 @@ export const terminalWebSocket = {
             } catch (err) {
               console.error('[control] Failed to initialize after resize:', err);
             }
+            // Now enable %output forwarding
+            ws.data.readyForOutput = true;
           } else {
             // Last-write-wins: any client's resize is applied immediately
             controlSession.setClientSize(msg.cols, msg.rows);
@@ -228,7 +235,29 @@ export const terminalWebSocket = {
           break;
         }
         case 'zoom-pane': {
-          await controlSession.zoomPane(msg.paneId);
+          // Suppress %output during zoom to prevent double content.
+          // Zoom causes tmux to reflow and send %output for the entire screen,
+          // which duplicates the initial-content we send afterwards.
+          ws.data.readyForOutput = false;
+          try {
+            await controlSession.zoomPane(msg.paneId);
+            // Capture zoomed pane content and send as initial-content
+            try {
+              const content = await controlSession.capturePane(msg.paneId);
+              if (content) {
+                const termContent = content.split('\n').join('\r\n');
+                ws.send(JSON.stringify({
+                  type: 'initial-content',
+                  paneId: msg.paneId,
+                  data: Buffer.from(termContent).toString('base64'),
+                }));
+              }
+            } catch {
+              // Pane may not be available
+            }
+          } finally {
+            ws.data.readyForOutput = true;
+          }
           break;
         }
         case 'ping': {

@@ -75,6 +75,7 @@ export interface TerminalRef {
   focus: () => void;
   extractUrls: () => string[];
   getSelection: () => string;
+  clearSelection: () => void;
   refreshTerminal: () => void;
   showKeyboard: () => void;
   hideKeyboard: () => void;
@@ -233,6 +234,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     sendInput: (char: string) => sendRef.current(char),
     focus: () => terminalRef.current?.focus(),
     getSelection: () => selectionRef.current,
+    clearSelection: () => terminalRef.current?.clearSelection(),
     refreshTerminal: () => {
       const fit = fitAddonRef.current;
       const term = terminalRef.current;
@@ -580,6 +582,9 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     let stoppedMomentum = false;
 
     const handleTouchStart = (e: TouchEvent) => {
+      // Clear any xterm.js selection on touch to prevent accidental selection
+      term.clearSelection();
+
       // Stop any ongoing momentum scroll - treat as consumed tap
       stoppedMomentum = momentumRafId !== null;
       if (stoppedMomentum) {
@@ -848,6 +853,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
     // Only clear terminal on actual pane SWITCH within the same session
     if (prevControlPaneIdRef.current !== null && prevControlPaneIdRef.current !== cm.paneId) {
+      terminalRef.current.clearSelection();
       terminalRef.current.clear();
       terminalRef.current.reset();
     }
@@ -1202,12 +1208,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
   return (
     <div
-      className="h-full w-full flex flex-col overflow-hidden"
+      className="h-full w-full flex flex-col overflow-hidden select-none"
       style={containerStyle}
     >
       {/* Terminal area - shrinks when input bar is shown */}
       <div
-        className="flex-1 relative min-h-0"
+        className="flex-1 relative min-h-0 select-none"
         onMouseUp={(e) => e.stopPropagation()}
       >
         {/* Terminal container */}

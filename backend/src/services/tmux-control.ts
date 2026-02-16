@@ -87,6 +87,38 @@ export class TmuxControlSession {
   }
 
   /**
+   * Detach orphaned control-mode clients for this session.
+   * These are leftover tmux -CC clients from previous connections that
+   * weren't properly detached, causing size conflicts (window-size=latest).
+   */
+  private async cleanupOrphanClients(): Promise<void> {
+    try {
+      const proc = spawn('tmux', ['list-clients', '-t', this.sessionId, '-F', '#{client_tty}|#{client_control_mode}'], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      const chunks: Buffer[] = [];
+      proc.stdout!.on('data', (c: Buffer) => chunks.push(c));
+      await new Promise<void>((resolve) => proc.on('close', () => resolve()));
+      const output = Buffer.concat(chunks).toString();
+
+      for (const line of output.trim().split('\n')) {
+        if (!line) continue;
+        const [tty, controlMode] = line.split('|');
+        if (controlMode === '1' && tty) {
+          // Detach this orphaned control-mode client
+          console.log(`[tmux-control] Detaching orphan control client: ${tty} from ${this.sessionId}`);
+          const detach = spawn('tmux', ['detach-client', '-t', tty], {
+            stdio: 'ignore',
+          });
+          await new Promise<void>((resolve) => detach.on('close', () => resolve()));
+        }
+      }
+    } catch {
+      // Ignore errors during cleanup
+    }
+  }
+
+  /**
    * Start the tmux -CC process.
    * Uses `script` to provide a PTY (tmux requires tcgetattr) while
    * communicating via pipes to avoid PTY echo corrupting the protocol stream.
@@ -96,6 +128,9 @@ export class TmuxControlSession {
 
     console.log(`[tmux-control] Starting session: ${this.sessionId}`);
 
+    // Clean up any orphaned control-mode clients before attaching
+    await this.cleanupOrphanClients();
+
     // Create ready promise - resolved when initial %begin/%end block completes
     this.readyPromise = new Promise<void>((resolve) => {
       this.resolveReady = resolve;
@@ -104,9 +139,12 @@ export class TmuxControlSession {
     try {
       // Use `script` to create a PTY for tmux while our I/O stays on pipes.
       // `stty -echo` prevents the PTY from echoing commands back into stdout.
+      // `rows 24 cols 80` sets a reasonable initial PTY size to prevent tmux
+      // from resizing panes to 0x0 (the default PTY size), which destroys
+      // content via reflow before the client sends the actual viewport size.
       this.proc = spawn(
         'script',
-        ['-qfc', `stty -echo && exec tmux -CC attach -t ${this.sessionId}`, '/dev/null'],
+        ['-qfc', `stty -echo rows 24 cols 80 && exec tmux -CC attach -t ${this.sessionId}`, '/dev/null'],
         {
           stdio: ['pipe', 'pipe', 'pipe'],
           env: { ...process.env, TERM: 'xterm-256color' },
@@ -760,30 +798,24 @@ export class TmuxControlSession {
     }
     this.pendingQueue.length = 0;
 
-    // Cleanly detach from tmux before killing the process.
-    // Without this, the tmux -CC client stays attached as an orphan and its
-    // stale size constrains the window layout (tmux window-size=latest).
-    if (this.proc?.stdin?.writable) {
-      try {
-        this.proc.stdin.write('detach\n');
-      } catch {
-        // stdin may already be closed
-      }
-    }
-
-    // Kill process tree (script + tmux -CC child)
-    if (this.proc && !this.proc.killed) {
-      try {
-        if (this.proc.pid) {
-          process.kill(-this.proc.pid, 'SIGTERM');
+    // Detach all control-mode clients for this session using external command.
+    // This is more reliable than sending 'detach' via stdin (which may not be
+    // processed before the process is killed).
+    this.cleanupOrphanClients().catch(() => {}).finally(() => {
+      // Kill process tree (script + tmux -CC child) after detach attempt
+      if (this.proc && !this.proc.killed) {
+        try {
+          if (this.proc.pid) {
+            process.kill(-this.proc.pid, 'SIGTERM');
+          }
+        } catch {
+          try { this.proc.kill('SIGKILL'); } catch { /* already dead */ }
         }
-      } catch {
-        try { this.proc.kill('SIGKILL'); } catch { /* already dead */ }
       }
-    }
-    this.proc = null;
+      this.proc = null;
+    });
 
-    // Clear listeners
+    // Clear listeners immediately (don't wait for cleanup)
     this.outputListeners.clear();
     this.globalOutputListeners.clear();
     this.layoutListeners.clear();

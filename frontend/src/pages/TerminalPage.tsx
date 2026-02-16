@@ -107,17 +107,27 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
       // Track that we've received initial-content for this pane
       contentDeliveredRef.current.add(paneId);
 
+      // Prepend terminal reset sequence to clear any existing content.
+      // initial-content represents the full terminal state (including scrollback),
+      // so we must clear the screen + scrollback before writing to prevent
+      // duplicate content from zoom reflow or pane switch.
+      // ESC[2J = clear screen, ESC[3J = clear scrollback, ESC[H = cursor home
+      const clearSeq = new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x33, 0x4a, 0x1b, 0x5b, 0x48]);
+      const combined = new Uint8Array(clearSeq.length + data.length);
+      combined.set(clearSeq);
+      combined.set(data, clearSeq.length);
+
       const callbacks = paneCallbacksRef.current.get(paneId);
       if (callbacks && callbacks.size > 0) {
         for (const cb of callbacks) {
-          cb(data);
+          cb(combined);
         }
       } else {
         // Buffer for replay when Terminal component mounts
         if (!initialContentBufferRef.current.has(paneId)) {
           initialContentBufferRef.current.set(paneId, []);
         }
-        initialContentBufferRef.current.get(paneId)!.push(data);
+        initialContentBufferRef.current.get(paneId)!.push(combined);
       }
     },
     onNewSession: onNewSession,
@@ -169,16 +179,12 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
       controlTerminal.selectPane(externalActivePaneId);
     }
 
-    // Request fresh content on actual pane switch
+    // Clear stale buffer on pane switch.
+    // The backend zoom-pane handler captures and sends initial-content,
+    // so we no longer need to request content separately.
     if (isActualSwitch) {
-      // Clear any stale buffer to prevent duplicate content
       initialContentBufferRef.current.delete(externalActivePaneId);
-      // Mark as not delivered so we accept the request-content response
       contentDeliveredRef.current.delete(externalActivePaneId);
-      // Delay request-content to allow zoom to take effect first
-      setTimeout(() => {
-        controlTerminal.requestContent(externalActivePaneId);
-      }, 150);
     }
   }, [externalActivePaneId, allPanes, controlTerminal]);
 
@@ -249,7 +255,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
   }, [ref, selectPane]);
 
   return (
-    <div className="flex-1 flex flex-col bg-gray-900 min-h-0">
+    <div className="flex-1 flex flex-col bg-gray-900 min-h-0 select-none">
       {/* Error banner */}
       {error && (
         <div className="bg-red-500/20 border-b border-red-500/50 px-4 py-2 text-red-400 text-sm shrink-0">
@@ -258,7 +264,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
       )}
 
       {/* Terminal - full screen */}
-      <main className="flex-1 relative overflow-hidden min-h-0">
+      <main className="flex-1 relative overflow-hidden min-h-0 select-none">
         <TerminalComponent
           ref={ref}
           sessionId={sessionId}

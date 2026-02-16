@@ -924,7 +924,7 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
           )}
 
           {activeTab === 'history' && (
-            <div className="h-full overflow-hidden">
+            <div className="h-full overflow-y-auto">
               <SessionHistory
                 onSelectSession={onSelectSession}
                 onSessionResumed={() => {

@@ -46,7 +46,7 @@ export function SessionModal({
 			onClick={onClose}
 		>
 			<div
-				className="max-w-lg w-full max-h-[80vh] bg-gray-900 rounded-lg shadow-2xl border border-gray-700 overflow-hidden flex flex-col mx-4"
+				className="max-w-lg w-full h-[80vh] bg-gray-900 rounded-lg shadow-2xl border border-gray-700 overflow-hidden flex flex-col mx-4"
 				onClick={(e) => e.stopPropagation()}
 			>
 				{/* Header */}

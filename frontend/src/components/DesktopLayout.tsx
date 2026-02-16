@@ -431,17 +431,26 @@ export function DesktopLayout({
       }, 50);
     },
     onInitialContent: (paneId, data) => {
+      // Prepend terminal clear sequence before initial-content.
+      // initial-content is the full terminal state, so clear existing content
+      // to prevent duplication (e.g., after zoom reflow).
+      // ESC[2J = clear screen, ESC[3J = clear scrollback, ESC[H = cursor home
+      const clearSeq = new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x33, 0x4a, 0x1b, 0x5b, 0x48]);
+      const combined = new Uint8Array(clearSeq.length + data.length);
+      combined.set(clearSeq);
+      combined.set(data, clearSeq.length);
+
       const callbacks = paneCallbacksRef.current.get(paneId);
       if (callbacks && callbacks.size > 0) {
         for (const cb of callbacks) {
-          cb(data);
+          cb(combined);
         }
       } else {
         // Buffer for replay when Terminal component mounts and registers callback
         if (!initialContentBufferRef.current.has(paneId)) {
           initialContentBufferRef.current.set(paneId, []);
         }
-        initialContentBufferRef.current.get(paneId)!.push(data);
+        initialContentBufferRef.current.get(paneId)!.push(combined);
       }
     },
     onConnect: () => {
@@ -934,6 +943,10 @@ export function DesktopLayout({
   }, []);
 
   const handleFocusPane = useCallback((paneId: string) => {
+    // Clear selection in all terminals to prevent stale selection on other panes
+    for (const [, ref] of terminalRefs.current) {
+      ref?.clearSelection();
+    }
     setDesktopState(prev => ({ ...prev, activePane: paneId }));
     controlTerminalRef.current.selectPane(paneId);
   }, []);
@@ -1118,7 +1131,7 @@ export function DesktopLayout({
         )}
 
         {/* Pane container */}
-        <div className="flex-1 min-h-0" data-onboarding="terminal" ref={paneContainerRef}>
+        <div className="flex-1 min-h-0 select-none" data-onboarding="terminal" ref={paneContainerRef}>
           <PaneContainer
             node={displayRoot}
             activePane={desktopState.activePane}

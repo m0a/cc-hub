@@ -1,27 +1,23 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { Keyboard } from './Keyboard';
 
-const POSITION_KEY_KEYBOARD = 'cchub-floating-keyboard-position-keyboard';
-const POSITION_KEY_INPUT = 'cchub-floating-keyboard-position-input';
-const POSITION_KEY_OLD = 'cchub-floating-keyboard-position'; // Legacy key for migration
+const POSITION_KEY_KEYBOARD = 'cchub-floating-keyboard-position-keyboard-v2';
+const POSITION_KEY_INPUT = 'cchub-floating-keyboard-position-input-v2';
 const MINIMIZED_KEY = 'cchub-floating-keyboard-minimized';
 const TRANSPARENT_KEY = 'cchub-floating-keyboard-transparent';
 
 const getPositionKey = (mode: 'keyboard' | 'input') =>
   mode === 'keyboard' ? POSITION_KEY_KEYBOARD : POSITION_KEY_INPUT;
 
-// Migrate old position to new mode-specific keys
-const migrateOldPosition = () => {
+// Clean up old position keys
+const cleanupOldKeys = () => {
   try {
-    const oldPosition = localStorage.getItem(POSITION_KEY_OLD);
-    if (oldPosition && !localStorage.getItem(POSITION_KEY_KEYBOARD)) {
-      localStorage.setItem(POSITION_KEY_KEYBOARD, oldPosition);
-      localStorage.setItem(POSITION_KEY_INPUT, oldPosition);
-      localStorage.removeItem(POSITION_KEY_OLD);
-    }
+    localStorage.removeItem('cchub-floating-keyboard-position');
+    localStorage.removeItem('cchub-floating-keyboard-position-keyboard');
+    localStorage.removeItem('cchub-floating-keyboard-position-input');
   } catch {}
 };
-migrateOldPosition();
+cleanupOldKeys();
 
 interface Position {
   x: number;
@@ -219,7 +215,7 @@ export function FloatingKeyboard({
     return (
       <div
         ref={containerRef}
-        className={`fixed ${elevated ? 'z-[10002]' : 'z-40'}`}
+        className={`fixed ${elevated ? 'z-[10002]' : 'z-[60]'}`}
         style={{ left: position.x, top: position.y }}
       >
         <div
@@ -302,7 +298,7 @@ export function FloatingKeyboard({
   return (
     <div
       ref={containerRef}
-      className={`fixed ${elevated ? 'z-[10002]' : 'z-40'} ${transparent ? '' : 'bg-gray-900'} border border-gray-700 rounded-lg shadow-2xl overflow-hidden`}
+      className={`fixed ${elevated ? 'z-[10002]' : 'z-[60]'} ${transparent ? '' : 'bg-gray-900'} border border-gray-700 rounded-lg shadow-2xl overflow-hidden`}
       style={{
         left: position.x,
         top: position.y,

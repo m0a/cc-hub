@@ -194,7 +194,15 @@ export const terminalWebSocket = {
           break;
         }
         case 'close-pane': {
-          await controlSession.closePane(msg.paneId);
+          try {
+            await controlSession.closePane(msg.paneId);
+          } catch (e) {
+            ws.send(JSON.stringify({
+              type: 'error',
+              message: e instanceof Error ? e.message : 'Failed to close pane',
+              paneId: msg.paneId,
+            }));
+          }
           break;
         }
         case 'resize-pane': {

@@ -501,9 +501,13 @@ export class TmuxControlSession {
   }
 
   /**
-   * Close a pane.
+   * Close a pane. Refuses to close the last remaining pane.
    */
   async closePane(paneId: string): Promise<void> {
+    const panes = await this.listPanes();
+    if (panes.length <= 1) {
+      throw new Error('Cannot close the last pane');
+    }
     await this.sendCommand(`kill-pane -t ${paneId}`);
   }
 

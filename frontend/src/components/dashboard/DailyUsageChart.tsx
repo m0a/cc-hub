@@ -10,8 +10,8 @@ export function DailyUsageChart({ data }: DailyUsageChartProps) {
 
   if (data.length === 0) {
     return (
-      <div className="p-3 bg-gray-800 rounded-lg">
-        <div className="text-gray-500 text-xs">{t('dashboard.noActivityData')}</div>
+      <div className="p-3 bg-th-surface rounded-lg">
+        <div className="text-th-text-muted text-xs">{t('dashboard.noActivityData')}</div>
       </div>
     );
   }
@@ -22,8 +22,8 @@ export function DailyUsageChart({ data }: DailyUsageChartProps) {
   const locale = i18n.language === 'ja' ? 'ja' : 'en';
 
   return (
-    <div className="p-3 bg-gray-800 rounded-lg">
-      <div className="text-sm font-medium text-white mb-2">{t('dashboard.dailyStats')}</div>
+    <div className="p-3 bg-th-surface rounded-lg">
+      <div className="text-sm font-medium text-th-text mb-2">{t('dashboard.dailyStats')}</div>
       <div className="flex items-end gap-1" style={{ height: '64px' }}>
         {recentData.map((day) => {
           const heightPx = Math.round((day.messageCount / maxMessages) * 64);
@@ -44,12 +44,12 @@ export function DailyUsageChart({ data }: DailyUsageChartProps) {
           const dayLabel = date.toLocaleDateString(locale, { weekday: 'narrow' });
           return (
             <div key={day.date} className="flex-1 text-center">
-              <span className="text-[10px] text-gray-500">{dayLabel}</span>
+              <span className="text-[10px] text-th-text-muted">{dayLabel}</span>
             </div>
           );
         })}
       </div>
-      <div className="mt-2 text-xs text-gray-400 text-center">
+      <div className="mt-2 text-xs text-th-text-secondary text-center">
         {t('dashboard.today')}: {recentData[recentData.length - 1]?.messageCount || 0} {t('dashboard.messages')}
       </div>
     </div>

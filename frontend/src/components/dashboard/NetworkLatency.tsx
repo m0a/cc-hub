@@ -9,7 +9,7 @@ function getLatencyColor(value: number): string {
 }
 
 function getDotColor(value: number | null): string {
-  if (value === null) return 'bg-gray-600';
+  if (value === null) return 'bg-th-surface-active';
   if (value < 50) return 'bg-green-500';
   if (value < 150) return 'bg-yellow-500';
   return 'bg-red-500';
@@ -52,13 +52,13 @@ interface LatencyRowProps {
 
 function LatencyRow({ label, value, history, naText, stale }: LatencyRowProps) {
   const valueColor = value !== null
-    ? (stale ? 'text-gray-500' : getLatencyColor(value))
-    : 'text-gray-600';
+    ? (stale ? 'text-th-text-muted' : getLatencyColor(value))
+    : 'text-th-text-muted';
 
   return (
     <div className={`flex items-center gap-2 ${stale ? 'opacity-60' : ''}`}>
-      <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${stale ? 'bg-gray-600' : getDotColor(value)}`} />
-      <span className="text-[11px] text-gray-400 w-16 shrink-0">{label}</span>
+      <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${stale ? 'bg-th-surface-active' : getDotColor(value)}`} />
+      <span className="text-[11px] text-th-text-secondary w-16 shrink-0">{label}</span>
       <span className={`text-[11px] w-12 shrink-0 text-right tabular-nums ${valueColor}`}>
         {value !== null ? `${value}ms` : naText}
       </span>
@@ -72,8 +72,8 @@ export function NetworkLatency({ className = '' }: { className?: string }) {
   const { wsLatency, apiLatency, wsHistory, apiHistory, wsConnected } = useNetworkLatency();
 
   return (
-    <div className={`bg-gray-800/50 rounded-lg p-3 ${className}`}>
-      <h3 className="text-xs text-gray-400 mb-3">{t('dashboard.networkLatency')}</h3>
+    <div className={`bg-th-surface/50 rounded-lg p-3 ${className}`}>
+      <h3 className="text-xs text-th-text-secondary mb-3">{t('dashboard.networkLatency')}</h3>
       <div className="space-y-1.5">
         <LatencyRow
           label={t('dashboard.websocket')}

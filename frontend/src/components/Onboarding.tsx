@@ -348,8 +348,8 @@ export function Onboarding({ onComplete, type = 'main', onStepAction }: Onboardi
   if (availableSteps.length === 0 || !step) {
     // Show loading state briefly
     return (
-      <div className="fixed inset-0 bg-black/70 z-[10000] flex items-center justify-center">
-        <div className="text-white">{t('common.loading')}</div>
+      <div className="fixed inset-0 bg-[var(--color-overlay)] z-[10000] flex items-center justify-center">
+        <div className="text-th-text">{t('common.loading')}</div>
       </div>
     );
   }
@@ -357,8 +357,8 @@ export function Onboarding({ onComplete, type = 'main', onStepAction }: Onboardi
   if (!isReady && !targetRect) {
     // Show loading state briefly
     return (
-      <div className="fixed inset-0 bg-black/70 z-[10000] flex items-center justify-center">
-        <div className="text-white">{t('common.loading')}</div>
+      <div className="fixed inset-0 bg-[var(--color-overlay)] z-[10000] flex items-center justify-center">
+        <div className="text-th-text">{t('common.loading')}</div>
       </div>
     );
   }
@@ -411,11 +411,11 @@ export function Onboarding({ onComplete, type = 'main', onStepAction }: Onboardi
       {/* Tooltip */}
       <div
         style={getTooltipStyle()}
-        className="bg-gray-800 rounded-xl shadow-2xl overflow-hidden pointer-events-auto"
+        className="bg-th-surface rounded-xl shadow-2xl overflow-hidden pointer-events-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Progress indicator */}
-        <div className="flex gap-1 p-3 justify-center bg-gray-900/50">
+        <div className="flex gap-1 p-3 justify-center bg-th-bg/50">
           {availableSteps.map((_, index) => (
             <div
               key={index}
@@ -424,7 +424,7 @@ export function Onboarding({ onComplete, type = 'main', onStepAction }: Onboardi
                   ? 'w-6 bg-blue-500'
                   : index < currentStep
                   ? 'w-2 bg-blue-400'
-                  : 'w-2 bg-gray-600'
+                  : 'w-2 bg-th-surface-active'
               }`}
             />
           ))}
@@ -432,25 +432,25 @@ export function Onboarding({ onComplete, type = 'main', onStepAction }: Onboardi
 
         {/* Content */}
         <div className="px-4 py-3">
-          <h2 className="text-lg font-bold text-white mb-2">
+          <h2 className="text-lg font-bold text-th-text mb-2">
             {t(step.titleKey)}
           </h2>
-          <p className="text-gray-300 text-sm leading-relaxed">
+          <p className="text-th-text-secondary text-sm leading-relaxed">
             {t(step.descriptionKey)}
           </p>
         </div>
 
         {/* Actions */}
-        <div className="flex gap-2 p-3 border-t border-gray-700">
+        <div className="flex gap-2 p-3 border-t border-th-border">
           <button
             onClick={handleSkip}
-            className="flex-1 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+            className="flex-1 py-2 text-sm text-th-text-secondary hover:text-th-text transition-colors"
           >
             {t('onboarding.skip')}
           </button>
           <button
             onClick={handleNext}
-            className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors"
+            className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-th-text rounded-lg text-sm font-medium transition-colors"
           >
             {isLastStep ? t('onboarding.start') : t('onboarding.next')}
           </button>

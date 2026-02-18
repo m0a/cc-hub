@@ -29,11 +29,11 @@ export function SessionTabs({
 }: SessionTabsProps) {
   const { t } = useTranslation();
   return (
-    <div className="flex items-center bg-gray-900 border-b border-gray-700 overflow-x-auto">
+    <div className="flex items-center bg-th-bg border-b border-th-border overflow-x-auto">
       {/* Session list button */}
       <button
         onClick={onShowSessionList}
-        className="px-3 py-2 text-gray-400 hover:text-white hover:bg-gray-800 transition-colors shrink-0"
+        className="px-3 py-2 text-th-text-secondary hover:text-th-text hover:bg-th-surface transition-colors shrink-0"
         title={t('session.list')}
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -60,7 +60,7 @@ export function SessionTabs({
       {/* New session button */}
       <button
         onClick={onNewSession}
-        className="px-3 py-2 text-gray-400 hover:text-white hover:bg-gray-800 transition-colors shrink-0"
+        className="px-3 py-2 text-th-text-secondary hover:text-th-text hover:bg-th-surface transition-colors shrink-0"
         title="新規セッション"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

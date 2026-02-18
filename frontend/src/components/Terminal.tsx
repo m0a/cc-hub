@@ -9,19 +9,64 @@ import { authFetch } from '../services/api';
 import type { SessionTheme } from '../../../shared/types';
 import { filterMouseTrackingInput, filterMouseTrackingOutput, shouldInterceptKeyEvent } from '../utils/terminal-filters';
 
-// Terminal theme colors based on session theme
-const TERMINAL_THEMES: Record<SessionTheme | 'default', { background: string; accent: string }> = {
-  default: { background: '#1a1a1a', accent: '#1a1a1a' },
-  red: { background: '#3d1a1f', accent: '#7f1d1d' },
-  orange: { background: '#3d2415', accent: '#7c2d12' },
-  amber: { background: '#3d3012', accent: '#78350f' },
-  green: { background: '#153d20', accent: '#14532d' },
-  teal: { background: '#153d35', accent: '#134e4a' },
-  blue: { background: '#15253d', accent: '#1e3a5f' },
-  indigo: { background: '#221c3d', accent: '#312e81' },
-  purple: { background: '#2d1a3d', accent: '#4c1d95' },
-  pink: { background: '#3d1a2d', accent: '#831843' },
+// Terminal theme colors based on session theme (dark mode)
+const TERMINAL_THEMES_DARK: Record<SessionTheme | 'default', { background: string; foreground: string; accent: string }> = {
+  default: { background: '#1a1a1a', foreground: '#efefef', accent: '#1a1a1a' },
+  red: { background: '#3d1a1f', foreground: '#efefef', accent: '#7f1d1d' },
+  orange: { background: '#3d2415', foreground: '#efefef', accent: '#7c2d12' },
+  amber: { background: '#3d3012', foreground: '#efefef', accent: '#78350f' },
+  green: { background: '#153d20', foreground: '#efefef', accent: '#14532d' },
+  teal: { background: '#153d35', foreground: '#efefef', accent: '#134e4a' },
+  blue: { background: '#15253d', foreground: '#efefef', accent: '#1e3a5f' },
+  indigo: { background: '#221c3d', foreground: '#efefef', accent: '#312e81' },
+  purple: { background: '#2d1a3d', foreground: '#efefef', accent: '#4c1d95' },
+  pink: { background: '#3d1a2d', foreground: '#efefef', accent: '#831843' },
 };
+
+// Terminal theme colors (light mode) - soft bg, strong text
+const TERMINAL_THEMES_LIGHT: Record<SessionTheme | 'default', { background: string; foreground: string; accent: string }> = {
+  default: { background: '#eff1f5', foreground: '#4c4f69', accent: '#eff1f5' },
+  red: { background: '#f3eced', foreground: '#4c4f69', accent: '#d20f39' },
+  orange: { background: '#f3eeeb', foreground: '#4c4f69', accent: '#fe640b' },
+  amber: { background: '#f3f0e8', foreground: '#4c4f69', accent: '#df8e1d' },
+  green: { background: '#ebf3ec', foreground: '#4c4f69', accent: '#40a02b' },
+  teal: { background: '#ebf3f1', foreground: '#4c4f69', accent: '#179299' },
+  blue: { background: '#ebeff3', foreground: '#4c4f69', accent: '#1e66f5' },
+  indigo: { background: '#eeedf3', foreground: '#4c4f69', accent: '#7287fd' },
+  purple: { background: '#f0edf3', foreground: '#4c4f69', accent: '#8839ef' },
+  pink: { background: '#f3edef', foreground: '#4c4f69', accent: '#ea76cb' },
+};
+
+// Official Catppuccin Latte ANSI colors
+// Source: https://github.com/catppuccin/alacritty
+const LIGHT_ANSI_COLORS = {
+  black: '#bcc0cc',        // Surface 1
+  red: '#d20f39',          // Red
+  green: '#40a02b',        // Green
+  yellow: '#df8e1d',       // Yellow
+  blue: '#1e66f5',         // Blue
+  magenta: '#ea76cb',      // Pink
+  cyan: '#179299',         // Teal
+  white: '#5c5f77',        // Subtext 1
+  brightBlack: '#acb0be',  // Surface 2
+  brightRed: '#d20f39',    // Red
+  brightGreen: '#40a02b',  // Green
+  brightYellow: '#df8e1d', // Yellow
+  brightBlue: '#1e66f5',   // Blue
+  brightMagenta: '#ea76cb', // Pink
+  brightCyan: '#179299',   // Teal
+  brightWhite: '#6c6f85',  // Subtext 0
+};
+
+function getTerminalThemes() {
+  const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+  return isDark ? TERMINAL_THEMES_DARK : TERMINAL_THEMES_LIGHT;
+}
+
+function isLightMode() {
+  return document.documentElement.getAttribute('data-theme') === 'light';
+}
+
 
 const FONT_SIZE_KEY_PREFIX = 'cchub-terminal-font-size-';
 const DEFAULT_FONT_SIZE = 14;
@@ -53,6 +98,7 @@ export interface ControlModeConfig {
   isConnected: boolean;
   onResize?: (cols: number, rows: number) => void;
   onScroll?: (lines: number) => void; // positive = up, negative = down
+  requestContent?: () => void;
 }
 
 interface TerminalProps {
@@ -220,7 +266,10 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
   const isConnected = controlMode?.isConnected ?? false;
   const connect = noopFn; // Connection managed by useControlTerminal in DesktopLayout
-  const refresh = noopFn;
+  const refresh = useCallback(() => {
+    // Re-request terminal content from tmux (capture-pane)
+    controlModeRef.current?.requestContent?.();
+  }, []);
 
   // Keep refs updated
   useEffect(() => {
@@ -236,13 +285,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     getSelection: () => selectionRef.current,
     clearSelection: () => terminalRef.current?.clearSelection(),
     refreshTerminal: () => {
-      const fit = fitAddonRef.current;
-      const term = terminalRef.current;
-      if (fit && term) {
-        // Compute size that would fit container, send to tmux (don't apply to xterm)
-        const dims = fit.proposeDimensions();
-        if (dims) resizeRef.current(dims.cols, dims.rows);
-      }
+      refreshRef.current();
     },
     extractUrls: () => {
       const term = terminalRef.current;
@@ -334,10 +377,10 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
     // High-performance terminal configuration
     const initialFontSize = loadFontSize(sessionId);
-    const themeColors = TERMINAL_THEMES[sessionTheme || 'default'];
+    const themeColors = getTerminalThemes()[sessionTheme || 'default'];
     const term = new Terminal({
       fontSize: initialFontSize,
-      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+      fontFamily: '"JetBrains Mono", "M PLUS 1 Code", Menlo, Monaco, monospace',
       fontWeight: 'normal',
       fontWeightBold: 'bold',
       letterSpacing: 0,
@@ -349,17 +392,18 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       smoothScrollDuration: 0, // Disable smooth scroll
       scrollSensitivity: 3,
       allowProposedApi: true,
-      minimumContrastRatio: 1, // Disable contrast calculation
+      minimumContrastRatio: isLightMode() ? 4.5 : 1, // WCAG AA auto-fix in light mode
       rescaleOverlappingGlyphs: false, // Disable glyph rescaling
       drawBoldTextInBrightColors: false, // Disable bold color transformation
       convertEol: false,
       ignoreBracketedPasteMode: false,
       theme: {
         background: themeColors.background,
-        foreground: '#efefef',
-        cursor: '#efefef',
+        foreground: themeColors.foreground,
+        cursor: themeColors.foreground,
         cursorAccent: themeColors.background,
-        selectionBackground: 'rgba(255, 255, 255, 0.3)',
+        selectionBackground: isLightMode() ? 'rgba(0, 0, 0, 0.15)' : 'rgba(255, 255, 255, 0.3)',
+        ...(isLightMode() ? LIGHT_ANSI_COLORS : {}),
       },
     });
 
@@ -974,33 +1018,54 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     };
   }, [isInitialized]);
 
-  // Update terminal theme when session theme changes
+  // Update terminal theme when session theme changes OR app theme (light/dark) changes
   useEffect(() => {
     const term = terminalRef.current;
     const container = containerRef.current;
     if (!term || !container) return;
 
-    const themeColors = TERMINAL_THEMES[sessionTheme || 'default'];
+    const applyTerminalTheme = () => {
+      const themeColors = getTerminalThemes()[sessionTheme || 'default'];
 
-    // Update xterm theme
-    term.options.theme = {
-      ...term.options.theme,
-      background: themeColors.background,
-      cursorAccent: themeColors.background,
+      // Update xterm theme
+      const light = isLightMode();
+      term.options.minimumContrastRatio = light ? 4.5 : 1;
+      term.options.theme = {
+        background: themeColors.background,
+        foreground: themeColors.foreground,
+        cursor: themeColors.foreground,
+        cursorAccent: themeColors.background,
+        selectionBackground: light ? 'rgba(0, 0, 0, 0.15)' : 'rgba(255, 255, 255, 0.3)',
+        ...(light ? LIGHT_ANSI_COLORS : {}),
+      };
+
+      // Also update the viewport background directly for WebGL renderer
+      const viewport = container.querySelector('.xterm-viewport') as HTMLElement;
+      if (viewport) {
+        viewport.style.backgroundColor = themeColors.background;
+      }
+      const screen = container.querySelector('.xterm-screen') as HTMLElement;
+      if (screen) {
+        screen.style.backgroundColor = themeColors.background;
+      }
+
+      // Force refresh to apply theme
+      term.refresh(0, term.rows - 1);
     };
 
-    // Also update the viewport background directly for WebGL renderer
-    const viewport = container.querySelector('.xterm-viewport') as HTMLElement;
-    if (viewport) {
-      viewport.style.backgroundColor = themeColors.background;
-    }
-    const screen = container.querySelector('.xterm-screen') as HTMLElement;
-    if (screen) {
-      screen.style.backgroundColor = themeColors.background;
-    }
+    applyTerminalTheme();
 
-    // Force refresh to apply theme
-    term.refresh(0, term.rows - 1);
+    // Watch for data-theme attribute changes on <html> for runtime light/dark switching
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        if (m.type === 'attributes' && m.attributeName === 'data-theme') {
+          applyTerminalTheme();
+        }
+      }
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+    return () => observer.disconnect();
   }, [sessionTheme]);
 
   // Handle file selection for image upload
@@ -1200,7 +1265,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   };
 
   // Calculate container height based on visual viewport (for mobile keyboard)
-  const themeColors = TERMINAL_THEMES[sessionTheme || 'default'];
+  const themeColors = getTerminalThemes()[sessionTheme || 'default'];
   const containerStyle: React.CSSProperties = {
     ...(keyboardOffset > 0 ? { height: `calc(100% - ${keyboardOffset}px)` } : {}),
     backgroundColor: themeColors.background,
@@ -1233,21 +1298,21 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           style={{ touchAction: 'none' }}
         />
         {(!isInitialized || !isConnected) && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-30">
-            <div className="text-white text-lg">
+          <div className="absolute inset-0 flex items-center justify-center bg-[var(--color-overlay)] z-30">
+            <div className="text-th-text text-lg">
               {!isInitialized ? 'Loading...' : 'Connecting...'}
             </div>
           </div>
         )}
         {/* Font size indicator */}
         {showFontSizeIndicator && (
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 bg-black/70 px-4 py-2 rounded-lg pointer-events-none">
-            <span className="text-white text-lg font-medium">{fontSize}px</span>
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 bg-[var(--color-overlay)] px-4 py-2 rounded-lg pointer-events-none">
+            <span className="text-th-text text-lg font-medium">{fontSize}px</span>
           </div>
         )}
         {/* Scroll position indicator (tmux-style) */}
         {scrollIndicator && (
-          <div className="absolute top-2 right-2 z-30 bg-black/70 px-2 py-1 rounded text-xs text-yellow-400/80 pointer-events-none font-mono">
+          <div className="absolute top-2 right-2 z-30 bg-[var(--color-overlay)] px-2 py-1 rounded text-xs text-yellow-400/80 pointer-events-none font-mono">
             {scrollIndicator}
           </div>
         )}
@@ -1257,35 +1322,35 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           const startIdx = urlPage * URL_PAGE_SIZE;
           const pageUrls = detectedUrls.slice(startIdx, startIdx + URL_PAGE_SIZE);
           return (
-            <div className="absolute inset-0 z-40 bg-black/80 flex items-center justify-center p-4">
-              <div className="bg-gray-800 rounded-lg w-full max-w-md flex flex-col">
-                <div className="flex items-center justify-between p-3 border-b border-gray-700">
-                  <span className="text-white font-medium">
+            <div className="absolute inset-0 z-40 bg-[var(--color-overlay)] flex items-center justify-center p-4">
+              <div className="bg-th-surface rounded-lg w-full max-w-md flex flex-col">
+                <div className="flex items-center justify-between p-3 border-b border-th-border">
+                  <span className="text-th-text font-medium">
                     URL一覧 {detectedUrls.length > 0 && `(${startIdx + 1}-${Math.min(startIdx + URL_PAGE_SIZE, detectedUrls.length)}/${detectedUrls.length})`}
                   </span>
                   <button
                     onClick={() => setShowUrlMenu(false)}
-                    className="text-gray-400 hover:text-white text-xl px-2"
+                    className="text-th-text-muted hover:text-th-text text-xl px-2"
                   >
                     ×
                   </button>
                 </div>
                 <div className="p-2">
                   {detectedUrls.length === 0 ? (
-                    <p className="text-gray-500 text-center py-4">URLが見つかりません</p>
+                    <p className="text-th-text-muted text-center py-4">URLが見つかりません</p>
                   ) : (
                     pageUrls.map((url, index) => (
-                      <div key={startIdx + index} className="flex items-center gap-2 p-2 hover:bg-gray-700 rounded">
-                        <span className="flex-1 text-white text-sm truncate">{url}</span>
+                      <div key={startIdx + index} className="flex items-center gap-2 p-2 hover:bg-th-surface-hover rounded">
+                        <span className="flex-1 text-th-text text-sm truncate">{url}</span>
                         <button
                           onClick={() => handleCopyUrl(url)}
-                          className="px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded text-white text-xs"
+                          className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 rounded text-white text-xs shrink-0"
                         >
                           コピー
                         </button>
                         <button
                           onClick={() => handleOpenUrl(url)}
-                          className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-white text-xs"
+                          className="px-2 py-1 bg-th-surface-active hover:bg-th-surface-hover rounded text-th-text text-xs shrink-0"
                         >
                           開く
                         </button>
@@ -1294,19 +1359,19 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                   )}
                 </div>
                 {totalPages > 1 && (
-                  <div className="flex items-center justify-center gap-4 p-3 border-t border-gray-700">
+                  <div className="flex items-center justify-center gap-4 p-3 border-t border-th-border">
                     <button
                       onClick={() => setUrlPage(p => Math.max(0, p - 1))}
                       disabled={urlPage === 0}
-                      className={`px-3 py-1 rounded ${urlPage === 0 ? 'bg-gray-700 text-gray-500' : 'bg-gray-600 text-white hover:bg-gray-500'}`}
+                      className={`px-3 py-1 rounded ${urlPage === 0 ? 'bg-th-surface-hover text-th-text-muted' : 'bg-th-surface-active text-th-text hover:bg-th-surface-hover'}`}
                     >
                       ← 前
                     </button>
-                    <span className="text-gray-400 text-sm">{urlPage + 1} / {totalPages}</span>
+                    <span className="text-th-text-secondary text-sm">{urlPage + 1} / {totalPages}</span>
                     <button
                       onClick={() => setUrlPage(p => Math.min(totalPages - 1, p + 1))}
                       disabled={urlPage >= totalPages - 1}
-                      className={`px-3 py-1 rounded ${urlPage >= totalPages - 1 ? 'bg-gray-700 text-gray-500' : 'bg-gray-600 text-white hover:bg-gray-500'}`}
+                      className={`px-3 py-1 rounded ${urlPage >= totalPages - 1 ? 'bg-th-surface-hover text-th-text-muted' : 'bg-th-surface-active text-th-text hover:bg-th-surface-hover'}`}
                     >
                       次 →
                     </button>
@@ -1322,7 +1387,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       {!hideKeyboard && inputMode !== 'hidden' && (
         <div
           ref={inputBarRef}
-          className="shrink-0 bg-black border-t border-green-500 relative"
+          className="shrink-0 bg-th-bg border-t border-green-500 relative"
           onTouchStart={handleInputBarTouchStart}
           onTouchEnd={handleInputBarTouchEnd}
         >
@@ -1335,7 +1400,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
               className="h-4 flex items-center justify-center"
               onClick={onOverlayTap}
             >
-              <div className="w-10 h-1 bg-gray-600 rounded-full" />
+              <div className="w-10 h-1 bg-th-surface-active rounded-full" />
             </div>
           )}
 
@@ -1350,7 +1415,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           {/* Header bar with hint and position toggle - hidden when overlay content is present */}
           {!overlayContent && (
           <div
-            className={`bg-gray-900 flex justify-between items-center overflow-hidden transition-all duration-300 ${
+            className={`bg-th-surface flex justify-between items-center overflow-hidden transition-all duration-300 ${
               isTablet
                 ? (showPositionToggle ? 'px-2 py-1' : 'h-0 py-0')
                 : 'px-2 py-1'
@@ -1359,14 +1424,14 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           >
             {/* Hint text - only show on mobile or when position toggle is visible */}
             {(!isTablet || showPositionToggle) && (
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-th-text-muted">
                 {showHint && (inputMode === 'shortcuts' ? '「あ」で日本語入力 | スクロールで閉じる' : '「ABC」で英語キーボード | スクロールで閉じる')}
               </span>
             )}
             {isTablet && inputMode === 'shortcuts' && showPositionToggle && (
               <button
                 onClick={handlePositionToggle}
-                className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded"
+                className="px-2 py-0.5 bg-th-surface-hover text-th-text-secondary text-xs rounded"
               >
                 {keyboardPosition === 'right' ? '← 左へ' : '右へ →'}
               </button>
@@ -1377,10 +1442,10 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           {/* Tap area to show position toggle when header is hidden */}
           {isTablet && !showPositionToggle && inputMode === 'shortcuts' && (
             <div
-              className="h-2 bg-gray-800 flex items-center justify-center"
+              className="h-2 bg-th-surface flex items-center justify-center"
               onClick={() => setShowPositionToggle(true)}
             >
-              <div className="w-8 h-0.5 bg-gray-600 rounded-full" />
+              <div className="w-8 h-0.5 bg-th-surface-active rounded-full" />
             </div>
           )}
 
@@ -1414,7 +1479,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                   </div>
                 </div>
                 {/* Text input mode */}
-                <div className="w-full flex-shrink-0 p-2 bg-black">
+                <div className="w-full flex-shrink-0 p-2 bg-th-bg">
                   <input
                     type="text"
                     inputMode="text"
@@ -1426,7 +1491,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                     autoComplete="off"
                     spellCheck={false}
                     placeholder="日本語入力可 - Enterで送信"
-                    className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
+                    className="w-full px-3 py-2 bg-th-surface border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-green-500"
                     style={{ fontSize: '16px' }}
                   />
                 </div>
@@ -1464,7 +1529,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             </div>
           ) : (
             // Input mode
-            <div className="p-2 bg-black flex gap-2">
+            <div className="p-2 bg-th-bg flex gap-2">
               <input
                 ref={inputRef}
                 type="text"
@@ -1481,7 +1546,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                 // biome-ignore lint/a11y/noAutofocus: required to show OS keyboard on mode switch
                 autoFocus
                 placeholder="入力欄をタップしてキーボード表示"
-                className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
+                className="flex-1 px-3 py-2 bg-th-surface border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-green-500"
                 style={{ fontSize: '16px' }}
               />
               {/* File picker button */}
@@ -1490,8 +1555,8 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                 disabled={isUploading}
                 className={`px-3 py-2 rounded font-medium ${
                   isUploading
-                    ? 'bg-gray-600 text-gray-400'
-                    : 'bg-gray-700 hover:bg-gray-600 active:bg-gray-500 text-white'
+                    ? 'bg-th-surface-active text-th-text-muted'
+                    : 'bg-th-surface-hover hover:bg-th-surface-active active:bg-th-surface text-th-text'
                 }`}
               >
                 {isUploading ? '⏳' : '📁'}
@@ -1506,7 +1571,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                     fitTerminal();
                   }, 350);
                 }}
-                className="px-3 py-2 bg-gray-700 hover:bg-gray-600 active:bg-gray-500 rounded text-white font-medium"
+                className="px-3 py-2 bg-th-surface-hover hover:bg-th-surface-active active:bg-th-surface rounded text-th-text font-medium"
               >
                 ABC
               </button>
@@ -1517,7 +1582,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
       {/* Bottom overlay when keyboard is hidden (mobile only) */}
       {!hideKeyboard && inputMode === 'hidden' && overlayContent && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 bg-black border-t border-gray-700">
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-th-bg border-t border-th-border">
           {overlayContent}
 
           {/* Tap area to show overlay when hidden */}
@@ -1533,7 +1598,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       {/* Tap area at bottom when keyboard hidden and no overlay content */}
       {!hideKeyboard && inputMode === 'hidden' && !overlayContent && (
         <div
-          className="fixed bottom-0 left-0 right-0 h-8 z-40 bg-black/50 flex items-center justify-center"
+          className="fixed bottom-0 left-0 right-0 h-8 z-40 bg-[var(--color-overlay)] flex items-center justify-center"
           onClick={() => {
             setInputMode('shortcuts');
             setShowHint(true);
@@ -1541,7 +1606,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             hintTimeoutRef.current = window.setTimeout(() => setShowHint(false), 5000);
           }}
         >
-          <svg className="w-5 h-5 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <svg className="w-5 h-5 text-th-text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <rect x="2" y="6" width="20" height="12" rx="2" />
             <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
           </svg>

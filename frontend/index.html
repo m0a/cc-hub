@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja">
+<html lang="ja" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
@@ -13,6 +13,20 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="CC Hub" />
 
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=M+PLUS+1+Code:wght@400;500;700&display=swap" rel="stylesheet" />
+
+    <!-- FOUC prevention: apply saved theme before first paint -->
+    <script>
+      (function() {
+        var t = localStorage.getItem('cchub-theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', t);
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', t === 'light' ? '#f8fafc' : '#1a1a1a');
+      })();
+    </script>
     <!-- Prevent text selection and callouts on mobile -->
     <style>
       html, body {
@@ -26,7 +40,7 @@
   <body>
     <div id="root"></div>
     <!-- Fallback UI: if React fails to mount within 4s, show cache clear button -->
-    <div id="fallback" style="display:none;position:fixed;inset:0;z-index:99999;background:#1a1a1a;color:#fff;font-family:system-ui;padding:40px 20px;text-align:center;">
+    <div id="fallback" style="display:none;position:fixed;inset:0;z-index:99999;background:#1a1a1a;color:#fff;font-family:'JetBrains Mono',monospace;padding:40px 20px;text-align:center;">
       <h2 style="margin-bottom:12px;">CC Hub</h2>
       <p style="color:#999;margin-bottom:24px;">アプリの読み込みに問題が発生しています</p>
       <button onclick="clearCacheAndReload()" style="padding:14px 28px;font-size:16px;background:#3b82f6;color:#fff;border:none;border-radius:8px;cursor:pointer;margin:8px;min-width:200px;">キャッシュクリア &amp; リロード</button>

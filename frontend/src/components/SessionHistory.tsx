@@ -68,17 +68,17 @@ function HistoryItem({
   return (
     <div
       onClick={onTap}
-      className="px-3 py-2 hover:bg-gray-700/50 transition-colors border-l-2 border-gray-700 ml-2 cursor-pointer"
+      className="px-3 py-2 hover:bg-th-surface-hover/50 transition-colors border-l-2 border-th-border ml-2 cursor-pointer"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <div className="text-sm text-gray-200 break-words">
+          <div className="text-sm text-th-text break-words">
             {truncatedText}
           </div>
-          <div className="flex flex-wrap items-center gap-2 mt-1 text-[10px] text-gray-500">
+          <div className="flex flex-wrap items-center gap-2 mt-1 text-[10px] text-th-text-muted">
             <span>{formatRelativeTime(session.modified, t, i18n.language)}</span>
             {duration && (
-              <span className="text-gray-400">
+              <span className="text-th-text-secondary">
                 <svg className="w-3 h-3 inline mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
@@ -86,7 +86,7 @@ function HistoryItem({
               </span>
             )}
             {messageCount !== undefined && messageCount > 0 && (
-              <span className="text-gray-400">
+              <span className="text-th-text-secondary">
                 <svg className="w-3 h-3 inline mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                 </svg>
@@ -109,7 +109,7 @@ function HistoryItem({
               e.stopPropagation();
               onNavigate();
             }}
-            className="shrink-0 px-2 py-1 text-xs bg-green-600 hover:bg-green-500 text-white rounded transition-colors"
+            className="shrink-0 px-2 py-1 text-xs bg-green-600 hover:bg-green-500 text-th-text rounded transition-colors"
           >
             {t('session.navigate')}
           </button>
@@ -120,7 +120,7 @@ function HistoryItem({
               onResume();
             }}
             disabled={isResuming}
-            className="shrink-0 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white rounded transition-colors"
+            className="shrink-0 px-2 py-1 text-xs bg-emerald-600 hover:bg-emerald-500 disabled:bg-th-surface-active text-th-text rounded transition-colors"
           >
             {isResuming ? '...' : t('session.resume')}
           </button>
@@ -164,13 +164,13 @@ function ProjectGroupItem({
   };
 
   return (
-    <div className="border-b border-gray-700">
+    <div className="border-b border-th-border">
       <button
         onClick={handleToggle}
-        className="w-full px-3 py-2 flex items-center gap-2 hover:bg-gray-700/50 transition-colors text-left"
+        className="w-full px-3 py-2 flex items-center gap-2 hover:bg-th-surface-hover/50 transition-colors text-left"
       >
         <svg
-          className={`w-3 h-3 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+          className={`w-3 h-3 text-th-text-secondary transition-transform ${isExpanded ? 'rotate-90' : ''}`}
           fill="currentColor"
           viewBox="0 0 20 20"
         >
@@ -181,19 +181,19 @@ function ProjectGroupItem({
           />
         </svg>
         <div className="flex-1 min-w-0">
-          <div className="text-sm text-gray-200 break-all">
+          <div className="text-sm text-th-text break-all">
             {project.projectName}
           </div>
         </div>
-        <span className="text-xs text-gray-500 shrink-0">
+        <span className="text-xs text-th-text-muted shrink-0">
           {project.sessionCount}
         </span>
       </button>
 
       {isExpanded && (
-        <div className="bg-gray-900/50">
+        <div className="bg-th-bg/50">
           {isLoading ? (
-            <div className="px-3 py-2 text-xs text-gray-500">{t('common.loading')}</div>
+            <div className="px-3 py-2 text-xs text-th-text-muted">{t('common.loading')}</div>
           ) : sessions && sessions.length > 0 ? (
             sessions.map((session) => (
               <HistoryItem
@@ -207,7 +207,7 @@ function ProjectGroupItem({
               />
             ))
           ) : (
-            <div className="px-3 py-2 text-xs text-gray-500">{t('history.noSessionsInProject')}</div>
+            <div className="px-3 py-2 text-xs text-th-text-muted">{t('history.noSessionsInProject')}</div>
           )}
         </div>
       )}
@@ -341,7 +341,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
 
   if (isLoadingProjects) {
     return (
-      <div className="p-4 text-center text-gray-500 text-sm">
+      <div className="p-4 text-center text-th-text-muted text-sm">
         {t('history.loadingHistory')}
       </div>
     );
@@ -387,7 +387,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
 
   if (projects.length === 0 && !searchQuery) {
     return (
-      <div className="p-4 text-center text-gray-500 text-sm">
+      <div className="p-4 text-center text-th-text-muted text-sm">
         {t('history.noSessions')}
       </div>
     );
@@ -396,17 +396,17 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
   return (
     <div className="flex flex-col">
       {/* Search input */}
-      <form onSubmit={handleSearchSubmit} className="p-2 border-b border-gray-700">
+      <form onSubmit={handleSearchSubmit} className="p-2 border-b border-th-border">
         <div className="relative">
           <input
             type="text"
             value={searchInput}
             onChange={handleSearchInput}
             placeholder={t('history.searchPlaceholder')}
-            className="w-full px-3 py-1.5 pl-8 text-sm bg-gray-800 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-gray-200 placeholder-gray-500"
+            className="w-full px-3 py-1.5 pl-8 text-sm bg-th-surface border border-th-border rounded focus:outline-none focus:border-emerald-500 text-th-text placeholder-th-text-muted"
           />
           <svg
-            className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500"
+            className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-th-text-muted"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -417,7 +417,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
             <button
               type="button"
               onClick={handleClearSearch}
-              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-300"
+              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-th-text-muted hover:text-th-text-secondary"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -429,7 +429,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
 
       {/* Resume error banner */}
       {resumeError && (
-        <div className="px-3 py-2 bg-red-900/50 text-red-300 text-xs flex items-center justify-between border-b border-gray-700">
+        <div className="px-3 py-2 bg-red-900/50 text-red-300 text-xs flex items-center justify-between border-b border-th-border">
           <span>{resumeError}</span>
           <button onClick={() => setResumeError(null)} className="text-red-400 hover:text-red-200 ml-2">×</button>
         </div>
@@ -439,7 +439,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
         {/* Search results */}
         {searchQuery ? (
           <div>
-            <div className="px-3 py-2 text-xs text-gray-400 border-b border-gray-700">
+            <div className="px-3 py-2 text-xs text-th-text-secondary border-b border-th-border">
               {isSearching ? (
                 t('history.searching')
               ) : (
@@ -458,7 +458,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
               />
             ))}
             {!isSearching && searchResults.length === 0 && (
-              <div className="p-4 text-center text-gray-500 text-sm">
+              <div className="p-4 text-center text-th-text-muted text-sm">
                 {t('history.noSearchResults')}
               </div>
             )}

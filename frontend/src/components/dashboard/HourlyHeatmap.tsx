@@ -27,8 +27,8 @@ export function HourlyHeatmap({ data, className = '' }: HourlyHeatmapProps) {
   const totalActivity = blockData.reduce((sum, b) => sum + b.total, 0);
 
   return (
-    <div className={`bg-gray-800/50 rounded-lg p-3 ${className}`}>
-      <h3 className="text-xs text-gray-400 mb-3">{t('dashboard.hourlyActivity')}</h3>
+    <div className={`bg-th-surface/50 rounded-lg p-3 ${className}`}>
+      <h3 className="text-xs text-th-text-secondary mb-3">{t('dashboard.hourlyActivity')}</h3>
 
       <div className="space-y-2">
         {blockData.map((block) => {
@@ -37,14 +37,14 @@ export function HourlyHeatmap({ data, className = '' }: HourlyHeatmapProps) {
 
           return (
             <div key={block.key} className="flex items-center gap-2">
-              <span className="text-[11px] text-gray-400 w-14 shrink-0">{block.label}</span>
-              <div className="flex-1 h-4 bg-gray-700 rounded overflow-hidden">
+              <span className="text-[11px] text-th-text-secondary w-14 shrink-0">{block.label}</span>
+              <div className="flex-1 h-4 bg-th-surface-hover rounded overflow-hidden">
                 <div
                   className="h-full bg-green-500 rounded transition-all duration-300"
                   style={{ width: `${barWidth}%` }}
                 />
               </div>
-              <span className="text-[10px] text-gray-500 w-8 text-right">{percentage}%</span>
+              <span className="text-[10px] text-th-text-muted w-8 text-right">{percentage}%</span>
             </div>
           );
         })}

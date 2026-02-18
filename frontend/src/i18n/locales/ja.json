@@ -199,6 +199,10 @@
     "hours": "{{count}}時間",
     "hoursMinutes": "{{hours}}時間{{minutes}}分"
   },
+  "appearance": {
+    "dark": "ダーク",
+    "light": "ライト"
+  },
   "theme": {
     "red": "赤",
     "orange": "オレンジ",

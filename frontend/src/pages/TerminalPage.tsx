@@ -59,6 +59,10 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
   const cachedPanesRef = useRef<PaneLeafInfo[]>([]);
   // Tracks whether initial zoom has been done (for multi-pane sessions)
   const initialZoomDoneRef = useRef(false);
+  // Track whether we explicitly requested content (zoom, request-content, first connect).
+  // When true, initial-content clears scrollback (ESC[3J). When false (reconnect),
+  // scrollback is preserved to avoid jarring scroll position jumps.
+  const expectingContentRef = useRef(true);
 
   const controlTerminal = useControlTerminal({
     sessionId,
@@ -103,16 +107,23 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
       });
     },
     onInitialContent: (paneId, data) => {
-      console.log(`[TP] initial-content for ${paneId}: ${data.length} bytes`);
+      const isExpected = expectingContentRef.current;
+      console.log(`[TP] initial-content for ${paneId}: ${data.length} bytes, expected=${isExpected}`);
       // Track that we've received initial-content for this pane
       contentDeliveredRef.current.add(paneId);
 
-      // Prepend terminal reset sequence to clear any existing content.
-      // initial-content represents the full terminal state (including scrollback),
-      // so we must clear the screen + scrollback before writing to prevent
-      // duplicate content from zoom reflow or pane switch.
+      // Choose clear sequence based on whether content was explicitly requested.
       // ESC[2J = clear screen, ESC[3J = clear scrollback, ESC[H = cursor home
-      const clearSeq = new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x33, 0x4a, 0x1b, 0x5b, 0x48]);
+      let clearSeq: Uint8Array;
+      if (isExpected) {
+        // Explicit action (zoom, reload, first connect): full clear including scrollback
+        clearSeq = new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x33, 0x4a, 0x1b, 0x5b, 0x48]);
+        expectingContentRef.current = false;
+      } else {
+        // Implicit (reconnect resize): clear screen only, preserve scrollback
+        // to avoid jarring scroll position jumps during brief disconnects
+        clearSeq = new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x48]);
+      }
       const combined = new Uint8Array(clearSeq.length + data.length);
       combined.set(clearSeq);
       combined.set(data, clearSeq.length);
@@ -173,6 +184,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
         console.log(`[TP] zoom-pane ${externalActivePaneId} (switch=${isActualSwitch}, wasZoomed=${isZoomedRef.current})`);
         isZoomedRef.current = true;
         initialZoomDoneRef.current = true;
+        expectingContentRef.current = true;
         controlTerminal.zoomPane(externalActivePaneId);
       }
     } else {
@@ -196,6 +208,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
       console.log(`[TP] auto-zoom ${activePaneId} (${allPanes.length} panes)`);
       initialZoomDoneRef.current = true;
       isZoomedRef.current = true;
+      expectingContentRef.current = true;
       controlTerminal.zoomPane(activePaneId);
     }
   }, [activePaneId, allPanes, externalActivePaneId, controlTerminal]);
@@ -208,6 +221,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
     initialZoomDoneRef.current = false;
     isZoomedRef.current = false;
     cachedPanesRef.current = [];
+    expectingContentRef.current = true; // First connection expects initial-content
     controlTerminal.connect();
     return () => {
       controlTerminal.disconnect();
@@ -245,6 +259,10 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
     onResize: (cols: number, rows: number) => {
       controlTerminal.resize(cols, rows);
     },
+    requestContent: () => {
+      expectingContentRef.current = true;
+      controlTerminal.requestContent(currentPaneId);
+    },
   } : undefined;
 
   // Expose selectPane via ref (for parent components)
@@ -255,7 +273,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
   }, [ref, selectPane]);
 
   return (
-    <div className="flex-1 flex flex-col bg-gray-900 min-h-0 select-none">
+    <div className="flex-1 flex flex-col bg-th-bg min-h-0 select-none">
       {/* Error banner */}
       {error && (
         <div className="bg-red-500/20 border-b border-red-500/50 px-4 py-2 text-red-400 text-sm shrink-0">

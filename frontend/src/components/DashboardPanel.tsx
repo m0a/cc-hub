@@ -12,15 +12,15 @@ export function DashboardPanel({ isOpen, onClose }: DashboardPanelProps) {
 	if (!isOpen) return null;
 
 	return (
-		<div className="w-[350px] shrink-0 flex flex-col bg-gray-900 border-l border-gray-700 z-30">
+		<div className="w-[350px] shrink-0 flex flex-col bg-th-bg border-l border-th-border z-30">
 			{/* Header */}
-			<div className="flex items-center justify-between px-3 py-2 bg-black/50 border-b border-gray-700 shrink-0">
+			<div className="flex items-center justify-between px-3 py-2 bg-[var(--color-overlay)] border-b border-th-border shrink-0">
 				<span className="text-sm font-medium text-white/90">
 					{t("dashboard.title")}
 				</span>
 				<button
 					onClick={onClose}
-					className="p-1 text-white/50 hover:text-white transition-colors"
+					className="p-1 text-white/50 hover:text-th-text transition-colors"
 				>
 					<svg
 						className="w-4 h-4"

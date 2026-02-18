@@ -38,18 +38,18 @@ function ProgressBar({
   return (
     <div className="mb-2">
       <div className="flex justify-between text-xs mb-0.5">
-        <span className={isStale ? 'text-gray-500' : 'text-gray-300'}>
+        <span className={isStale ? 'text-th-text-muted' : 'text-th-text-secondary'}>
           {label}
           {isStale && <span className="ml-1 text-yellow-600">(古い)</span>}
         </span>
-        <span className={isStale ? 'text-gray-500' : 'text-gray-400'}>
+        <span className={isStale ? 'text-th-text-muted' : 'text-th-text-secondary'}>
           {sublabel}
           {resetTime && (
             <span className="ml-1 text-blue-400">({formatResetTime(resetTime)})</span>
           )}
         </span>
       </div>
-      <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+      <div className="h-2 bg-th-surface-hover rounded-full overflow-hidden">
         <div
           className={`h-full ${getBarColor(percentage)} transition-all duration-300`}
           style={{ width: `${Math.min(100, percentage)}%` }}
@@ -62,8 +62,8 @@ function ProgressBar({
 export function LimitWarning({ limits }: LimitWarningProps) {
   if (!limits) {
     return (
-      <div className="p-3 bg-gray-800 rounded-lg">
-        <div className="text-gray-500 text-xs">Limit data unavailable</div>
+      <div className="p-3 bg-th-surface rounded-lg">
+        <div className="text-th-text-muted text-xs">Limit data unavailable</div>
       </div>
     );
   }
@@ -71,9 +71,9 @@ export function LimitWarning({ limits }: LimitWarningProps) {
   const planLabel = limits.plan.replace('_', ' ').toUpperCase();
 
   return (
-    <div className="p-3 bg-gray-800 rounded-lg">
+    <div className="p-3 bg-th-surface rounded-lg">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-medium text-white">Usage Limits</span>
+        <span className="text-sm font-medium text-th-text">Usage Limits</span>
         <span className="text-xs px-2 py-0.5 bg-purple-600 rounded">{planLabel}</span>
       </div>
 

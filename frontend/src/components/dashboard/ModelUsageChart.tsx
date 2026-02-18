@@ -20,8 +20,8 @@ function formatTokens(tokens: number): string {
 export function ModelUsageChart({ data }: ModelUsageChartProps) {
   if (data.length === 0) {
     return (
-      <div className="p-3 bg-gray-800 rounded-lg">
-        <div className="text-gray-500 text-xs">No model usage data</div>
+      <div className="p-3 bg-th-surface rounded-lg">
+        <div className="text-th-text-muted text-xs">No model usage data</div>
       </div>
     );
   }
@@ -37,11 +37,11 @@ export function ModelUsageChart({ data }: ModelUsageChartProps) {
   };
 
   return (
-    <div className="p-3 bg-gray-800 rounded-lg">
-      <div className="text-sm font-medium text-white mb-2">Model Usage</div>
+    <div className="p-3 bg-th-surface rounded-lg">
+      <div className="text-sm font-medium text-th-text mb-2">Model Usage</div>
 
       {/* Bar chart */}
-      <div className="h-4 bg-gray-700 rounded-full overflow-hidden flex">
+      <div className="h-4 bg-th-surface-hover rounded-full overflow-hidden flex">
         {data.map((model) => {
           const modelTotal = model.totalTokensIn + model.totalTokensOut + model.totalCacheRead;
           const pct = (modelTotal / total) * 100;
@@ -62,8 +62,8 @@ export function ModelUsageChart({ data }: ModelUsageChartProps) {
         {data.map((model) => (
           <div key={model.model} className="flex items-center gap-1">
             <div className={`w-2 h-2 rounded-full ${getColor(model.model)}`} />
-            <span className="text-gray-400">{model.model}</span>
-            <span className="text-gray-500">{formatTokens(model.totalTokensOut)}</span>
+            <span className="text-th-text-secondary">{model.model}</span>
+            <span className="text-th-text-muted">{formatTokens(model.totalTokensOut)}</span>
           </div>
         ))}
       </div>

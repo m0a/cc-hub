@@ -42,21 +42,21 @@ export function SessionModal({
 
 	return (
 		<div
-			className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center"
+			className="fixed inset-0 z-40 bg-[var(--color-overlay)] flex items-center justify-center animate-backdrop-in"
 			onClick={onClose}
 		>
 			<div
-				className="max-w-lg w-full h-[80vh] bg-gray-900 rounded-lg shadow-2xl border border-gray-700 overflow-hidden flex flex-col mx-4"
+				className="max-w-lg w-full h-[80vh] bg-th-bg rounded-lg shadow-2xl border border-th-border overflow-hidden flex flex-col mx-4 animate-modal-in"
 				onClick={(e) => e.stopPropagation()}
 			>
 				{/* Header */}
-				<div className="flex items-center justify-between px-4 py-2 bg-black/50 border-b border-gray-700 shrink-0">
+				<div className="flex items-center justify-between px-4 py-2 bg-[var(--color-overlay)] border-b border-th-border shrink-0">
 					<span className="text-sm font-medium text-white/90">
 						{t("session.title")}
 					</span>
 					<button
 						onClick={onClose}
-						className="p-1 text-white/50 hover:text-white transition-colors"
+						className="p-1 text-white/50 hover:text-th-text transition-colors"
 					>
 						<svg
 							className="w-4 h-4"

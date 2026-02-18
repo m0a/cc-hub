@@ -51,7 +51,7 @@ function FileIcon({ file, isExpanded }: { file: FileInfo; isExpanded?: boolean }
   // Markdown/text
   if (['.md', '.txt', '.yaml', '.yml', '.toml'].includes(ext || '')) {
     return (
-      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg className="w-4 h-4 text-th-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
       </svg>
     );
@@ -59,7 +59,7 @@ function FileIcon({ file, isExpanded }: { file: FileInfo; isExpanded?: boolean }
 
   // Default file icon
   return (
-    <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="w-4 h-4 text-th-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
     </svg>
   );
@@ -77,7 +77,7 @@ function formatFileSize(bytes: number): string {
 function ChevronIcon({ isExpanded }: { isExpanded: boolean }) {
   return (
     <svg
-      className={`w-3 h-3 text-gray-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+      className={`w-3 h-3 text-th-text-muted transition-transform ${isExpanded ? 'rotate-90' : ''}`}
       fill="none"
       stroke="currentColor"
       viewBox="0 0 24 24"
@@ -126,7 +126,7 @@ function TreeItem({
     <>
       <div
         onClick={handleClick}
-        className="flex items-center gap-1 py-1 px-2 hover:bg-gray-800 active:bg-gray-700 cursor-pointer transition-colors"
+        className="flex items-center gap-1 py-1 px-2 hover:bg-th-surface active:bg-th-surface-hover cursor-pointer transition-colors"
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
       >
         {/* Chevron for directories */}
@@ -147,7 +147,7 @@ function TreeItem({
         <div className="flex-1 min-w-0 flex items-center gap-2">
           <span className="text-sm truncate">{file.name}</span>
           {!isDirectory && (
-            <span className="text-xs text-gray-500 shrink-0">
+            <span className="text-xs text-th-text-muted shrink-0">
               {formatFileSize(file.size)}
             </span>
           )}
@@ -243,16 +243,16 @@ export function FileBrowser({
   const shortPath = currentPath.replace(/^\/home\/[^/]+\//, '~/');
 
   return (
-    <div className="flex flex-col h-full bg-gray-900 text-white">
+    <div className="flex flex-col h-full bg-th-bg text-th-text">
       {/* File tree */}
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="flex items-center justify-center h-32">
-            <div className="text-gray-500">読み込み中...</div>
+            <div className="text-th-text-muted">読み込み中...</div>
           </div>
         ) : visibleFiles.length === 0 ? (
           <div className="flex items-center justify-center h-32">
-            <div className="text-gray-500">ファイルがありません</div>
+            <div className="text-th-text-muted">ファイルがありません</div>
           </div>
         ) : (
           <div className="py-1">
@@ -274,8 +274,8 @@ export function FileBrowser({
       </div>
 
       {/* Path bar - at bottom */}
-      <div className="px-3 py-2 border-t border-gray-700 bg-gray-800">
-        <div className="text-sm text-gray-300 truncate font-mono" title={currentPath}>
+      <div className="px-3 py-2 border-t border-th-border bg-th-surface">
+        <div className="text-sm text-th-text-secondary truncate font-mono" title={currentPath}>
           {shortPath}
         </div>
       </div>

@@ -298,14 +298,14 @@ export function Keyboard({
       if (transparent) {
         if (isActive) return 'bg-blue-600/30';
         if (keyDef.color === 'red') return 'bg-red-700/25 active:bg-red-600/40';
-        return 'bg-gray-800/15 active:bg-gray-600/25';
+        return 'bg-th-surface/15 active:bg-th-surface-active/25';
       }
       if (isActive) return 'bg-blue-600';
       if (keyDef.color === 'green') return 'bg-green-700 active:bg-green-600';
       if (keyDef.color === 'red') return 'bg-red-700 active:bg-red-600';
       if (keyDef.color === 'blue') return 'bg-blue-700 active:bg-blue-600';
-      if (keyDef.type === 'layer') return 'bg-gray-700';
-      return 'bg-gray-800';
+      if (keyDef.type === 'layer') return 'bg-th-surface-hover';
+      return 'bg-th-surface';
     };
 
     // SVG Enter icon
@@ -334,8 +334,8 @@ export function Keyboard({
         onTouchCancel={handleCancel}
         onContextMenu={(e) => e.preventDefault()}
         className={`
-          ${compact ? 'py-2 text-sm' : 'py-3 text-base'} text-white font-medium active:bg-gray-600 select-none relative
-          border ${transparent ? 'border-gray-600/20' : 'border-gray-700'} rounded m-0.5 flex items-center justify-center
+          ${compact ? 'py-2 text-sm' : 'py-3 text-base'} text-th-text font-medium active:bg-th-surface-active select-none relative
+          border ${transparent ? 'border-th-border/20' : 'border-th-border'} rounded m-0.5 flex items-center justify-center
           ${getBgColor()}
           ${keyDef.type === 'modifier' || keyDef.type === 'layer' ? 'text-xs' : ''}
         `}
@@ -343,7 +343,7 @@ export function Keyboard({
       >
         {isEnterKey ? <EnterIcon /> : isSpaceKey ? '' : displayLabel}
         {keyDef.longLabel && !shiftPressed && !isEnterKey && (
-          <span className={`absolute top-0.5 right-1 ${compact ? 'text-[7px]' : 'text-[9px]'} text-gray-500`}>{keyDef.longLabel}</span>
+          <span className={`absolute top-0.5 right-1 ${compact ? 'text-[7px]' : 'text-[9px]'} text-th-text-muted`}>{keyDef.longLabel}</span>
         )}
       </button>
     );
@@ -366,11 +366,11 @@ export function Keyboard({
     const getBgColor = () => {
       if (transparent) {
         if (keyDef.color === 'red') return 'bg-red-700/25 active:bg-red-600/40';
-        return 'bg-gray-700/15 active:bg-gray-600/25';
+        return 'bg-th-surface-hover/15 active:bg-th-surface-active/25';
       }
       if (keyDef.color === 'green') return 'bg-green-700 active:bg-green-600';
       if (keyDef.color === 'red') return 'bg-red-700 active:bg-red-600';
-      return 'bg-gray-700 active:bg-gray-600';
+      return 'bg-th-surface-hover active:bg-th-surface-active';
     };
 
     const width = keyDef.width || 1;
@@ -380,7 +380,7 @@ export function Keyboard({
       return (
         <button
           disabled
-          className={`${compact ? 'py-1.5 text-xs' : 'py-2 text-sm'} font-medium select-none border border-gray-700 rounded m-0.5 text-center bg-gray-600 text-gray-400`}
+          className={`${compact ? 'py-1.5 text-xs' : 'py-2 text-sm'} font-medium select-none border border-th-border rounded m-0.5 text-center bg-th-surface-active text-th-text-secondary`}
           style={{ flex: width, minWidth: 0 }}
           data-onboarding="image-upload"
         >
@@ -400,7 +400,7 @@ export function Keyboard({
       <button
         onClick={handleClick}
         onContextMenu={(e) => e.preventDefault()}
-        className={`${compact ? 'py-1.5 text-xs' : 'py-2 text-sm'} font-medium select-none border ${transparent ? 'border-gray-600/20' : 'border-gray-700'} rounded m-0.5 text-center text-white ${getBgColor()}`}
+        className={`${compact ? 'py-1.5 text-xs' : 'py-2 text-sm'} font-medium select-none border ${transparent ? 'border-th-border/20' : 'border-th-border'} rounded m-0.5 text-center text-th-text ${getBgColor()}`}
         style={{ flex: width, minWidth: 0 }}
         data-onboarding={getOnboardingAttr()}
       >
@@ -410,7 +410,7 @@ export function Keyboard({
   };
 
   return (
-    <div className={`${transparent ? 'bg-transparent' : 'bg-black'} px-0.5 pb-1 ${className}`}>
+    <div className={`${transparent ? 'bg-transparent' : 'bg-th-bg'} px-0.5 pb-1 ${className}`}>
       {/* Action bar */}
       <div className="flex mb-0.5">
         {ACTION_BAR.map((keyDef, index) => (

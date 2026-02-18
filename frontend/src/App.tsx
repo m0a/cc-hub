@@ -44,24 +44,24 @@ function LoadingScreen({
     : t('loading.fetchingSessions');
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-gray-900 gap-3">
+    <div className="flex flex-col items-center justify-center h-screen bg-th-bg gap-3">
       {error ? (
         <>
           <div className="text-red-400 text-sm">{error}</div>
           <button
             type="button"
             onClick={onRetry}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm transition-colors"
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded text-th-text text-sm transition-colors"
           >
             {t('loading.retry')}
           </button>
         </>
       ) : (
         <>
-          <div className="w-6 h-6 border-2 border-gray-600 border-t-blue-400 rounded-full animate-spin" />
-          <div className="text-gray-400 text-sm">{phaseText}</div>
+          <div className="w-6 h-6 border-2 border-th-surface-active border-t-emerald-400 rounded-full animate-spin" />
+          <div className="text-th-text-secondary text-sm">{phaseText}</div>
           {elapsed >= 5 && (
-            <div className="text-gray-500 text-xs">
+            <div className="text-th-text-muted text-xs">
               {t('loading.slow', { seconds: elapsed })}
             </div>
           )}
@@ -95,11 +95,11 @@ function ConfirmDeleteDialog({
   onCancel: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="bg-gray-800 rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
-        <h3 className="text-lg font-bold text-white mb-2">セッションを削除</h3>
-        <p className="text-gray-300 mb-4">
-          <span className="font-medium text-white">{sessionName}</span> を削除しますか？
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay)] animate-backdrop-in">
+      <div className="bg-th-surface rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl animate-modal-in">
+        <h3 className="text-lg font-bold text-th-text mb-2">セッションを削除</h3>
+        <p className="text-th-text-secondary mb-4">
+          <span className="font-medium text-th-text">{sessionName}</span> を削除しますか？
         </p>
         <p className="text-sm text-red-400 mb-6">
           この操作は取り消せません。
@@ -107,13 +107,13 @@ function ConfirmDeleteDialog({
         <div className="flex gap-3 justify-end">
           <button
             onClick={onCancel}
-            className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded font-medium transition-colors text-white"
+            className="px-4 py-2 bg-th-surface-active hover:bg-th-surface-hover rounded font-medium transition-colors text-th-text"
           >
             キャンセル
           </button>
           <button
             onClick={onConfirm}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded font-medium transition-colors text-white"
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded font-medium transition-colors text-th-text"
           >
             削除する
           </button>
@@ -731,36 +731,36 @@ export function App() {
   // Overlay bar content (shared between positions)
   const overlayBar = (
     <div
-      className={`flex items-center justify-between px-2 py-1 bg-black/80 transition-opacity duration-300 ${
+      className={`flex items-center justify-between px-2 py-0.5 bg-[var(--color-overlay)] transition-opacity duration-300 ${
         showOverlay ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}
     >
       {/* Left: Session name */}
-      <span className="text-white/70 text-sm truncate max-w-[150px]">
+      <span className="text-th-text-secondary text-sm truncate max-w-[150px]">
         {activeSession?.name || '-'}
       </span>
 
       {/* Right: Reload + History + File browser + Session list buttons */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-2">
         <button
           onClick={handleReload}
-          className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+          className="p-2.5 text-emerald-400/70 hover:text-emerald-300 active:text-emerald-200 hover:bg-th-surface-hover active:bg-th-surface-active rounded-lg transition-colors"
           title="リロード"
           data-onboarding="reload"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
         </button>
         {activeSession?.ccSessionId && (
           <button
             onClick={handleShowConversation}
-            className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+            className="p-2.5 text-sky-400/70 hover:text-sky-300 active:text-sky-200 hover:bg-th-surface-hover active:bg-th-surface-active rounded-lg transition-colors"
             title="会話履歴"
             data-onboarding="conversation"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
             </svg>
           </button>
         )}
@@ -768,24 +768,24 @@ export function App() {
           onClick={() => {
             setShowFileViewer(true);
           }}
-          className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+          className="p-2.5 text-amber-400/70 hover:text-amber-300 active:text-amber-200 hover:bg-th-surface-hover active:bg-th-surface-active rounded-lg transition-colors"
           title="ファイルブラウザ"
           data-onboarding="file-browser"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
           </svg>
         </button>
         <button
           onClick={() => {
             handleShowSessionList();
           }}
-          className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+          className="p-2.5 text-violet-400/70 hover:text-violet-300 active:text-violet-200 hover:bg-th-surface-hover active:bg-th-surface-active rounded-lg transition-colors"
           title={t('session.list')}
           data-onboarding="session-list"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </button>
       </div>
@@ -794,7 +794,7 @@ export function App() {
 
   // Mobile: Show terminal with overlay (position depends on keyboard state)
   return (
-    <div className="h-screen flex flex-col bg-gray-900 relative">
+    <div className="h-screen flex flex-col bg-th-bg relative">
       {/* Terminal - full screen */}
       {activeSession ? (
         <div className="flex-1 flex flex-col min-h-0" data-onboarding="terminal">
@@ -829,7 +829,7 @@ export function App() {
               pink: 'text-pink-400',
             };
             return (
-              <div className="flex bg-gray-800 border-t border-gray-700 shrink-0 overflow-x-auto">
+              <div className="flex bg-th-surface border-t border-th-border shrink-0 overflow-x-auto">
                 {mobilePanes.map((pane) => {
                   const isActive = mobileActivePaneId
                     ? pane.paneId === mobileActivePaneId
@@ -845,8 +845,8 @@ export function App() {
                       onClick={() => setMobileActivePaneId(pane.paneId)}
                       className={`px-3 py-1.5 text-xs font-mono whitespace-nowrap transition-colors ${
                         isActive
-                          ? `${colorCls || 'text-white'} bg-gray-700 border-t-2 border-blue-500`
-                          : `${colorCls || 'text-gray-400'} hover:text-gray-200 hover:bg-gray-700/50`
+                          ? `${colorCls || 'text-th-text'} bg-th-surface-hover border-t-2 border-emerald-400`
+                          : `${colorCls || 'text-th-text-secondary'} hover:text-th-text hover:bg-th-surface-hover/50`
                       }`}
                     >
                       {label}
@@ -859,10 +859,10 @@ export function App() {
         </div>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center" data-onboarding="terminal">
-          <p className="text-gray-500">{t('pane.selectSession')}</p>
+          <p className="text-th-text-muted">{t('pane.selectSession')}</p>
           <button
             onClick={handleShowSessionList}
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded"
+            className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-th-text rounded transition-colors"
             data-onboarding="session-list"
           >
             {t('session.list')}

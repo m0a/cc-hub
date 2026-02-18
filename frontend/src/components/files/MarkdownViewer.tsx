@@ -112,7 +112,7 @@ export function MarkdownViewer({
   // Source view (plain markdown)
   if (showSource) {
     return (
-      <div className="relative flex flex-col h-full bg-gray-900 text-white font-mono text-sm">
+      <div className="relative flex flex-col h-full bg-th-bg text-th-text font-mono text-sm">
         {truncated && (
           <div className="px-3 py-1.5 bg-yellow-900/50 text-yellow-300 text-xs border-b border-yellow-800">
             ファイルが大きすぎるため一部のみ表示しています
@@ -129,17 +129,17 @@ export function MarkdownViewer({
         </div>
 
         {/* Controls */}
-        <div className="absolute top-2 right-2 flex items-center gap-1 bg-gray-800/90 rounded-lg p-1 backdrop-blur-sm">
+        <div className="absolute top-2 right-2 flex items-center gap-1 bg-th-surface/90 rounded-lg p-1 backdrop-blur-sm">
           <button
             onClick={resetFontSize}
-            className="px-1.5 py-0.5 text-xs text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+            className="px-1.5 py-0.5 text-xs text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
             title="フォントサイズをリセット"
           >
             {fontSize}px
           </button>
           <button
             onClick={() => setShowSource(false)}
-            className="p-1 rounded text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
+            className="p-1 rounded text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover transition-colors"
             title="プレビュー表示"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -154,7 +154,7 @@ export function MarkdownViewer({
 
   // Preview (rendered markdown)
   return (
-    <div className="relative flex flex-col h-full bg-gray-900 text-white">
+    <div className="relative flex flex-col h-full bg-th-bg text-th-text">
       {truncated && (
         <div className="px-3 py-1.5 bg-yellow-900/50 text-yellow-300 text-xs border-b border-yellow-800">
           ファイルが大きすぎるため一部のみ表示しています
@@ -170,7 +170,7 @@ export function MarkdownViewer({
           remarkPlugins={[remarkGfm]}
           components={{
             pre: ({ children }) => (
-              <pre className="bg-gray-800 p-3 rounded-lg overflow-x-auto my-3 text-sm">
+              <pre className="bg-th-surface p-3 rounded-lg overflow-x-auto my-3 text-sm">
                 {children}
               </pre>
             ),
@@ -192,20 +192,20 @@ export function MarkdownViewer({
               return isBlock ? (
                 <code className="text-green-300">{children}</code>
               ) : (
-                <code className="bg-gray-700 px-1.5 py-0.5 rounded text-blue-300 text-sm">{children}</code>
+                <code className="bg-th-surface-hover px-1.5 py-0.5 rounded text-blue-300 text-sm">{children}</code>
               );
             },
             p: ({ children }) => <p className="my-3 leading-relaxed">{children}</p>,
             ul: ({ children }) => <ul className="list-disc ml-5 my-3 space-y-1">{children}</ul>,
             ol: ({ children }) => <ol className="list-decimal ml-5 my-3 space-y-1">{children}</ol>,
             li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-            h1: ({ children }) => <h1 className="text-2xl font-bold my-4 pb-2 border-b border-gray-700">{children}</h1>,
-            h2: ({ children }) => <h2 className="text-xl font-bold my-4 pb-1 border-b border-gray-700">{children}</h2>,
+            h1: ({ children }) => <h1 className="text-2xl font-bold my-4 pb-2 border-b border-th-border">{children}</h1>,
+            h2: ({ children }) => <h2 className="text-xl font-bold my-4 pb-1 border-b border-th-border">{children}</h2>,
             h3: ({ children }) => <h3 className="text-lg font-bold my-3">{children}</h3>,
             h4: ({ children }) => <h4 className="text-base font-bold my-2">{children}</h4>,
             h5: ({ children }) => <h5 className="text-sm font-bold my-2">{children}</h5>,
-            h6: ({ children }) => <h6 className="text-sm font-bold my-2 text-gray-400">{children}</h6>,
-            strong: ({ children }) => <strong className="font-bold text-white">{children}</strong>,
+            h6: ({ children }) => <h6 className="text-sm font-bold my-2 text-th-text-secondary">{children}</h6>,
+            strong: ({ children }) => <strong className="font-bold text-th-text">{children}</strong>,
             em: ({ children }) => <em className="italic">{children}</em>,
             a: ({ href, children }) => (
               <a href={href} className="text-blue-400 hover:text-blue-300 underline" target="_blank" rel="noopener noreferrer">
@@ -213,22 +213,22 @@ export function MarkdownViewer({
               </a>
             ),
             blockquote: ({ children }) => (
-              <blockquote className="border-l-4 border-gray-600 pl-4 my-3 text-gray-300 italic">
+              <blockquote className="border-l-4 border-th-border pl-4 my-3 text-th-text-secondary italic">
                 {children}
               </blockquote>
             ),
-            hr: () => <hr className="my-6 border-gray-700" />,
+            hr: () => <hr className="my-6 border-th-border" />,
             table: ({ children }) => (
               <div className="overflow-x-auto my-4">
-                <table className="min-w-full border border-gray-600 rounded">{children}</table>
+                <table className="min-w-full border border-th-border rounded">{children}</table>
               </div>
             ),
-            thead: ({ children }) => <thead className="bg-gray-800">{children}</thead>,
+            thead: ({ children }) => <thead className="bg-th-surface">{children}</thead>,
             th: ({ children }) => (
-              <th className="border border-gray-600 px-3 py-2 text-left font-semibold">{children}</th>
+              <th className="border border-th-border px-3 py-2 text-left font-semibold">{children}</th>
             ),
             td: ({ children }) => (
-              <td className="border border-gray-600 px-3 py-2">{children}</td>
+              <td className="border border-th-border px-3 py-2">{children}</td>
             ),
             img: ({ src, alt }) => (
               <img
@@ -259,17 +259,17 @@ export function MarkdownViewer({
       </div>
 
       {/* Controls */}
-      <div className="absolute top-2 right-2 flex items-center gap-1 bg-gray-800/90 rounded-lg p-1 backdrop-blur-sm">
+      <div className="absolute top-2 right-2 flex items-center gap-1 bg-th-surface/90 rounded-lg p-1 backdrop-blur-sm">
         <button
           onClick={resetFontSize}
-          className="px-1.5 py-0.5 text-xs text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+          className="px-1.5 py-0.5 text-xs text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
           title="フォントサイズをリセット"
         >
           {fontSize}px
         </button>
         <button
           onClick={() => setShowSource(true)}
-          className="p-1 rounded text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
+          className="p-1 rounded text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover transition-colors"
           title="ソース表示"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

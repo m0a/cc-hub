@@ -199,6 +199,10 @@
     "hours": "{{count}}h",
     "hoursMinutes": "{{hours}}h {{minutes}}m"
   },
+  "appearance": {
+    "dark": "Dark",
+    "light": "Light"
+  },
   "theme": {
     "red": "Red",
     "orange": "Orange",

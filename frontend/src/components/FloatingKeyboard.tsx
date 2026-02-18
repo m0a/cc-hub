@@ -211,7 +211,7 @@ export function FloatingKeyboard({
 
   // Minimized mini keyboard with arrow up/down and enter
   if (minimized) {
-    const miniKeyClass = "p-3 text-white hover:bg-gray-700 active:bg-gray-600 transition-colors select-none";
+    const miniKeyClass = "p-3 text-th-text hover:bg-th-surface-hover active:bg-th-surface-active transition-colors select-none";
     return (
       <div
         ref={containerRef}
@@ -219,15 +219,15 @@ export function FloatingKeyboard({
         style={{ left: position.x, top: position.y }}
       >
         <div
-          className="flex items-center bg-gray-800 border border-gray-600 rounded-lg shadow-lg cursor-move"
+          className="flex items-center bg-th-surface border border-th-border rounded-lg shadow-lg cursor-move"
           onMouseDown={handleDragStart}
           onTouchStart={handleDragStart}
         >
           {/* Drag handle + Expand */}
           <div className="flex items-center rounded-l-lg">
             <div className="flex items-center gap-0.5 px-2 py-3">
-              <div className="w-1 h-4 bg-gray-500 rounded-full" />
-              <div className="w-1 h-4 bg-gray-500 rounded-full" />
+              <div className="w-1 h-4 bg-th-surface-active rounded-full" />
+              <div className="w-1 h-4 bg-th-surface-active rounded-full" />
             </div>
             <button
               onClick={toggleMinimize}
@@ -241,7 +241,7 @@ export function FloatingKeyboard({
             </button>
           </div>
           {/* Divider */}
-          <div className="w-px h-6 bg-gray-600" />
+          <div className="w-px h-6 bg-th-surface-active" />
           {/* Arrow Up */}
           <button
             onClick={() => onSend('\x1b[A')}
@@ -277,11 +277,11 @@ export function FloatingKeyboard({
             </svg>
           </button>
           {/* Divider */}
-          <div className="w-px h-6 bg-gray-600" />
+          <div className="w-px h-6 bg-th-surface-active" />
           {/* Close */}
           <button
             onClick={onClose}
-            className={`${miniKeyClass} text-gray-400 hover:text-white rounded-r-lg`}
+            className={`${miniKeyClass} text-th-text-secondary hover:text-th-text rounded-r-lg`}
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
@@ -298,7 +298,7 @@ export function FloatingKeyboard({
   return (
     <div
       ref={containerRef}
-      className={`fixed ${elevated ? 'z-[10002]' : 'z-[60]'} ${transparent ? '' : 'bg-gray-900'} border border-gray-700 rounded-lg shadow-2xl overflow-hidden`}
+      className={`fixed ${elevated ? 'z-[10002]' : 'z-[60]'} ${transparent ? '' : 'bg-th-bg'} border border-th-border rounded-lg shadow-2xl overflow-hidden`}
       style={{
         left: position.x,
         top: position.y,
@@ -310,22 +310,22 @@ export function FloatingKeyboard({
     >
       {/* Header - drag handle */}
       <div
-        className={`flex items-center justify-between px-2 py-1.5 ${transparent ? 'bg-transparent' : isDragging ? 'bg-gray-700' : 'bg-gray-800'} border-b border-gray-700 cursor-move select-none`}
+        className={`flex items-center justify-between px-2 py-1.5 ${transparent ? 'bg-transparent' : isDragging ? 'bg-th-surface-hover' : 'bg-th-surface'} border-b border-th-border cursor-move select-none`}
         onMouseDown={handleDragStart}
         onTouchStart={handleDragStart}
       >
         <div className="flex items-center gap-2">
           <div className="flex gap-0.5">
-            <div className="w-1 h-4 bg-gray-600 rounded-full" />
-            <div className="w-1 h-4 bg-gray-600 rounded-full" />
+            <div className="w-1 h-4 bg-th-surface-active rounded-full" />
+            <div className="w-1 h-4 bg-th-surface-active rounded-full" />
           </div>
-          <span className="text-xs text-gray-400">Keyboard</span>
+          <span className="text-xs text-th-text-secondary">Keyboard</span>
         </div>
         <div className="flex items-center gap-2">
           {/* Transparent toggle */}
           <button
             onClick={toggleTransparent}
-            className={`p-2 ${transparent ? 'text-blue-400' : 'text-gray-400'} hover:text-white hover:bg-gray-600 rounded transition-colors`}
+            className={`p-2 ${transparent ? 'text-blue-400' : 'text-th-text-secondary'} hover:text-th-text hover:bg-th-surface-active rounded transition-colors`}
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
@@ -339,7 +339,7 @@ export function FloatingKeyboard({
           </button>
           <button
             onClick={toggleMinimize}
-            className="p-2 text-gray-400 hover:text-white hover:bg-gray-600 rounded transition-colors"
+            className="p-2 text-th-text-secondary hover:text-th-text hover:bg-th-surface-active rounded transition-colors"
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
@@ -349,7 +349,7 @@ export function FloatingKeyboard({
           </button>
           <button
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-white hover:bg-gray-600 rounded transition-colors"
+            className="p-2 text-th-text-secondary hover:text-th-text hover:bg-th-surface-active rounded transition-colors"
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
@@ -361,7 +361,7 @@ export function FloatingKeyboard({
       </div>
 
       {/* Content */}
-      <div className={transparent ? 'bg-transparent' : 'bg-black'}>
+      <div className={transparent ? 'bg-transparent' : 'bg-th-bg'}>
         {inputMode === 'keyboard' ? (
           <Keyboard
             onSend={onSend}
@@ -389,12 +389,12 @@ export function FloatingKeyboard({
                 spellCheck={false}
                 enterKeyHint="send"
                 placeholder="日本語入力 - Enterで送信"
-                className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
+                className="flex-1 px-3 py-2 bg-th-bg border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-green-500"
                 style={{ fontSize: '16px' }}
               />
               <button
                 onClick={handleSwitchToKeyboard}
-                className="px-3 py-2 bg-gray-700 hover:bg-gray-600 active:bg-gray-500 rounded text-white font-medium"
+                className="px-3 py-2 bg-th-surface-hover hover:bg-th-surface-active active:bg-th-surface-active rounded text-th-text font-medium"
               >
                 ABC
               </button>

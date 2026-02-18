@@ -169,7 +169,7 @@ export function CodeViewer({
   const lines = content.split('\n');
 
   return (
-    <div className="relative flex flex-col h-full bg-gray-900 text-white font-mono text-sm">
+    <div className="relative flex flex-col h-full bg-th-bg text-th-text font-mono text-sm">
       {/* Truncation warning */}
       {truncated && (
         <div className="px-3 py-1.5 bg-yellow-900/50 text-yellow-300 text-xs border-b border-yellow-800">
@@ -183,7 +183,7 @@ export function CodeViewer({
           {/* Line numbers - hidden when word wrap is enabled */}
           {showLineNumbers && !wordWrap && (
             <div
-              className="flex-shrink-0 select-none text-right bg-gray-800/50 border-r border-gray-700 text-gray-500 sticky left-0"
+              className="flex-shrink-0 select-none text-right bg-th-surface/50 border-r border-th-border text-th-text-muted sticky left-0"
               style={{ fontSize: `${Math.max(10, fontSize - 2)}px`, lineHeight: `${fontSize * 1.5}px` }}
             >
               {lines.map((_, i) => (
@@ -207,17 +207,17 @@ export function CodeViewer({
       </div>
 
       {/* Floating controls - top right */}
-      <div className="absolute top-2 right-2 flex items-center gap-1 bg-gray-800/90 rounded-lg p-1 backdrop-blur-sm">
+      <div className="absolute top-2 right-2 flex items-center gap-1 bg-th-surface/90 rounded-lg p-1 backdrop-blur-sm">
         <button
           onClick={resetFontSize}
-          className="px-1.5 py-0.5 text-xs text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+          className="px-1.5 py-0.5 text-xs text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
           title="フォントサイズをリセット (ピンチでズーム)"
         >
           {fontSize}px
         </button>
         <button
           onClick={toggleWordWrap}
-          className={`p-1 rounded transition-colors ${wordWrap ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+          className={`p-1 rounded transition-colors ${wordWrap ? 'bg-blue-600 text-th-text' : 'text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover'}`}
           title={wordWrap ? '折り返しOFF' : '折り返しON'}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

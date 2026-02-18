@@ -377,6 +377,10 @@ export function DesktopLayout({
   // While true, sendControlResize is suppressed to avoid sending stale proposed sizes.
   const layoutPendingRef = useRef(false);
 
+  // Track whether we explicitly requested content (zoom, request-content, first connect).
+  // When true, initial-content clears scrollback. When false (reconnect), preserve scrollback.
+  const expectingContentRef = useRef(true);
+
   const controlTerminal = useControlTerminal({
     sessionId: controlSessionId || '',
     onPaneOutput: (paneId, data) => {
@@ -431,11 +435,17 @@ export function DesktopLayout({
       }, 50);
     },
     onInitialContent: (paneId, data) => {
-      // Prepend terminal clear sequence before initial-content.
-      // initial-content is the full terminal state, so clear existing content
-      // to prevent duplication (e.g., after zoom reflow).
+      // Choose clear sequence based on whether content was explicitly requested.
       // ESC[2J = clear screen, ESC[3J = clear scrollback, ESC[H = cursor home
-      const clearSeq = new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x33, 0x4a, 0x1b, 0x5b, 0x48]);
+      let clearSeq: Uint8Array;
+      if (expectingContentRef.current) {
+        // Explicit action (zoom, reload, first connect): full clear including scrollback
+        clearSeq = new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x33, 0x4a, 0x1b, 0x5b, 0x48]);
+        expectingContentRef.current = false;
+      } else {
+        // Implicit (reconnect resize): clear screen only, preserve scrollback
+        clearSeq = new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x48]);
+      }
       const combined = new Uint8Array(clearSeq.length + data.length);
       combined.set(clearSeq);
       combined.set(data, clearSeq.length);
@@ -491,6 +501,7 @@ export function DesktopLayout({
   // Connect/disconnect control mode
   useEffect(() => {
     if (controlSessionId) {
+      expectingContentRef.current = true; // First connection expects initial-content
       controlTerminal.connect();
     }
     return () => {
@@ -611,6 +622,12 @@ export function DesktopLayout({
             controlTerminalRef.current.scrollPane(paneId, lines);
           }
         },
+        requestContent: () => {
+          if (controlTerminalRef.current.isConnected) {
+            expectingContentRef.current = true;
+            controlTerminalRef.current.requestContent(paneId);
+          }
+        },
       };
     },
     splitPane: (paneId: string, direction: 'h' | 'v') => {
@@ -621,6 +638,7 @@ export function DesktopLayout({
     },
     zoomPane: (paneId: string) => {
       console.log(`[zoom] ${paneId} (current=${zoomedPaneId})`);
+      expectingContentRef.current = true;
       const isUnzooming = zoomedPaneId === paneId;
       if (isUnzooming) {
         // Same pane: toggle off (unzoom)
@@ -636,6 +654,7 @@ export function DesktopLayout({
         sendControlResize();
         // When unzooming, request content for all re-mounted panes
         if (isUnzooming) {
+          expectingContentRef.current = true;
           const allPanes = getAllPaneIds(desktopStateRef.current.root);
           for (const pid of allPanes) {
             if (pid !== paneId) {
@@ -1026,14 +1045,14 @@ export function DesktopLayout({
   }, [handleSelectSessionForPane]);
 
   return (
-    <div className="h-screen flex bg-gray-900">
+    <div className="h-screen flex bg-th-bg">
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header - tablet: full toolbar with keyboard toggle */}
         {isTablet && (
-          <div className="flex items-center justify-between px-3 py-1.5 bg-black/50 border-b border-gray-700 shrink-0 select-none">
+          <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--color-overlay)] border-b border-th-border shrink-0 select-none">
             {/* Left: Session name */}
-            <span className="text-white/70 text-sm truncate max-w-[300px]">
+            <span className="text-th-text-secondary text-sm truncate max-w-[300px]">
               {activeSession?.name || 'CC Hub - Desktop'}
             </span>
 
@@ -1045,7 +1064,7 @@ export function DesktopLayout({
                 className={`p-2.5 rounded transition-colors ${
                   showSessionModal
                     ? 'text-blue-400 bg-blue-500/20 hover:bg-blue-500/30'
-                    : 'text-white/70 hover:text-white hover:bg-white/10'
+                    : 'text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover'
                 }`}
                 title="セッション一覧"
                 data-onboarding="session-list"
@@ -1061,7 +1080,7 @@ export function DesktopLayout({
                 className={`p-2.5 rounded transition-colors ${
                   showDashboard
                     ? 'text-blue-400 bg-blue-500/20 hover:bg-blue-500/30'
-                    : 'text-white/70 hover:text-white hover:bg-white/10'
+                    : 'text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover'
                 }`}
                 title="ダッシュボード"
               >
@@ -1074,7 +1093,7 @@ export function DesktopLayout({
               <div className="flex items-center" data-onboarding="split-pane">
                 <button
                   onClick={() => handleSplit('horizontal')}
-                  className="p-2.5 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                  className="p-2.5 text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
                   title="縦分割 (Ctrl+D)"
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -1084,7 +1103,7 @@ export function DesktopLayout({
                 </button>
                 <button
                   onClick={() => handleSplit('vertical')}
-                  className="p-2.5 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                  className="p-2.5 text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
                   title="横分割 (Ctrl+Shift+D)"
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -1097,7 +1116,7 @@ export function DesktopLayout({
               {/* Reload all panes */}
               <button
                 onClick={handleGlobalReload}
-                className="p-2.5 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                className="p-2.5 text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
                 title="全ペインをリロード"
                 data-onboarding="reload"
               >
@@ -1112,7 +1131,7 @@ export function DesktopLayout({
                 className={`p-2.5 rounded transition-colors ${
                   showKeyboard
                     ? 'text-green-400 bg-green-500/20 hover:bg-green-500/30'
-                    : 'text-white/70 hover:text-white hover:bg-white/10'
+                    : 'text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover'
                 }`}
                 title={showKeyboard ? 'キーボードを隠す' : 'キーボードを表示'}
                 data-onboarding="keyboard"
@@ -1201,35 +1220,35 @@ export function DesktopLayout({
         const pageUrls = detectedUrls.slice(startIdx, startIdx + URL_PAGE_SIZE);
 
         return (
-          <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-            <div className="bg-gray-800 rounded-lg w-full max-w-md max-h-[80vh] flex flex-col">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
-                <span className="text-white font-medium">
+          <div className="fixed inset-0 z-50 bg-[var(--color-overlay)] flex items-center justify-center p-4">
+            <div className="bg-th-surface rounded-lg w-full max-w-md max-h-[80vh] flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-th-border">
+                <span className="text-th-text font-medium">
                   URL一覧 {detectedUrls.length > 0 && `(${startIdx + 1}-${Math.min(startIdx + URL_PAGE_SIZE, detectedUrls.length)}/${detectedUrls.length})`}
                 </span>
                 <button
                   onClick={() => setShowUrlMenu(false)}
-                  className="p-1 text-gray-400 hover:text-white"
+                  className="p-1 text-th-text-secondary hover:text-th-text"
                 >
                   ✕
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto p-2">
                 {detectedUrls.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">URLが見つかりません</p>
+                  <p className="text-th-text-muted text-center py-4">URLが見つかりません</p>
                 ) : (
                   pageUrls.map((url, index) => (
-                    <div key={startIdx + index} className="flex items-center gap-2 p-2 hover:bg-gray-700 rounded">
-                      <span className="flex-1 text-white text-sm truncate">{url}</span>
+                    <div key={startIdx + index} className="flex items-center gap-2 p-2 hover:bg-th-surface-hover rounded">
+                      <span className="flex-1 text-th-text text-sm truncate">{url}</span>
                       <button
                         onClick={() => handleCopyUrl(url)}
-                        className="px-2 py-1 text-xs bg-gray-600 hover:bg-gray-500 text-white rounded"
+                        className="px-2 py-1 text-xs bg-th-surface-active hover:bg-th-surface-hover text-th-text rounded"
                       >
                         コピー
                       </button>
                       <button
                         onClick={() => handleOpenUrl(url)}
-                        className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded"
+                        className="px-2 py-1 text-xs bg-emerald-600 hover:bg-emerald-500 text-th-text rounded"
                       >
                         開く
                       </button>
@@ -1238,19 +1257,19 @@ export function DesktopLayout({
                 )}
               </div>
               {totalPages > 1 && (
-                <div className="flex items-center justify-center gap-4 px-4 py-3 border-t border-gray-700">
+                <div className="flex items-center justify-center gap-4 px-4 py-3 border-t border-th-border">
                   <button
                     onClick={() => setUrlPage(p => Math.max(0, p - 1))}
                     disabled={urlPage === 0}
-                    className={`px-3 py-1 rounded ${urlPage === 0 ? 'bg-gray-700 text-gray-500' : 'bg-gray-600 text-white hover:bg-gray-500'}`}
+                    className={`px-3 py-1 rounded ${urlPage === 0 ? 'bg-th-surface-hover text-th-text-muted' : 'bg-th-surface-active text-th-text hover:bg-th-surface-hover'}`}
                   >
                     前へ
                   </button>
-                  <span className="text-gray-400 text-sm">{urlPage + 1} / {totalPages}</span>
+                  <span className="text-th-text-secondary text-sm">{urlPage + 1} / {totalPages}</span>
                   <button
                     onClick={() => setUrlPage(p => Math.min(totalPages - 1, p + 1))}
                     disabled={urlPage >= totalPages - 1}
-                    className={`px-3 py-1 rounded ${urlPage >= totalPages - 1 ? 'bg-gray-700 text-gray-500' : 'bg-gray-600 text-white hover:bg-gray-500'}`}
+                    className={`px-3 py-1 rounded ${urlPage >= totalPages - 1 ? 'bg-th-surface-hover text-th-text-muted' : 'bg-th-surface-active text-th-text hover:bg-th-surface-hover'}`}
                   >
                     次へ
                   </button>

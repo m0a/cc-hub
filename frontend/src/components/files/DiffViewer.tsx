@@ -326,14 +326,14 @@ export function DiffViewer({
   }, [diffLines]);
 
   return (
-    <div className="flex flex-col h-full bg-gray-900 text-white font-mono text-sm">
+    <div className="flex flex-col h-full bg-th-bg text-th-text font-mono text-sm">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-700 bg-gray-800">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-th-border bg-th-surface">
         <svg className="w-4 h-4 text-yellow-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
         {fileName && (
-          <span className="text-sm text-gray-300 truncate flex-1">{fileName}</span>
+          <span className="text-sm text-th-text-secondary truncate flex-1">{fileName}</span>
         )}
         {toolName !== 'git' && (
           <span className={`text-xs px-1.5 py-0.5 rounded ${
@@ -345,7 +345,7 @@ export function DiffViewer({
       </div>
 
       {/* Stats */}
-      <div className="flex items-center gap-4 px-3 py-1.5 border-b border-gray-700 bg-gray-800/50 text-xs">
+      <div className="flex items-center gap-4 px-3 py-1.5 border-b border-th-border bg-th-surface/50 text-xs">
         <span className="text-green-400">+{stats.added} 追加</span>
         <span className="text-red-400">-{stats.removed} 削除</span>
         <div className="flex items-center gap-1 ml-auto">
@@ -354,7 +354,7 @@ export function DiffViewer({
             <>
               <button
                 onClick={scrollLeft}
-                className="p-1 rounded text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
+                className="p-1 rounded text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover transition-colors"
                 title="左へスクロール"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -363,7 +363,7 @@ export function DiffViewer({
               </button>
               <button
                 onClick={scrollRight}
-                className="p-1 rounded text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
+                className="p-1 rounded text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover transition-colors"
                 title="右へスクロール"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -375,7 +375,7 @@ export function DiffViewer({
           {/* Word wrap toggle */}
           <button
             onClick={toggleWordWrap}
-            className={`p-1 rounded transition-colors ${wordWrap ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+            className={`p-1 rounded transition-colors ${wordWrap ? 'bg-blue-600 text-th-text' : 'text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover'}`}
             title={wordWrap ? '折り返しOFF' : '折り返しON'}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -400,7 +400,7 @@ export function DiffViewer({
             >
               {/* Line numbers - hidden when word wrap is enabled */}
               {!wordWrap && (
-                <div className="shrink-0 text-gray-500 text-right select-none border-r border-gray-700 bg-gray-800/50 text-xs leading-6 px-1 min-w-[2rem]">
+                <div className="shrink-0 text-th-text-muted text-right select-none border-r border-th-border bg-th-surface/50 text-xs leading-6 px-1 min-w-[2rem]">
                   {line.type === 'hunk' ? '...' : (toolName === 'Write' ? line.newLineNum : (line.newLineNum || line.oldLineNum || ''))}
                 </div>
               )}
@@ -409,7 +409,7 @@ export function DiffViewer({
               <div className={`w-4 shrink-0 text-center leading-6 text-xs ${
                 line.type === 'add' ? 'text-green-400 bg-green-900/50' :
                 line.type === 'remove' ? 'text-red-400 bg-red-900/50' :
-                'text-gray-600'
+                'text-th-text-muted'
               }`}>
                 {line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ''}
               </div>

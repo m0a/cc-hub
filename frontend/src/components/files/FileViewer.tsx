@@ -298,14 +298,14 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
   // Two-pane layout for wide screens
   if (isWideScreen) {
     return (
-      <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center">
-        <div className="bg-gray-900 w-full h-full lg:w-[95%] lg:h-[90%] lg:max-w-6xl lg:rounded-lg lg:shadow-2xl overflow-hidden flex flex-col">
+      <div className="fixed inset-0 z-50 bg-[var(--color-overlay)] flex items-center justify-center">
+        <div className="bg-th-bg w-full h-full lg:w-[95%] lg:h-[90%] lg:max-w-6xl lg:rounded-lg lg:shadow-2xl overflow-hidden flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 bg-gray-800">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-th-border bg-th-surface">
             <div className="flex items-center gap-2">
               <button
                 onClick={handleBack}
-                className="p-1 hover:bg-gray-700 rounded transition-colors"
+                className="p-1 hover:bg-th-surface-hover rounded transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -316,11 +316,11 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
 
             <div className="flex items-center gap-2">
               {/* Tab buttons */}
-              <div className="flex items-center bg-gray-700 rounded-lg p-0.5">
+              <div className="flex items-center bg-th-surface-hover rounded-lg p-0.5">
                 <button
                   onClick={handleShowBrowser}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
-                    listMode === 'browser' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
+                    listMode === 'browser' ? 'bg-th-surface-active text-th-text' : 'text-th-text-secondary hover:text-th-text'
                   }`}
                 >
                   {t('files.browser')}
@@ -328,7 +328,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                 <button
                   onClick={handleShowChanges}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
-                    listMode === 'changes' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
+                    listMode === 'changes' ? 'bg-th-surface-active text-th-text' : 'text-th-text-secondary hover:text-th-text'
                   }`}
                 >
                   {t('files.changes')}
@@ -339,7 +339,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
               {listMode === 'browser' && (
                 <button
                   onClick={() => setShowHidden(!showHidden)}
-                  className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600' : 'hover:bg-gray-700'}`}
+                  className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600' : 'hover:bg-th-surface-hover'}`}
                   title={t('files.showHidden')}
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -352,7 +352,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
               {/* Close button */}
               <button
                 onClick={onClose}
-                className="p-1.5 hover:bg-gray-700 rounded transition-colors"
+                className="p-1.5 hover:bg-th-surface-hover rounded transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -399,7 +399,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
 
             {/* Resize handle */}
             <div
-              className="w-1 bg-gray-700 hover:bg-blue-500 cursor-col-resize transition-colors shrink-0 touch-none"
+              className="w-1 bg-th-surface-hover hover:bg-blue-500 cursor-col-resize transition-colors shrink-0 touch-none"
               onMouseDown={handleResizeStart}
               onTouchStart={handleResizeStart}
             />
@@ -409,8 +409,8 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
               {hasContent ? (
                 <>
                   {/* Content header */}
-                  <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-700 bg-gray-800/50">
-                    <span className="text-sm text-gray-300 truncate flex-1">
+                  <div className="flex items-center gap-2 px-3 py-2 border-b border-th-border bg-th-surface/50">
+                    <span className="text-sm text-th-text-secondary truncate flex-1">
                       {viewMode === 'diff'
                         ? currentDiffFileName
                         : selectedFile
@@ -420,7 +420,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                     {viewMode === 'diff' && (
                       <button
                         onClick={handleOpenFileFromDiff}
-                        className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+                        className="px-2 py-1 text-xs bg-th-surface-hover hover:bg-th-surface-active rounded transition-colors"
                       >
                         {t('files.openFile')}
                       </button>
@@ -475,7 +475,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                   </div>
                 </>
               ) : (
-                <div className="flex-1 flex items-center justify-center text-gray-500">
+                <div className="flex-1 flex items-center justify-center text-th-text-muted">
                   <div className="text-center">
                     <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -493,8 +493,8 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
 
   // Single-pane layout for narrow screens (mobile)
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center">
-      <div className="bg-gray-900 w-full h-full lg:w-[90%] lg:h-[90%] lg:max-w-5xl lg:rounded-lg lg:shadow-2xl overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 bg-[var(--color-overlay)] flex items-center justify-center">
+      <div className="bg-th-bg w-full h-full lg:w-[90%] lg:h-[90%] lg:max-w-5xl lg:rounded-lg lg:shadow-2xl overflow-hidden flex flex-col">
         {/* Error */}
         {error && (
           <div className="px-3 py-2 bg-red-900/50 text-red-300 text-sm border-b border-red-800">
@@ -574,11 +574,11 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
         </div>
 
         {/* Footer controls - at bottom for easier touch access */}
-        <div className="flex items-center justify-between px-3 py-2 border-t border-gray-700 bg-gray-800">
+        <div className="flex items-center justify-between px-3 py-2 border-t border-th-border bg-th-surface">
           <div className="flex items-center gap-2">
             <button
               onClick={handleBack}
-              className="p-1.5 hover:bg-gray-700 rounded transition-colors"
+              className="p-1.5 hover:bg-th-surface-hover rounded transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -595,11 +595,11 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
 
           <div className="flex items-center gap-2">
             {/* Tab buttons */}
-            <div className="flex items-center bg-gray-700 rounded-lg p-0.5">
+            <div className="flex items-center bg-th-surface-hover rounded-lg p-0.5">
               <button
                 onClick={handleShowBrowser}
                 className={`px-2 py-1 text-xs rounded transition-colors ${
-                  viewMode === 'browser' || viewMode === 'file' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
+                  viewMode === 'browser' || viewMode === 'file' ? 'bg-th-surface-active text-th-text' : 'text-th-text-secondary hover:text-th-text'
                 }`}
               >
                 {t('files.browser')}
@@ -607,7 +607,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
               <button
                 onClick={handleShowChanges}
                 className={`px-2 py-1 text-xs rounded transition-colors ${
-                  viewMode === 'changes' || viewMode === 'diff' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
+                  viewMode === 'changes' || viewMode === 'diff' ? 'bg-th-surface-active text-th-text' : 'text-th-text-secondary hover:text-th-text'
                 }`}
               >
                 {t('files.changes')}
@@ -618,7 +618,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
             {viewMode === 'browser' && (
               <button
                 onClick={() => setShowHidden(!showHidden)}
-                className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600' : 'hover:bg-gray-700'}`}
+                className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600' : 'hover:bg-th-surface-hover'}`}
                 title={t('files.showHidden')}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -631,7 +631,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
             {/* Close button */}
             <button
               onClick={onClose}
-              className="p-1.5 hover:bg-gray-700 rounded transition-colors"
+              className="p-1.5 hover:bg-th-surface-hover rounded transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -650,7 +650,7 @@ function gitStatusLabel(status: string): { label: string; color: string; dotColo
     case 'A': return { label: 'Added', color: 'text-green-400', dotColor: 'bg-green-500' };
     case 'D': return { label: 'Deleted', color: 'text-red-400', dotColor: 'bg-red-500' };
     case 'R': return { label: 'Renamed', color: 'text-blue-400', dotColor: 'bg-blue-500' };
-    case '??': return { label: 'Untracked', color: 'text-gray-400', dotColor: 'bg-gray-500' };
+    case '??': return { label: 'Untracked', color: 'text-th-text-secondary', dotColor: 'bg-gray-500' };
     case 'U': return { label: 'Conflict', color: 'text-orange-400', dotColor: 'bg-orange-500' };
     default: return { label: 'Modified', color: 'text-yellow-400', dotColor: 'bg-yellow-500' };
   }
@@ -726,14 +726,14 @@ function TreeView({
             <div key={node.fullPath}>
               <div
                 onClick={() => toggleDir(node.fullPath)}
-                className="flex items-center gap-1 px-2 py-1 hover:bg-gray-800 cursor-pointer text-sm text-gray-400"
+                className="flex items-center gap-1 px-2 py-1 hover:bg-th-surface cursor-pointer text-sm text-th-text-secondary"
                 style={{ paddingLeft: `${depth * 16 + 8}px` }}
               >
                 <svg className={`w-3 h-3 transition-transform ${isCollapsed ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
                 <span className="truncate">{node.name}</span>
-                <span className="text-xs text-gray-600 ml-auto shrink-0">
+                <span className="text-xs text-th-text-muted ml-auto shrink-0">
                   {countLeaves(node)}
                 </span>
               </div>
@@ -765,8 +765,8 @@ function TreeView({
                 onSelectClaudeChange(node.change as FileChange);
               }
             }}
-            className={`flex items-center gap-2 px-2 py-1 hover:bg-gray-800 active:bg-gray-700 cursor-pointer transition-colors ${
-              selectedPath === node.fullPath ? 'bg-gray-800' : ''
+            className={`flex items-center gap-2 px-2 py-1 hover:bg-th-surface active:bg-th-surface-hover cursor-pointer transition-colors ${
+              selectedPath === node.fullPath ? 'bg-th-surface' : ''
             }`}
             style={{ paddingLeft: `${depth * 16 + 8}px` }}
           >
@@ -776,7 +776,7 @@ function TreeView({
                 : 'bg-yellow-500'
             }`} />
             <span className="text-sm truncate flex-1">{node.name}</span>
-            <span className={`text-xs shrink-0 ${statusInfo?.color || 'text-gray-500'}`}>
+            <span className={`text-xs shrink-0 ${statusInfo?.color || 'text-th-text-muted'}`}>
               {statusInfo ? statusInfo.label
                 : isClaudeChange && (node.change as FileChange).toolName === 'Write' ? 'Created'
                 : 'Edited'}
@@ -851,7 +851,7 @@ function ChangesView({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-gray-500">{t('common.loading')}</div>
+        <div className="text-th-text-muted">{t('common.loading')}</div>
       </div>
     );
   }
@@ -859,13 +859,13 @@ function ChangesView({
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* Controls bar */}
-      <div className="px-2 py-1.5 border-b border-gray-700 bg-gray-800/50 flex items-center gap-2 flex-wrap">
+      <div className="px-2 py-1.5 border-b border-th-border bg-th-surface/50 flex items-center gap-2 flex-wrap">
         {/* Source toggle: Claude / Git */}
-        <div className="flex items-center bg-gray-700 rounded p-0.5">
+        <div className="flex items-center bg-th-surface-hover rounded p-0.5">
           <button
             onClick={() => handleSourceChange('claude')}
             className={`px-2 py-0.5 text-xs rounded transition-colors ${
-              source === 'claude' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
+              source === 'claude' ? 'bg-th-surface-active text-th-text' : 'text-th-text-secondary hover:text-th-text'
             }`}
           >
             Claude{claudeChanges.length > 0 ? `(${claudeChanges.length})` : ''}
@@ -873,7 +873,7 @@ function ChangesView({
           <button
             onClick={() => handleSourceChange('git')}
             className={`px-2 py-0.5 text-xs rounded transition-colors ${
-              source === 'git' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
+              source === 'git' ? 'bg-th-surface-active text-th-text' : 'text-th-text-secondary hover:text-th-text'
             }`}
           >
             Git{uniqueGitChanges.length > 0 ? `(${uniqueGitChanges.length})` : ''}
@@ -881,11 +881,11 @@ function ChangesView({
         </div>
 
         {/* Display toggle: List / Tree */}
-        <div className="flex items-center bg-gray-700 rounded p-0.5">
+        <div className="flex items-center bg-th-surface-hover rounded p-0.5">
           <button
             onClick={() => handleDisplayChange('list')}
             className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
-              display === 'list' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
+              display === 'list' ? 'bg-th-surface-active text-th-text' : 'text-th-text-secondary hover:text-th-text'
             }`}
             title={t('files.listView')}
           >
@@ -896,7 +896,7 @@ function ChangesView({
           <button
             onClick={() => handleDisplayChange('tree')}
             className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
-              display === 'tree' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
+              display === 'tree' ? 'bg-th-surface-active text-th-text' : 'text-th-text-secondary hover:text-th-text'
             }`}
             title={t('files.treeView')}
           >
@@ -908,7 +908,7 @@ function ChangesView({
 
         {/* Branch indicator for git */}
         {source === 'git' && gitBranch && (
-          <span className="text-xs text-gray-500 truncate ml-auto">
+          <span className="text-xs text-th-text-muted truncate ml-auto">
             {gitBranch}
           </span>
         )}
@@ -916,7 +916,7 @@ function ChangesView({
 
       {/* Content */}
       {currentChanges.length === 0 ? (
-        <div className="flex flex-col items-center justify-center flex-1 text-gray-500">
+        <div className="flex flex-col items-center justify-center flex-1 text-th-text-muted">
           <svg className="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
@@ -942,14 +942,14 @@ function ChangesView({
                   <div
                     key={`${change.path}-${i}`}
                     onClick={() => onSelectGitChange(change)}
-                    className={`flex items-center gap-3 px-3 py-2 hover:bg-gray-800 active:bg-gray-700 cursor-pointer transition-colors ${
-                      selectedPath === change.path ? 'bg-gray-800' : ''
+                    className={`flex items-center gap-3 px-3 py-2 hover:bg-th-surface active:bg-th-surface-hover cursor-pointer transition-colors ${
+                      selectedPath === change.path ? 'bg-th-surface' : ''
                     }`}
                   >
                     <div className={`w-2 h-2 rounded-full shrink-0 ${statusInfo.dotColor}`} />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm truncate">{getFileName(change.path)}</div>
-                      <div className="text-xs text-gray-500 truncate">{change.path}</div>
+                      <div className="text-xs text-th-text-muted truncate">{change.path}</div>
                     </div>
                     <div className={`text-xs shrink-0 ${statusInfo.color}`}>
                       {statusInfo.label}
@@ -962,8 +962,8 @@ function ChangesView({
                 <div
                   key={`${change.path}-${i}`}
                   onClick={() => onSelectClaudeChange(change)}
-                  className={`flex items-center gap-3 px-3 py-2 hover:bg-gray-800 active:bg-gray-700 cursor-pointer transition-colors ${
-                    selectedPath === change.path ? 'bg-gray-800' : ''
+                  className={`flex items-center gap-3 px-3 py-2 hover:bg-th-surface active:bg-th-surface-hover cursor-pointer transition-colors ${
+                    selectedPath === change.path ? 'bg-th-surface' : ''
                   }`}
                 >
                   <div className={`w-2 h-2 rounded-full shrink-0 ${
@@ -971,11 +971,11 @@ function ChangesView({
                   }`} />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm truncate">{getFileName(change.path)}</div>
-                    <div className="text-xs text-gray-500 truncate">
+                    <div className="text-xs text-th-text-muted truncate">
                       {change.path.replace(/^\/home\/[^/]+\//, '~/')}
                     </div>
                   </div>
-                  <div className="text-xs text-gray-500 shrink-0">
+                  <div className="text-xs text-th-text-muted shrink-0">
                     {change.toolName === 'Write' ? t('files.created') : t('files.edited')}
                   </div>
                 </div>

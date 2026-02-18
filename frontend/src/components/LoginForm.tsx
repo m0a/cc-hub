@@ -21,15 +21,15 @@ export function LoginForm({ onLogin, isLoading, error }: LoginFormProps) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900">
-      <div className="bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-md">
-        <h1 className="text-2xl font-bold text-white mb-6 text-center">
+    <div className="min-h-screen flex items-center justify-center bg-th-bg">
+      <div className="bg-th-surface p-8 rounded-lg shadow-xl w-full max-w-md">
+        <h1 className="text-2xl font-bold text-th-text mb-6 text-center">
           CC Hub
         </h1>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">
+            <label htmlFor="password" className="block text-sm font-medium text-th-text-secondary mb-1">
               {t('auth.password')}
             </label>
             <input
@@ -37,7 +37,7 @@ export function LoginForm({ onLogin, isLoading, error }: LoginFormProps) {
               id="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-2 bg-th-surface-hover border border-th-border rounded-lg text-th-text focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
               disabled={isLoading}
             />
@@ -52,7 +52,7 @@ export function LoginForm({ onLogin, isLoading, error }: LoginFormProps) {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
+            className="w-full py-2 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-800 disabled:cursor-not-allowed text-th-text font-medium rounded-lg transition-colors"
           >
             {isLoading ? t('auth.authenticating') : t('auth.login')}
           </button>

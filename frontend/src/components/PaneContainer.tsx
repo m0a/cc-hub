@@ -284,17 +284,17 @@ function TerminalPane({
   return (
     <div
       ref={containerRef}
-      className={`h-full flex flex-col bg-gray-900 relative select-none ${isActive ? 'ring-2 ring-blue-500' : ''}`}
+      className={`h-full flex flex-col bg-th-bg relative select-none ${isActive ? 'ring-2 ring-blue-500' : ''}`}
       onMouseDown={onFocus}
     >
       {/* Pane header - overlay on tablet, normal on desktop */}
       <div className={`flex items-center px-2 py-1 text-xs select-none ${
         isTablet
-          ? 'absolute top-0 right-0 z-50 justify-end pointer-events-auto bg-black/60 backdrop-blur-sm rounded-bl-lg'
-          : 'justify-between bg-black/50 border-b border-gray-700 shrink-0'
+          ? 'absolute top-0 right-0 z-50 justify-end pointer-events-auto bg-[var(--color-overlay)] backdrop-blur-sm rounded-bl-lg'
+          : 'justify-between bg-[var(--color-overlay)] border-b border-th-border shrink-0'
       }`}>
         {!isTablet && (
-          <span className="text-white/70 truncate flex-1">
+          <span className="text-th-text-secondary truncate flex-1">
             {showConversation ? t('conversation.history') : (session?.name || t('pane.noSession'))}
           </span>
         )}
@@ -306,7 +306,7 @@ function TerminalPane({
               className={`${isTablet ? 'p-2.5' : 'p-1'} transition-colors ${
                 showConversation
                   ? 'text-blue-400 hover:text-blue-300'
-                  : 'text-white/50 hover:text-white/80'
+                  : 'text-white/50 hover:text-th-text'
               }`}
               title={showConversation ? t('conversation.backToTerminal') : t('conversation.showHistory')}
             >
@@ -319,7 +319,7 @@ function TerminalPane({
           {session?.currentPath && !showConversation && (
             <button
               onClick={handleOpenFileViewer}
-              className={`${isTablet ? 'p-2.5' : 'p-1'} text-white/50 hover:text-white/80 transition-colors`}
+              className={`${isTablet ? 'p-2.5' : 'p-1'} text-white/50 hover:text-th-text transition-colors`}
               title={t('files.title')}
               data-onboarding="file-browser"
             >
@@ -332,7 +332,7 @@ function TerminalPane({
           {sessionId && !showConversation && (
             <button
               onClick={handleReload}
-              className={`${isTablet ? 'p-2.5' : 'p-1'} text-white/50 hover:text-white/80 transition-colors`}
+              className={`${isTablet ? 'p-2.5' : 'p-1'} text-white/50 hover:text-th-text transition-colors`}
               title={t('files.reload')}
             >
               <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -350,7 +350,7 @@ function TerminalPane({
               className={`${isTablet ? 'p-2.5' : 'p-1'} transition-colors ${
                 controlModeContext.isZoomed
                   ? 'text-blue-400 hover:text-blue-300'
-                  : 'text-white/50 hover:text-white/80'
+                  : 'text-white/50 hover:text-th-text'
               }`}
               title={controlModeContext.isZoomed ? 'Unzoom' : 'Zoom'}
             >
@@ -395,7 +395,7 @@ function TerminalPane({
                   e.stopPropagation();
                   controlModeContext.splitPane(paneId, 'h');
                 }}
-                className="p-1 text-white/50 hover:text-white/80 transition-colors"
+                className="p-1 text-white/50 hover:text-th-text transition-colors"
                 title="縦分割 (Ctrl+D)"
                 data-onboarding="split-pane"
               >
@@ -409,7 +409,7 @@ function TerminalPane({
                   e.stopPropagation();
                   controlModeContext.splitPane(paneId, 'v');
                 }}
-                className="p-1 text-white/50 hover:text-white/80 transition-colors"
+                className="p-1 text-white/50 hover:text-th-text transition-colors"
                 title="横分割 (Ctrl+Shift+D)"
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -514,25 +514,25 @@ interface SessionSelectorProps {
 function SessionSelector({ sessions, onSelect }: SessionSelectorProps) {
   const { t } = useTranslation();
   return (
-    <div className="h-full flex flex-col items-center justify-center bg-gray-900 p-4">
-      <p className="text-gray-400 mb-4">{t('pane.selectSession')}</p>
+    <div className="h-full flex flex-col items-center justify-center bg-th-bg p-4">
+      <p className="text-th-text-secondary mb-4">{t('pane.selectSession')}</p>
       <div className="max-h-64 overflow-y-auto w-full max-w-xs space-y-2">
         {sessions.map((session) => (
           <button
             key={session.id}
             onClick={() => onSelect(session)}
-            className="w-full text-left px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded text-white text-sm transition-colors"
+            className="w-full text-left px-3 py-2 bg-th-surface hover:bg-th-surface-hover rounded text-th-text text-sm transition-colors"
           >
             <div className="font-medium truncate">{session.name}</div>
             {session.currentPath && (
-              <div className="text-xs text-gray-400 truncate">
+              <div className="text-xs text-th-text-secondary truncate">
                 {session.currentPath.replace(/^\/home\/[^/]+\//, '~/')}
               </div>
             )}
           </button>
         ))}
         {sessions.length === 0 && (
-          <p className="text-gray-500 text-sm text-center">{t('session.noSessions')}</p>
+          <p className="text-th-text-muted text-sm text-center">{t('session.noSessions')}</p>
         )}
       </div>
     </div>
@@ -713,7 +713,7 @@ function SplitContainer({
           }}
           className={`
             ${isHorizontal ? 'h-full cursor-col-resize' : 'w-full cursor-row-resize'}
-            flex items-center justify-center bg-gray-700 hover:bg-blue-500/50 transition-colors flex-shrink-0 z-10
+            flex items-center justify-center bg-th-surface-hover hover:bg-blue-500/50 transition-colors flex-shrink-0 z-10
             ${isDragging === index ? 'bg-blue-500/70' : ''}
           `}
         >

@@ -37,7 +37,7 @@ function CollapsibleSection({
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   const variantStyles = {
-    default: 'bg-gray-700/50 border-gray-600',
+    default: 'bg-th-surface-hover/50 border-th-border',
     thinking: 'bg-purple-900/30 border-purple-600',
     tool: 'bg-blue-900/30 border-blue-600',
     result: 'bg-green-900/30 border-green-600',
@@ -48,7 +48,7 @@ function CollapsibleSection({
     <div className={`my-2 border rounded ${variantStyles[variant]}`}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center gap-2 p-2 text-xs text-gray-300 hover:bg-gray-700/50"
+        className="w-full flex items-center gap-2 p-2 text-xs text-th-text-secondary hover:bg-th-surface-hover/50"
       >
         <span className="transform transition-transform" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>
           ▶
@@ -57,7 +57,7 @@ function CollapsibleSection({
         <span className="flex-1 text-left truncate">{title}</span>
       </button>
       {isOpen && (
-        <div className="p-2 border-t border-gray-600 text-xs overflow-x-auto">
+        <div className="p-2 border-t border-th-border text-xs overflow-x-auto">
           {children}
         </div>
       )}
@@ -115,7 +115,7 @@ function ToolResultDisplay({ results }: { results: ToolResultInfo[] }) {
             variant={result.isError ? 'error' : 'result'}
             defaultOpen={isShortContent(result.output)}
           >
-            <pre className={`whitespace-pre-wrap break-all ${result.isError ? 'text-red-300' : 'text-gray-300'}`}>
+            <pre className={`whitespace-pre-wrap break-all ${result.isError ? 'text-red-300' : 'text-th-text-secondary'}`}>
               {isLong ? (
                 <ExpandableText text={result.output} preview={preview} />
               ) : (
@@ -181,7 +181,7 @@ interface ConversationViewerProps {
 // Markdown components configuration
 const markdownComponents = {
   pre: ({ children }: { children?: React.ReactNode }) => (
-    <pre className="bg-gray-900 p-2 rounded overflow-x-auto my-2 text-xs">
+    <pre className="bg-th-bg p-2 rounded overflow-x-auto my-2 text-xs">
       {children}
     </pre>
   ),
@@ -190,7 +190,7 @@ const markdownComponents = {
     return isBlock ? (
       <code className="text-green-300">{children}</code>
     ) : (
-      <code className="bg-gray-700 px-1 rounded text-blue-300">{children}</code>
+      <code className="bg-th-surface-hover px-1 rounded text-blue-300">{children}</code>
     );
   },
   p: ({ children }: { children?: React.ReactNode }) => <p className="my-1">{children}</p>,
@@ -200,33 +200,33 @@ const markdownComponents = {
   h1: ({ children }: { children?: React.ReactNode }) => <h1 className="text-lg font-bold my-2">{children}</h1>,
   h2: ({ children }: { children?: React.ReactNode }) => <h2 className="text-base font-bold my-2">{children}</h2>,
   h3: ({ children }: { children?: React.ReactNode }) => <h3 className="text-sm font-bold my-1">{children}</h3>,
-  strong: ({ children }: { children?: React.ReactNode }) => <strong className="font-bold text-white">{children}</strong>,
+  strong: ({ children }: { children?: React.ReactNode }) => <strong className="font-bold text-th-text">{children}</strong>,
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
     <a href={href} className="text-blue-400 underline" target="_blank" rel="noopener noreferrer">
       {children}
     </a>
   ),
   blockquote: ({ children }: { children?: React.ReactNode }) => (
-    <blockquote className="border-l-2 border-gray-500 pl-2 my-2 text-gray-400">
+    <blockquote className="border-l-2 border-gray-500 pl-2 my-2 text-th-text-secondary">
       {children}
     </blockquote>
   ),
   table: ({ children }: { children?: React.ReactNode }) => (
     <div className="overflow-x-auto my-2">
-      <table className="min-w-full text-xs border border-gray-600">{children}</table>
+      <table className="min-w-full text-xs border border-th-border">{children}</table>
     </div>
   ),
   th: ({ children }: { children?: React.ReactNode }) => (
-    <th className="border border-gray-600 px-2 py-1 bg-gray-700">{children}</th>
+    <th className="border border-th-border px-2 py-1 bg-th-surface-hover">{children}</th>
   ),
   td: ({ children }: { children?: React.ReactNode }) => (
-    <td className="border border-gray-600 px-2 py-1">{children}</td>
+    <td className="border border-th-border px-2 py-1">{children}</td>
   ),
   img: ({ src, alt }: { src?: string; alt?: string }) => (
     <img
       src={src}
       alt={alt || 'Screenshot'}
-      className="max-w-full h-auto rounded my-2 border border-gray-600"
+      className="max-w-full h-auto rounded my-2 border border-th-border"
       loading="lazy"
     />
   ),
@@ -254,18 +254,18 @@ const MessageItem = memo(function MessageItem({ msg }: { msg: ConversationMessag
     containerStyle = 'mx-4 bg-amber-900/20 border-l-2 border-amber-500';
   } else if (isToolResultOnly) {
     displayRole = t('conversation.system');
-    containerStyle = 'mr-8 bg-gray-700/50 border-l-2 border-gray-500';
+    containerStyle = 'mr-8 bg-th-surface-hover/50 border-l-2 border-gray-500';
   } else if (msg.role === 'user') {
     displayRole = t('conversation.you');
     containerStyle = 'ml-8 bg-blue-900/30 border-l-2 border-blue-500';
   } else {
     displayRole = t('conversation.claude');
-    containerStyle = 'mr-8 bg-gray-800 border-l-2 border-gray-600';
+    containerStyle = 'mr-8 bg-th-surface border-l-2 border-th-border';
   }
 
   return (
     <div className={`${containerStyle} p-2 rounded`}>
-      <div className="text-xs text-gray-400 mb-1">
+      <div className="text-xs text-th-text-secondary mb-1">
         {displayRole}
       </div>
 
@@ -274,7 +274,7 @@ const MessageItem = memo(function MessageItem({ msg }: { msg: ConversationMessag
 
       {/* Main text content */}
       {msg.content && (
-        <div className="text-sm text-gray-200 markdown-content">
+        <div className="text-sm text-th-text markdown-content">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={markdownComponents}
@@ -356,8 +356,8 @@ export function ConversationViewer({
 
   // Container class based on inline mode
   const containerClass = inline
-    ? 'h-full flex flex-col bg-gray-900'
-    : 'fixed inset-0 z-50 flex flex-col bg-gray-900';
+    ? 'h-full flex flex-col bg-th-bg'
+    : 'fixed inset-0 z-50 flex flex-col bg-th-bg';
 
   return (
     <div className={containerClass}>
@@ -368,11 +368,11 @@ export function ConversationViewer({
         style={{ WebkitUserSelect: 'text', userSelect: 'text' }}
       >
         {isLoading ? (
-          <div className="text-center text-gray-500 py-8">
+          <div className="text-center text-th-text-muted py-8">
             {t('common.loading')}
           </div>
         ) : messages.length === 0 ? (
-          <div className="text-center text-gray-500 py-8">
+          <div className="text-center text-th-text-muted py-8">
             {t('conversation.noMessages')}
           </div>
         ) : (
@@ -407,26 +407,26 @@ export function ConversationViewer({
 
       {/* Footer - only show in modal mode */}
       {!inline && (
-        <div className="flex items-center px-3 py-2 border-t border-gray-700 bg-gray-800 shrink-0">
+        <div className="flex items-center px-3 py-2 border-t border-th-border bg-th-surface shrink-0">
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white p-1"
+            className="text-th-text-secondary hover:text-th-text p-1"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
           <div className="flex-1 min-w-0 ml-2">
-            <h2 className="text-sm font-medium text-white truncate">{title}</h2>
+            <h2 className="text-sm font-medium text-th-text truncate">{title}</h2>
             {subtitle && (
-              <p className="text-xs text-gray-400 truncate">{subtitle}</p>
+              <p className="text-xs text-th-text-secondary truncate">{subtitle}</p>
             )}
           </div>
           {onResume && (
             <button
               onClick={onResume}
               disabled={isResuming}
-              className="ml-2 px-3 py-1 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white rounded shrink-0"
+              className="ml-2 px-3 py-1 text-sm bg-emerald-600 hover:bg-emerald-500 disabled:bg-th-surface-active text-th-text rounded shrink-0"
             >
               {isResuming ? t('session.resuming') : t('session.resume')}
             </button>

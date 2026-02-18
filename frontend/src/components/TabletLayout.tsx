@@ -240,26 +240,26 @@ export function TabletLayout({
   const activeSession = sessions.find(s => s.id === activeSessionId);
 
   return (
-    <div ref={containerRef} className="h-screen flex bg-gray-900">
+    <div ref={containerRef} className="h-screen flex bg-th-bg">
       {/* Left: Terminal */}
       <div className="h-full flex flex-col" style={{ width: `${splitRatio}%` }}>
         {/* Session name header */}
-        <div className="flex items-center justify-between px-2 py-1 bg-black/50 border-b border-gray-700 shrink-0">
+        <div className="flex items-center justify-between px-2 py-1 bg-[var(--color-overlay)] border-b border-th-border shrink-0">
           <button
             onClick={onShowSessionList}
-            className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+            className="p-1 text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
             title={t('session.list')}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <span className="text-white/70 text-xs truncate max-w-[120px]">
+          <span className="text-th-text-secondary text-xs truncate max-w-[120px]">
             {activeSession?.name || '-'}
           </span>
           <button
             onClick={() => setShowFileViewer(true)}
-            className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+            className="p-1 text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
             title="ファイルブラウザ"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -268,7 +268,7 @@ export function TabletLayout({
           </button>
           <button
             onClick={onReload}
-            className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+            className="p-1 text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
             title="リロード"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -298,24 +298,24 @@ export function TabletLayout({
         onMouseDown={handleDragStart}
         onTouchStart={handleDragStart}
         className={`w-2 h-full cursor-col-resize flex items-center justify-center hover:bg-blue-500/30 active:bg-blue-500/50 transition-colors ${
-          isDragging ? 'bg-blue-500/50' : 'bg-gray-700'
+          isDragging ? 'bg-blue-500/50' : 'bg-th-surface-hover'
         }`}
       >
-        <div className="w-0.5 h-8 bg-gray-500 rounded-full" />
+        <div className="w-0.5 h-8 bg-th-surface-active rounded-full" />
       </div>
 
       {/* Right: Session List / Dashboard + Keyboard */}
       <div className="h-full flex flex-col flex-1">
         {/* Top: Tab Switcher + Content */}
-        <div className="flex-1 min-h-0 border-b border-gray-700 flex flex-col">
+        <div className="flex-1 min-h-0 border-b border-th-border flex flex-col">
           {/* Tab header */}
-          <div className="flex items-center border-b border-gray-700 shrink-0">
+          <div className="flex items-center border-b border-th-border shrink-0">
             <button
               onClick={() => setRightPanelTab('sessions')}
               className={`flex-1 px-2 py-1.5 text-xs font-medium transition-colors ${
                 rightPanelTab === 'sessions'
-                  ? 'text-white bg-gray-800'
-                  : 'text-gray-400 hover:text-gray-300'
+                  ? 'text-th-text bg-th-surface'
+                  : 'text-th-text-secondary hover:text-th-text-secondary'
               }`}
             >
               Sessions
@@ -324,8 +324,8 @@ export function TabletLayout({
               onClick={() => setRightPanelTab('dashboard')}
               className={`flex-1 px-2 py-1.5 text-xs font-medium transition-colors ${
                 rightPanelTab === 'dashboard'
-                  ? 'text-white bg-gray-800'
-                  : 'text-gray-400 hover:text-gray-300'
+                  ? 'text-th-text bg-th-surface'
+                  : 'text-th-text-secondary hover:text-th-text-secondary'
               }`}
             >
               Dashboard
@@ -345,7 +345,7 @@ export function TabletLayout({
         </div>
 
         {/* Bottom: Keyboard */}
-        <div className="h-[45%] bg-black shrink-0 flex flex-col">
+        <div className="h-[45%] bg-th-bg shrink-0 flex flex-col">
           {/* Hidden file input */}
           <input
             type="file"
@@ -384,12 +384,12 @@ export function TabletLayout({
                   spellCheck={false}
                   enterKeyHint="send"
                   placeholder="日本語入力 - Enterで送信"
-                  className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
+                  className="flex-1 px-3 py-2 bg-th-bg border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-green-500"
                   style={{ fontSize: '16px' }}
                 />
                 <button
                   onClick={handleSwitchToKeyboard}
-                  className="px-3 py-2 bg-gray-700 hover:bg-gray-600 active:bg-gray-500 rounded text-white font-medium"
+                  className="px-3 py-2 bg-th-surface-hover hover:bg-th-surface-active active:bg-th-surface-active rounded text-th-text font-medium"
                 >
                   ABC
                 </button>
@@ -414,35 +414,35 @@ export function TabletLayout({
         const pageUrls = detectedUrls.slice(startIdx, startIdx + URL_PAGE_SIZE);
 
         return (
-          <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-            <div className="bg-gray-800 rounded-lg w-full max-w-md max-h-[80vh] flex flex-col">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
-                <span className="text-white font-medium">
+          <div className="fixed inset-0 z-50 bg-[var(--color-overlay)] flex items-center justify-center p-4">
+            <div className="bg-th-surface rounded-lg w-full max-w-md max-h-[80vh] flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-th-border">
+                <span className="text-th-text font-medium">
                   URL一覧 {detectedUrls.length > 0 && `(${startIdx + 1}-${Math.min(startIdx + URL_PAGE_SIZE, detectedUrls.length)}/${detectedUrls.length})`}
                 </span>
                 <button
                   onClick={() => setShowUrlMenu(false)}
-                  className="p-1 text-gray-400 hover:text-white"
+                  className="p-1 text-th-text-secondary hover:text-th-text"
                 >
                   ✕
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto p-2">
                 {detectedUrls.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">URLが見つかりません</p>
+                  <p className="text-th-text-muted text-center py-4">URLが見つかりません</p>
                 ) : (
                   pageUrls.map((url, index) => (
-                    <div key={startIdx + index} className="flex items-center gap-2 p-2 hover:bg-gray-700 rounded">
-                      <span className="flex-1 text-white text-sm truncate">{url}</span>
+                    <div key={startIdx + index} className="flex items-center gap-2 p-2 hover:bg-th-surface-hover rounded">
+                      <span className="flex-1 text-th-text text-sm truncate">{url}</span>
                       <button
                         onClick={() => handleCopyUrl(url)}
-                        className="px-2 py-1 text-xs bg-gray-600 hover:bg-gray-500 text-white rounded"
+                        className="px-2 py-1 text-xs bg-th-surface-active hover:bg-th-surface-active text-th-text rounded"
                       >
                         コピー
                       </button>
                       <button
                         onClick={() => handleOpenUrl(url)}
-                        className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded"
+                        className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-th-text rounded"
                       >
                         開く
                       </button>
@@ -451,19 +451,19 @@ export function TabletLayout({
                 )}
               </div>
               {totalPages > 1 && (
-                <div className="flex items-center justify-center gap-4 px-4 py-3 border-t border-gray-700">
+                <div className="flex items-center justify-center gap-4 px-4 py-3 border-t border-th-border">
                   <button
                     onClick={() => setUrlPage(p => Math.max(0, p - 1))}
                     disabled={urlPage === 0}
-                    className={`px-3 py-1 rounded ${urlPage === 0 ? 'bg-gray-700 text-gray-500' : 'bg-gray-600 text-white hover:bg-gray-500'}`}
+                    className={`px-3 py-1 rounded ${urlPage === 0 ? 'bg-th-surface-hover text-th-text-muted' : 'bg-th-surface-active text-th-text hover:bg-th-surface-active'}`}
                   >
                     前へ
                   </button>
-                  <span className="text-gray-400 text-sm">{urlPage + 1} / {totalPages}</span>
+                  <span className="text-th-text-secondary text-sm">{urlPage + 1} / {totalPages}</span>
                   <button
                     onClick={() => setUrlPage(p => Math.min(totalPages - 1, p + 1))}
                     disabled={urlPage >= totalPages - 1}
-                    className={`px-3 py-1 rounded ${urlPage >= totalPages - 1 ? 'bg-gray-700 text-gray-500' : 'bg-gray-600 text-white hover:bg-gray-500'}`}
+                    className={`px-3 py-1 rounded ${urlPage >= totalPages - 1 ? 'bg-th-surface-hover text-th-text-muted' : 'bg-th-surface-active text-th-text hover:bg-th-surface-active'}`}
                   >
                     次へ
                   </button>

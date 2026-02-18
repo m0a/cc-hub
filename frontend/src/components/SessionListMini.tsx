@@ -87,12 +87,12 @@ function SessionMiniItem({
   return (
     <div
       onClick={onClick}
-      className={`px-2 py-1.5 cursor-pointer transition-colors border-b border-gray-700/50 ${
-        isActive ? 'bg-blue-900/50' : 'hover:bg-gray-700/50 active:bg-gray-600/50'
+      className={`px-2 py-1.5 cursor-pointer transition-colors border-b border-th-border/50 ${
+        isActive ? 'bg-blue-900/50' : 'hover:bg-th-surface-hover/50 active:bg-th-surface-active/50'
       }`}
     >
       <div className="flex items-center gap-2">
-        <span className="text-sm text-white truncate flex-1">{displayTitle}</span>
+        <span className="text-sm text-th-text truncate flex-1">{displayTitle}</span>
         {isWaiting && extSession.waitingToolName && (
           <span className="text-[10px] text-yellow-400 bg-yellow-900/50 px-1 rounded shrink-0">{waitingLabel}</span>
         )}
@@ -102,7 +102,7 @@ function SessionMiniItem({
         {showConversationButton && (
           <button
             onClick={handleShowConversation}
-            className="text-[10px] text-gray-400 bg-gray-700/50 px-1 rounded shrink-0 hover:bg-gray-600/50"
+            className="text-[10px] text-th-text-secondary bg-th-surface-hover/50 px-1 rounded shrink-0 hover:bg-th-surface-active/50"
             title={t('session.history')}
           >
             {t('session.history')}
@@ -125,7 +125,7 @@ function SessionMiniItem({
       )}
       {/* Phase 2: Metadata display (B1, B2, B3) */}
       {(extSession.messageCount || extSession.gitBranch) && (
-        <div className="flex items-center gap-2 mt-0.5 text-[10px] text-gray-500 pl-3.5">
+        <div className="flex items-center gap-2 mt-0.5 text-[10px] text-th-text-muted pl-3.5">
           {extSession.messageCount !== undefined && extSession.messageCount > 0 && (
             <span>{extSession.messageCount}msg</span>
           )}
@@ -234,14 +234,14 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
   }, [viewingConversation, fetchConversation]);
 
   return (
-    <div className="h-full flex flex-col bg-gray-900">
+    <div className="h-full flex flex-col bg-th-bg">
       {/* Header with tabs */}
-      <div className="flex items-center justify-between px-2 py-1 border-b border-gray-700 shrink-0">
+      <div className="flex items-center justify-between px-2 py-1 border-b border-th-border shrink-0">
         <div className="flex gap-2">
           <button
             onClick={() => setActiveTab('sessions')}
             className={`text-xs font-medium px-1 ${
-              activeTab === 'sessions' ? 'text-white' : 'text-gray-500 hover:text-gray-300'
+              activeTab === 'sessions' ? 'text-th-text' : 'text-th-text-muted hover:text-th-text-secondary'
             }`}
           >
             {t('session.title')}
@@ -249,7 +249,7 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
           <button
             onClick={() => setActiveTab('history')}
             className={`text-xs font-medium px-1 ${
-              activeTab === 'history' ? 'text-white' : 'text-gray-500 hover:text-gray-300'
+              activeTab === 'history' ? 'text-th-text' : 'text-th-text-muted hover:text-th-text-secondary'
             }`}
           >
             {t('history.title')}
@@ -257,7 +257,7 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
           <button
             onClick={() => setActiveTab('search')}
             className={`text-xs font-medium px-1 ${
-              activeTab === 'search' ? 'text-white' : 'text-gray-500 hover:text-gray-300'
+              activeTab === 'search' ? 'text-th-text' : 'text-th-text-muted hover:text-th-text-secondary'
             }`}
           >
             {t('common.search')}
@@ -277,7 +277,7 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
       {activeTab === 'sessions' ? (
         <div ref={containerRef} className="flex-1 overflow-y-auto">
           {sessions.length === 0 ? (
-            <div className="text-center text-gray-500 text-xs py-4">
+            <div className="text-center text-th-text-muted text-xs py-4">
               {t('session.noSessions')}
             </div>
           ) : (

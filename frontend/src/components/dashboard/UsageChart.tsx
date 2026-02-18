@@ -1,6 +1,18 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { UsageSnapshot } from '../../../../shared/types';
+
+function useIsLightMode() {
+  const [light, setLight] = useState(() => document.documentElement.getAttribute('data-theme') === 'light');
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setLight(document.documentElement.getAttribute('data-theme') === 'light');
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
+  return light;
+}
 
 interface UsageChartProps {
   label: string;
@@ -48,6 +60,7 @@ function getStatusTextColor(status: string): string {
 
 export function UsageChart({ label, field, snapshots, currentUtilization, resetsAt, status, statusMessage }: UsageChartProps) {
   const { t } = useTranslation();
+  const isLight = useIsLightMode();
 
   const chartData = useMemo(() => {
     const now = Date.now();
@@ -149,8 +162,8 @@ export function UsageChart({ label, field, snapshots, currentUtilization, resets
   return (
     <div className="mb-3">
       <div className="flex justify-between text-xs mb-1">
-        <span className="text-gray-300">{label}</span>
-        <span className="text-gray-300">{currentUtilization.toFixed(0)}%</span>
+        <span className="text-th-text-secondary">{label}</span>
+        <span className="text-th-text-secondary">{currentUtilization.toFixed(0)}%</span>
       </div>
       <svg
         viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
@@ -165,22 +178,22 @@ export function UsageChart({ label, field, snapshots, currentUtilization, resets
         </defs>
 
         {/* Background */}
-        <rect x={PADDING.left} y={PADDING.top} width={INNER_W} height={INNER_H} fill="#1f2937" rx="2" />
+        <rect x={PADDING.left} y={PADDING.top} width={INNER_W} height={INNER_H} fill={isLight ? '#ffffff' : '#1f2937'} rx="2" />
 
         {/* Y-axis grid + labels */}
         {yLabels.map(val => {
           const y = utilToY(val);
           return (
             <g key={val}>
-              <line x1={PADDING.left} y1={y} x2={PADDING.left + INNER_W} y2={y} stroke="#374151" strokeWidth="0.5" />
-              <text x={PADDING.left - 3} y={y + 3} textAnchor="end" fill="#6b7280" fontSize="7">{val}%</text>
+              <line x1={PADDING.left} y1={y} x2={PADDING.left + INNER_W} y2={y} stroke={isLight ? '#d1d5db' : '#374151'} strokeWidth="0.5" />
+              <text x={PADDING.left - 3} y={y + 3} textAnchor="end" fill={isLight ? '#6b7280' : '#6b7280'} fontSize="7">{val}%</text>
             </g>
           );
         })}
 
         {/* Time markers */}
         {markers.map((x, i) => (
-          <line key={i} x1={x} y1={PADDING.top} x2={x} y2={PADDING.top + INNER_H} stroke="#4b5563" strokeWidth="0.5" strokeDasharray="2,2" />
+          <line key={i} x1={x} y1={PADDING.top} x2={x} y2={PADDING.top + INNER_H} stroke={isLight ? '#d1d5db' : '#4b5563'} strokeWidth="0.5" strokeDasharray="2,2" />
         ))}
 
         {/* 1) Ideal pace line — gray diagonal */}
@@ -226,10 +239,10 @@ export function UsageChart({ label, field, snapshots, currentUtilization, resets
         )}
 
         {/* Current point dot */}
-        <circle cx={currentPoint.x} cy={currentPoint.y} r="2.5" fill={lineColor} stroke="#111827" strokeWidth="1" />
+        <circle cx={currentPoint.x} cy={currentPoint.y} r="2.5" fill={lineColor} stroke={isLight ? '#ffffff' : '#111827'} strokeWidth="1" />
 
         {/* "Now" label */}
-        <text x={currentPoint.x} y={CHART_HEIGHT - 2} textAnchor="middle" fill="#9ca3af" fontSize="6">
+        <text x={currentPoint.x} y={CHART_HEIGHT - 2} textAnchor="middle" fill={isLight ? '#6b7280' : '#9ca3af'} fontSize="6">
           {t('dashboard.chartNow')}
         </text>
 

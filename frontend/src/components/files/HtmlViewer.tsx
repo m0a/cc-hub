@@ -22,9 +22,9 @@ export function HtmlViewer({ content, fileName }: HtmlViewerProps) {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 bg-gray-800/50">
-        <span className="text-sm text-gray-300">{fileName}</span>
-        <span className="text-xs text-gray-500">HTML Preview</span>
+      <div className="flex items-center justify-between px-3 py-2 border-b border-th-border bg-th-surface/50">
+        <span className="text-sm text-th-text-secondary">{fileName}</span>
+        <span className="text-xs text-th-text-muted">HTML Preview</span>
       </div>
 
       {/* Content */}

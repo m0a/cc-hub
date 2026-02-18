@@ -96,8 +96,8 @@ export function SessionTab({ id, name, state, isActive, onSelect, onClose, onDel
         flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors
         border-b-2 min-w-0
         ${isActive
-          ? 'bg-gray-800 border-blue-500 text-white'
-          : 'bg-gray-900 border-transparent text-gray-400 hover:bg-gray-800 hover:text-gray-200'
+          ? 'bg-th-surface border-emerald-400 text-th-text'
+          : 'bg-th-bg border-transparent text-th-text-secondary hover:bg-th-surface hover:text-th-text'
         }
       `}
     >
@@ -111,7 +111,7 @@ export function SessionTab({ id, name, state, isActive, onSelect, onClose, onDel
       <button
         onClick={handleClose}
         onTouchEnd={(e) => e.stopPropagation()}
-        className="p-1 rounded hover:bg-gray-700 active:bg-gray-600 text-gray-500 hover:text-gray-300 shrink-0"
+        className="p-1 rounded hover:bg-th-surface-hover active:bg-th-surface-active text-th-text-muted hover:text-th-text-secondary shrink-0"
         title="タブを閉じる"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

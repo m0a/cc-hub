@@ -1,15 +1,65 @@
 @import 'tailwindcss';
 
+/* Theme CSS variables: dark = default, light = data-theme="light" */
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  /* Brand colors */
+  --color-brand: #34d399;
+  --color-brand-dim: #059669;
+  --color-brand-glow: rgba(52, 211, 153, 0.3);
+
+  /* Surfaces */
+  --color-bg: #1a1a1a;
+  --color-surface: #1f2937;
+  --color-surface-hover: #374151;
+  --color-surface-active: #4b5563;
+  --color-overlay: rgba(0, 0, 0, 0.7);
+
+  /* Text */
+  --color-text: #e0e0e0;
+  --color-text-secondary: rgba(255, 255, 255, 0.6);
+  --color-text-muted: rgba(255, 255, 255, 0.4);
+
+  /* Borders */
+  --color-border: #374151;
+  --color-border-dim: #1f2937;
+
+  /* Typography */
+  font-family: 'JetBrains Mono', 'M PLUS 1 Code', 'SF Mono', 'Cascadia Code', monospace;
   line-height: 1.5;
   font-weight: 400;
-  color: #efefef;
-  background-color: #1a1a1a;
+  font-size: 13px;
+  color: var(--color-text);
+  background-color: var(--color-bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+[data-theme="light"] {
+  --color-bg: #f3f4f6;
+  --color-surface: #ffffff;
+  --color-surface-hover: #e5e7eb;
+  --color-surface-active: #d1d5db;
+  --color-overlay: rgba(0, 0, 0, 0.5);
+  --color-text: #111827;
+  --color-text-secondary: #4b5563;
+  --color-text-muted: #6b7280;
+  --color-border: #d1d5db;
+  --color-border-dim: #e5e7eb;
+}
+
+/* Tailwind v4 @theme: generate th-* utility classes from CSS variables */
+@theme {
+  --color-th-bg: var(--color-bg);
+  --color-th-surface: var(--color-surface);
+  --color-th-surface-hover: var(--color-surface-hover);
+  --color-th-surface-active: var(--color-surface-active);
+  --color-th-text: var(--color-text);
+  --color-th-text-secondary: var(--color-text-secondary);
+  --color-th-text-muted: var(--color-text-muted);
+  --color-th-border: var(--color-border);
+  --color-th-border-dim: var(--color-border-dim);
 }
 
 html, body {
@@ -36,4 +86,39 @@ html, body {
 }
 .xterm-viewport::-webkit-scrollbar {
   display: none; /* Chrome/Safari/Android */
+}
+
+/* Modal animation */
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes modal-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-modal-in {
+  animation: modal-in 0.15s ease-out;
+}
+
+.animate-backdrop-in {
+  animation: modal-backdrop-in 0.15s ease-out;
+}
+
+/* Status glow for waiting state */
+@keyframes status-glow {
+  0%, 100% { box-shadow: 0 0 4px var(--color-brand-glow); }
+  50% { box-shadow: 0 0 8px var(--color-brand-glow), 0 0 16px var(--color-brand-glow); }
+}
+
+.animate-status-glow {
+  animation: status-glow 2s ease-in-out infinite;
 }

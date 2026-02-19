@@ -235,3 +235,14 @@ Uses [Biome](https://biomejs.dev/) for linting. Configuration in `biome.json` at
 Frontend `console.log/warn/error/info` calls are automatically sent to the backend via `/api/logs`. Logs are written to `logs/frontend.log`.
 
 This enables debugging on mobile/tablet devices without access to browser DevTools. Use `tail -f logs/frontend.log` to monitor frontend logs in real-time.
+
+### TMUX Nesting Caveat
+
+When running the dev server from within a tmux session (e.g., from a CC Hub terminal), the `$TMUX` environment variable is inherited by child processes. This causes `tmux -CC attach` (used by the backend for terminal control) to fail with "sessions should be nested with care".
+
+**Symptom**: All terminals show "Connecting..." / "Session exited: process exited"
+
+**Fix**: Start the dev server with `$TMUX` unset:
+```bash
+nohup env -u TMUX bun run dev > /tmp/cchub-dev.log 2>&1 &
+```

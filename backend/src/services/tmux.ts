@@ -8,6 +8,7 @@ interface TmuxPaneInfo {
   title: string;
   tty: string;
   isActive: boolean;
+  isDead: boolean;
 }
 
 interface TmuxSessionInfo {
@@ -126,7 +127,7 @@ export class TmuxService {
 
       // Get pane info for each session (command, path, title, tty, pane_id, active)
       // Use | as separator since path can contain :
-      const panesProc = Bun.spawn(['tmux', 'list-panes', '-a', '-F', '#{session_name}|#{pane_id}|#{pane_current_command}|#{pane_title}|#{pane_tty}|#{pane_active}|#{pane_current_path}'], {
+      const panesProc = Bun.spawn(['tmux', 'list-panes', '-a', '-F', '#{session_name}|#{pane_id}|#{pane_current_command}|#{pane_title}|#{pane_tty}|#{pane_active}|#{pane_dead}|#{pane_current_path}'], {
         stdout: 'pipe',
         stderr: 'pipe',
       });
@@ -143,11 +144,12 @@ export class TmuxService {
           .filter((line) => line.length > 0)
           .forEach((line) => {
             const parts = line.split('|');
-            if (parts.length >= 7) {
-              const [sessionName, paneId, command, title, tty, active, ...pathParts] = parts;
+            if (parts.length >= 8) {
+              const [sessionName, paneId, command, title, tty, active, dead, ...pathParts] = parts;
               // Path might contain |, so join the rest
               const panePath = pathParts.join('|');
               const isActive = active === '1';
+              const isDead = dead === '1';
 
               // Collect all panes (pane_id already includes % prefix)
               if (!allPanes.has(sessionName)) {
@@ -160,18 +162,32 @@ export class TmuxService {
                 title,
                 tty,
                 isActive,
+                isDead,
               });
             }
           });
       }
 
+      // Batch check: which TTYs have claude running (single ps call for all pane TTYs)
+      // Must run before pane selection so we can pick the right representative pane.
+      const allTtys = new Set<string>();
+      for (const [, panes] of allPanes) {
+        for (const p of panes) {
+          if (p.tty) allTtys.add(p.tty.replace('/dev/', ''));
+        }
+      }
+      const claudeOnTtySet = await this.batchCheckClaudeOnTtys([...allTtys]);
+
       // Derive session-level pane info from all panes (backward compatibility).
-      // Priority: pane running 'claude' > first pane (matches old behavior).
+      // Priority: pane with claude running (via ps) > first non-dead pane > first pane.
       const paneInfo = new Map<string, { command: string; path: string; title: string; tty: string }>();
       for (const [sessionName, panes] of allPanes) {
-        // Prefer claude pane for session-level info (important for claude detection via TTY)
-        const claudePane = panes.find(p => p.command === 'claude');
-        const bestPane = claudePane || panes[0];
+        const claudePane = panes.find(p => {
+          const ttyName = p.tty?.replace('/dev/', '');
+          return ttyName && claudeOnTtySet.has(ttyName);
+        });
+        const alivePane = panes.find(p => !p.isDead);
+        const bestPane = claudePane || alivePane || panes[0];
         if (bestPane) {
           paneInfo.set(sessionName, {
             command: bestPane.command,
@@ -181,13 +197,6 @@ export class TmuxService {
           });
         }
       }
-
-      // Batch check: which TTYs have claude running (single ps call for all TTYs)
-      const allTtys = new Set<string>();
-      for (const [, info] of paneInfo) {
-        if (info.tty) allTtys.add(info.tty.replace('/dev/', ''));
-      }
-      const claudeOnTtySet = await this.batchCheckClaudeOnTtys([...allTtys]);
 
       // Get preview + waiting status (single capture-pane call per session)
       const previews = new Map<string, string>();
@@ -247,7 +256,15 @@ export class TmuxService {
   }
 
   /**
-   * Batch check which TTYs have 'claude' process running (single ps call)
+   * Check if process args indicate a Claude Code process.
+   * Matches 'claude ...' (main binary) or paths containing '/claude/versions/' (team agents).
+   */
+  private isClaudeProcess(args: string): boolean {
+    return args.startsWith('claude ') || args === 'claude' || args.includes('/claude/versions/');
+  }
+
+  /**
+   * Batch check which TTYs have Claude Code process running (single ps call)
    * Returns a Set of tty names that have claude running
    */
   async batchCheckClaudeOnTtys(ttyNames: string[]): Promise<Set<string>> {
@@ -255,8 +272,8 @@ export class TmuxService {
     if (ttyNames.length === 0) return result;
 
     try {
-      // Single ps call: get TTY and command for all processes
-      const proc = Bun.spawn(['ps', '-eo', 'tty,comm', '--no-headers'], {
+      // Use args (full command line) to reliably detect both claude binary and team agents
+      const proc = Bun.spawn(['ps', '-eo', 'tty,args', '--no-headers'], {
         stdout: 'pipe',
         stderr: 'pipe',
       });
@@ -265,12 +282,17 @@ export class TmuxService {
       const exitCode = await proc.exited;
       if (exitCode !== 0) return result;
 
-      // Build a set of TTYs that have claude
       const ttySet = new Set(ttyNames);
       for (const line of output.split('\n')) {
-        const parts = line.trim().split(/\s+/);
-        if (parts.length >= 2 && parts[1] === 'claude' && ttySet.has(parts[0])) {
-          result.add(parts[0]);
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const spaceIdx = trimmed.indexOf(' ');
+        if (spaceIdx === -1) continue;
+        const tty = trimmed.substring(0, spaceIdx);
+        if (!ttySet.has(tty)) continue;
+        const args = trimmed.substring(spaceIdx + 1);
+        if (this.isClaudeProcess(args)) {
+          result.add(tty);
         }
       }
     } catch {
@@ -390,8 +412,8 @@ export class TmuxService {
     for (const tty of ttyNames) result.set(tty, false);
 
     try {
-      // Single ps call: get TTY, state, wchan, and command for all processes
-      const proc = Bun.spawn(['ps', '-eo', 'tty,stat,wchan:20,comm', '--no-headers'], {
+      // Single ps call: get TTY, state, wchan, and full args for all processes
+      const proc = Bun.spawn(['ps', '-eo', 'tty,stat,wchan:20,args', '--no-headers'], {
         stdout: 'pipe',
         stderr: 'pipe',
       });
@@ -404,8 +426,10 @@ export class TmuxService {
       for (const line of output.split('\n')) {
         const parts = line.trim().split(/\s+/);
         if (parts.length < 4) continue;
-        const [tty, stat, wchan, comm] = parts;
-        if (comm !== 'claude' || !ttySet.has(tty)) continue;
+        const [tty, stat, wchan] = parts;
+        if (!ttySet.has(tty)) continue;
+        const args = parts.slice(3).join(' ');
+        if (!this.isClaudeProcess(args)) continue;
 
         if (stat.startsWith('R')) {
           result.set(tty, true); // Actively running

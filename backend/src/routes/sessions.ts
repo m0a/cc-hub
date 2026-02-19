@@ -61,13 +61,7 @@ sessions.get('/', async (c) => {
   // Also get sessions by path for fallback (when session ID not found from PTY)
   const ccSessionsByPath = await claudeCodeService.getSessionsForPaths(claudePaths);
 
-  // Batch check process state for all Claude sessions (single ps call instead of N)
-  const claudeTtys = tmuxSessions
-    .filter(s => s.currentCommand === 'claude' && s.paneTty)
-    .map(s => (s.paneTty as string).replace('/dev/', ''));
-  const processRunningByTty = await tmuxService.batchCheckProcessRunning(claudeTtys);
-
-  // Batch get team agent info for all pane TTYs (for agent name display)
+  // Collect all pane TTYs once (used for process state, claude detection, and agent info)
   const allPaneTtys: string[] = [];
   for (const s of tmuxSessions) {
     if (s.panes) {
@@ -76,7 +70,13 @@ sessions.get('/', async (c) => {
       }
     }
   }
-  const agentInfoByTty = await tmuxService.batchGetAgentInfo(allPaneTtys);
+
+  // Batch check process state, claude presence, and agent info for all pane TTYs
+  const [processRunningByTty, claudeOnPaneTtys, agentInfoByTty] = await Promise.all([
+    tmuxService.batchCheckProcessRunning(allPaneTtys),
+    tmuxService.batchCheckClaudeOnTtys(allPaneTtys),
+    tmuxService.batchGetAgentInfo(allPaneTtys),
+  ]);
 
   const sessions = await Promise.all(tmuxSessions.map(async (s) => {
     let ccSession: Awaited<ReturnType<typeof claudeCodeService.getSessionForPath>> | undefined;
@@ -174,9 +174,22 @@ sessions.get('/', async (c) => {
       durationMinutes: includeClaudeInfo ? durationMinutes : undefined,
       firstMessageId: includeClaudeInfo ? ccSession?.firstMessageId : undefined,
       theme: sessionThemes[s.id],
-      panes: s.panes && s.panes.length > 1 ? s.panes.map((p: { paneId: string; command: string; path: string; title: string; tty: string; isActive: boolean }) => {
+      panes: s.panes ? s.panes.map((p: { paneId: string; command: string; path: string; title: string; tty: string; isActive: boolean; isDead: boolean }) => {
         const ttyName = p.tty?.replace('/dev/', '');
         const agentInfo = ttyName ? agentInfoByTty.get(ttyName) : undefined;
+        // Per-pane indicator state
+        let paneIndicator: IndicatorState | undefined;
+        if (p.isDead) {
+          paneIndicator = 'completed';
+        } else {
+          const isClaudeOnPane = ttyName ? claudeOnPaneTtys.has(ttyName) : false;
+          if (isClaudeOnPane) {
+            const isActive = ttyName ? (processRunningByTty.get(ttyName) || false) : false;
+            paneIndicator = isActive ? 'processing' : 'waiting_input';
+          } else {
+            paneIndicator = 'idle';
+          }
+        }
         const pane: PaneInfo = {
           paneId: p.paneId,
           currentCommand: p.command,
@@ -185,6 +198,8 @@ sessions.get('/', async (c) => {
           agentName: agentInfo?.agentName,
           agentColor: agentInfo?.agentColor,
           isActive: p.isActive,
+          isDead: p.isDead || undefined,
+          indicatorState: paneIndicator,
         };
         return pane;
       }) : undefined,

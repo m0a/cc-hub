@@ -87,6 +87,8 @@ export interface PaneInfo {
   agentName?: string;      // Team agent name from --agent-name process arg
   agentColor?: string;     // Team agent color from --agent-color process arg
   isActive: boolean;
+  isDead?: boolean;
+  indicatorState?: IndicatorState;
 }
 
 export const CreateSessionSchema = z.object({

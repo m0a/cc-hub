@@ -178,7 +178,8 @@
     "cannotCloseLast": "最後のペインは閉じられません",
     "paneTab": "ペイン {{id}}",
     "processExited": "プロセスが終了しました",
-    "restart": "再起動"
+    "restart": "再起動",
+    "dead": "終了"
   },
   "url": {
     "noUrls": "URLが見つかりません",

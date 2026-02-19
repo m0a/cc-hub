@@ -178,7 +178,8 @@
     "cannotCloseLast": "Cannot close the last pane",
     "paneTab": "Pane {{id}}",
     "processExited": "Process exited",
-    "restart": "Restart"
+    "restart": "Restart",
+    "dead": "Exited"
   },
   "url": {
     "noUrls": "No URLs found",

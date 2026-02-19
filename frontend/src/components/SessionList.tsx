@@ -500,9 +500,9 @@ function SessionItem({
     }
     longPressFiredRef.current = false;
 
-    // Multi-pane session: toggle pane list only when pane selection is available (mobile)
+    // Multi-pane session: toggle pane list to show per-pane status
     const extSess = session as SessionResponse & { panes?: PaneInfo[] };
-    if (onSelectPane && extSess.panes && extSess.panes.length > 1) {
+    if (extSess.panes && extSess.panes.length > 1) {
       setPanesExpanded(prev => !prev);
       return;
     }
@@ -610,11 +610,20 @@ function SessionItem({
           </button>
         ) : null}
         {/* Secondary badge: pane count (only if > 1) */}
-        {extSession.panes && extSession.panes.length > 1 && (
-          <span className="text-xs text-cyan-400 bg-cyan-900/50 px-1.5 py-0.5 rounded shrink-0">
-            {extSession.panes.length}
-          </span>
-        )}
+        {extSession.panes && extSession.panes.length > 1 && (() => {
+          const deadCount = extSession.panes.filter(p => p.isDead).length;
+          return (
+            <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${
+              deadCount > 0
+                ? 'text-red-400 bg-red-900/50'
+                : 'text-cyan-400 bg-cyan-900/50'
+            }`}>
+              {deadCount > 0
+                ? `${extSession.panes.length} (${deadCount} ${t('pane.dead')})`
+                : extSession.panes.length}
+            </span>
+          );
+        })()}
       </div>
       {shortPath && (
         <div className="text-xs text-th-text-muted mt-1 truncate pl-4">
@@ -632,8 +641,8 @@ function SessionItem({
         </div>
       )}
 
-      {/* Pane selection list (expandable, only when onSelectPane is available) */}
-      {onSelectPane && panesExpanded && extSession.panes && extSession.panes.length > 1 && (
+      {/* Pane list (expandable, shows per-pane status indicators) */}
+      {panesExpanded && extSession.panes && extSession.panes.length > 1 && (
         <div
           className="mt-2 pt-2 border-t border-th-border space-y-1"
           onClick={(e) => e.stopPropagation()}
@@ -657,6 +666,21 @@ function SessionItem({
             const nameColor = pane.agentColor && agentColorMap[pane.agentColor]
               ? agentColorMap[pane.agentColor]
               : isClaudePane ? 'text-green-300' : 'text-th-text';
+            // Per-pane status styling
+            const paneIndicator = pane.indicatorState;
+            const paneDotClass = pane.isDead
+              ? 'bg-red-400'
+              : paneIndicator === 'processing'
+                ? 'bg-emerald-400'
+                : paneIndicator === 'waiting_input'
+                  ? 'bg-yellow-400 animate-status-glow'
+                  : 'bg-gray-500';
+            const paneBgClass = pane.isDead
+              ? 'bg-red-900/30 active:bg-red-800/40'
+              : isClaudePane
+                ? 'bg-green-900/30 active:bg-green-800/40'
+                : 'bg-th-surface-hover/40 active:bg-th-surface-active/50';
+
             return (
               <button
                 key={pane.paneId}
@@ -667,12 +691,10 @@ function SessionItem({
                     onSelect(session);
                   }
                 }}
-                className={`w-full flex items-center gap-2 px-3 py-2.5 rounded text-left transition-colors active:scale-[0.98] ${
-                  isClaudePane
-                    ? 'bg-green-900/30 active:bg-green-800/40'
-                    : 'bg-th-surface-hover/40 active:bg-th-surface-active/50'
-                }`}
+                className={`w-full flex items-center gap-2 px-3 py-2.5 rounded text-left transition-colors active:scale-[0.98] ${paneBgClass}`}
               >
+                {/* Per-pane status dot */}
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${paneDotClass}`} />
                 <span className={`text-sm font-medium truncate ${nameColor}`}>
                   {displayName}
                 </span>
@@ -682,7 +704,15 @@ function SessionItem({
                 {!pane.agentName && !paneTitle && (
                   <span className="text-th-text-muted text-xs truncate flex-1" />
                 )}
-                {pane.isActive && (
+                {/* Per-pane status badge */}
+                {pane.isDead ? (
+                  <span className="text-[10px] text-red-400 bg-red-900/40 px-1 rounded shrink-0">{t('pane.dead')}</span>
+                ) : paneIndicator === 'processing' ? (
+                  <span className="text-[10px] text-emerald-400 bg-emerald-900/40 px-1 rounded shrink-0">{t('session.processing')}</span>
+                ) : paneIndicator === 'waiting_input' ? (
+                  <span className="text-[10px] text-yellow-400 bg-yellow-900/40 px-1 rounded shrink-0">{t('session.waitingInputShort')}</span>
+                ) : null}
+                {pane.isActive && !pane.isDead && (
                   <span className="text-[10px] text-cyan-400 bg-cyan-900/40 px-1 rounded shrink-0">active</span>
                 )}
                 <svg className="w-4 h-4 text-th-text-muted shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

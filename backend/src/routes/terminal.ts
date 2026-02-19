@@ -87,6 +87,17 @@ export const terminalWebSocket = {
         })
       );
 
+      // Pane dead listener: notify client when a pane's process exits
+      cleanupFns.push(
+        controlSession.onPaneDead((paneId) => {
+          try {
+            ws.send(JSON.stringify({ type: 'pane-dead', paneId }));
+          } catch {
+            // Client may have disconnected
+          }
+        })
+      );
+
       // New session listener: notify client when a pane is separated (mobile)
       cleanupFns.push(
         controlSession.onNewSession((newSessionId, sessionName) => {
@@ -265,6 +276,18 @@ export const terminalWebSocket = {
             }
           } finally {
             ws.data.readyForOutput = true;
+          }
+          break;
+        }
+        case 'respawn-pane': {
+          try {
+            await controlSession.respawnPane(msg.paneId);
+          } catch (e) {
+            ws.send(JSON.stringify({
+              type: 'error',
+              message: e instanceof Error ? e.message : 'Failed to respawn pane',
+              paneId: msg.paneId,
+            }));
           }
           break;
         }

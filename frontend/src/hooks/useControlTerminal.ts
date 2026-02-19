@@ -9,6 +9,7 @@ interface UseControlTerminalOptions {
   onLayoutChange?: (layout: TmuxLayoutNode) => void;
   onInitialContent?: (paneId: string, data: Uint8Array) => void;
   onNewSession?: (sessionId: string, sessionName: string) => void;
+  onPaneDead?: (paneId: string) => void;
   onConnect?: () => void;
   onDisconnect?: () => void;
   onError?: (error: string, paneId?: string) => void;
@@ -30,6 +31,8 @@ interface UseControlTerminalReturn {
   sendClientInfo: (deviceType: 'mobile' | 'tablet' | 'desktop') => void;
   requestContent: (paneId: string) => void;
   zoomPane: (paneId: string) => void;
+  respawnPane: (paneId: string) => void;
+  deadPanes: Set<string>;
 }
 
 // Use same origin WebSocket
@@ -45,15 +48,18 @@ const getAuthToken = (): string | null => {
 export function useControlTerminal(options: UseControlTerminalOptions): UseControlTerminalReturn {
   const { sessionId, token } = options;
   const [isConnected, setIsConnected] = useState(false);
+  const [deadPanes, setDeadPanes] = useState<Set<string>>(new Set());
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
+  const deadPanesRef = useRef<Set<string>>(deadPanes);
 
   // Use refs for callbacks to avoid re-creating connect function
   const onPaneOutputRef = useRef(options.onPaneOutput);
   const onLayoutChangeRef = useRef(options.onLayoutChange);
   const onInitialContentRef = useRef(options.onInitialContent);
   const onNewSessionRef = useRef(options.onNewSession);
+  const onPaneDeadRef = useRef(options.onPaneDead);
   const onConnectRef = useRef(options.onConnect);
   const onDisconnectRef = useRef(options.onDisconnect);
   const onErrorRef = useRef(options.onError);
@@ -64,6 +70,8 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
   onLayoutChangeRef.current = options.onLayoutChange;
   onInitialContentRef.current = options.onInitialContent;
   onNewSessionRef.current = options.onNewSession;
+  onPaneDeadRef.current = options.onPaneDead;
+  deadPanesRef.current = deadPanes;
   onConnectRef.current = options.onConnect;
   onDisconnectRef.current = options.onDisconnect;
   onErrorRef.current = options.onError;
@@ -153,6 +161,11 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
           onNewSessionRef.current?.(msg.sessionId, msg.sessionName);
           break;
         }
+        case 'pane-dead': {
+          setDeadPanes(prev => new Set(prev).add(msg.paneId));
+          onPaneDeadRef.current?.(msg.paneId);
+          break;
+        }
       }
     };
 
@@ -170,8 +183,9 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
       }
       onDisconnectRef.current?.();
 
-      // Auto-reconnect
-      if (event.code !== 1000) {
+      // Auto-reconnect (but not if panes are dead - the session's tmux -CC
+      // process exits when all panes die, causing a reconnect loop)
+      if (event.code !== 1000 && deadPanesRef.current.size === 0) {
         reconnectTimeoutRef.current = window.setTimeout(() => {
           connect();
         }, 2000);
@@ -246,6 +260,34 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
     sendMessage({ type: 'zoom-pane', paneId });
   }, [sendMessage]);
 
+  const respawnPane = useCallback((paneId: string) => {
+    setDeadPanes(prev => {
+      const next = new Set(prev);
+      next.delete(paneId);
+      return next;
+    });
+    // If WebSocket is still open, send respawn command directly.
+    // If disconnected (tmux -CC exited after pane death), use REST API.
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      sendMessage({ type: 'respawn-pane', paneId });
+    } else {
+      // Respawn via REST API, then reconnect
+      const apiBase = import.meta.env.VITE_API_URL || '';
+      fetch(`${apiBase}/api/sessions/${encodeURIComponent(sessionId)}/panes/respawn`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paneId }),
+      }).then(() => {
+        // Reconnect to establish new control session
+        setTimeout(() => connect(), 500);
+      }).catch(() => {
+        // Try reconnecting anyway
+        setTimeout(() => connect(), 500);
+      });
+    }
+  }, [sendMessage, sessionId, connect]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -278,6 +320,8 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
     sendClientInfo,
     requestContent,
     zoomPane,
+    respawnPane,
+    deadPanes,
   };
 }
 

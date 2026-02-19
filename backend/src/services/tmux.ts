@@ -35,6 +35,9 @@ set -g history-limit 10000
 
 # Enable clipboard (OSC 52)
 set -g set-clipboard on
+
+# Keep panes alive after process exits (dead pane mode)
+set -g remain-on-exit on
 `;
 
 export class TmuxService {
@@ -63,11 +66,8 @@ export class TmuxService {
       fs.mkdirSync(configDir, { recursive: true });
     }
 
-    // Create config file if it doesn't exist
-    if (!fs.existsSync(this.configPath)) {
-      fs.writeFileSync(this.configPath, CCHUB_TMUX_CONFIG);
-      console.log(`Created tmux config: ${this.configPath}`);
-    }
+    // Always write config to ensure latest settings are applied
+    fs.writeFileSync(this.configPath, CCHUB_TMUX_CONFIG);
 
     this.configEnsured = true;
   }

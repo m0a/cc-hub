@@ -355,7 +355,8 @@ export type ControlClientMessage =
   | { type: 'adjust-pane'; paneId: string; direction: 'L' | 'R' | 'U' | 'D'; amount: number }
   | { type: 'equalize-panes'; direction: 'horizontal' | 'vertical' }
   | { type: 'request-content'; paneId: string }
-  | { type: 'zoom-pane'; paneId: string };
+  | { type: 'zoom-pane'; paneId: string }
+  | { type: 'respawn-pane'; paneId: string };
 
 // Server → Client messages
 export type ControlServerMessage =
@@ -365,4 +366,5 @@ export type ControlServerMessage =
   | { type: 'ready' }
   | { type: 'pong'; timestamp: number }
   | { type: 'error'; message: string; paneId?: string }
-  | { type: 'new-session'; sessionId: string; sessionName: string };
+  | { type: 'new-session'; sessionId: string; sessionName: string }
+  | { type: 'pane-dead'; paneId: string };

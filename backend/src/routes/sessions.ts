@@ -563,6 +563,10 @@ const PaneSplitSchema = z.object({
   direction: z.enum(['h', 'v']),
 });
 
+const PaneRespawnSchema = z.object({
+  paneId: PaneIdSchema,
+});
+
 // POST /sessions/:id/panes/focus - Focus a specific pane
 sessions.post('/:id/panes/focus', async (c) => {
   const id = c.req.param('id');
@@ -672,6 +676,38 @@ sessions.post('/:id/panes/split', async (c) => {
     return c.json({ success: true });
   } catch (_error) {
     return c.json({ error: 'Failed to split pane' }, 500);
+  }
+});
+
+// POST /sessions/:id/panes/respawn - Respawn a dead pane
+sessions.post('/:id/panes/respawn', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = PaneRespawnSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid request' }, 400);
+  }
+
+  const exists = await tmuxService.sessionExists(id);
+  if (!exists) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+
+  try {
+    const proc = Bun.spawn(['tmux', 'respawn-pane', '-t', parsed.data.paneId], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      const error = await new Response(proc.stderr).text();
+      return c.json({ error: `Failed to respawn pane: ${error}` }, 500);
+    }
+    tmuxService.invalidateCache();
+    return c.json({ success: true });
+  } catch (_error) {
+    return c.json({ error: 'Failed to respawn pane' }, 500);
   }
 });
 

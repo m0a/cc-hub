@@ -39,6 +39,7 @@ interface PendingCommand {
 type OutputListener = (data: Buffer) => void;
 type LayoutListener = (layout: TmuxLayoutNode, frontendLayout: ReturnType<typeof toFrontendLayout>) => void;
 type ExitListener = (reason: string) => void;
+type PaneDeadListener = (paneId: string) => void;
 
 export class TmuxControlSession {
   private proc: ChildProcess | null = null;
@@ -65,6 +66,7 @@ export class TmuxControlSession {
   private layoutListeners = new Set<LayoutListener>();
   private exitListeners = new Set<ExitListener>();
   private newSessionListeners = new Set<(sessionId: string, sessionName: string) => void>();
+  private paneDeadListeners = new Set<PaneDeadListener>();
 
   // Client tracking
   private clientCount = 0;
@@ -266,6 +268,10 @@ export class TmuxControlSession {
       } else if (line.startsWith('%exit')) {
         const reason = line.substring(5).trim() || 'unknown';
         this.handleExit(reason);
+      } else if (line.startsWith('%pane-mode-changed ')) {
+        this.handlePaneModeChanged(line);
+      } else if (line.startsWith('%window-renamed ')) {
+        this.handleWindowRenamed(line);
       } else if (this.currentBeginNum !== null) {
         // Inside a command response block - accumulate output
         this.currentOutput.push(line);
@@ -445,6 +451,52 @@ export class TmuxControlSession {
     this.destroy();
   }
 
+  /**
+   * Handle %pane-mode-changed %<paneId>
+   * When remain-on-exit is on, a pane enters dead mode when its process exits.
+   * We check pane_dead status and notify listeners.
+   */
+  private handlePaneModeChanged(line: string): void {
+    const match = line.match(/^%pane-mode-changed (%\d+)$/);
+    if (!match) return;
+
+    const paneId = match[1];
+    // Check if the pane is actually dead (process exited)
+    this.sendCommand(`display-message -t ${paneId} -p "#{pane_dead}"`).then((result) => {
+      if (result.trim() === '1') {
+        console.log(`[tmux-control] Pane ${paneId} is dead (process exited)`);
+        for (const listener of this.paneDeadListeners) {
+          listener(paneId);
+        }
+      }
+    }).catch(() => {
+      // Pane may no longer exist
+    });
+  }
+
+  /**
+   * Handle %window-renamed @<windowId> <name>
+   * When remain-on-exit is on and a pane's process exits, tmux renames
+   * the window with a [dead] suffix (e.g. "zsh[dead]").
+   *
+   * IMPORTANT: This must notify listeners SYNCHRONOUSLY because tmux
+   * sends %client-detached immediately after, which triggers destroy()
+   * and clears all listeners. An async sendCommand would arrive too late.
+   */
+  private handleWindowRenamed(line: string): void {
+    if (!line.includes('[dead]')) return;
+
+    // Use known pane IDs from the last layout to notify immediately.
+    // We cannot use sendCommand here because %client-detached follows
+    // immediately and will destroy the session before the response arrives.
+    for (const paneId of this.knownPaneIds) {
+      console.log(`[tmux-control] Pane ${paneId} is dead (process exited, window renamed)`);
+      for (const listener of this.paneDeadListeners) {
+        listener(paneId);
+      }
+    }
+  }
+
   // =========================================================================
   // Public API - Commands
   // =========================================================================
@@ -509,6 +561,13 @@ export class TmuxControlSession {
       throw new Error('Cannot close the last pane');
     }
     await this.sendCommand(`kill-pane -t ${paneId}`);
+  }
+
+  /**
+   * Respawn a dead pane (restart the process).
+   */
+  async respawnPane(paneId: string): Promise<void> {
+    await this.sendCommand(`respawn-pane -t ${paneId}`);
   }
 
   /**
@@ -708,6 +767,16 @@ export class TmuxControlSession {
   }
 
   /**
+   * Register a listener for pane death (process exited, remain-on-exit).
+   */
+  onPaneDead(listener: PaneDeadListener): () => void {
+    this.paneDeadListeners.add(listener);
+    return () => {
+      this.paneDeadListeners.delete(listener);
+    };
+  }
+
+  /**
    * Register a listener for new session creation (mobile pane separation).
    */
   onNewSession(listener: (sessionId: string, sessionName: string) => void): () => void {
@@ -824,6 +893,7 @@ export class TmuxControlSession {
     this.globalOutputListeners.clear();
     this.layoutListeners.clear();
     this.exitListeners.clear();
+    this.paneDeadListeners.clear();
     this.newSessionListeners.clear();
     this.clientDeviceTypes.clear();
     this.knownPaneIds.clear();

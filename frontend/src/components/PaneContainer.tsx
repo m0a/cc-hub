@@ -32,6 +32,8 @@ export interface ControlModeContext {
   closePane: (paneId: string) => void;
   zoomPane?: (paneId: string) => void;
   isZoomed?: boolean;
+  respawnPane?: (paneId: string) => void;
+  deadPanes?: Set<string>;
 }
 
 interface PaneContainerProps {
@@ -158,6 +160,7 @@ function TerminalPane({
   isTablet = false,
   controlModeContext,
 }: TerminalPaneProps) {
+  const isDead = controlModeContext.deadPanes?.has(paneId) ?? false;
   const { t } = useTranslation();
   const terminalRef = useRef<TerminalRef>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -459,6 +462,50 @@ function TerminalPane({
           </button>
         </div>
       </div>
+
+      {/* Dead pane overlay */}
+      {isDead && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
+          <div className="flex flex-col items-center gap-4 px-8 py-6 bg-th-surface/95 border border-th-border rounded-xl shadow-2xl max-w-xs">
+            <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
+              <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z" />
+              </svg>
+            </div>
+            <p className="text-th-text text-sm font-medium">{t('pane.processExited')}</p>
+            <div className="flex gap-2 w-full">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  controlModeContext.respawnPane?.(paneId);
+                }}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                {t('pane.restart')}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (sessionId) {
+                    authFetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}`, {
+                      method: 'DELETE',
+                    }).then(() => {
+                      window.location.reload();
+                    }).catch(() => {
+                      window.location.reload();
+                    });
+                  }
+                }}
+                className="flex-1 px-4 py-2 bg-th-surface-hover hover:bg-th-border text-th-text-secondary rounded-lg text-sm font-medium transition-colors"
+              >
+                {t('common.close')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Terminal, conversation, or session selector */}
       <div className="flex-1 min-h-0">

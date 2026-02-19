@@ -176,7 +176,9 @@
     "active": "Active",
     "confirmClose": "Close?",
     "cannotCloseLast": "Cannot close the last pane",
-    "paneTab": "Pane {{id}}"
+    "paneTab": "Pane {{id}}",
+    "processExited": "Process exited",
+    "restart": "Restart"
   },
   "url": {
     "noUrls": "No URLs found",

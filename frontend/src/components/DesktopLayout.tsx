@@ -665,6 +665,10 @@ export function DesktopLayout({
       }, 300);
     },
     isZoomed: zoomedPaneId !== null,
+    respawnPane: (paneId: string) => {
+      controlTerminalRef.current.respawnPane(paneId);
+    },
+    deadPanes: controlTerminal.deadPanes,
   };
 
   const handleSplit = useCallback((direction: 'horizontal' | 'vertical') => {

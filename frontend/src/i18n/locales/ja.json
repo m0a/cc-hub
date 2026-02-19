@@ -176,7 +176,9 @@
     "active": "アクティブ",
     "confirmClose": "閉じる?",
     "cannotCloseLast": "最後のペインは閉じられません",
-    "paneTab": "ペイン {{id}}"
+    "paneTab": "ペイン {{id}}",
+    "processExited": "プロセスが終了しました",
+    "restart": "再起動"
   },
   "url": {
     "noUrls": "URLが見つかりません",

@@ -1052,7 +1052,41 @@ export function DesktopLayout({
     <div className="h-screen flex bg-th-bg">
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Header - tablet: full toolbar with keyboard toggle */}
+        {/* Header - desktop: minimal icons, tablet: full toolbar */}
+        {!isTablet && (
+          <div className="flex items-center justify-end px-2 py-0.5 bg-[var(--color-overlay)] border-b border-th-border shrink-0 select-none">
+            <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={() => setShowSessionModal(prev => !prev)}
+                className={`p-1 rounded transition-colors ${
+                  showSessionModal
+                    ? 'text-blue-400 bg-blue-500/20'
+                    : 'text-th-text-muted hover:text-th-text-secondary hover:bg-th-surface-hover'
+                }`}
+                title="Sessions (Ctrl+B)"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowDashboard(prev => !prev)}
+                className={`p-1 rounded transition-colors ${
+                  showDashboard
+                    ? 'text-blue-400 bg-blue-500/20'
+                    : 'text-th-text-muted hover:text-th-text-secondary hover:bg-th-surface-hover'
+                }`}
+                title="Dashboard (Ctrl+Shift+B)"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1v-2zM14 13a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1h-4a1 1 0 01-1-1v-5z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
         {isTablet && (
           <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--color-overlay)] border-b border-th-border shrink-0 select-none">
             {/* Left: Session name */}

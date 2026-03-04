@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
 import '@xterm/xterm/css/xterm.css';
 import { Keyboard } from './Keyboard';
 import { authFetch } from '../services/api';
@@ -409,6 +410,11 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
+
+    // Enable Unicode 11 for correct CJK double-width character rendering
+    const unicode11Addon = new Unicode11Addon();
+    term.loadAddon(unicode11Addon);
+    term.unicode.activeVersion = '11';
 
     term.open(container);
 

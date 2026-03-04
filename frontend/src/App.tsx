@@ -244,9 +244,11 @@ export function App() {
     // PCの場合は常にdesktop（ソフトキーボード不要）
     if (!checkIsTouchDevice()) return 'desktop';
 
-    // タッチデバイスの場合はサイズで判定
-    const width = window.innerWidth;
-    if (width >= 640 && window.innerHeight >= 500) return 'tablet';
+    // タッチデバイスの場合は短辺で判定（向きに依存しない）
+    // screen.width/height は物理解像度ベースで向きに左右されにくい
+    const shortSide = Math.min(screen.width, screen.height);
+    const longSide = Math.max(screen.width, screen.height);
+    if (shortSide >= 500 && longSide >= 640) return 'tablet';
     return 'mobile';
   };
 

@@ -1,13 +1,18 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { Keyboard } from './Keyboard';
 
-const POSITION_KEY_KEYBOARD = 'cchub-floating-keyboard-position-keyboard-v2';
-const POSITION_KEY_INPUT = 'cchub-floating-keyboard-position-input-v2';
 const MINIMIZED_KEY = 'cchub-floating-keyboard-minimized';
 const TRANSPARENT_KEY = 'cchub-floating-keyboard-transparent';
 
-const getPositionKey = (mode: 'keyboard' | 'input') =>
-  mode === 'keyboard' ? POSITION_KEY_KEYBOARD : POSITION_KEY_INPUT;
+type Orientation = 'portrait' | 'landscape';
+
+const getOrientation = (): Orientation =>
+  window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
+
+const getPositionKey = (mode: 'keyboard' | 'input', orientation?: Orientation) => {
+  const orient = orientation ?? getOrientation();
+  return `cchub-floating-keyboard-position-${mode}-${orient}-v3`;
+};
 
 // Clean up old position keys
 const cleanupOldKeys = () => {
@@ -15,6 +20,8 @@ const cleanupOldKeys = () => {
     localStorage.removeItem('cchub-floating-keyboard-position');
     localStorage.removeItem('cchub-floating-keyboard-position-keyboard');
     localStorage.removeItem('cchub-floating-keyboard-position-input');
+    localStorage.removeItem('cchub-floating-keyboard-position-keyboard-v2');
+    localStorage.removeItem('cchub-floating-keyboard-position-input-v2');
   } catch {}
 };
 cleanupOldKeys();
@@ -85,10 +92,35 @@ export function FloatingKeyboard({
   const dragOffset = useRef<Position>({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Save position to localStorage (mode-specific)
+  // Track orientation for position saving
+  const [orientation, setOrientation] = useState<Orientation>(getOrientation);
+  const positionRef = useRef(position);
+  positionRef.current = position;
+  const inputModeRef = useRef(inputMode);
+  inputModeRef.current = inputMode;
+
+  // Save position to localStorage (mode + orientation specific)
   useEffect(() => {
-    localStorage.setItem(getPositionKey(inputMode), JSON.stringify(position));
-  }, [position, inputMode]);
+    localStorage.setItem(getPositionKey(inputMode, orientation), JSON.stringify(position));
+  }, [position, inputMode, orientation]);
+
+  // On orientation change, save current position and load position for new orientation
+  useEffect(() => {
+    const handleOrientationChange = () => {
+      const newOrientation = getOrientation();
+      setOrientation(prev => {
+        if (prev === newOrientation) return prev;
+        // Save current position for old orientation before switching
+        localStorage.setItem(getPositionKey(inputModeRef.current, prev), JSON.stringify(positionRef.current));
+        // Load position for new orientation (getPositionKey uses newOrientation via getOrientation())
+        const saved = loadPositionForMode(inputModeRef.current);
+        setPosition(saved);
+        return newOrientation;
+      });
+    };
+    window.addEventListener('resize', handleOrientationChange);
+    return () => window.removeEventListener('resize', handleOrientationChange);
+  }, [loadPositionForMode]);
 
   // Save minimized state to localStorage
   useEffect(() => {

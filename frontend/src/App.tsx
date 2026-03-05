@@ -654,8 +654,7 @@ export function App() {
 
   // When app regains focus after notification, switch to the notified session
   useEffect(() => {
-    const handler = () => {
-      if (document.visibilityState !== 'visible') return;
+    const switchToPendingSession = () => {
       const ccSessionId = consumePendingSessionId();
       if (!ccSessionId) return;
       const match = openSessions.find(s => s.ccSessionId === ccSessionId);
@@ -664,8 +663,17 @@ export function App() {
         setShowSessionList(false);
       }
     };
-    document.addEventListener('visibilitychange', handler);
-    return () => document.removeEventListener('visibilitychange', handler);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') switchToPendingSession();
+    };
+    // visibilitychange: app was in background → foreground
+    document.addEventListener('visibilitychange', onVisibility);
+    // focus: notification tap while app is already in foreground
+    window.addEventListener('focus', switchToPendingSession);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', switchToPendingSession);
+    };
   }, [openSessions]);
 
   // Diagnostic: log render state for debugging black screen issues

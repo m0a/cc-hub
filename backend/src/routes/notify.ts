@@ -5,6 +5,63 @@ import { homedir } from 'node:os';
 import { broadcastToAllClients } from './terminal';
 import type { IndicatorState } from '../../../shared/types';
 
+/** transcriptファイルからコンテキストに応じた通知メッセージを生成する */
+async function generateSmartMessage(transcriptPath: string, event: string): Promise<string | undefined> {
+  try {
+    const content = await readFile(transcriptPath, 'utf-8');
+    const lines = content.trim().split('\n');
+
+    // 最後の50行を解析（パフォーマンスのため）
+    const recentLines = lines.slice(-50);
+    const entries = [];
+    for (const line of recentLines) {
+      try { entries.push(JSON.parse(line)); } catch {}
+    }
+
+    // 使用されたツールを収集
+    const tools: string[] = [];
+    for (const entry of entries) {
+      if (entry.type === 'assistant') {
+        for (const block of entry.message?.content || []) {
+          if (block.type === 'tool_use' && block.name && !tools.includes(block.name)) {
+            tools.push(block.name);
+          }
+        }
+      }
+    }
+
+    // アクション種別を判定
+    let action: string;
+    if (tools.includes('Edit') || tools.includes('Write')) action = 'ファイル編集完了';
+    else if (tools.includes('Bash')) action = 'コマンド実行完了';
+    else if (tools.includes('Grep') || tools.includes('Glob') || tools.includes('Read')) action = '調査完了';
+    else action = '完了';
+
+    // 最後のアシスタントメッセージのテキストを取得
+    for (let i = entries.length - 1; i >= 0; i--) {
+      if (entries[i].type !== 'assistant') continue;
+      for (const block of entries[i].message?.content || []) {
+        if (block.type !== 'text') continue;
+        // コードブロックを除いた最初の有意な行
+        let inCodeBlock = false;
+        for (const line of (block.text || '').split('\n')) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith('```')) { inCodeBlock = !inCodeBlock; continue; }
+          if (inCodeBlock) continue;
+          if (trimmed && trimmed.length > 5) {
+            const summary = trimmed.length > 80 ? `${trimmed.slice(0, 77)}...` : trimmed;
+            return `${action}: ${summary}`;
+          }
+        }
+      }
+    }
+
+    return action;
+  } catch {
+    return undefined;
+  }
+}
+
 const notify = new Hono();
 
 // hookイベントによるindicatorStateの一時オーバーライド
@@ -55,7 +112,8 @@ notify.post('/', async (c) => {
     const sessionId = body.session_id as string | undefined;
 
     // hook固有の情報を data に格納
-    const { hook_event_name, cwd: _cwd, session_id: _sid, ...rest } = body;
+    const { hook_event_name, cwd: _cwd, session_id: _sid, transcript_path: _tp, ...rest } = body;
+    const transcriptPath = body.transcript_path as string | undefined;
 
     // indicatorStateオーバーライドを保存
     if (sessionId) {
@@ -65,11 +123,18 @@ notify.post('/', async (c) => {
       }
     }
 
+    // transcriptからスマートなメッセージを生成
+    let message: string | undefined;
+    if (transcriptPath && event === 'Stop') {
+      message = await generateSmartMessage(transcriptPath, event);
+    }
+
     broadcastToAllClients({
       type: 'hook-event',
       event,
       cwd,
       sessionId,
+      message,
       data: Object.keys(rest).length > 0 ? rest : undefined,
     });
 

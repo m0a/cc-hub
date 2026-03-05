@@ -10,6 +10,7 @@ const EVENT_MESSAGES: Record<string, string> = {
   Notification: 'Claudeがユーザー入力を待っています',
   SubagentStop: 'サブエージェントが完了しました',
   TaskCompleted: 'タスクが完了しました',
+  PostToolUse: 'Claudeがユーザー入力を待っています',
 };
 
 // デバウンス: 同じイベント+cwdの組み合わせを500ms以内に重複発火しない
@@ -50,6 +51,7 @@ export function fireHookNotification(
   cwd?: string,
   _sessionId?: string,
   _data?: Record<string, unknown>,
+  smartMessage?: string,
 ) {
   if (!('Notification' in window) || Notification.permission !== 'granted') {
     return;
@@ -63,9 +65,9 @@ export function fireHookNotification(
   }
   lastNotification = { key, time: now };
 
-  const message = EVENT_MESSAGES[event] || `Hook: ${event}`;
+  const displayMessage = smartMessage || EVENT_MESSAGES[event] || `Hook: ${event}`;
   const projectName = cwd?.replace(/^\/home\/[^/]+\//, '~/') || '';
-  const body = projectName ? `${message}\n${projectName}` : message;
+  const body = projectName ? `${displayMessage}\n${projectName}` : displayMessage;
 
   showNotification('CC Hub', {
     body,

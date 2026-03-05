@@ -370,4 +370,4 @@ export type ControlServerMessage =
   | { type: 'error'; message: string; paneId?: string }
   | { type: 'new-session'; sessionId: string; sessionName: string }
   | { type: 'pane-dead'; paneId: string }
-  | { type: 'hook-event'; event: string; cwd?: string; sessionId?: string; data?: Record<string, unknown> };
+  | { type: 'hook-event'; event: string; cwd?: string; sessionId?: string; message?: string; data?: Record<string, unknown> };

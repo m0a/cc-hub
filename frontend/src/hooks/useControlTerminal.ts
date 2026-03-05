@@ -10,7 +10,7 @@ interface UseControlTerminalOptions {
   onInitialContent?: (paneId: string, data: Uint8Array) => void;
   onNewSession?: (sessionId: string, sessionName: string) => void;
   onPaneDead?: (paneId: string) => void;
-  onHookEvent?: (event: string, cwd?: string, sessionId?: string, data?: Record<string, unknown>) => void;
+  onHookEvent?: (event: string, cwd?: string, sessionId?: string, data?: Record<string, unknown>, message?: string) => void;
   onConnect?: () => void;
   onDisconnect?: () => void;
   onError?: (error: string, paneId?: string) => void;
@@ -170,7 +170,7 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
           break;
         }
         case 'hook-event': {
-          onHookEventRef.current?.(msg.event, msg.cwd, msg.sessionId, msg.data);
+          onHookEventRef.current?.(msg.event, msg.cwd, msg.sessionId, msg.data, msg.message);
           break;
         }
       }

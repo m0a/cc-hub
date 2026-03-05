@@ -472,8 +472,8 @@ export function DesktopLayout({
         setTimeout(() => sendControlResize(), delay);
       }
     },
-    onHookEvent: (event, cwd, sessionId, data) => {
-      fireHookNotification(event, cwd, sessionId, data);
+    onHookEvent: (event, cwd, sessionId, data, message) => {
+      fireHookNotification(event, cwd, sessionId, data, message);
       // 全useSessions インスタンスのindicatorStateを即座に更新
       updateCachedSessionsByHookEvent(event, sessionId);
     },

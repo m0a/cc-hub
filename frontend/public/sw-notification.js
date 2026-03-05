@@ -4,16 +4,20 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
   const sessionId = event.notification.data?.sessionId;
+  console.log('[SW] notificationclick, sessionId:', sessionId);
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // Try to focus an existing window and navigate to the session
+      console.log('[SW] clients found:', clientList.length);
       for (const client of clientList) {
         if ('focus' in client) {
-          if (sessionId) {
-            client.postMessage({ type: 'navigate-session', sessionId });
-          }
-          return client.focus();
+          return client.focus().then((focusedClient) => {
+            if (sessionId && focusedClient) {
+              console.log('[SW] posting navigate-session to focused client');
+              focusedClient.postMessage({ type: 'navigate-session', sessionId });
+            }
+            return focusedClient;
+          });
         }
       }
       // Open a new window with session parameter if none exists

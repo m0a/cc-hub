@@ -655,11 +655,14 @@ export function App() {
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
     const handler = (event: MessageEvent) => {
+      console.log('[App] SW message received:', event.data);
       if (event.data?.type !== 'navigate-session') return;
       const ccSessionId = event.data.sessionId;
       if (!ccSessionId) return;
+      console.log('[App] Looking for session with ccSessionId:', ccSessionId, 'in', openSessions.map(s => ({ id: s.id, ccSessionId: s.ccSessionId })));
       const match = openSessions.find(s => s.ccSessionId === ccSessionId);
       if (match) {
+        console.log('[App] Switching to session:', match.id);
         setActiveSessionId(match.id);
         setShowSessionList(false);
       }

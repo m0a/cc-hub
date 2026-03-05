@@ -8,6 +8,7 @@ import { sessions } from './routes/sessions';
 import { upload } from './routes/upload';
 import { files } from './routes/files';
 import { dashboard } from './routes/dashboard';
+import { notify } from './routes/notify';
 import { terminalWebSocket, handleTerminalUpgrade } from './routes/terminal';
 import { parseArgs, runCli, VERSION } from './cli';
 import { conditionalAuthMiddleware } from './middleware/auth';
@@ -146,6 +147,7 @@ app.route('/api/sessions', sessions);
 app.route('/api/upload', upload);
 app.route('/api/files', files);
 app.route('/api/dashboard', dashboard);
+app.route('/api/notify', notify);
 
 // Static files handling
 const staticRoot = process.env.STATIC_ROOT || '../frontend/dist';

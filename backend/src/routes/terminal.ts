@@ -20,6 +20,20 @@ const tmuxService = new TmuxService();
 // Track active control mode connections per session
 const activeControlConnections = new Map<string, Set<ServerWebSocket<TerminalData>>>();
 
+/** Broadcast a message to ALL connected WebSocket clients across all sessions. */
+export function broadcastToAllClients(msg: Record<string, unknown>) {
+  const payload = JSON.stringify(msg);
+  for (const connections of activeControlConnections.values()) {
+    for (const ws of connections) {
+      try {
+        ws.send(payload);
+      } catch {
+        // Client may have disconnected
+      }
+    }
+  }
+}
+
 export const terminalWebSocket = {
   async open(ws: ServerWebSocket<TerminalData>) {
     const { sessionId } = ws.data;

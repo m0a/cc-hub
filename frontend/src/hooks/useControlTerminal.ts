@@ -10,6 +10,7 @@ interface UseControlTerminalOptions {
   onInitialContent?: (paneId: string, data: Uint8Array) => void;
   onNewSession?: (sessionId: string, sessionName: string) => void;
   onPaneDead?: (paneId: string) => void;
+  onHookEvent?: (event: string, cwd?: string, sessionId?: string, data?: Record<string, unknown>) => void;
   onConnect?: () => void;
   onDisconnect?: () => void;
   onError?: (error: string, paneId?: string) => void;
@@ -60,6 +61,7 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
   const onInitialContentRef = useRef(options.onInitialContent);
   const onNewSessionRef = useRef(options.onNewSession);
   const onPaneDeadRef = useRef(options.onPaneDead);
+  const onHookEventRef = useRef(options.onHookEvent);
   const onConnectRef = useRef(options.onConnect);
   const onDisconnectRef = useRef(options.onDisconnect);
   const onErrorRef = useRef(options.onError);
@@ -71,6 +73,7 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
   onInitialContentRef.current = options.onInitialContent;
   onNewSessionRef.current = options.onNewSession;
   onPaneDeadRef.current = options.onPaneDead;
+  onHookEventRef.current = options.onHookEvent;
   deadPanesRef.current = deadPanes;
   onConnectRef.current = options.onConnect;
   onDisconnectRef.current = options.onDisconnect;
@@ -164,6 +167,10 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
         case 'pane-dead': {
           setDeadPanes(prev => new Set(prev).add(msg.paneId));
           onPaneDeadRef.current?.(msg.paneId);
+          break;
+        }
+        case 'hook-event': {
+          onHookEventRef.current?.(msg.event, msg.cwd, msg.sessionId, msg.data);
           break;
         }
       }

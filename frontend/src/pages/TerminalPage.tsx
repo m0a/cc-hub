@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, forwardRef, type ReactNode } 
 import { TerminalComponent, type TerminalRef, type ControlModeConfig } from '../components/Terminal';
 import { useControlTerminal } from '../hooks/useControlTerminal';
 import type { SessionState, SessionTheme, TmuxLayoutNode } from '../../../shared/types';
+import { fireHookNotification } from '../utils/hookNotification';
 
 interface PaneLeafInfo {
   paneId: string;
@@ -150,6 +151,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
       // Send client-info to enable mobile pane separation
       controlTerminal.sendClientInfo('mobile');
     },
+    onHookEvent: fireHookNotification,
     onDisconnect: () => {
       onStateChange?.('disconnected');
     },

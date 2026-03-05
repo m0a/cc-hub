@@ -9,7 +9,7 @@ const isDev = process.argv.some(arg => arg.includes('--watch'));
 const DEFAULT_PORT = isDev ? 3000 : 5923;
 
 interface CliOptions {
-  command: 'serve' | 'setup' | 'update' | 'status' | 'help' | 'version';
+  command: 'serve' | 'setup' | 'update' | 'status' | 'notify' | 'help' | 'version';
   port: number;
   host: string;
   password?: string;
@@ -26,6 +26,7 @@ ${t('cli.usage')}
   cchub setup [options]     systemd service setup
   cchub update [options]    Check and apply updates
   cchub status              Show service status
+  cchub notify              Send hook event (reads JSON from stdin)
 
 ${t('cli.options')}
   ${t('cli.optionPort')}
@@ -68,6 +69,9 @@ export function parseArgs(args: string[]): CliOptions {
         break;
       case 'status':
         options.command = 'status';
+        break;
+      case 'notify':
+        options.command = 'notify';
         break;
       case '-h':
       case '--help':
@@ -145,6 +149,10 @@ export async function runCli(options: CliOptions): Promise<'serve' | 'exit'> {
       await runStatus();
       return 'exit';
 
+    case 'notify':
+      await runNotify(options);
+      return 'exit';
+
     case 'serve':
       return 'serve';
   }
@@ -158,6 +166,11 @@ async function runSetup(options: CliOptions): Promise<void> {
 async function runUpdate(options: CliOptions): Promise<void> {
   const { checkAndUpdate } = await import('./commands/update');
   await checkAndUpdate(options.updateCheck ?? false, options.updateAuto ?? false);
+}
+
+async function runNotify(options: CliOptions): Promise<void> {
+  const { sendNotify } = await import('./commands/notify');
+  await sendNotify(options.port);
 }
 
 async function runStatus(): Promise<void> {

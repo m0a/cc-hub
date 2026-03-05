@@ -526,7 +526,19 @@ function SessionItem({
   };
   const isClaudeRunning = extSession.currentCommand === 'claude';
   const themeColor = extSession.theme ? THEME_COLORS[extSession.theme] : null;
-  const isWaiting = extSession.waitingForInput;
+
+  // Derive card-level indicatorState from panes (priority: waiting_input > processing > idle)
+  const cardIndicator: IndicatorState | undefined = (() => {
+    if (extSession.panes && extSession.panes.length > 0) {
+      if (extSession.panes.some(p => p.indicatorState === 'waiting_input')) return 'waiting_input';
+      if (extSession.panes.some(p => p.indicatorState === 'processing')) return 'processing';
+    }
+    // Fallback to session-level indicatorState
+    return extSession.indicatorState;
+  })();
+
+  // cardIndicator takes priority: if hook says 'processing', don't show waiting
+  const isWaiting = cardIndicator === 'waiting_input' || (cardIndicator !== 'processing' && extSession.waitingForInput);
   const waitingLabel = extSession.waitingToolName === 'AskUserQuestion' ? t('session.waitingQuestion')
     : extSession.waitingToolName === 'EnterPlanMode' ? t('session.waitingPlan')
     : extSession.waitingToolName === 'ExitPlanMode' ? t('session.waitingPlan')
@@ -558,10 +570,10 @@ function SessionItem({
     return '';
   };
 
-  // Status dot color
-  const statusDotClass = isWaiting
+  // Status dot color (use cardIndicator for hook-derived state)
+  const statusDotClass = cardIndicator === 'waiting_input'
     ? 'bg-yellow-400 animate-status-glow'
-    : isClaudeRunning
+    : cardIndicator === 'processing' || isClaudeRunning
       ? 'bg-emerald-400'
       : 'bg-gray-500';
 
@@ -597,7 +609,9 @@ function SessionItem({
         {/* Primary badge: status (max 1) */}
         {isWaiting && extSession.waitingToolName ? (
           <span className="text-xs text-yellow-400 bg-yellow-900/50 px-1.5 py-0.5 rounded shrink-0">{waitingLabel}</span>
-        ) : isClaudeRunning ? (
+        ) : isWaiting ? (
+          <span className="text-xs text-yellow-400 bg-yellow-900/50 px-1.5 py-0.5 rounded shrink-0">{t('session.waitingInput')}</span>
+        ) : cardIndicator === 'processing' || isClaudeRunning ? (
           <span className="text-xs text-emerald-400 bg-emerald-900/50 px-1.5 py-0.5 rounded shrink-0">{t('session.processing')}</span>
         ) : showResumeButton ? (
           <button
@@ -743,6 +757,10 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
   const [sessionForMenu, setSessionForMenu] = useState<SessionResponse | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'sessions' | 'history' | 'dashboard'>('sessions');
+  const [hookConfigured, setHookConfigured] = useState<boolean | null>(null);
+  const [hookBannerDismissed, setHookBannerDismissed] = useState(() =>
+    typeof localStorage !== 'undefined' && localStorage.getItem('cchub-hook-banner-dismissed') === '1'
+  );
 
   // Conversation viewer state
   const [viewingConversation, setViewingConversation] = useState<{
@@ -764,6 +782,15 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
 
     return () => clearInterval(interval);
   }, [fetchSessions]);
+
+  // Check hook configuration status
+  useEffect(() => {
+    if (hookBannerDismissed) return;
+    authFetch(`${API_BASE}/api/notify/hook-status`)
+      .then(r => r.json())
+      .then(data => setHookConfigured(data.configured))
+      .catch(() => {});
+  }, [hookBannerDismissed]);
 
   // Resume a Claude session
   const handleResume = useCallback(async (sessionId: string, ccSessionId?: string) => {
@@ -914,6 +941,21 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
         >
           {activeTab === 'sessions' && (
             <div className="h-full overflow-y-auto p-4">
+              {/* Hook configuration banner */}
+              {hookConfigured === false && !hookBannerDismissed && (
+                <div className="mb-3 p-2.5 bg-amber-900/30 border border-amber-700/50 rounded text-xs text-amber-300 flex items-start gap-2">
+                  <span className="flex-1">{t('onboarding.hookNotConfigured')}</span>
+                  <button
+                    onClick={() => {
+                      setHookBannerDismissed(true);
+                      localStorage.setItem('cchub-hook-banner-dismissed', '1');
+                    }}
+                    className="shrink-0 text-amber-400 hover:text-amber-200"
+                  >
+                    {t('onboarding.hookNotConfiguredDismiss')}
+                  </button>
+                </div>
+              )}
               {sessions.length === 0 ? (
                 <div className="text-center text-th-text-muted py-8">
                   {t('session.noSessions')} {t('session.noSessionsHint')}

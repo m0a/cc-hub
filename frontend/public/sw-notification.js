@@ -6,9 +6,9 @@ self.addEventListener('notificationclick', (event) => {
   // Focus existing CC Hub window or open a new one
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // Try to focus an existing window
+      // Try to focus any existing window
       for (const client of clientList) {
-        if (client.url.includes(self.location.origin) && 'focus' in client) {
+        if ('focus' in client) {
           return client.focus();
         }
       }

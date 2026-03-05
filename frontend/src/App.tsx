@@ -14,6 +14,7 @@ import { useSessionHistory } from './hooks/useSessionHistory';
 import { useAuth } from './hooks/useAuth';
 import { useSessions } from './hooks/useSessions';
 import { authFetch, isTransientNetworkError } from './services/api';
+import { consumePendingSessionId } from './utils/hookNotification';
 import type { SessionResponse, SessionState, ConversationMessage, SessionTheme, PaneInfo } from '../../shared/types';
 
 // Loading screen with phase display and timeout detection
@@ -651,24 +652,20 @@ export function App() {
     };
   }, [showOverlay, showSessionList, isLoading, startOverlayTimer]);
 
-  // Handle notification tap → navigate to session via ServiceWorker postMessage
+  // When app regains focus after notification, switch to the notified session
   useEffect(() => {
-    if (!('serviceWorker' in navigator)) return;
-    const handler = (event: MessageEvent) => {
-      console.log('[App] SW message received:', event.data);
-      if (event.data?.type !== 'navigate-session') return;
-      const ccSessionId = event.data.sessionId;
+    const handler = () => {
+      if (document.visibilityState !== 'visible') return;
+      const ccSessionId = consumePendingSessionId();
       if (!ccSessionId) return;
-      console.log('[App] Looking for session with ccSessionId:', ccSessionId, 'in', openSessions.map(s => ({ id: s.id, ccSessionId: s.ccSessionId })));
       const match = openSessions.find(s => s.ccSessionId === ccSessionId);
       if (match) {
-        console.log('[App] Switching to session:', match.id);
         setActiveSessionId(match.id);
         setShowSessionList(false);
       }
     };
-    navigator.serviceWorker.addEventListener('message', handler);
-    return () => navigator.serviceWorker.removeEventListener('message', handler);
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
   }, [openSessions]);
 
   // Diagnostic: log render state for debugging black screen issues

@@ -652,9 +652,23 @@ export function App() {
     };
   }, [showOverlay, showSessionList, isLoading, startOverlayTimer]);
 
-  // When app regains focus after notification, switch to the notified session
+  // Navigate to session from notification tap (URL param or in-memory pending)
   useEffect(() => {
     const switchToPendingSession = () => {
+      // Check URL param first (from SW navigate)
+      const params = new URLSearchParams(window.location.search);
+      const urlSessionId = params.get('notify-session');
+      if (urlSessionId) {
+        // Clean up URL
+        window.history.replaceState({}, '', '/');
+        const match = openSessions.find(s => s.ccSessionId === urlSessionId);
+        if (match) {
+          setActiveSessionId(match.id);
+          setShowSessionList(false);
+          return;
+        }
+      }
+      // Fallback: in-memory pending
       const ccSessionId = consumePendingSessionId();
       if (!ccSessionId) return;
       const match = openSessions.find(s => s.ccSessionId === ccSessionId);
@@ -663,12 +677,13 @@ export function App() {
         setShowSessionList(false);
       }
     };
+    // Check on mount (SW navigate reloads the page with URL param)
+    switchToPendingSession();
+    // Also check on visibility/focus changes
     const onVisibility = () => {
       if (document.visibilityState === 'visible') switchToPendingSession();
     };
-    // visibilitychange: app was in background → foreground
     document.addEventListener('visibilitychange', onVisibility);
-    // focus: notification tap while app is already in foreground
     window.addEventListener('focus', switchToPendingSession);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);

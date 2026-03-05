@@ -73,5 +73,6 @@ export function fireHookNotification(
     body,
     icon: '/icon-192.png',
     tag: `hook-${event}-${now}`,
+    data: { sessionId: _sessionId, event },
   });
 }

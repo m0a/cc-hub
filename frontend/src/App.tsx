@@ -651,6 +651,23 @@ export function App() {
     };
   }, [showOverlay, showSessionList, isLoading, startOverlayTimer]);
 
+  // Handle notification tap → navigate to session via ServiceWorker postMessage
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type !== 'navigate-session') return;
+      const ccSessionId = event.data.sessionId;
+      if (!ccSessionId) return;
+      const match = openSessions.find(s => s.ccSessionId === ccSessionId);
+      if (match) {
+        setActiveSessionId(match.id);
+        setShowSessionList(false);
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', handler);
+    return () => navigator.serviceWorker.removeEventListener('message', handler);
+  }, [openSessions]);
+
   // Diagnostic: log render state for debugging black screen issues
   useEffect(() => {
     console.log(`[App] Render state: device=${deviceType} authLoading=${auth.isLoading} loading=${isLoading} authRequired=${auth.authRequired} authenticated=${auth.isAuthenticated} sessions=${openSessions.length} active=${activeSessionId} showList=${showSessionList}`);

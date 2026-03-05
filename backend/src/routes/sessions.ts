@@ -6,6 +6,7 @@ import { ClaudeCodeService } from '../services/claude-code';
 import { SessionHistoryService } from '../services/session-history';
 import { PromptHistoryService } from '../services/prompt-history';
 import { getAllSessionThemes, setSessionTheme } from '../services/session-themes';
+import { getIndicatorOverride } from './notify';
 
 const tmuxService = new TmuxService();
 const claudeCodeService = new ClaudeCodeService();
@@ -136,8 +137,9 @@ sessions.get('/', async (c) => {
       waitingForInput = s.waitingForInput || false;
     }
 
-    // Calculate indicator state
-    const indicatorState = getIndicatorState(
+    // Calculate indicator state (with hook event override)
+    const hookOverride = ccSession?.sessionId ? getIndicatorOverride(ccSession.sessionId) : null;
+    const indicatorState = hookOverride ?? getIndicatorState(
       isClaudeRunning,
       waitingForInput,
       ccSession?.waitingToolName
@@ -199,7 +201,7 @@ sessions.get('/', async (c) => {
           agentColor: agentInfo?.agentColor,
           isActive: p.isActive,
           isDead: p.isDead || undefined,
-          indicatorState: paneIndicator,
+          indicatorState: hookOverride ?? paneIndicator,
         };
         return pane;
       }) : undefined,

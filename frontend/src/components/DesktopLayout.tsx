@@ -5,10 +5,11 @@ import { FloatingKeyboard } from './FloatingKeyboard';
 import { SessionModal } from './SessionModal';
 import { DashboardPanel } from './DashboardPanel';
 import { authFetch } from '../services/api';
-import { useSessions } from '../hooks/useSessions';
+import { useSessions, updateCachedSessionsByHookEvent } from '../hooks/useSessions';
 import { useControlTerminal } from '../hooks/useControlTerminal';
 import type { TerminalRef, ControlModeConfig } from './Terminal';
 import type { SessionState, SessionTheme, TmuxLayoutNode } from '../../../shared/types';
+import { fireHookNotification } from '../utils/hookNotification';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const DESKTOP_STATE_KEY = 'cchub-desktop-state';
@@ -470,6 +471,11 @@ export function DesktopLayout({
       for (const delay of delays) {
         setTimeout(() => sendControlResize(), delay);
       }
+    },
+    onHookEvent: (event, cwd, sessionId, data) => {
+      fireHookNotification(event, cwd, sessionId, data);
+      // 全useSessions インスタンスのindicatorStateを即座に更新
+      updateCachedSessionsByHookEvent(event, sessionId);
     },
     onDisconnect: () => {},
     onError: (err) => {

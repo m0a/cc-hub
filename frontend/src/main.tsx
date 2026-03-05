@@ -25,6 +25,11 @@ updateViewportHeight();
 window.visualViewport?.addEventListener('resize', updateViewportHeight);
 window.addEventListener('resize', updateViewportHeight);
 
+// Request notification permission for hook event notifications
+if ('Notification' in window && Notification.permission === 'default') {
+  Notification.requestPermission();
+}
+
 createRoot(document.getElementById('root')!).render(
   <App />
 );

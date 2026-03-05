@@ -247,6 +247,8 @@
     "historyTabDescription": "Search and browse past Claude Code sessions. Resume previous conversations or view their history.",
     "dashboardTabTitle": "Dashboard",
     "dashboardTabDescription": "Monitor usage limits, activity statistics, and cost estimates in real-time.",
-    "welcomePrompt": "Hello! Welcome to CC Hub. You are Claude Code, being accessed remotely through CC Hub. Please briefly introduce yourself."
+    "welcomePrompt": "Hello! Welcome to CC Hub. You are Claude Code, being accessed remotely through CC Hub. Please briefly introduce yourself.",
+    "hookNotConfigured": "Hook notifications not configured. Add cchub notify to ~/.claude/settings.json to receive OS notifications when responses complete.",
+    "hookNotConfiguredDismiss": "Dismiss"
   }
 }

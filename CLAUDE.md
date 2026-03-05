@@ -171,6 +171,9 @@ cchub setup -P pass     # Register systemd service
 cchub update            # Update from GitHub Releases
 cchub status            # Show service status
 
+# Hook notification
+cchub notify            # Send hook event (reads JSON from stdin)
+
 # Help
 cchub --help
 cchub --version
@@ -189,6 +192,67 @@ cchub --version
 - Tailscale must be running (used for HTTPS certificates)
 - Run `sudo tailscale set --operator=$USER` once to allow cert generation
 - macOS: Install Tailscale via `brew install tailscale` (App Store version lacks CLI)
+
+## Claude Code Hook通知連携
+
+Claude Codeのhookイベント（応答完了、ユーザー入力待ち等）をCC Hub経由でブラウザのOS通知として受け取れる。
+
+### 仕組み
+
+```
+Claude Code hook → cchub notify (stdin JSON) → POST /api/notify → WebSocket broadcast → ブラウザ Notification API
+```
+
+### セットアップ手順
+
+1. `~/.claude/settings.json` の `hooks` に `cchub notify` を追加する:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "/home/m0a/.claude/hooks/smart-notify.py" },
+          { "type": "command", "command": "cchub notify" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          { "type": "command", "command": "/home/m0a/.claude/hooks/question-notify.py" },
+          { "type": "command", "command": "cchub notify" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+2. `cchub` バイナリにPATHが通っていることを確認（hookはClaude Codeのプロセスから実行される）。**`cchub update` でリリース版に更新してから設定すること**（`notify` サブコマンドはリリース済みバイナリに含まれている必要がある）
+
+3. CC Hubサーバーがデフォルトポート（5923）で起動していること。カスタムポートの場合は `cchub notify -p <port>` を指定
+
+4. ブラウザで初回アクセス時に通知権限を許可する
+
+### 対応イベント
+
+| hookイベント | 通知メッセージ |
+|-------------|-------------|
+| `Stop` | Claudeの応答が完了しました |
+| `PostToolUse` (AskUserQuestion) | Claudeがユーザー入力を待っています |
+| `SubagentStop` | サブエージェントが完了しました |
+| `TaskCompleted` | タスクが完了しました |
+| その他 | Hook: {イベント名} |
+
+### 注意事項
+
+- `cchub notify` はstdinからClaude Codeのhook JSON入力を読み取る
+- `/api/notify` エンドポイントは認証不要（ローカルhookから呼ばれるため）
+- 既存のhookスクリプト（smart-notify.py等）と併用可能（同じイベントに複数hook登録）
+- 複数のWebSocket接続がある場合でもデバウンスにより通知は1回のみ
 
 ## Internationalization (i18n)
 

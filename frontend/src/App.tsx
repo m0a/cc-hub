@@ -14,7 +14,6 @@ import { useSessionHistory } from './hooks/useSessionHistory';
 import { useAuth } from './hooks/useAuth';
 import { useSessions } from './hooks/useSessions';
 import { authFetch, isTransientNetworkError } from './services/api';
-import { consumePendingSessionId } from './utils/hookNotification';
 import type { SessionResponse, SessionState, ConversationMessage, SessionTheme, PaneInfo } from '../../shared/types';
 
 // Loading screen with phase display and timeout detection
@@ -652,46 +651,32 @@ export function App() {
     };
   }, [showOverlay, showSessionList, isLoading, startOverlayTimer]);
 
-  // Navigate to session from notification tap (URL param or in-memory pending)
-  // Store pending ccSessionId in ref so it survives across openSessions updates
+  // Navigate to session from notification tap
+  // SW client.navigate() reloads page with ?notify-session=<ccSessionId>
+  // Store in ref until openSessions loads, then switch once
   const pendingNotifyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // Capture URL param on mount/navigate (SW client.navigate reloads with ?notify-session=...)
     const params = new URLSearchParams(window.location.search);
     const urlSessionId = params.get('notify-session');
     if (urlSessionId) {
       pendingNotifyRef.current = urlSessionId;
       window.history.replaceState({}, '', '/');
-      console.log(`[App] notify-session URL param captured: ${urlSessionId}`);
+      // Auto-clear after 15s to prevent stale switches
+      setTimeout(() => { pendingNotifyRef.current = null; }, 15_000);
     }
-  }, []); // Run once on mount
+  }, []);
 
+  // When openSessions updates, check if we have a pending notification switch
   useEffect(() => {
-    const trySwitch = () => {
-      // Check ref first (from URL param or previous notification)
-      const pending = pendingNotifyRef.current || consumePendingSessionId();
-      if (!pending) return;
-      console.log(`[App] trySwitch pending=${pending} sessions=${openSessions.length}`);
-      const match = openSessions.find(s => s.ccSessionId === pending);
-      if (match) {
-        pendingNotifyRef.current = null;
-        setActiveSessionId(match.id);
-        setShowSessionList(false);
-        console.log(`[App] Switched to session ${match.id} from notification`);
-      }
-      // If no match yet, keep pendingNotifyRef so next openSessions update retries
-    };
-    trySwitch();
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') trySwitch();
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    window.addEventListener('focus', trySwitch);
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
-      window.removeEventListener('focus', trySwitch);
-    };
+    const pending = pendingNotifyRef.current;
+    if (!pending || openSessions.length === 0) return;
+    const match = openSessions.find(s => s.ccSessionId === pending);
+    if (match) {
+      pendingNotifyRef.current = null;
+      setActiveSessionId(match.id);
+      setShowSessionList(false);
+    }
   }, [openSessions]);
 
   // Diagnostic: log render state for debugging black screen issues

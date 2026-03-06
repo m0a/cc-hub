@@ -1,5 +1,5 @@
 // Custom notification click handler for CC Hub PWA
-// This file is imported by the main service worker via importScripts
+// Version: 0.0.61-1
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
@@ -7,6 +7,10 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // Send log to all clients so it appears in frontend.log
+      for (const c of clientList) {
+        c.postMessage({ type: 'sw-log', message: `[SW v0.0.61-1] notificationclick sessionId=${sessionId} clients=${clientList.length}` });
+      }
       for (const client of clientList) {
         if ('navigate' in client) {
           const url = sessionId ? `/?notify-session=${sessionId}` : '/';
@@ -22,4 +26,13 @@ self.addEventListener('notificationclick', (event) => {
       }
     })
   );
+});
+
+// Log when this script is loaded
+self.addEventListener('activate', () => {
+  self.clients.matchAll({ type: 'window' }).then((clients) => {
+    for (const c of clients) {
+      c.postMessage({ type: 'sw-log', message: '[SW v0.0.61-1] activated' });
+    }
+  });
 });

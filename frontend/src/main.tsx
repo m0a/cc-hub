@@ -30,6 +30,15 @@ if ('Notification' in window && Notification.permission === 'default') {
   Notification.requestPermission();
 }
 
+// Listen for ServiceWorker log messages
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data?.type === 'sw-log') {
+      console.log(event.data.message);
+    }
+  });
+}
+
 createRoot(document.getElementById('root')!).render(
   <App />
 );

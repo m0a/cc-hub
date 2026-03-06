@@ -609,7 +609,7 @@ function SessionItem({
         {/* Primary badge: status (max 1) — skip generic "入力待ち", only show specific wait reasons */}
         {isWaiting && extSession.waitingToolName ? (
           <span className="text-xs text-yellow-400 bg-yellow-900/50 px-1.5 py-0.5 rounded shrink-0">{waitingLabel}</span>
-        ) : cardIndicator === 'processing' || isClaudeRunning ? (
+        ) : cardIndicator === 'processing' ? (
           <span className="text-xs text-emerald-400 bg-emerald-900/50 px-1.5 py-0.5 rounded shrink-0">{t('session.processing')}</span>
         ) : showResumeButton ? (
           <button

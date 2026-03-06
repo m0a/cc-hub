@@ -606,11 +606,9 @@ function SessionItem({
         {/* Status dot */}
         <span className={`w-2 h-2 rounded-full shrink-0 ${statusDotClass}`} />
         <span className={`font-medium truncate flex-1 ${!isClaudeRunning ? 'text-th-text-secondary' : ''}`}>{displayTitle}</span>
-        {/* Primary badge: status (max 1) */}
+        {/* Primary badge: status (max 1) — skip generic "入力待ち", only show specific wait reasons */}
         {isWaiting && extSession.waitingToolName ? (
           <span className="text-xs text-yellow-400 bg-yellow-900/50 px-1.5 py-0.5 rounded shrink-0">{waitingLabel}</span>
-        ) : isWaiting ? (
-          <span className="text-xs text-yellow-400 bg-yellow-900/50 px-1.5 py-0.5 rounded shrink-0">{t('session.waitingInput')}</span>
         ) : cardIndicator === 'processing' || isClaudeRunning ? (
           <span className="text-xs text-emerald-400 bg-emerald-900/50 px-1.5 py-0.5 rounded shrink-0">{t('session.processing')}</span>
         ) : showResumeButton ? (
@@ -723,8 +721,6 @@ function SessionItem({
                   <span className="text-[10px] text-red-400 bg-red-900/40 px-1 rounded shrink-0">{t('pane.dead')}</span>
                 ) : paneIndicator === 'processing' ? (
                   <span className="text-[10px] text-emerald-400 bg-emerald-900/40 px-1 rounded shrink-0">{t('session.processing')}</span>
-                ) : paneIndicator === 'waiting_input' ? (
-                  <span className="text-[10px] text-yellow-400 bg-yellow-900/40 px-1 rounded shrink-0">{t('session.waitingInputShort')}</span>
                 ) : null}
                 {pane.isActive && !pane.isDead && (
                   <span className="text-[10px] text-cyan-400 bg-cyan-900/40 px-1 rounded shrink-0">active</span>

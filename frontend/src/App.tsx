@@ -653,41 +653,44 @@ export function App() {
   }, [showOverlay, showSessionList, isLoading, startOverlayTimer]);
 
   // Navigate to session from notification tap (URL param or in-memory pending)
+  // Store pending ccSessionId in ref so it survives across openSessions updates
+  const pendingNotifyRef = useRef<string | null>(null);
+
   useEffect(() => {
-    const switchToPendingSession = () => {
-      // Check URL param first (from SW navigate)
-      const params = new URLSearchParams(window.location.search);
-      const urlSessionId = params.get('notify-session');
-      if (urlSessionId) {
-        // Clean up URL
-        window.history.replaceState({}, '', '/');
-        const match = openSessions.find(s => s.ccSessionId === urlSessionId);
-        if (match) {
-          setActiveSessionId(match.id);
-          setShowSessionList(false);
-          return;
-        }
-      }
-      // Fallback: in-memory pending
-      const ccSessionId = consumePendingSessionId();
-      if (!ccSessionId) return;
-      const match = openSessions.find(s => s.ccSessionId === ccSessionId);
+    // Capture URL param on mount/navigate (SW client.navigate reloads with ?notify-session=...)
+    const params = new URLSearchParams(window.location.search);
+    const urlSessionId = params.get('notify-session');
+    if (urlSessionId) {
+      pendingNotifyRef.current = urlSessionId;
+      window.history.replaceState({}, '', '/');
+      console.log(`[App] notify-session URL param captured: ${urlSessionId}`);
+    }
+  }, []); // Run once on mount
+
+  useEffect(() => {
+    const trySwitch = () => {
+      // Check ref first (from URL param or previous notification)
+      const pending = pendingNotifyRef.current || consumePendingSessionId();
+      if (!pending) return;
+      console.log(`[App] trySwitch pending=${pending} sessions=${openSessions.length}`);
+      const match = openSessions.find(s => s.ccSessionId === pending);
       if (match) {
+        pendingNotifyRef.current = null;
         setActiveSessionId(match.id);
         setShowSessionList(false);
+        console.log(`[App] Switched to session ${match.id} from notification`);
       }
+      // If no match yet, keep pendingNotifyRef so next openSessions update retries
     };
-    // Check on mount (SW navigate reloads the page with URL param)
-    switchToPendingSession();
-    // Also check on visibility/focus changes
+    trySwitch();
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') switchToPendingSession();
+      if (document.visibilityState === 'visible') trySwitch();
     };
     document.addEventListener('visibilitychange', onVisibility);
-    window.addEventListener('focus', switchToPendingSession);
+    window.addEventListener('focus', trySwitch);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
-      window.removeEventListener('focus', switchToPendingSession);
+      window.removeEventListener('focus', trySwitch);
     };
   }, [openSessions]);
 

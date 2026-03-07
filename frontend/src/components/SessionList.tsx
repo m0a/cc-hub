@@ -539,10 +539,12 @@ function SessionItem({
 
   // cardIndicator takes priority: if hook says 'processing', don't show waiting
   const isWaiting = cardIndicator === 'waiting_input' || (cardIndicator !== 'processing' && extSession.waitingForInput);
+  // Only show badge for tools that genuinely need user interaction
+  const userInteractionTools = ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode'];
+  const isUserInteractionWait = extSession.waitingToolName && userInteractionTools.includes(extSession.waitingToolName);
   const waitingLabel = extSession.waitingToolName === 'AskUserQuestion' ? t('session.waitingQuestion')
     : extSession.waitingToolName === 'EnterPlanMode' ? t('session.waitingPlan')
     : extSession.waitingToolName === 'ExitPlanMode' ? t('session.waitingPlan')
-    : extSession.waitingToolName ? t('session.waitingPermission')
     : t('session.waitingInput');
   const shortPath = extSession.currentPath?.replace(/^\/home\/[^/]+\//, '~/') || '';
 
@@ -607,7 +609,7 @@ function SessionItem({
         <span className={`w-2 h-2 rounded-full shrink-0 ${statusDotClass}`} />
         <span className={`font-medium truncate flex-1 ${!isClaudeRunning ? 'text-th-text-secondary' : ''}`}>{displayTitle}</span>
         {/* Primary badge: status (max 1) — skip generic "入力待ち", only show specific wait reasons */}
-        {isWaiting && extSession.waitingToolName ? (
+        {isWaiting && isUserInteractionWait ? (
           <span className="text-xs text-yellow-400 bg-yellow-900/50 px-1.5 py-0.5 rounded shrink-0">{waitingLabel}</span>
         ) : cardIndicator === 'processing' ? (
           <span className="text-xs text-emerald-400 bg-emerald-900/50 px-1.5 py-0.5 rounded shrink-0">{t('session.processing')}</span>

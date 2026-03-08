@@ -59,6 +59,15 @@ export function FloatingKeyboard({
   const [inputValue, setInputValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Input history
+  const MAX_HISTORY = 50;
+  const HISTORY_KEY = 'cchub-input-history';
+  const historyRef = useRef<string[]>(
+    (() => { try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; } })()
+  );
+  const historyIndexRef = useRef(-1); // -1 = not browsing history
+  const savedInputRef = useRef(''); // save current input when browsing history
+
   // Helper to load position for a mode
   const loadPositionForMode = useCallback((mode: 'keyboard' | 'input'): Position => {
     try {
@@ -203,23 +212,65 @@ export function FloatingKeyboard({
     setInputValue('');
   }, [position, loadPositionForMode]);
 
+  // Save to history
+  const addToHistory = (text: string) => {
+    const history = historyRef.current;
+    // Remove duplicate if exists
+    const idx = history.indexOf(text);
+    if (idx !== -1) history.splice(idx, 1);
+    // Add to front
+    history.unshift(text);
+    if (history.length > MAX_HISTORY) history.pop();
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch {}
+    historyIndexRef.current = -1;
+  };
+
+  // Send input text (shared by Enter key and send button)
+  const sendInputText = (): boolean => {
+    if (inputValue) {
+      const result = onSend(inputValue);
+      if (result === false) return false;
+      addToHistory(inputValue);
+      setInputValue('');
+    }
+    onSend('\r');
+    historyIndexRef.current = -1;
+    savedInputRef.current = '';
+    return true;
+  };
+
   // Input key handler
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      if (inputValue) {
-        const result = onSend(inputValue);
-        if (result === false) return; // Send failed (e.g. disconnected), keep input
-        setInputValue('');
+      sendInputText();
+    } else if (e.key === 'ArrowUp' && !e.nativeEvent.isComposing && !inputValue) {
+      // Browse history up (when input is empty)
+      e.preventDefault();
+      const history = historyRef.current;
+      if (history.length === 0) return;
+      if (historyIndexRef.current === -1) {
+        savedInputRef.current = inputValue;
       }
-      onSend('\r');
+      const nextIdx = Math.min(historyIndexRef.current + 1, history.length - 1);
+      historyIndexRef.current = nextIdx;
+      setInputValue(history[nextIdx]);
+    } else if (e.key === 'ArrowDown' && !e.nativeEvent.isComposing && historyIndexRef.current >= 0) {
+      // Browse history down
+      e.preventDefault();
+      const nextIdx = historyIndexRef.current - 1;
+      if (nextIdx < 0) {
+        historyIndexRef.current = -1;
+        setInputValue(savedInputRef.current);
+      } else {
+        historyIndexRef.current = nextIdx;
+        setInputValue(historyRef.current[nextIdx]);
+      }
     } else if (e.key === 'Backspace' && !inputValue && !e.nativeEvent.isComposing) {
       e.preventDefault();
       onSend('\x7f');
     } else if (!inputValue && !e.nativeEvent.isComposing) {
       const arrowKeys: Record<string, string> = {
-        'ArrowUp': '\x1b[A',
-        'ArrowDown': '\x1b[B',
         'ArrowLeft': '\x1b[D',
         'ArrowRight': '\x1b[C',
       };
@@ -427,12 +478,7 @@ export function FloatingKeyboard({
               />
               <button
                 onClick={() => {
-                  if (inputValue) {
-                    const result = onSend(inputValue);
-                    if (result === false) return;
-                    setInputValue('');
-                  }
-                  onSend('\r');
+                  sendInputText();
                   inputRef.current?.focus();
                 }}
                 className="px-3 py-2 bg-green-700 hover:bg-green-600 active:bg-green-500 rounded text-white font-medium min-w-[3rem]"

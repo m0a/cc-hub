@@ -916,9 +916,12 @@ export function DesktopLayout({
   }, [sessions, handleClosePane, handleFocusNavigation, handlePaste, handleSplit]);
 
   // Floating keyboard handlers (for tablet mode)
-  const handleKeyboardSend = useCallback((char: string) => {
+  const handleKeyboardSend = useCallback((char: string): boolean => {
+    if (!controlTerminalRef.current.isConnected) return false;
     const ref = terminalRefs.current?.get(activePaneRef.current);
-    ref?.sendInput(char);
+    if (!ref) return false;
+    ref.sendInput(char);
+    return true;
   }, []);
 
   const handleFilePicker = useCallback(() => {

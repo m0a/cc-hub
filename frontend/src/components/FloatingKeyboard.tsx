@@ -39,7 +39,7 @@ const getDefaultPosition = (): Position => ({
 interface FloatingKeyboardProps {
   visible: boolean;
   onClose: () => void;
-  onSend: (char: string) => void;
+  onSend: (char: string) => boolean | void;
   onFilePicker?: () => void;
   onUrlExtract?: () => void;
   isUploading?: boolean;
@@ -208,7 +208,8 @@ export function FloatingKeyboard({
     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
       e.preventDefault();
       if (inputValue) {
-        onSend(inputValue);
+        const result = onSend(inputValue);
+        if (result === false) return; // Send failed (e.g. disconnected), keep input
         setInputValue('');
       }
       onSend('\r');

@@ -57,6 +57,7 @@ export function FloatingKeyboard({
 }: FloatingKeyboardProps) {
   const [inputMode, setInputMode] = useState<'keyboard' | 'input'>('keyboard');
   const [inputValue, setInputValue] = useState('');
+  const [showHistory, setShowHistory] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Input history
@@ -486,12 +487,37 @@ export function FloatingKeyboard({
                 ↵
               </button>
               <button
+                onClick={() => setShowHistory(prev => !prev)}
+                className={`px-2 py-2 rounded font-medium ${showHistory ? 'bg-blue-700 text-white' : 'bg-th-surface-hover hover:bg-th-surface-active text-th-text'}`}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
+              <button
                 onClick={handleSwitchToKeyboard}
                 className="px-3 py-2 bg-th-surface-hover hover:bg-th-surface-active active:bg-th-surface-active rounded text-th-text font-medium"
               >
                 ABC
               </button>
             </div>
+            {showHistory && historyRef.current.length > 0 && (
+              <div className="mt-1 max-h-32 overflow-y-auto border border-th-border rounded bg-th-bg">
+                {historyRef.current.map((item, i) => (
+                  <button
+                    key={`${i}-${item}`}
+                    onClick={() => {
+                      setInputValue(item);
+                      setShowHistory(false);
+                      inputRef.current?.focus();
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-sm text-th-text hover:bg-th-surface-hover active:bg-th-surface-active border-b border-th-border/30 last:border-b-0 truncate"
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

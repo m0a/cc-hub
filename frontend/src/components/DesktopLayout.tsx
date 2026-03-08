@@ -439,7 +439,8 @@ export function DesktopLayout({
       // Choose clear sequence based on whether content was explicitly requested.
       // ESC[2J = clear screen, ESC[3J = clear scrollback, ESC[H = cursor home
       let clearSeq: Uint8Array;
-      if (expectingContentRef.current) {
+      const isExplicit = expectingContentRef.current;
+      if (isExplicit) {
         // Explicit action (zoom, reload, first connect): full clear including scrollback
         clearSeq = new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x33, 0x4a, 0x1b, 0x5b, 0x48]);
         expectingContentRef.current = false;
@@ -455,6 +456,13 @@ export function DesktopLayout({
       if (callbacks && callbacks.size > 0) {
         for (const cb of callbacks) {
           cb(combined);
+        }
+        // After writing initial-content on implicit reconnect, scroll to bottom
+        // to prevent the terminal from jumping to the top of scrollback buffer
+        if (!isExplicit) {
+          requestAnimationFrame(() => {
+            terminalRefs.current?.get(paneId)?.scrollToBottom();
+          });
         }
       } else {
         // Buffer for replay when Terminal component mounts and registers callback

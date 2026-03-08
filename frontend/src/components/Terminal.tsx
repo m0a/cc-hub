@@ -132,6 +132,7 @@ export interface TerminalRef {
   getProposedSize: () => { cols: number; rows: number } | null;
   /** Resize xterm to exact cols/rows without triggering resize-back-to-tmux. */
   setExactSize: (cols: number, rows: number) => void;
+  scrollToBottom: () => void;
 }
 
 export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(function TerminalComponent({
@@ -340,6 +341,9 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       }
       // Note: does NOT trigger resizeRef / sendControlResize.
       // This is intentional: tmux already knows the correct pane sizes.
+    },
+    scrollToBottom: () => {
+      terminalRef.current?.scrollToBottom();
     },
   }), []);
 

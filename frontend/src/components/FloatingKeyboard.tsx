@@ -421,10 +421,24 @@ export function FloatingKeyboard({
                 autoComplete="off"
                 spellCheck={false}
                 enterKeyHint="send"
-                placeholder="日本語入力 - Enterで送信"
+                placeholder="日本語入力"
                 className="flex-1 px-3 py-2 bg-th-bg border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-green-500"
                 style={{ fontSize: '16px' }}
               />
+              <button
+                onClick={() => {
+                  if (inputValue) {
+                    const result = onSend(inputValue);
+                    if (result === false) return;
+                    setInputValue('');
+                  }
+                  onSend('\r');
+                  inputRef.current?.focus();
+                }}
+                className="px-3 py-2 bg-green-700 hover:bg-green-600 active:bg-green-500 rounded text-white font-medium min-w-[3rem]"
+              >
+                ↵
+              </button>
               <button
                 onClick={handleSwitchToKeyboard}
                 className="px-3 py-2 bg-th-surface-hover hover:bg-th-surface-active active:bg-th-surface-active rounded text-th-text font-medium"

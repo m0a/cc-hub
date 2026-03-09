@@ -152,12 +152,12 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'https://localhost:3000',
+        target: 'https://localhost:3456',
         changeOrigin: true,
         secure: false,
       },
       '/ws': {
-        target: 'wss://localhost:3000',
+        target: 'wss://localhost:3456',
         ws: true,
         secure: false,
       },

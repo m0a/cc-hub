@@ -13,7 +13,7 @@ CC Hub is a web-based terminal session manager for Claude Code. It runs Claude C
 bun run dev
 
 # Individual services
-bun run dev:backend   # Backend only (port 3000)
+bun run dev:backend   # Backend only (port 3456)
 bun run dev:frontend  # Frontend only (port 5173)
 
 # Testing and linting

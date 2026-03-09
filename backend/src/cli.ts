@@ -6,7 +6,7 @@ const VERSION = pkg.version;
 
 // Development mode detection (running with bun run --watch)
 const isDev = process.argv.some(arg => arg.includes('--watch'));
-const DEFAULT_PORT = isDev ? 3000 : 5923;
+const DEFAULT_PORT = isDev ? 3456 : 5923;
 
 interface CliOptions {
   command: 'serve' | 'setup' | 'update' | 'status' | 'notify' | 'help' | 'version';

@@ -8,7 +8,7 @@
  */
 
 const PRODUCTION_PORT = 5923;
-const DEV_PORT = 3000;
+const DEV_PORT = 3456;
 
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];

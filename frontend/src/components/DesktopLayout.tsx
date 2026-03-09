@@ -436,18 +436,10 @@ export function DesktopLayout({
       }, 50);
     },
     onInitialContent: (paneId, data) => {
-      // Choose clear sequence based on whether content was explicitly requested.
-      // ESC[2J = clear screen, ESC[3J = clear scrollback, ESC[H = cursor home
-      let clearSeq: Uint8Array;
-      const isExplicit = expectingContentRef.current;
-      if (isExplicit) {
-        // Explicit action (zoom, reload, first connect): full clear including scrollback
-        clearSeq = new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x33, 0x4a, 0x1b, 0x5b, 0x48]);
-        expectingContentRef.current = false;
-      } else {
-        // Implicit (reconnect resize): clear screen only, preserve scrollback
-        clearSeq = new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x48]);
-      }
+      // Always do full reset: ESC[2J (clear screen) + ESC[3J (clear scrollback) + ESC[H (cursor home)
+      // capture-pane -S - includes the full scrollback, so it will be reconstructed.
+      const clearSeq = new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x33, 0x4a, 0x1b, 0x5b, 0x48]);
+      expectingContentRef.current = false;
       const combined = new Uint8Array(clearSeq.length + data.length);
       combined.set(clearSeq);
       combined.set(data, clearSeq.length);
@@ -457,13 +449,10 @@ export function DesktopLayout({
         for (const cb of callbacks) {
           cb(combined);
         }
-        // After writing initial-content on implicit reconnect, scroll to bottom
-        // to prevent the terminal from jumping to the top of scrollback buffer
-        if (!isExplicit) {
-          requestAnimationFrame(() => {
-            terminalRefs.current?.get(paneId)?.scrollToBottom();
-          });
-        }
+        // Scroll to bottom after writing content
+        requestAnimationFrame(() => {
+          terminalRefs.current?.get(paneId)?.scrollToBottom();
+        });
       } else {
         // Buffer for replay when Terminal component mounts and registers callback
         if (!initialContentBufferRef.current.has(paneId)) {

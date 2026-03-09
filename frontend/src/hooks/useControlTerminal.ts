@@ -295,6 +295,24 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
     }
   }, [sendMessage, sessionId, connect]);
 
+  // Reconnect immediately when tab becomes visible (tablet background recovery)
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') return;
+      const ws = wsRef.current;
+      if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+        // Cancel pending delayed reconnect and reconnect immediately
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = null;
+        }
+        connect();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [connect]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {

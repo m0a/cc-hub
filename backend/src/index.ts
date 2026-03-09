@@ -298,5 +298,9 @@ export default {
     // Handle regular HTTP requests
     return app.fetch(req);
   },
-  websocket: terminalWebSocket,
+  websocket: {
+    ...terminalWebSocket,
+    idleTimeout: 120, // seconds - keep alive with client pings every 10s
+    sendPings: true, // Bun auto-sends WebSocket pings
+  } as any,
 };

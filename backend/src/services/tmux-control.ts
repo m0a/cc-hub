@@ -688,11 +688,12 @@ export class TmuxControlSession {
 
   /**
    * Capture existing pane content (with ANSI escapes).
-   * Uses -S - to include the full scrollback buffer so that
-   * xterm.js has history available for scrolling.
+   * Only captures the visible area (no scrollback) to avoid corrupted
+   * content from tmux reflow when terminal size changes.
+   * Scrollback builds up naturally from %output messages.
    */
   async capturePane(paneId: string): Promise<string> {
-    return this.sendCommand(`capture-pane -e -p -S - -t ${paneId}`);
+    return this.sendCommand(`capture-pane -e -p -t ${paneId}`);
   }
 
   /**

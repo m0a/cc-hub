@@ -201,12 +201,33 @@ export const terminalWebSocket = {
             // %output is suppressed (readyForOutput=false) until initial-content is sent,
             // preventing duplicate content from tmux reflow during resize.
             try {
+              // Check pane sizes BEFORE resize to detect significant changes
+              const panesBefore = await controlSession.listPanes();
+              const oldSizes = new Map(panesBefore.map(p => [p.paneId, { w: p.width, h: p.height }]));
+
               await controlSession.setClientSizeImmediate(msg.cols, msg.rows);
-              // Capture current pane content and send to client
-              const panes = await controlSession.listPanes();
-              for (const pane of panes) {
+
+              // Check pane sizes AFTER resize
+              const panesAfter = await controlSession.listPanes();
+
+              for (const pane of panesAfter) {
                 try {
-                  const content = await controlSession.capturePane(pane.paneId);
+                  const old = oldSizes.get(pane.paneId);
+                  const sizeChanged = !old || Math.abs(old.w - pane.width) > 2 || Math.abs(old.h - pane.height) > 2;
+
+                  // If pane size changed significantly, scrollback reflow corrupts TUI content.
+                  // Only capture the visible area (no -S -) and request app redraw via SIGWINCH.
+                  let content: string;
+                  if (sizeChanged) {
+                    // Capture visible area only (avoids corrupted scrollback)
+                    content = await controlSession.sendCommand(`capture-pane -e -p -t ${pane.paneId}`);
+                    // Clear scrollback to prevent scrolling into corrupted content
+                    await controlSession.sendCommand(`clear-history -t ${pane.paneId}`).catch(() => {});
+                  } else {
+                    // Size unchanged - safe to include full scrollback
+                    content = await controlSession.capturePane(pane.paneId);
+                  }
+
                   if (content) {
                     // Convert \n to \r\n for xterm.js line rendering
                     const termContent = content.split('\n').join('\r\n');

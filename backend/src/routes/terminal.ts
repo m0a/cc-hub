@@ -13,6 +13,8 @@ interface TerminalData {
   cleanupFns?: Array<() => void>;
   initialContentSent?: boolean;
   readyForOutput?: boolean; // true after initial-content has been delivered
+  outputSuppressedCount?: number;
+  sendFailCount?: number;
 }
 
 const tmuxService = new TmuxService();
@@ -63,17 +65,32 @@ export const terminalWebSocket = {
 
       // Output listener: forward pane output to this client
       // Suppressed until initial-content has been delivered to prevent duplicate content
+      ws.data.outputSuppressedCount = 0;
+      ws.data.sendFailCount = 0;
       cleanupFns.push(
         controlSession.onOutput((paneId, data) => {
-          if (!ws.data.readyForOutput) return;
+          if (!ws.data.readyForOutput) {
+            ws.data.outputSuppressedCount = (ws.data.outputSuppressedCount || 0) + 1;
+            if (ws.data.outputSuppressedCount % 50 === 1) {
+              console.warn(`[control] Output suppressed (readyForOutput=false) for ${sessionId}: count=${ws.data.outputSuppressedCount}`);
+            }
+            return;
+          }
           try {
-            ws.send(JSON.stringify({
+            const result = ws.send(JSON.stringify({
               type: 'output',
               paneId,
               data: data.toString('base64'),
             }));
-          } catch {
-            // Client may have disconnected
+            // Bun ws.send returns number of bytes sent, or 0 if backpressure/dropped
+            if (result === 0) {
+              ws.data.sendFailCount = (ws.data.sendFailCount || 0) + 1;
+              if (ws.data.sendFailCount % 20 === 1) {
+                console.warn(`[control] ws.send backpressure for ${sessionId}: dropped=${ws.data.sendFailCount} buffered=${ws.getBufferedAmount()}`);
+              }
+            }
+          } catch (err) {
+            console.warn(`[control] ws.send error for ${sessionId}:`, err);
           }
         })
       );
@@ -306,6 +323,13 @@ export const terminalWebSocket = {
           break;
         }
         case 'ping': {
+          // Log health info for debugging terminal freeze
+          const buffered = ws.getBufferedAmount();
+          const suppressed = ws.data.outputSuppressedCount || 0;
+          const dropped = ws.data.sendFailCount || 0;
+          if (dropped > 0 || suppressed > 0 || buffered > 0) {
+            console.log(`[control] health ${ws.data.sessionId}: ready=${ws.data.readyForOutput} suppressed=${suppressed} dropped=${dropped} buffered=${buffered}`);
+          }
           ws.send(JSON.stringify({ type: 'pong', timestamp: msg.timestamp }));
           break;
         }

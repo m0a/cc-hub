@@ -298,8 +298,8 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
   // Two-pane layout for wide screens
   if (isWideScreen) {
     return (
-      <div className="fixed inset-0 z-50 bg-[var(--color-overlay)] flex items-center justify-center">
-        <div className="bg-th-bg w-full h-full lg:w-[95%] lg:h-[90%] lg:max-w-6xl lg:rounded-lg lg:shadow-2xl overflow-hidden flex flex-col">
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="bg-th-bg w-full h-full overflow-hidden flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between px-3 py-2 border-b border-th-border bg-th-surface">
             <div className="flex items-center gap-2">
@@ -494,7 +494,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
   // Single-pane layout for narrow screens (mobile)
   return (
     <div className="fixed inset-0 z-50 bg-[var(--color-overlay)] flex items-center justify-center">
-      <div className="bg-th-bg w-full h-full lg:w-[90%] lg:h-[90%] lg:max-w-5xl lg:rounded-lg lg:shadow-2xl overflow-hidden flex flex-col">
+      <div className="bg-th-bg w-full h-full overflow-hidden flex flex-col">
         {/* Error */}
         {error && (
           <div className="px-3 py-2 bg-red-900/50 text-red-300 text-sm border-b border-red-800">

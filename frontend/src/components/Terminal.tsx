@@ -453,8 +453,25 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     try {
       const webglAddon = new WebglAddon();
       webglAddon.onContextLoss(() => {
-        console.warn('[Terminal] WebGL context lost, falling back to canvas renderer');
+        console.warn('[Terminal] WebGL context lost, disposing and reloading');
         webglAddon.dispose();
+        // After dispose, xterm falls back to DOM renderer which may not repaint.
+        // Try to reload WebGL after a short delay, or request content refresh.
+        setTimeout(() => {
+          try {
+            const newWebgl = new WebglAddon();
+            newWebgl.onContextLoss(() => {
+              console.warn('[Terminal] WebGL context lost again, staying on canvas');
+              newWebgl.dispose();
+            });
+            term.loadAddon(newWebgl);
+            console.log('[Terminal] WebGL renderer reloaded after context loss');
+          } catch {
+            console.warn('[Terminal] WebGL reload failed, using canvas renderer');
+          }
+          // Force a refresh to repaint terminal content
+          term.refresh(0, term.rows - 1);
+        }, 500);
       });
       term.loadAddon(webglAddon);
       console.log('[Terminal] WebGL renderer loaded');
@@ -570,6 +587,14 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     // ResizeObserver for container size changes
     const resizeObserver = new ResizeObserver(doResize);
     resizeObserver.observe(container);
+
+    // Force repaint when tab becomes visible (WebGL context may be stale after background)
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && terminalRef.current) {
+        terminalRef.current.refresh(0, terminalRef.current.rows - 1);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     // Window resize event
     window.addEventListener('resize', doResize);
@@ -874,6 +899,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         clearTimeout(resizeTimeout);
       }
       resizeObserver.disconnect();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('resize', doResize);
       viewport?.removeEventListener('resize', doResize);
       onDataDisposable.dispose();

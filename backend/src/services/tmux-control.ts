@@ -25,7 +25,7 @@ import type { TmuxLayoutNode } from '../../../shared/types';
 const SEND_KEYS_CHUNK_SIZE = 4096;
 
 // Debounce for refresh-client -C
-const RESIZE_DEBOUNCE_MS = 100;
+const RESIZE_DEBOUNCE_MS = 50;
 
 // Grace period before destroying session after all clients disconnect
 const GRACE_PERIOD_MS = 30_000;

@@ -111,18 +111,31 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
       // Don't set isConnected yet - wait for 'ready' message from server.
       // The server sends 'ready' after the async open handler completes
       // (control session created, initial layout sent).
+      console.log(`[WS] opened for ${sessionId}`);
 
-      // Start periodic ping
+      // Start periodic ping + health check
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       pingIntervalRef.current = window.setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
+          const silentSec = Math.round((Date.now() - wsLastMsgTime) / 1000);
+          // Always log health status for debugging terminal freeze issues
+          console.log(`[WS] health: silent=${silentSec}s msgs=${wsMsgCount} outputs=${wsOutputCount} buffered=${ws.bufferedAmount}`);
           ws.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+        } else {
+          console.warn(`[WS] ping skipped: readyState=${ws.readyState}`);
         }
       }, 10_000);
     };
 
+    // Track message activity for health monitoring
+    let wsMsgCount = 0;
+    let wsOutputCount = 0;
+    let wsLastMsgTime = Date.now();
+
     ws.onmessage = (event) => {
       if (typeof event.data !== 'string') return;
+      wsMsgCount++;
+      wsLastMsgTime = Date.now();
 
       let msg: ControlServerMessage;
       try {
@@ -133,6 +146,7 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
 
       switch (msg.type) {
         case 'output': {
+          wsOutputCount++;
           const bytes = base64ToUint8Array(msg.data);
           onPaneOutputRef.current?.(msg.paneId, bytes);
           break;
@@ -177,6 +191,7 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
     };
 
     ws.onclose = (event) => {
+      console.log(`[WS] closed for ${sessionId}: code=${event.code} reason=${event.reason} msgs=${wsMsgCount} outputs=${wsOutputCount}`);
       // Guard: only update state if this WS is still the active one.
       // During session switch, disconnect() → connect() creates a new WS
       // before the old one's onclose fires asynchronously.

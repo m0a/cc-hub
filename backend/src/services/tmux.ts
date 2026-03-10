@@ -127,7 +127,7 @@ export class TmuxService {
 
       // Get pane info for each session (command, path, title, tty, pane_id, active)
       // Use | as separator since path can contain :
-      const panesProc = Bun.spawn(['tmux', 'list-panes', '-a', '-F', '#{session_name}|#{pane_id}|#{pane_current_command}|#{pane_title}|#{pane_tty}|#{pane_active}|#{pane_dead}|#{pane_current_path}'], {
+      const panesProc = Bun.spawn(['tmux', 'list-panes', '-a', '-F', '#{session_name}\x1f#{pane_id}\x1f#{pane_current_command}\x1f#{pane_title}\x1f#{pane_tty}\x1f#{pane_active}\x1f#{pane_dead}\x1f#{pane_current_path}'], {
         stdout: 'pipe',
         stderr: 'pipe',
       });
@@ -143,11 +143,11 @@ export class TmuxService {
           .split('\n')
           .filter((line) => line.length > 0)
           .forEach((line) => {
-            const parts = line.split('|');
+            const parts = line.split('\x1f');
             if (parts.length >= 8) {
               const [sessionName, paneId, command, title, tty, active, dead, ...pathParts] = parts;
-              // Path might contain |, so join the rest
-              const panePath = pathParts.join('|');
+              // Path might contain \x1f (unlikely), so join the rest
+              const panePath = pathParts.join('\x1f');
               const isActive = active === '1';
               const isDead = dead === '1';
 

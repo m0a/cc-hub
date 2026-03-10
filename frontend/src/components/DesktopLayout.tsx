@@ -386,10 +386,12 @@ export function DesktopLayout({
     sessionId: controlSessionId || '',
     onPaneOutput: (paneId, data) => {
       const callbacks = paneCallbacksRef.current.get(paneId);
-      if (callbacks) {
-        for (const cb of callbacks) {
-          cb(data);
-        }
+      if (!callbacks || callbacks.size === 0) {
+        console.warn(`[TP] output for ${paneId}: ${data.length} bytes but NO callbacks registered`);
+        return;
+      }
+      for (const cb of callbacks) {
+        cb(data);
       }
     },
     onLayoutChange: (layout) => {
@@ -436,6 +438,7 @@ export function DesktopLayout({
       }, 50);
     },
     onInitialContent: (paneId, data) => {
+      console.log(`[TP] initial-content for ${paneId}: ${data.length} bytes, expected=${expectingContentRef.current}`);
       // Always do full reset: ESC[2J (clear screen) + ESC[3J (clear scrollback) + ESC[H (cursor home)
       // capture-pane -S - includes the full scrollback, so it will be reconstructed.
       const clearSeq = new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x33, 0x4a, 0x1b, 0x5b, 0x48]);
@@ -563,7 +566,7 @@ export function DesktopLayout({
       } else {
         console.log(`[Resize] Failed to compute size, root type=${root.type}, totalSize=`, totalSize);
       }
-    }, 100);
+    }, 50);
   }, []);
 
   // Compute control pane tree synchronously (not via useEffect) to avoid paneId mismatch

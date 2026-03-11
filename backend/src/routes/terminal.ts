@@ -209,6 +209,11 @@ export const terminalWebSocket = {
             try {
               await controlSession.setClientSizeImmediate(msg.cols, msg.rows);
 
+              // Wait for applications to redraw after SIGWINCH from resize.
+              // Without this delay, capture-pane grabs content before the app
+              // has redrawn at the new size, showing corrupted/reflowed content.
+              await new Promise(resolve => setTimeout(resolve, 200));
+
               const panes = await controlSession.listPanes();
               for (const pane of panes) {
                 try {
@@ -298,6 +303,8 @@ export const terminalWebSocket = {
           ws.data.readyForOutput = false;
           try {
             await controlSession.zoomPane(msg.paneId);
+            // Wait for app to redraw after zoom resize
+            await new Promise(resolve => setTimeout(resolve, 200));
             // Capture zoomed pane content and send as initial-content
             try {
               const content = await controlSession.capturePane(msg.paneId);

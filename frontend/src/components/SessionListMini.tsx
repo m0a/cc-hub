@@ -116,7 +116,7 @@ function SessionMiniItem({
     >
       <div className="flex items-center gap-2">
         <span className="text-sm text-th-text truncate flex-1">{displayTitle}</span>
-        {isWaiting && extSession.waitingToolName && (
+        {isWaiting && extSession.waitingToolName && extSession.waitingToolName !== 'UserInput' && (
           <span className="text-[10px] text-yellow-400 bg-yellow-900/50 px-1 rounded shrink-0">{waitingLabel}</span>
         )}
         {isClaudeRunning && !isWaiting && (

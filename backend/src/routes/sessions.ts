@@ -19,13 +19,17 @@ export const sessions = new Hono();
 function getIndicatorState(
   isClaudeRunning: boolean,
   waitingForInput: boolean,
-  _waitingToolName?: string
+  waitingToolName?: string
 ): IndicatorState {
   if (!isClaudeRunning) {
     return 'completed'; // Not running Claude = shell prompt
   }
 
   if (waitingForInput) {
+    // UserInput = end_turn (Claude finished, idle). Treat as completed (no badge).
+    if (waitingToolName === 'UserInput') {
+      return 'completed';
+    }
     return 'waiting_input';
   }
 

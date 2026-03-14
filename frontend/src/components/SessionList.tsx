@@ -567,8 +567,8 @@ function SessionItem({
     return extSession.indicatorState;
   })();
 
-  // cardIndicator takes priority: if hook says 'processing', don't show waiting
-  const isWaiting = cardIndicator === 'waiting_input' || (cardIndicator !== 'processing' && extSession.waitingForInput);
+  // Use indicatorState (not waitingForInput) to determine badge display
+  const isWaiting = cardIndicator === 'waiting_input';
   // Show badge for any waiting tool (UserInput = idle, no badge)
   const hasWaitingTool = !!extSession.waitingToolName && extSession.waitingToolName !== 'UserInput';
   const waitingLabel = extSession.waitingToolName === 'AskUserQuestion' ? t('session.waitingQuestion')

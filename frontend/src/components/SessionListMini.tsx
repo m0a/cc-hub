@@ -54,7 +54,7 @@ function SessionMiniItem({
   };
 
   const isClaudeRunning = extSession.currentCommand === 'claude';
-  const isWaiting = extSession.waitingForInput;
+  const isWaiting = extSession.indicatorState === 'waiting_input';
   const waitingLabel = extSession.waitingToolName === 'AskUserQuestion' ? t('session.waitingQuestionShort')
     : extSession.waitingToolName === 'EnterPlanMode' ? t('session.waitingPlanShort')
     : extSession.waitingToolName === 'ExitPlanMode' ? t('session.waitingPlanShort')
@@ -119,7 +119,7 @@ function SessionMiniItem({
         {isWaiting && extSession.waitingToolName && extSession.waitingToolName !== 'UserInput' && (
           <span className="text-[10px] text-yellow-400 bg-yellow-900/50 px-1 rounded shrink-0">{waitingLabel}</span>
         )}
-        {isClaudeRunning && !isWaiting && (
+        {isClaudeRunning && extSession.indicatorState === 'processing' && (
           <span className="text-[10px] text-green-400 bg-green-900/50 px-1 rounded shrink-0">cc</span>
         )}
         {showConversationButton && (

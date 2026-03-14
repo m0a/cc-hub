@@ -438,11 +438,16 @@ export function DesktopLayout({
       }, 50);
     },
     onInitialContent: (paneId, data) => {
-      console.log(`[TP] initial-content for ${paneId}: ${data.length} bytes, expected=${expectingContentRef.current}`);
-      // Always do full reset: ESC[2J (clear screen) + ESC[3J (clear scrollback) + ESC[H (cursor home)
-      // capture-pane -S - includes the full scrollback, so it will be reconstructed.
-      const clearSeq = new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x33, 0x4a, 0x1b, 0x5b, 0x48]);
+      const wasExpected = expectingContentRef.current;
+      console.log(`[TP] initial-content for ${paneId}: ${data.length} bytes, expected=${wasExpected}`);
       expectingContentRef.current = false;
+
+      // Expected (first connect, zoom, explicit request): full clear including scrollback
+      // Unexpected (reconnect): clear visible screen only, preserve scrollback & scroll position
+      const clearSeq = wasExpected
+        ? new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x33, 0x4a, 0x1b, 0x5b, 0x48]) // ESC[2J + ESC[3J + ESC[H
+        : new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x48]); // ESC[2J + ESC[H (no scrollback clear)
+
       const combined = new Uint8Array(clearSeq.length + data.length);
       combined.set(clearSeq);
       combined.set(data, clearSeq.length);
@@ -452,10 +457,13 @@ export function DesktopLayout({
         for (const cb of callbacks) {
           cb(combined);
         }
-        // Scroll to bottom after writing content
-        requestAnimationFrame(() => {
-          terminalRefs.current?.get(paneId)?.scrollToBottom();
-        });
+        // Only scroll to bottom on expected content (first connect, zoom)
+        // On reconnect, preserve user's scroll position
+        if (wasExpected) {
+          requestAnimationFrame(() => {
+            terminalRefs.current?.get(paneId)?.scrollToBottom();
+          });
+        }
       } else {
         // Buffer for replay when Terminal component mounts and registers callback
         if (!initialContentBufferRef.current.has(paneId)) {

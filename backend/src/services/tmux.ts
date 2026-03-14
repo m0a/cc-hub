@@ -290,7 +290,7 @@ export class TmuxService {
         if (spaceIdx === -1) continue;
         const tty = trimmed.substring(0, spaceIdx);
         if (!ttySet.has(tty)) continue;
-        const args = trimmed.substring(spaceIdx + 1);
+        const args = trimmed.substring(spaceIdx + 1).trimStart();
         if (this.isClaudeProcess(args)) {
           result.add(tty);
         }
@@ -433,8 +433,11 @@ export class TmuxService {
 
         if (stat.startsWith('R')) {
           result.set(tty, true); // Actively running
-        } else if (stat.startsWith('S') && (wchan === 'do_epo' || wchan === 'ep_poll' || wchan === 'poll_s')) {
-          result.set(tty, false); // Sleeping (waiting for input)
+        } else if (stat.startsWith('S')) {
+          // Sleeping: check if idle (waiting for user input via epoll) or active (network I/O, etc.)
+          // epoll_wait/poll_schedule = idle event loop = waiting for input
+          const isIdle = wchan.startsWith('do_epoll') || wchan.startsWith('ep_poll') || wchan.startsWith('poll_schedule');
+          result.set(tty, !isIdle); // Active if not in idle epoll
         }
       }
     } catch {

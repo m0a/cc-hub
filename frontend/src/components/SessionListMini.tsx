@@ -58,10 +58,12 @@ function SessionMiniItem({
     : extSession.waitingToolName ? t('session.waitingPermissionShort')
     : t('session.waitingInputShort');
 
-  // Use pane title if cc is running and title exists, otherwise use session name
-  const displayTitle = isClaudeRunning && extSession.paneTitle
-    ? extSession.paneTitle.replace(/^[✳★●◆]\s*/, '')  // Remove status icons
-    : session.name;
+  // Use custom title if set, then pane title, then session name
+  const displayTitle = session.customTitle
+    ? session.customTitle
+    : isClaudeRunning && extSession.paneTitle
+      ? extSession.paneTitle.replace(/^[✳★●◆]\s*/, '')
+      : session.name;
 
   // Show resume button only when Claude is not running and we have a ccSessionId
   const showResumeButton = !isClaudeRunning && extSession.ccSessionId;

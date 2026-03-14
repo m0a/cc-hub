@@ -55,6 +55,7 @@ export interface SessionResponse {
   state: SessionState;
   isExternal?: boolean;
   theme?: SessionTheme;
+  customTitle?: string;
 }
 
 export interface SessionListResponse {

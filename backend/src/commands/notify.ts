@@ -52,7 +52,7 @@ export async function sendNotify(port: number): Promise<void> {
       // Default: try both production (HTTPS) and dev (HTTP), ignore failures
       : [
           { port: PRODUCTION_PORT, https: true },
-          { port: DEV_PORT, https: false },
+          { port: DEV_PORT, https: true },
         ];
 
     await Promise.allSettled(

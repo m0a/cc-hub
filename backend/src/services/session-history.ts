@@ -324,11 +324,8 @@ export class SessionHistoryService {
         }
       }));
 
-      // Sort by latest modified (newest first)
-      projects.sort((a, b) => {
-        if (!a.latestModified || !b.latestModified) return 0;
-        return new Date(b.latestModified).getTime() - new Date(a.latestModified).getTime();
-      });
+      // Sort alphabetically by project name
+      projects.sort((a, b) => a.projectName.localeCompare(b.projectName));
 
       return projects;
     } catch {

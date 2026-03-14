@@ -539,19 +539,21 @@ function SessionItem({
 
   // cardIndicator takes priority: if hook says 'processing', don't show waiting
   const isWaiting = cardIndicator === 'waiting_input' || (cardIndicator !== 'processing' && extSession.waitingForInput);
-  // Only show badge for tools that genuinely need user interaction
-  const userInteractionTools = ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode'];
-  const isUserInteractionWait = extSession.waitingToolName && userInteractionTools.includes(extSession.waitingToolName);
+  // Show badge for any waiting tool
+  const hasWaitingTool = !!extSession.waitingToolName;
   const waitingLabel = extSession.waitingToolName === 'AskUserQuestion' ? t('session.waitingQuestion')
     : extSession.waitingToolName === 'EnterPlanMode' ? t('session.waitingPlan')
     : extSession.waitingToolName === 'ExitPlanMode' ? t('session.waitingPlan')
-    : t('session.waitingInput');
+    : extSession.waitingToolName === 'UserInput' ? t('session.waitingInput')
+    : t('session.waitingPermission');
   const shortPath = extSession.currentPath?.replace(/^\/home\/[^/]+\//, '~/') || '';
 
-  // Use pane title if cc is running and title exists, otherwise use session name
-  const displayTitle = isClaudeRunning && extSession.paneTitle
-    ? extSession.paneTitle.replace(/^[✳★●◆]\s*/, '')  // Remove status icons
-    : session.name;
+  // Use customTitle if set, then pane title if cc is running and title exists, otherwise use session name
+  const displayTitle = session.customTitle
+    ? session.customTitle
+    : isClaudeRunning && extSession.paneTitle
+      ? extSession.paneTitle.replace(/^[✳★●◆]\s*/, '')  // Remove status icons
+      : session.name;
 
   // Show resume button only when Claude is not running and we have a ccSessionId
   const showResumeButton = !isClaudeRunning && extSession.ccSessionId;
@@ -598,7 +600,7 @@ function SessionItem({
       onMouseLeave={handleMouseLeave}
       onContextMenu={handleContextMenu}
       style={{ touchAction: 'pan-y', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
-      className={`p-3 rounded cursor-pointer transition-colors select-none ${
+      className={`p-3 md:p-4 rounded cursor-pointer transition-colors select-none ${
         isClaudeRunning
           ? `bg-th-surface hover:bg-th-surface-hover active:bg-th-surface-active ${getBorderClass()}`
           : `bg-th-surface/60 hover:bg-th-surface-hover/70 active:bg-th-surface-active/70 ${getBorderClass()}`
@@ -608,8 +610,8 @@ function SessionItem({
         {/* Status dot */}
         <span className={`w-2 h-2 rounded-full shrink-0 ${statusDotClass}`} />
         <span className={`font-medium truncate flex-1 ${!isClaudeRunning ? 'text-th-text-secondary' : ''}`}>{displayTitle}</span>
-        {/* Primary badge: status (max 1) — skip generic "入力待ち", only show specific wait reasons */}
-        {isWaiting && isUserInteractionWait ? (
+        {/* Primary badge: status (max 1) */}
+        {isWaiting && hasWaitingTool ? (
           <span className="text-xs text-yellow-400 bg-yellow-900/50 px-1.5 py-0.5 rounded shrink-0">{waitingLabel}</span>
         ) : cardIndicator === 'processing' ? (
           <span className="text-xs text-emerald-400 bg-emerald-900/50 px-1.5 py-0.5 rounded shrink-0">{t('session.processing')}</span>
@@ -644,8 +646,13 @@ function SessionItem({
           {shortPath}
         </div>
       )}
+      {extSession.ccFirstPrompt && (
+        <div className="hidden md:block text-xs text-th-text-muted mt-1 truncate pl-4">
+          {extSession.ccFirstPrompt}
+        </div>
+      )}
       {(extSession.ccSummary || extSession.ccFirstPrompt) && (
-        <div className="text-xs text-th-text-secondary mt-1 truncate pl-4">
+        <div className="text-xs text-th-text-secondary mt-1 truncate md:line-clamp-2 md:whitespace-normal pl-4">
           {extSession.ccSummary || extSession.ccFirstPrompt}
         </div>
       )}
@@ -959,7 +966,7 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
                   {t('session.noSessions')} {t('session.noSessionsHint')}
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-2 md:grid md:grid-cols-2 md:gap-3 md:space-y-0">
                   {sessions.map((session, index) => (
                     <div key={session.id} data-onboarding={index === 0 ? 'session-item' : undefined}>
                       <SessionItem

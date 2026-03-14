@@ -195,7 +195,8 @@ function ProjectGroupItem({
           {isLoading ? (
             <div className="px-3 py-2 text-xs text-th-text-muted">{t('common.loading')}</div>
           ) : sessions && sessions.length > 0 ? (
-            sessions.map((session) => (
+            <div className="md:grid md:grid-cols-2 md:gap-1 md:px-1">
+            {sessions.map((session) => (
               <HistoryItem
                 key={session.sessionId}
                 session={session}
@@ -205,7 +206,8 @@ function ProjectGroupItem({
                 isResuming={resumingId === session.sessionId}
                 isActive={activeCcSessionIds.has(session.sessionId)}
               />
-            ))
+            ))}
+            </div>
           ) : (
             <div className="px-3 py-2 text-xs text-th-text-muted">{t('history.noSessionsInProject')}</div>
           )}
@@ -446,6 +448,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
                 t('history.searchResults', { query: searchQuery, count: searchResults.length })
               )}
             </div>
+            <div className="md:grid md:grid-cols-2 md:gap-1 md:px-1">
             {searchResults.map((session) => (
               <HistoryItem
                 key={session.sessionId}
@@ -457,6 +460,7 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
                 isActive={activeCcSessionIds.has(session.sessionId)}
               />
             ))}
+            </div>
             {!isSearching && searchResults.length === 0 && (
               <div className="p-4 text-center text-th-text-muted text-sm">
                 {t('history.noSearchResults')}

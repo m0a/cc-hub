@@ -5,7 +5,7 @@ import { TmuxService } from '../services/tmux';
 import { ClaudeCodeService } from '../services/claude-code';
 import { SessionHistoryService } from '../services/session-history';
 import { PromptHistoryService } from '../services/prompt-history';
-import { getAllSessionThemes, setSessionTheme } from '../services/session-themes';
+import { getAllSessionMetadata, setSessionTheme, setSessionTitle } from '../services/session-metadata';
 import { getIndicatorOverride } from './notify';
 
 const tmuxService = new TmuxService();
@@ -40,7 +40,7 @@ const ResumeSessionSchema = z.object({
 // GET /sessions - List all tmux sessions
 sessions.get('/', async (c) => {
   const tmuxSessions = await tmuxService.listSessions();
-  const sessionThemes = await getAllSessionThemes();
+  const sessionMetadata = await getAllSessionMetadata();
 
   // Get Claude Code session IDs from PTY for each tmux session running claude
   const sessionIdByTmuxId = new Map<string, string>();
@@ -128,10 +128,12 @@ sessions.get('/', async (c) => {
       const ttyName = s.paneTty?.replace('/dev/', '');
       const isProcessActive = ttyName ? (processRunningByTty.get(ttyName) || false) : false;
 
-      if (!isProcessActive) {
+      if (isProcessActive) {
+        waitingForInput = false;
+      } else if (ccSession?.waitingForInput) {
         waitingForInput = true;
       } else {
-        waitingForInput = s.waitingForInput || ccSession?.waitingForInput || false;
+        waitingForInput = false;
       }
     } else {
       waitingForInput = s.waitingForInput || false;
@@ -175,7 +177,8 @@ sessions.get('/', async (c) => {
       gitBranch: includeClaudeInfo ? ccSession?.gitBranch : undefined,
       durationMinutes: includeClaudeInfo ? durationMinutes : undefined,
       firstMessageId: includeClaudeInfo ? ccSession?.firstMessageId : undefined,
-      theme: sessionThemes[s.id],
+      theme: sessionMetadata[s.id]?.theme,
+      customTitle: sessionMetadata[s.id]?.title,
       panes: s.panes ? s.panes.map((p: { paneId: string; command: string; path: string; title: string; tty: string; isActive: boolean; isDead: boolean }) => {
         const ttyName = p.tty?.replace('/dev/', '');
         const agentInfo = ttyName ? agentInfoByTty.get(ttyName) : undefined;
@@ -560,6 +563,33 @@ sessions.put('/:id/theme', async (c) => {
     return c.json({ success: true, theme: parsed.data.theme });
   } catch (_error) {
     return c.json({ error: 'Failed to update theme' }, 500);
+  }
+});
+
+// PUT /sessions/:id/title - Update session custom title
+const UpdateTitleSchema = z.object({
+  title: z.string().max(100).nullable(),
+});
+
+sessions.put('/:id/title', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = UpdateTitleSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid title' }, 400);
+  }
+
+  const exists = await tmuxService.sessionExists(id);
+  if (!exists) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+
+  try {
+    await setSessionTitle(id, parsed.data.title);
+    return c.json({ success: true, title: parsed.data.title });
+  } catch (_error) {
+    return c.json({ error: 'Failed to update title' }, 500);
   }
 });
 

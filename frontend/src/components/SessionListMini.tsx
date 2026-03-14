@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { SessionResponse, IndicatorState, ConversationMessage } from '../../../shared/types';
+import type { SessionResponse, SessionTheme, IndicatorState, ConversationMessage } from '../../../shared/types';
 import { useSessions } from '../hooks/useSessions';
 import { useSessionHistory } from '../hooks/useSessionHistory';
 import { authFetch } from '../services/api';
 import { SessionHistory } from './SessionHistory';
 import { ConversationViewer } from './ConversationViewer';
 import { PromptSearch } from './PromptSearch';
+import { SessionMenuDialog } from './SessionList';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -25,12 +26,14 @@ function SessionMiniItem({
   onClick,
   onResume,
   onShowConversation,
+  onLongPress,
 }: {
   session: SessionResponse;
   isActive: boolean;
   onClick: () => void;
   onResume?: (sessionId: string, ccSessionId?: string) => void;
   onShowConversation?: (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => void;
+  onLongPress?: (session: SessionResponse) => void;
 }) {
   const { t } = useTranslation();
   // Get extra session info
@@ -86,9 +89,27 @@ function SessionMiniItem({
     }
   };
 
+  // Long press detection
+  const longPressTimerRef = useRef<number | null>(null);
+  const handleTouchStart = () => {
+    longPressTimerRef.current = window.setTimeout(() => {
+      onLongPress?.(session);
+    }, 500);
+  };
+  const handleTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
   return (
     <div
       onClick={onClick}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+      onContextMenu={e => { e.preventDefault(); onLongPress?.(session); }}
       className={`px-2 py-1.5 cursor-pointer transition-colors border-b border-th-border/50 ${
         isActive ? 'bg-blue-900/50' : 'hover:bg-th-surface-hover/50 active:bg-th-surface-active/50'
       }`}
@@ -144,10 +165,11 @@ type TabType = 'sessions' | 'history' | 'search';
 
 export function SessionListMini({ onSelectSession, activeSessionId, onCreateSession }: SessionListMiniProps) {
   const { t } = useTranslation();
-  const { sessions, fetchSessions } = useSessions();
+  const { sessions, fetchSessions, updateSessionTheme, deleteSession } = useSessions();
   const { fetchConversation } = useSessionHistory();
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<TabType>('sessions');
+  const [sessionForMenu, setSessionForMenu] = useState<SessionResponse | null>(null);
 
   // Conversation viewer state
   const [viewingConversation, setViewingConversation] = useState<{
@@ -177,6 +199,38 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
       activeElement?.scrollIntoView({ block: 'nearest' });
     }
   }, [activeSessionId]);
+
+  // Session menu handlers
+  const handleMenuChangeTheme = useCallback(async (theme: SessionTheme | null) => {
+    if (sessionForMenu) {
+      await updateSessionTheme(sessionForMenu.id, theme);
+      await fetchSessions(true);
+      setSessionForMenu(null);
+    }
+  }, [sessionForMenu, updateSessionTheme, fetchSessions]);
+
+  const handleMenuChangeTitle = useCallback(async (title: string | null) => {
+    if (sessionForMenu) {
+      try {
+        await authFetch(`${API_BASE}/api/sessions/${sessionForMenu.id}/title`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title }),
+        });
+        await fetchSessions(true);
+        setSessionForMenu(null);
+      } catch (err) {
+        console.error('Failed to update title:', err);
+      }
+    }
+  }, [sessionForMenu, fetchSessions]);
+
+  const handleMenuDelete = useCallback(async () => {
+    if (sessionForMenu) {
+      await deleteSession(sessionForMenu.id);
+      setSessionForMenu(null);
+    }
+  }, [sessionForMenu, deleteSession]);
 
   // Resume a Claude session
   const handleResume = useCallback(async (sessionId: string, ccSessionId?: string) => {
@@ -291,6 +345,7 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
                   onClick={() => onSelectSession(session)}
                   onResume={handleResume}
                   onShowConversation={handleShowConversation}
+                  onLongPress={setSessionForMenu}
                 />
               </div>
             ))
@@ -308,6 +363,17 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
         <div className="flex-1 overflow-hidden">
           <PromptSearch />
         </div>
+      )}
+
+      {/* Session menu dialog (long press) */}
+      {sessionForMenu && (
+        <SessionMenuDialog
+          session={sessionForMenu}
+          onChangeTheme={handleMenuChangeTheme}
+          onChangeTitle={handleMenuChangeTitle}
+          onDelete={handleMenuDelete}
+          onCancel={() => setSessionForMenu(null)}
+        />
       )}
 
       {/* Conversation viewer modal */}

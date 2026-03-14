@@ -67,7 +67,8 @@ const notify = new Hono();
 // hookイベントによるindicatorStateの一時オーバーライド
 // ccSessionId → { state, expiresAt }
 const stateOverrides = new Map<string, { state: IndicatorState; expiresAt: number }>();
-const OVERRIDE_TTL = 30_000; // 30秒後に期限切れ（ポーリング間隔5秒に余裕を持たせる）
+const OVERRIDE_TTL_WAITING = 30_000; // waiting_input: 30秒後に期限切れ（ポーリング間隔5秒に余裕を持たせる）
+const OVERRIDE_TTL_PROCESSING = 300_000; // processing: 5分（タスク実行中は長時間かかる。Stopイベントで上書きされる）
 
 function hookEventToState(event: string, toolName?: string): IndicatorState | null {
   switch (event) {
@@ -125,7 +126,8 @@ notify.post('/', async (c) => {
     if (sessionId) {
       const newState = hookEventToState(event, body.tool_name as string | undefined);
       if (newState) {
-        stateOverrides.set(sessionId, { state: newState, expiresAt: Date.now() + OVERRIDE_TTL });
+        const ttl = newState === 'processing' ? OVERRIDE_TTL_PROCESSING : OVERRIDE_TTL_WAITING;
+        stateOverrides.set(sessionId, { state: newState, expiresAt: Date.now() + ttl });
       }
     }
 

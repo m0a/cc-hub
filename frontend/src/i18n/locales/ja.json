@@ -38,6 +38,8 @@
     "resuming": "再開中...",
     "navigate": "移動",
     "colorTheme": "テーマカラー",
+    "customTitle": "カスタムタイトル",
+    "customTitlePlaceholder": "タイトルを入力（空で自動）",
     "clearColor": "色をクリア",
     "deleteSession": "セッションを削除",
     "deleteConfirm": "{{name}} を削除しますか？",

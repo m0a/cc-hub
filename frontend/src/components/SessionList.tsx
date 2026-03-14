@@ -62,20 +62,23 @@ interface SessionListProps {
   hideDashboardTab?: boolean;  // Hide dashboard tab (used in modal)
 }
 
-// Session menu dialog (color change + delete)
-function SessionMenuDialog({
+// Session menu dialog (color change + title edit + delete)
+export function SessionMenuDialog({
   session,
   onChangeTheme,
+  onChangeTitle,
   onDelete,
   onCancel,
 }: {
   session: SessionResponse;
   onChangeTheme: (theme: SessionTheme | null) => void;
+  onChangeTitle?: (title: string | null) => void;
   onDelete: () => void;
   onCancel: () => void;
 }) {
   const { t } = useTranslation();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [titleValue, setTitleValue] = useState(session.customTitle || '');
 
   if (showDeleteConfirm) {
     return (
@@ -140,6 +143,33 @@ function SessionMenuDialog({
             ))}
           </div>
         </div>
+
+        {/* Title edit */}
+        {onChangeTitle && (
+          <div className="mb-4">
+            <p className="text-sm text-th-text-secondary mb-2">{t('session.customTitle')}</p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={titleValue}
+                onChange={e => setTitleValue(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    onChangeTitle(titleValue.trim() || null);
+                  }
+                }}
+                placeholder={t('session.customTitlePlaceholder')}
+                className="flex-1 bg-th-bg border border-th-border rounded px-2 py-1 text-sm text-th-text placeholder-th-text-muted focus:outline-none focus:border-blue-500"
+              />
+              <button
+                onClick={() => onChangeTitle(titleValue.trim() || null)}
+                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium transition-colors"
+              >
+                {t('common.save')}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex gap-3 justify-between pt-3 border-t border-th-border">
@@ -902,6 +932,22 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
     }
   };
 
+  const handleMenuChangeTitle = async (title: string | null) => {
+    if (sessionForMenu) {
+      try {
+        await authFetch(`${API_BASE}/api/sessions/${sessionForMenu.id}/title`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title }),
+        });
+        await fetchSessions(true);
+        setSessionForMenu(null);
+      } catch (err) {
+        console.error('Failed to update title:', err);
+      }
+    }
+  };
+
   const handleMenuClose = () => {
     setSessionForMenu(null);
   };
@@ -1079,6 +1125,7 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
         <SessionMenuDialog
           session={sessionForMenu}
           onChangeTheme={handleMenuChangeTheme}
+          onChangeTitle={handleMenuChangeTitle}
           onDelete={handleMenuDelete}
           onCancel={handleMenuClose}
         />

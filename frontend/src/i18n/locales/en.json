@@ -38,6 +38,8 @@
     "resuming": "Resuming...",
     "navigate": "Go to",
     "colorTheme": "Color Theme",
+    "customTitle": "Custom Title",
+    "customTitlePlaceholder": "Enter title (empty for auto)",
     "clearColor": "Clear Color",
     "deleteSession": "Delete Session",
     "deleteConfirm": "Delete {{name}}?",

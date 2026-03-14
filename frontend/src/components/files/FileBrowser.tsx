@@ -17,11 +17,11 @@ interface FileBrowserProps {
 function FileIcon({ file, isExpanded }: { file: FileInfo; isExpanded?: boolean }) {
   if (file.type === 'directory') {
     return isExpanded ? (
-      <svg className="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+      <svg className="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
         <path fillRule="evenodd" d="M2 6a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1H2V6zm0 3v5a2 2 0 002 2h12a2 2 0 002-2V9H2z" clipRule="evenodd" />
       </svg>
     ) : (
-      <svg className="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+      <svg className="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
         <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
       </svg>
     );
@@ -33,7 +33,7 @@ function FileIcon({ file, isExpanded }: { file: FileInfo; isExpanded?: boolean }
   // Code files
   if (['.ts', '.tsx', '.js', '.jsx', '.json', '.html', '.css', '.scss'].includes(ext || '')) {
     return (
-      <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
       </svg>
     );
@@ -42,7 +42,7 @@ function FileIcon({ file, isExpanded }: { file: FileInfo; isExpanded?: boolean }
   // Image files
   if (['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico'].includes(ext || '')) {
     return (
-      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
       </svg>
     );
@@ -51,7 +51,7 @@ function FileIcon({ file, isExpanded }: { file: FileInfo; isExpanded?: boolean }
   // Markdown/text
   if (['.md', '.txt', '.yaml', '.yml', '.toml'].includes(ext || '')) {
     return (
-      <svg className="w-4 h-4 text-th-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg className="w-5 h-5 text-th-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
       </svg>
     );
@@ -59,7 +59,7 @@ function FileIcon({ file, isExpanded }: { file: FileInfo; isExpanded?: boolean }
 
   // Default file icon
   return (
-    <svg className="w-4 h-4 text-th-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="w-5 h-5 text-th-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
     </svg>
   );
@@ -77,7 +77,7 @@ function formatFileSize(bytes: number): string {
 function ChevronIcon({ isExpanded }: { isExpanded: boolean }) {
   return (
     <svg
-      className={`w-3 h-3 text-th-text-muted transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+      className={`w-4 h-4 text-th-text-muted transition-transform ${isExpanded ? 'rotate-90' : ''}`}
       fill="none"
       stroke="currentColor"
       viewBox="0 0 24 24"
@@ -126,14 +126,14 @@ function TreeItem({
     <>
       <div
         onClick={handleClick}
-        className="flex items-center gap-1 py-1 px-2 hover:bg-th-surface active:bg-th-surface-hover cursor-pointer transition-colors"
-        style={{ paddingLeft: `${depth * 16 + 8}px` }}
+        className="flex items-center gap-2 py-2.5 px-2 hover:bg-th-surface active:bg-th-surface-hover cursor-pointer transition-colors"
+        style={{ paddingLeft: `${depth * 20 + 8}px` }}
       >
         {/* Chevron for directories */}
-        <div className="w-4 h-4 flex items-center justify-center shrink-0">
+        <div className="w-5 h-5 flex items-center justify-center shrink-0">
           {isDirectory && (
             isLoading ? (
-              <div className="w-3 h-3 border border-gray-500 border-t-transparent rounded-full animate-spin" />
+              <div className="w-4 h-4 border border-gray-500 border-t-transparent rounded-full animate-spin" />
             ) : (
               <ChevronIcon isExpanded={isExpanded} />
             )
@@ -145,9 +145,9 @@ function TreeItem({
 
         {/* Name and size */}
         <div className="flex-1 min-w-0 flex items-center gap-2">
-          <span className="text-sm truncate">{file.name}</span>
+          <span className="text-base truncate">{file.name}</span>
           {!isDirectory && (
-            <span className="text-xs text-th-text-muted shrink-0">
+            <span className="text-sm text-th-text-muted shrink-0">
               {formatFileSize(file.size)}
             </span>
           )}

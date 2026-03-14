@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.86] - 2026-03-14
+
+### Fixed
+- ファイルブラウザのタッチターゲット・フォントサイズを拡大（スマホ操作改善）
+
+## [0.0.85] - 2026-03-14
+
+### Fixed
+- バッジ表示を indicatorState ベースに統一（processing→緑cc、waiting_input→黄、idle→なし）
+
+## [0.0.84] - 2026-03-14
+
+### Fixed
+- アイドル状態（UserInput/end_turn）を completed として扱い、不要な入力待ちバッジを抑制
+
+## [0.0.83] - 2026-03-14
+
+### Added
+- スマホ: セッション長押しでメニューダイアログ（タイトル編集・テーマ変更・削除）
+- タブレット: メニューダイアログにカスタムタイトル入力欄を追加
+
+### Fixed
+- WebSocket再接続時にスクロール位置を保持（スクロールバッククリア・scrollToBottomをスキップ）
+- processing状態のhook TTLを30秒→5分に延長（誤った入力待ち表示を削減）
+
+## [0.0.82] - 2026-03-14
+
+### Fixed
+- WebSocket再接続時のターミナルちらつき・スクロールリセットを軽減
+
+## [0.0.81] - 2026-03-14
+
+### Added
+- サーバーサイドでのカスタムセッションタイトル保存（session-metadata.jsonに統合）
+- セッション一覧を全画面表示（ファイルビューワーと同様）
+- タブレット/PCでセッションカード・履歴を2列グリッド表示
+- タブレットでfirstPrompt常時表示、summary複数行表示
+- hook経由のステータス検知改善（UserPromptSubmit、Stop、AskUserQuestion）
+
+### Fixed
+- Bashツール等の許可待ちで「許可待ち」バッジを表示
+- スマホ版セッション一覧でカスタムタイトルを表示
+- cchub notifyがdev環境にHTTPSで送信するように修正
+- 履歴プロジェクトをパス辞書順でソート
+
 ## [0.0.29] - 2026-02-07
 
 ### Added

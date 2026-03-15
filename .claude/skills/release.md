@@ -22,6 +22,7 @@ description: CC Hub のリリース手順を実行する。バージョンバン
    ```
 6. **CI 完了待ち**: `gh run list --limit 3` でワークフロー状況を確認。バイナリビルドは CI が自動で行うため、ローカルでの `bun run build:binary` は **絶対に不要**
 7. **本番更新**: `cchub update` を実行
+8. **ブランチリセット**: `git fetch origin && git checkout -B work-1 origin/main` で作業ブランチを最新の main にリセット
 
 ## Important Rules
 

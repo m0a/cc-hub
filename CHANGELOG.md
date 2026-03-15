@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.87] - 2026-03-15
+
+### Fixed
+- ターミナルのスクロール不能問題を修正（初期接続時にスクロールバックをxterm.jsに送信）
+- Connectingオーバーレイがタッチ操作をブロックしないよう修正
+
 ## [0.0.86] - 2026-03-14
 
 ### Fixed

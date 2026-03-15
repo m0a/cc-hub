@@ -201,27 +201,44 @@ export const terminalWebSocket = {
             // %output is suppressed (readyForOutput=false) until initial-content is sent,
             // preventing duplicate content from tmux reflow during resize.
             //
-            // IMPORTANT: Always capture visible area only (no -S - scrollback).
-            // tmux reflows scrollback on ANY size change, which corrupts TUI content
-            // (absolute cursor positioning). Even if size hasn't changed, scrollback
-            // may have been corrupted by a previous client's resize.
-            // Scrollback will build up naturally from new %output messages.
+            // Capture scrollback BEFORE resize (reflow corrupts absolute positioning).
+            // Then resize, wait for redraw, and capture visible area.
+            // Send scrollback + visible as initial-content so xterm has scroll history.
             try {
+              // Step 1: Capture scrollback before resize (won't be corrupted yet)
+              const panesBefore = await controlSession.listPanes();
+              const scrollbackMap = new Map<string, string>();
+              for (const pane of panesBefore) {
+                try {
+                  const scrollback = await controlSession.sendCommand(
+                    `capture-pane -e -p -t ${pane.paneId} -S - -E -1`
+                  );
+                  if (scrollback && scrollback.trim()) {
+                    scrollbackMap.set(pane.paneId, scrollback);
+                  }
+                } catch {
+                  // Pane may not be available
+                }
+              }
+
+              // Step 2: Resize
               await controlSession.setClientSizeImmediate(msg.cols, msg.rows);
 
               // Wait for applications to redraw after SIGWINCH from resize.
-              // Without this delay, capture-pane grabs content before the app
-              // has redrawn at the new size, showing corrupted/reflowed content.
               await new Promise(resolve => setTimeout(resolve, 200));
 
+              // Step 3: Capture visible area after resize
               const panes = await controlSession.listPanes();
               for (const pane of panes) {
                 try {
-                  // Capture visible area only (avoids corrupted scrollback from reflow)
-                  const content = await controlSession.sendCommand(`capture-pane -e -p -t ${pane.paneId}`);
-                  if (content) {
-                    // Convert \n to \r\n for xterm.js line rendering
-                    const termContent = content.split('\n').join('\r\n');
+                  const visible = await controlSession.sendCommand(`capture-pane -e -p -t ${pane.paneId}`);
+                  if (visible) {
+                    // Prepend scrollback if available
+                    const scrollback = scrollbackMap.get(pane.paneId);
+                    const fullContent = scrollback
+                      ? scrollback + '\n' + visible
+                      : visible;
+                    const termContent = fullContent.split('\n').join('\r\n');
                     ws.send(JSON.stringify({
                       type: 'initial-content',
                       paneId: pane.paneId,
@@ -280,9 +297,9 @@ export const terminalWebSocket = {
           break;
         }
         case 'request-content': {
-          // Re-capture pane content and send as initial-content
+          // Re-capture pane content with scrollback and send as initial-content
           try {
-            const content = await controlSession.capturePane(msg.paneId);
+            const content = await controlSession.capturePaneWithScrollback(msg.paneId);
             if (content) {
               const termContent = content.split('\n').join('\r\n');
               ws.send(JSON.stringify({

@@ -432,7 +432,10 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       if (!document.getElementById(styleId)) {
         const style = document.createElement('style');
         style.id = styleId;
-        style.textContent = '.xterm-viewport::-webkit-scrollbar { display: none !important; }';
+        style.textContent = `
+          .xterm-viewport::-webkit-scrollbar { display: none !important; }
+          .xterm, .xterm-viewport, .xterm-screen { touch-action: none !important; }
+        `;
         document.head.appendChild(style);
       }
     }
@@ -631,6 +634,18 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     let longPressTriggered = false;
     const LONG_PRESS_DURATION = 400; // ms
 
+    // Scroll through terminal history.
+    // Uses xterm's local buffer if scrollback exists,
+    // falls back to tmux copy-mode via controlMode.onScroll.
+    const scrollTerminal = (lines: number) => {
+      const buf = term.buffer.active;
+      if (buf.baseY > 0) {
+        term.scrollLines(lines);
+      } else if (controlModeRef.current?.onScroll) {
+        controlModeRef.current.onScroll(lines);
+      }
+    };
+
     // Update scroll indicator
     const updateScrollIndicator = () => {
       const buf = term.buffer.active;
@@ -767,7 +782,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             const lines = Math.round(accumulatedDelta / 8);
             if (lines !== 0) {
               accumulatedDelta = accumulatedDelta % 8;
-              term.scrollLines(lines);
+              scrollTerminal(lines);
               updateScrollIndicator();
             }
           });
@@ -822,7 +837,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             const lines = Math.trunc(residual / 8);
             if (lines !== 0) {
               residual -= lines * 8;
-              term.scrollLines(lines);
+              scrollTerminal(lines);
               updateScrollIndicator();
             }
 
@@ -860,7 +875,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       // deltaY > 0 = wheel down (scroll toward newer content)
       // scrollLines: positive = scroll down, negative = scroll up
       const lines = Math.ceil(Math.abs(e.deltaY) / 40);
-      term.scrollLines(e.deltaY > 0 ? lines : -lines);
+      scrollTerminal(e.deltaY > 0 ? lines : -lines);
 
       // Show tmux-style scroll position indicator
       const buf = term.buffer.active;
@@ -1334,7 +1349,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           style={{ touchAction: 'none' }}
         />
         {(!isInitialized || !isConnected) && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[var(--color-overlay)] z-30">
+          <div className="absolute inset-0 flex items-center justify-center bg-[var(--color-overlay)] z-30 pointer-events-none">
             <div className="text-th-text text-lg">
               {!isInitialized ? 'Loading...' : 'Connecting...'}
             </div>

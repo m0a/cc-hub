@@ -697,6 +697,13 @@ export class TmuxControlSession {
   }
 
   /**
+   * Capture pane content including scrollback history.
+   */
+  async capturePaneWithScrollback(paneId: string): Promise<string> {
+    return this.sendCommand(`capture-pane -e -p -t ${paneId} -S -`);
+  }
+
+  /**
    * List current panes with their IDs.
    */
   async listPanes(): Promise<Array<{ paneId: string; width: number; height: number }>> {

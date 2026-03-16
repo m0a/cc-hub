@@ -58,7 +58,7 @@ export function FloatingKeyboard({
   const [inputMode, setInputMode] = useState<'keyboard' | 'input'>('keyboard');
   const [inputValue, setInputValue] = useState('');
   const [showHistory, setShowHistory] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Input history
   const MAX_HISTORY = 50;
@@ -226,52 +226,41 @@ export function FloatingKeyboard({
     historyIndexRef.current = -1;
   };
 
-  // Send input text (shared by Enter key and send button)
-  const sendInputText = (): boolean => {
-    if (inputValue) {
-      const result = onSend(inputValue);
-      if (result === false) return false;
-      addToHistory(inputValue);
-      setInputValue('');
+  // Send text to terminal
+  const sendText = (text: string) => {
+    if (text) {
+      addToHistory(text);
+      if (text.includes('\n')) {
+        onSend(`\x1b[200~${text}\x1b[201~`);
+      } else {
+        onSend(text);
+      }
     }
     onSend('\r');
+    setInputValue('');
     historyIndexRef.current = -1;
     savedInputRef.current = '';
-    return true;
+    setShowHistory(false);
   };
 
   // Input key handler
-  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  // Single Enter = newline, Double Enter (trailing \n + Enter) = send
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      sendInputText();
-    } else if (e.key === 'ArrowUp' && !e.nativeEvent.isComposing && !inputValue) {
-      // Browse history up (when input is empty)
-      e.preventDefault();
-      const history = historyRef.current;
-      if (history.length === 0) return;
-      if (historyIndexRef.current === -1) {
-        savedInputRef.current = inputValue;
+      if (inputValue.endsWith('\n')) {
+        // Double Enter: send content (strip trailing newline)
+        e.preventDefault();
+        const text = inputValue.replace(/\n$/, '');
+        sendText(text);
       }
-      const nextIdx = Math.min(historyIndexRef.current + 1, history.length - 1);
-      historyIndexRef.current = nextIdx;
-      setInputValue(history[nextIdx]);
-    } else if (e.key === 'ArrowDown' && !e.nativeEvent.isComposing && historyIndexRef.current >= 0) {
-      // Browse history down
-      e.preventDefault();
-      const nextIdx = historyIndexRef.current - 1;
-      if (nextIdx < 0) {
-        historyIndexRef.current = -1;
-        setInputValue(savedInputRef.current);
-      } else {
-        historyIndexRef.current = nextIdx;
-        setInputValue(historyRef.current[nextIdx]);
-      }
+      // Single Enter: default textarea behavior (insert newline)
     } else if (e.key === 'Backspace' && !inputValue && !e.nativeEvent.isComposing) {
       e.preventDefault();
       onSend('\x7f');
     } else if (!inputValue && !e.nativeEvent.isComposing) {
       const arrowKeys: Record<string, string> = {
+        'ArrowUp': '\x1b[A',
+        'ArrowDown': '\x1b[B',
         'ArrowLeft': '\x1b[D',
         'ArrowRight': '\x1b[C',
       };
@@ -459,50 +448,9 @@ export function FloatingKeyboard({
           />
         ) : (
           <div className="p-2">
-            <div className="flex gap-2">
-              <input
-                ref={inputRef}
-                type="text"
-                inputMode="text"
-                lang="ja"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={handleInputKeyDown}
-                autoCapitalize="off"
-                autoCorrect="off"
-                autoComplete="off"
-                spellCheck={false}
-                enterKeyHint="send"
-                placeholder="日本語入力"
-                className="flex-1 px-3 py-2 bg-th-bg border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-green-500"
-                style={{ fontSize: '16px' }}
-              />
-              <button
-                onClick={() => {
-                  sendInputText();
-                  inputRef.current?.focus();
-                }}
-                className="px-3 py-2 bg-green-700 hover:bg-green-600 active:bg-green-500 rounded text-white font-medium min-w-[3rem]"
-              >
-                ↵
-              </button>
-              <button
-                onClick={() => setShowHistory(prev => !prev)}
-                className={`px-2 py-2 rounded font-medium ${showHistory ? 'bg-blue-700 text-white' : 'bg-th-surface-hover hover:bg-th-surface-active text-th-text'}`}
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </button>
-              <button
-                onClick={handleSwitchToKeyboard}
-                className="px-3 py-2 bg-th-surface-hover hover:bg-th-surface-active active:bg-th-surface-active rounded text-th-text font-medium"
-              >
-                ABC
-              </button>
-            </div>
+            {/* History list (above input) */}
             {showHistory && historyRef.current.length > 0 && (
-              <div className="mt-1 max-h-32 overflow-y-auto border border-th-border rounded bg-th-bg">
+              <div className="max-h-32 overflow-y-auto border border-th-border rounded bg-th-bg mb-1">
                 {historyRef.current.map((item, i) => (
                   <button
                     key={`${i}-${item}`}
@@ -518,6 +466,41 @@ export function FloatingKeyboard({
                 ))}
               </div>
             )}
+            <div className="flex gap-1.5 items-end">
+              <textarea
+                ref={inputRef}
+                inputMode="text"
+                lang="ja"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleInputKeyDown}
+                autoCapitalize="off"
+                autoCorrect="off"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="日本語入力 - Enter×2で送信"
+                rows={Math.min(Math.max(inputValue.split('\n').length, 1), 5)}
+                className="flex-1 px-3 py-2 bg-th-bg border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-green-500 resize-none"
+                style={{ fontSize: '16px' }}
+              />
+              <button
+                onClick={() => {
+                  historyRef.current = (() => { try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; } })();
+                  setShowHistory(prev => !prev);
+                }}
+                className={`h-10 self-end px-2 rounded font-medium ${showHistory ? 'bg-blue-700 text-white' : 'bg-th-surface-hover hover:bg-th-surface-active text-th-text'}`}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
+              <button
+                onClick={handleSwitchToKeyboard}
+                className="h-10 self-end px-3 bg-th-surface-hover hover:bg-th-surface-active active:bg-th-surface-active rounded text-th-text font-medium"
+              >
+                ABC
+              </button>
+            </div>
           </div>
         )}
       </div>

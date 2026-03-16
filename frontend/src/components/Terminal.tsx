@@ -150,7 +150,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -163,6 +163,10 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const [isInitialized, setIsInitialized] = useState(false);
   const [inputMode, setInputMode] = useState<'hidden' | 'shortcuts' | 'input'>('hidden');
   const [inputValue, setInputValue] = useState('');
+  const [showInputHistory, setShowInputHistory] = useState(false);
+  const inputHistoryRef = useRef<string[]>(
+    (() => { try { return JSON.parse(localStorage.getItem('cchub-input-history') || '[]'); } catch { return []; } })()
+  );
   const [fontSize, setFontSize] = useState(() => loadFontSize(sessionId));
   const [showHint, setShowHint] = useState(true);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -1207,15 +1211,38 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     setShowUrlMenu(false);
   };
 
-  // Handle Enter key in input
-  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  // Save to input history (shared with Keyboard/FloatingKeyboard)
+  const addToInputHistory = (text: string) => {
+    const history = inputHistoryRef.current;
+    const idx = history.indexOf(text);
+    if (idx !== -1) history.splice(idx, 1);
+    history.unshift(text);
+    if (history.length > 50) history.pop();
+    try { localStorage.setItem('cchub-input-history', JSON.stringify(history)); } catch {}
+  };
+
+  // Handle Enter key in textarea input
+  // Single Enter = newline, Double Enter (trailing \n + Enter) = send
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      if (inputValue) {
-        sendRef.current(inputValue);
+      if (inputValue.endsWith('\n')) {
+        // Double Enter: send content (strip trailing newline)
+        e.preventDefault();
+        const text = inputValue.replace(/\n$/, '');
+        if (text) {
+          addToInputHistory(text);
+          if (text.includes('\n')) {
+            // Multi-line: use bracketed paste mode so terminal treats it as pasted text
+            sendRef.current(`\x1b[200~${text}\x1b[201~`);
+          } else {
+            sendRef.current(text);
+          }
+        }
+        sendRef.current('\r');
         setInputValue('');
+        setShowInputHistory(false);
       }
-      sendRef.current('\r');
+      // Single Enter: default textarea behavior (insert newline)
     } else if (e.key === 'Backspace' && !inputValue && !e.nativeEvent.isComposing) {
       // Send backspace to terminal when input is empty
       e.preventDefault();
@@ -1531,20 +1558,54 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                 </div>
                 {/* Text input mode */}
                 <div className="w-full flex-shrink-0 p-2 bg-th-bg">
-                  <input
-                    type="text"
-                    inputMode="text"
-                    lang="ja"
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    autoCapitalize="off"
-                    autoCorrect="off"
-                    autoComplete="off"
-                    spellCheck={false}
-                    placeholder="日本語入力可 - Enterで送信"
-                    className="w-full px-3 py-2 bg-th-surface border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-green-500"
-                    style={{ fontSize: '16px' }}
-                  />
+                  {/* History list (above input) */}
+                  {showInputHistory && inputHistoryRef.current.length > 0 && (
+                    <div className="max-h-40 overflow-y-auto border border-th-border rounded bg-th-bg mb-1">
+                      {inputHistoryRef.current.map((item, i) => (
+                        <button
+                          key={`${i}-${item}`}
+                          onClick={() => {
+                            setInputValue(item);
+                            setShowInputHistory(false);
+                            inputRef.current?.focus();
+                          }}
+                          onContextMenu={(e) => e.preventDefault()}
+                          className="w-full text-left px-3 py-2 text-sm text-th-text hover:bg-th-surface-hover active:bg-th-surface-active border-b border-th-border/30 last:border-b-0 truncate"
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      inputMode="text"
+                      lang="ja"
+                      value={inputValue}
+                      onChange={(e) => setInputValue(e.target.value)}
+                      onKeyDown={handleInputKeyDown}
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      autoComplete="off"
+                      spellCheck={false}
+                      placeholder="日本語入力可 - Enterで送信"
+                      className="flex-1 px-3 py-2 bg-th-surface border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-green-500"
+                      style={{ fontSize: '16px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        inputHistoryRef.current = (() => { try { return JSON.parse(localStorage.getItem('cchub-input-history') || '[]'); } catch { return []; } })();
+                        setShowInputHistory(prev => !prev);
+                      }}
+                      className={`px-2.5 rounded border border-th-border ${showInputHistory ? 'bg-blue-700 text-white border-blue-700' : 'bg-th-surface text-th-text-secondary'}`}
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1557,7 +1618,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                 inputMode="none"
                 className="absolute opacity-0 w-0 h-0 pointer-events-none"
                 tabIndex={-1}
-                ref={inputRef}
+                ref={inputRef as React.RefObject<HTMLInputElement | null>}
               />
               <div className={isTablet ? 'w-1/3 max-w-sm' : 'w-full'} data-onboarding="keyboard">
                 <Keyboard
@@ -1580,52 +1641,86 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             </div>
           ) : (
             // Input mode
-            <div className="p-2 bg-th-bg flex gap-2">
-              <input
-                ref={inputRef}
-                type="text"
-                inputMode="text"
-                lang="ja"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={handleInputKeyDown}
-                autoCapitalize="off"
-                autoCorrect="off"
-                autoComplete="off"
-                spellCheck={false}
-                enterKeyHint="send"
-                // biome-ignore lint/a11y/noAutofocus: required to show OS keyboard on mode switch
-                autoFocus
-                placeholder="入力欄をタップしてキーボード表示"
-                className="flex-1 px-3 py-2 bg-th-surface border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-green-500"
-                style={{ fontSize: '16px' }}
-              />
-              {/* File picker button */}
-              <button
-                onClick={handleOpenFilePicker}
-                disabled={isUploading}
-                className={`px-3 py-2 rounded font-medium ${
-                  isUploading
-                    ? 'bg-th-surface-active text-th-text-muted'
-                    : 'bg-th-surface-hover hover:bg-th-surface-active active:bg-th-surface text-th-text'
-                }`}
-              >
-                {isUploading ? '⏳' : '📁'}
-              </button>
-              <button
-                onClick={() => {
-                  setIsAnimating(true);
-                  setInputMode('shortcuts');
-                  setInputValue('');
-                  setTimeout(() => {
-                    setIsAnimating(false);
-                    fitTerminal();
-                  }, 350);
-                }}
-                className="px-3 py-2 bg-th-surface-hover hover:bg-th-surface-active active:bg-th-surface rounded text-th-text font-medium"
-              >
-                ABC
-              </button>
+            <div className="p-2 bg-th-bg">
+              {/* History list (above input) */}
+              {showInputHistory && inputHistoryRef.current.length > 0 && (
+                <div className="max-h-40 overflow-y-auto border border-th-border rounded bg-th-bg mb-1">
+                  {inputHistoryRef.current.map((item, i) => (
+                    <button
+                      key={`${i}-${item}`}
+                      onClick={() => {
+                        setInputValue(item);
+                        setShowInputHistory(false);
+                        inputRef.current?.focus();
+                      }}
+                      onContextMenu={(e) => e.preventDefault()}
+                      className="w-full text-left px-3 py-2 text-sm text-th-text hover:bg-th-surface-hover active:bg-th-surface-active border-b border-th-border/30 last:border-b-0 truncate"
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-1.5 items-end">
+                <textarea
+                  ref={inputRef as React.RefObject<HTMLTextAreaElement | null>}
+                  inputMode="text"
+                  lang="ja"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={handleInputKeyDown}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  autoComplete="off"
+                  spellCheck={false}
+                  // biome-ignore lint/a11y/noAutofocus: required to show OS keyboard on mode switch
+                  autoFocus
+                  placeholder="日本語入力 - Enter×2で送信"
+                  rows={Math.min(Math.max(inputValue.split('\n').length, 1), 5)}
+                  className="flex-1 px-3 py-2 bg-th-surface border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-green-500 resize-none"
+                  style={{ fontSize: '16px' }}
+                />
+                {/* History button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    inputHistoryRef.current = (() => { try { return JSON.parse(localStorage.getItem('cchub-input-history') || '[]'); } catch { return []; } })();
+                    setShowInputHistory(prev => !prev);
+                  }}
+                  className={`px-2.5 h-10 self-end rounded border ${showInputHistory ? 'bg-blue-700 text-white border-blue-700' : 'bg-th-surface border-th-border text-th-text-secondary'}`}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </button>
+                {/* File picker button */}
+                <button
+                  onClick={handleOpenFilePicker}
+                  disabled={isUploading}
+                  className={`px-3 h-10 self-end rounded font-medium ${
+                    isUploading
+                      ? 'bg-th-surface-active text-th-text-muted'
+                      : 'bg-th-surface-hover hover:bg-th-surface-active active:bg-th-surface text-th-text'
+                  }`}
+                >
+                  {isUploading ? '⏳' : '📁'}
+                </button>
+                <button
+                  onClick={() => {
+                    setIsAnimating(true);
+                    setInputMode('shortcuts');
+                    setInputValue('');
+                    setShowInputHistory(false);
+                    setTimeout(() => {
+                      setIsAnimating(false);
+                      fitTerminal();
+                    }, 350);
+                  }}
+                  className="px-3 h-10 self-end bg-th-surface-hover hover:bg-th-surface-active active:bg-th-surface rounded text-th-text font-medium"
+                >
+                  ABC
+                </button>
+              </div>
             </div>
           )}
         </div>

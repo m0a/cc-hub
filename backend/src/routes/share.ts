@@ -25,13 +25,14 @@ async function getFunnelBaseUrl(): Promise<string | null> {
     const web = status.Web as Record<string, { Handlers: Record<string, { Proxy?: string }> }> | undefined;
     if (!allowFunnel || !web) return null;
 
-    // Find a funnel-enabled host:port that proxies to our backend (3456 or 5923)
+    // Find a funnel-enabled host:port that proxies to our backend
+    const backendPort = process.env.CCHUB_PORT || '5923';
     for (const hostPort of Object.keys(allowFunnel)) {
       if (!allowFunnel[hostPort]) continue;
       const webEntry = web[hostPort];
       if (!webEntry?.Handlers) continue;
       for (const handler of Object.values(webEntry.Handlers)) {
-        if (handler.Proxy && (handler.Proxy.includes('3456') || handler.Proxy.includes('5923'))) {
+        if (handler.Proxy && handler.Proxy.includes(`:${backendPort}`)) {
           funnelBaseUrl = `https://${hostPort}`;
           return funnelBaseUrl;
         }

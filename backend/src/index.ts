@@ -281,10 +281,52 @@ if (args.password) {
 // Start server
 const port = args.port;
 const host = args.host;
+process.env.CCHUB_PORT = String(port);
 
 console.log(`🚀 CC Hub v${VERSION}`);
 console.log(`   URL: https://${tailscaleHostname}:${port}`);
 console.log(`   Static: ${EMBEDDED_MODE ? '(embedded)' : staticRoot}`);
+
+// Auto-setup Tailscale Funnel for external sharing
+// Funnel listens on a separate port (8443) and proxies to CC Hub's local HTTPS port.
+// This enables VPN-external access for the /view/:token share feature.
+const FUNNEL_PORT = 8443;
+(async () => {
+  try {
+    // Check current funnel status
+    const statusResult = Bun.spawnSync(['tailscale', 'funnel', 'status', '--json']);
+    if (statusResult.exitCode === 0) {
+      const status = JSON.parse(statusResult.stdout.toString());
+      const allowFunnel = status.AllowFunnel as Record<string, boolean> | undefined;
+      const funnelHostPort = `${tailscaleHostname}:${FUNNEL_PORT}`;
+
+      // Already configured for our backend?
+      if (allowFunnel?.[funnelHostPort]) {
+        console.log(`🌐 Funnel: https://${funnelHostPort} (already active)`);
+        return;
+      }
+    }
+
+    // Setup funnel on separate port, proxying to our HTTPS backend
+    const funnelResult = Bun.spawnSync([
+      'tailscale', 'funnel', '--bg', '--https', String(FUNNEL_PORT),
+      `https+insecure://localhost:${port}`,
+    ]);
+
+    if (funnelResult.exitCode === 0) {
+      console.log(`🌐 Funnel: https://${tailscaleHostname}:${FUNNEL_PORT} (external access enabled)`);
+    } else {
+      const stderr = funnelResult.stderr.toString();
+      if (stderr.includes('not enabled') || stderr.includes('Funnel not available')) {
+        console.log('⚠️  Funnel not available on this tailnet (enable in Tailscale admin console)');
+      } else {
+        console.warn(`⚠️  Funnel setup failed: ${stderr.trim()}`);
+      }
+    }
+  } catch {
+    // Funnel is optional, don't fail startup
+  }
+})();
 
 export default {
   port,

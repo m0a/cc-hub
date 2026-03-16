@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.90] - 2026-03-16
+
+### Changed
+- Funnelをオンデマンド化: 共有トークン生成時にON、全トークン消滅時にOFF
+- 起動時の自動Funnel設定を廃止（前回のFunnel残骸はクリーンアップ）
+
 ## [0.0.89] - 2026-03-16
 
 ### Added

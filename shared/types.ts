@@ -372,3 +372,21 @@ export type ControlServerMessage =
   | { type: 'new-session'; sessionId: string; sessionName: string }
   | { type: 'pane-dead'; paneId: string }
   | { type: 'hook-event'; event: string; cwd?: string; sessionId?: string; message?: string; data?: Record<string, unknown> };
+
+// =============================================================================
+// Share Token Types (Presentation / Read-Only View)
+// =============================================================================
+
+export interface ShareTokenInfo {
+  token: string;
+  sessionId: string;
+  sessionName: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export const ShareTokenCreateSchema = z.object({
+  expiresInHours: z.number().min(1).max(72).optional().default(24),
+});
+
+export type ShareTokenCreateInput = z.infer<typeof ShareTokenCreateSchema>;

@@ -4,11 +4,13 @@ import { isAuthRequired, getJwtSecret } from '../middleware/auth';
 import { AuthService } from '../services/auth';
 import { getDataDir } from '../utils/storage';
 import { getOrCreateControlSession, type TmuxControlSession } from '../services/tmux-control';
+import { validateShareToken } from '../services/share-token';
 import type { ControlClientMessage } from '../../../shared/types';
 
 interface TerminalData {
   sessionId: string;
   visitorId: string;
+  readOnly?: boolean;
   controlSession?: TmuxControlSession;
   cleanupFns?: Array<() => void>;
   initialContentSent?: boolean;
@@ -186,6 +188,60 @@ export const terminalWebSocket = {
       return;
     }
 
+
+    // Read-only clients: only allow resize (initial content), ping, request-content
+    if (ws.data.readOnly) {
+      if (msg.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong', timestamp: msg.timestamp }));
+        return;
+      }
+      if (msg.type === 'request-content') {
+        try {
+          const content = await controlSession.capturePaneWithScrollback(msg.paneId);
+          if (content) {
+            const termContent = content.split('\n').join('\r\n');
+            ws.send(JSON.stringify({
+              type: 'initial-content',
+              paneId: msg.paneId,
+              data: Buffer.from(termContent).toString('base64'),
+            }));
+          }
+        } catch {
+          // Pane may not be available
+        }
+        return;
+      }
+      if (msg.type === 'resize') {
+        // Read-only: capture content at tmux's current size, don't resize tmux
+        if (!ws.data.initialContentSent) {
+          ws.data.initialContentSent = true;
+          try {
+            const panes = await controlSession.listPanes();
+            for (const pane of panes) {
+              try {
+                const content = await controlSession.capturePaneWithScrollback(pane.paneId);
+                if (content) {
+                  const termContent = content.split('\n').join('\r\n');
+                  ws.send(JSON.stringify({
+                    type: 'initial-content',
+                    paneId: pane.paneId,
+                    data: Buffer.from(termContent).toString('base64'),
+                  }));
+                }
+              } catch {
+                // Pane may not be available
+              }
+            }
+          } catch (err) {
+            console.error('[view] Failed to send initial content:', err);
+          }
+          ws.data.readyForOutput = true;
+        }
+        return;
+      }
+      // Ignore all other messages (input, split, close-pane, etc.)
+      return;
+    }
 
     try {
       switch (msg.type) {
@@ -410,6 +466,29 @@ export async function handleTerminalUpgrade(
   server: { upgrade: (req: Request, options: { data: TerminalData }) => boolean }
 ): Promise<Response | null> {
   const url = new URL(req.url);
+
+  // Match /ws/view/:token (read-only share view)
+  const viewMatch = url.pathname.match(/^\/ws\/view\/(.+)$/);
+  if (viewMatch) {
+    const shareToken = decodeURIComponent(viewMatch[1]);
+    const stored = validateShareToken(shareToken);
+    if (!stored) {
+      return new Response('Invalid or expired share token', { status: 403 });
+    }
+
+    const upgraded = server.upgrade(req, {
+      data: {
+        sessionId: stored.sessionId,
+        visitorId: crypto.randomUUID(),
+        readOnly: true,
+      },
+    });
+
+    if (upgraded) {
+      return undefined as unknown as Response;
+    }
+    return new Response('WebSocket upgrade failed', { status: 500 });
+  }
 
   // Match /ws/control/:id (primary) and /ws/terminal/:id (legacy compatibility)
   const controlMatch = url.pathname.match(/^\/ws\/control\/(.+)$/);

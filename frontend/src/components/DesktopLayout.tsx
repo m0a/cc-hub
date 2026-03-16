@@ -4,6 +4,7 @@ import { FileViewer } from './files/FileViewer';
 import { FloatingKeyboard } from './FloatingKeyboard';
 import { SessionModal } from './SessionModal';
 import { DashboardPanel } from './DashboardPanel';
+import { ShareDialog } from './ShareDialog';
 import { authFetch } from '../services/api';
 import { useSessions, updateCachedSessionsByHookEvent } from '../hooks/useSessions';
 import { useControlTerminal } from '../hooks/useControlTerminal';
@@ -238,6 +239,7 @@ export function DesktopLayout({
   const [showFileViewer, setShowFileViewer] = useState(false);
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
 
   // Floating keyboard state (for tablet mode)
   const [showKeyboard, setShowKeyboard] = useState(() => {
@@ -1101,6 +1103,16 @@ export function DesktopLayout({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1v-2zM14 13a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1h-4a1 1 0 01-1-1v-5z" />
                 </svg>
               </button>
+              <button
+                type="button"
+                onClick={() => setShowShareDialog(true)}
+                className="p-1 rounded transition-colors text-th-text-muted hover:text-th-text-secondary hover:bg-th-surface-hover"
+                title="Share Session"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                </svg>
+              </button>
             </div>
           </div>
         )}
@@ -1141,6 +1153,17 @@ export function DesktopLayout({
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1v-2zM14 13a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1h-4a1 1 0 01-1-1v-5z" />
+                </svg>
+              </button>
+
+              {/* Share */}
+              <button
+                onClick={() => setShowShareDialog(true)}
+                className="p-2.5 rounded transition-colors text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover"
+                title="共有"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                 </svg>
               </button>
 
@@ -1235,6 +1258,15 @@ export function DesktopLayout({
         onClose={() => setShowSessionModal(false)}
         onSelectSession={handleModalSelectSession}
       />
+
+      {/* Share Dialog */}
+      {showShareDialog && controlSessionId && (
+        <ShareDialog
+          sessionId={controlSessionId}
+          sessionName={activeSession?.name || controlSessionId}
+          onClose={() => setShowShareDialog(false)}
+        />
+      )}
 
       {/* File Viewer Modal */}
       {showFileViewer && activeSession?.currentPath && (

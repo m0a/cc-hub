@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ViewerPage } from './pages/ViewerPage';
 import { TerminalPage } from './pages/TerminalPage';
 import type { TerminalRef } from './components/Terminal';
 import { SessionList } from './components/SessionList';
@@ -9,6 +10,7 @@ import { DesktopLayout } from './components/DesktopLayout';
 import { FileViewer } from './components/files/FileViewer';
 import { ConversationViewer } from './components/ConversationViewer';
 import { LoginForm } from './components/LoginForm';
+import { ShareDialog } from './components/ShareDialog';
 import { Onboarding, useOnboarding } from './components/Onboarding';
 import { useSessionHistory } from './hooks/useSessionHistory';
 import { useAuth } from './hooks/useAuth';
@@ -153,6 +155,12 @@ function getSavedOpenSessionIds(): string[] {
 }
 
 export function App() {
+  // Route: /view/:token → read-only viewer (no auth)
+  const viewMatch = window.location.pathname.match(/^\/view\/(.+)$/);
+  if (viewMatch) {
+    return <ViewerPage token={decodeURIComponent(viewMatch[1])} />;
+  }
+
   const { t } = useTranslation();
   // Auth state
   const auth = useAuth();
@@ -212,6 +220,7 @@ export function App() {
   const [sessionToDelete, setSessionToDelete] = useState<OpenSession | null>(null);
   const [showOverlay, setShowOverlay] = useState(true);
   const [showFileViewer, setShowFileViewer] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   const overlayTimeoutRef = useRef<number | null>(null);
 
   // Conversation viewer state
@@ -807,6 +816,15 @@ export function App() {
           </svg>
         </button>
         <button
+          onClick={() => setShowShareDialog(true)}
+          className="p-2.5 text-cyan-400/70 hover:text-cyan-300 active:text-cyan-200 hover:bg-th-surface-hover active:bg-th-surface-active rounded-lg transition-colors"
+          title="共有"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+          </svg>
+        </button>
+        <button
           onClick={() => {
             handleShowSessionList();
           }}
@@ -906,6 +924,15 @@ export function App() {
           sessionName={sessionToDelete.name}
           onConfirm={handleConfirmDelete}
           onCancel={handleCancelDelete}
+        />
+      )}
+
+      {/* Share Dialog */}
+      {showShareDialog && activeSessionId && (
+        <ShareDialog
+          sessionId={activeSessionId}
+          sessionName={activeSession?.name || activeSessionId}
+          onClose={() => setShowShareDialog(false)}
         />
       )}
 

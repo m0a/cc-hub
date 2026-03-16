@@ -10,6 +10,7 @@ import { files } from './routes/files';
 import { dashboard } from './routes/dashboard';
 import { notify } from './routes/notify';
 import { terminalWebSocket, handleTerminalUpgrade } from './routes/terminal';
+import { shareManage, sharePublic } from './routes/share';
 import { parseArgs, runCli, VERSION } from './cli';
 import { conditionalAuthMiddleware } from './middleware/auth';
 import { t } from './i18n';
@@ -97,6 +98,9 @@ addLog('Version: ${VERSION}',true);
 // Auth routes (no auth required for login/required check)
 app.route('/api/auth', auth);
 
+// Public share route (no auth required - token-based access)
+app.route('/api/share', sharePublic);
+
 // Public images route (no auth required - images are user-uploaded screenshots)
 const IMAGES_DIR = '/tmp/cchub-images';
 app.get('/api/images/:filename', async (c) => {
@@ -144,6 +148,7 @@ app.use('/api/dashboard', conditionalAuthMiddleware);
 
 app.route('/api/logs', logs);
 app.route('/api/sessions', sessions);
+app.route('/api/sessions', shareManage);
 app.route('/api/upload', upload);
 app.route('/api/files', files);
 app.route('/api/dashboard', dashboard);

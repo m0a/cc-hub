@@ -5,6 +5,8 @@ import type { TmuxLayoutNode, ControlServerMessage } from '../../../shared/types
 interface UseControlTerminalOptions {
   sessionId: string;
   token?: string | null;
+  viewToken?: string | null;
+  readOnly?: boolean;
   onPaneOutput?: (paneId: string, data: Uint8Array) => void;
   onLayoutChange?: (layout: TmuxLayoutNode) => void;
   onInitialContent?: (paneId: string, data: Uint8Array) => void;
@@ -47,7 +49,7 @@ const getAuthToken = (): string | null => {
 };
 
 export function useControlTerminal(options: UseControlTerminalOptions): UseControlTerminalReturn {
-  const { sessionId, token } = options;
+  const { sessionId, token, viewToken, readOnly } = options;
   const [isConnected, setIsConnected] = useState(false);
   const [deadPanes, setDeadPanes] = useState<Set<string>>(new Set());
   const wsRef = useRef<WebSocket | null>(null);
@@ -66,6 +68,7 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
   const onDisconnectRef = useRef(options.onDisconnect);
   const onErrorRef = useRef(options.onError);
   const tokenRef = useRef(token);
+  const viewTokenRef = useRef(viewToken);
 
   // Keep refs updated
   onPaneOutputRef.current = options.onPaneOutput;
@@ -79,6 +82,7 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
   onDisconnectRef.current = options.onDisconnect;
   onErrorRef.current = options.onError;
   tokenRef.current = token;
+  viewTokenRef.current = viewToken;
 
   const sendMessage = useCallback((msg: Record<string, unknown>) => {
     const ws = wsRef.current;
@@ -98,10 +102,15 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
       reconnectTimeoutRef.current = null;
     }
 
-    let wsUrl = `${getWsBase()}/ws/control/${encodeURIComponent(sessionId)}`;
-    const authToken = tokenRef.current || getAuthToken();
-    if (authToken) {
-      wsUrl += `?token=${encodeURIComponent(authToken)}`;
+    let wsUrl: string;
+    if (viewTokenRef.current) {
+      wsUrl = `${getWsBase()}/ws/view/${encodeURIComponent(viewTokenRef.current)}`;
+    } else {
+      wsUrl = `${getWsBase()}/ws/control/${encodeURIComponent(sessionId)}`;
+      const authToken = tokenRef.current || getAuthToken();
+      if (authToken) {
+        wsUrl += `?token=${encodeURIComponent(authToken)}`;
+      }
     }
 
     const ws = new WebSocket(wsUrl);
@@ -232,11 +241,12 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
   }, []);
 
   const sendInput = useCallback((paneId: string, data: string) => {
+    if (readOnly) return;
     // data is raw string from xterm onData, encode to base64
     const bytes = new TextEncoder().encode(data);
     const base64 = uint8ArrayToBase64(bytes);
     sendMessage({ type: 'input', paneId, data: base64 });
-  }, [sendMessage]);
+  }, [sendMessage, readOnly]);
 
   const resize = useCallback((cols: number, rows: number) => {
     sendMessage({ type: 'resize', cols, rows });

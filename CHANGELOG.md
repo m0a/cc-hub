@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.89] - 2026-03-16
+
+### Added
+- Tailscale Funnel自動設定: サーバー起動時にポート8443で外部公開を自動セットアップ
+- 共有ダイアログのQRコード/URLが自動的にFunnel経由の外部URLを使用
+
+### Fixed
+- Funnelとバックエンドのポート競合を修正（別ポート8443で転送）
+- ViewerPageのターミナル固定幅レンダリングとフォントサイズ調整
+
 ## [0.0.88] - 2026-03-16
 
 ### Added

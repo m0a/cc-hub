@@ -10,13 +10,8 @@ import { TmuxService } from '../services/tmux';
 
 const tmuxService = new TmuxService();
 
-// Detect Funnel external URL (cached)
-let funnelBaseUrl: string | null = null;
-let funnelChecked = false;
-
+// Detect Funnel external URL (re-checked each time since Funnel may be toggled)
 async function getFunnelBaseUrl(): Promise<string | null> {
-  if (funnelChecked) return funnelBaseUrl;
-  funnelChecked = true;
   try {
     const result = Bun.spawnSync(['tailscale', 'funnel', 'status', '--json']);
     if (result.exitCode !== 0) return null;
@@ -33,8 +28,7 @@ async function getFunnelBaseUrl(): Promise<string | null> {
       if (!webEntry?.Handlers) continue;
       for (const handler of Object.values(webEntry.Handlers)) {
         if (handler.Proxy && handler.Proxy.includes(`:${backendPort}`)) {
-          funnelBaseUrl = `https://${hostPort}`;
-          return funnelBaseUrl;
+          return `https://${hostPort}`;
         }
       }
     }

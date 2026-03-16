@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.91] - 2026-03-16
+
+### Fixed
+- ビューアページで画面下部のターミナル内容が見えない問題を修正（縦スクロール有効化）
+
 ## [0.0.90] - 2026-03-16
 
 ### Changed

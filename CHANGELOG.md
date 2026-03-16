@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.93] - 2026-03-17
+
+### Changed
+- タブレットFloatingKeyboardの日本語入力をスマホと統一（textarea + Enter×2送信 + ブラケットペースト）
+
 ## [0.0.92] - 2026-03-17
 
 ### Added

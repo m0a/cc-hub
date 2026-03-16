@@ -331,7 +331,7 @@ export function ViewerPage({ token }: ViewerPageProps) {
       </div>
 
       {/* Terminal area - horizontal scroll when content exceeds viewport */}
-      <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden">
+      <div className="flex-1 min-h-0 overflow-auto">
         {layout && cellSize.width > 0 ? (
           <LayoutRenderer
             key={termKey}

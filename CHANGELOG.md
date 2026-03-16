@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.92] - 2026-03-17
+
+### Added
+- スマホ日本語入力に履歴ボタン追加（FloatingKeyboardと履歴共有）
+- スマホ日本語入力を複数行編集対応（textarea化）
+- Enter×2で送信、複数行はブラケットペーストモードで一括送信
+
+### Fixed
+- ビューアページの縦スクロール有効化
+
 ## [0.0.91] - 2026-03-16
 
 ### Fixed

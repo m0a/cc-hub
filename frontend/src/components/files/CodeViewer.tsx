@@ -164,7 +164,7 @@ export function CodeViewer({
         console.warn('Highlight error:', err);
       }
     }
-  }, [language]);
+  }, [content, language]);
 
   const lines = content.split('\n');
 

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.94] - 2026-03-18
+
+### Fixed
+- ソフトキーボードで`/`を押すと`?`が付く問題を修正（タッチ+マウスの二重発火による長押しタイマーの残留）
+
 ## [0.0.93] - 2026-03-17
 
 ### Changed

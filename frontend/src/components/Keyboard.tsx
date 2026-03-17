@@ -243,6 +243,11 @@ export function Keyboard({
   const KeyboardKey = ({ keyDef }: { keyDef: KeyDef }) => {
     const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
       e.preventDefault();
+      // Clear any existing timer (prevents duplicate from touch+mouse double-fire)
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
       longPressFiredRef.current = false;
 
       if (keyDef.longKey) {

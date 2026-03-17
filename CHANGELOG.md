@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.95] - 2026-03-18
+
+### Fixed
+- ファイルブラウザでシンタックスハイライトが付かないことがある問題を修正
+
 ## [0.0.94] - 2026-03-18
 
 ### Fixed

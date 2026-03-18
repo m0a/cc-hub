@@ -53,7 +53,6 @@ export interface SessionResponse {
   createdAt: string;
   lastAccessedAt: string;
   state: SessionState;
-  isExternal?: boolean;
   theme?: SessionTheme;
   customTitle?: string;
 }

@@ -4,8 +4,6 @@ import { ViewerPage } from './pages/ViewerPage';
 import { TerminalPage } from './pages/TerminalPage';
 import type { TerminalRef } from './components/Terminal';
 import { SessionList } from './components/SessionList';
-// TabletLayout is deprecated - now using DesktopLayout with isTablet prop
-// import { TabletLayout } from './components/TabletLayout';
 import { DesktopLayout } from './components/DesktopLayout';
 import { FileViewer } from './components/files/FileViewer';
 import { ConversationViewer } from './components/ConversationViewer';

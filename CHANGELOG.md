@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.98] - 2026-03-18
+
+### Changed
+- zod 3→4、@hono/zod-validator 0.5→0.7 にメジャーアップグレード
+- vite 6→8、@vitejs/plugin-react 4→6 にメジャーアップグレード
+
 ## [0.0.97] - 2026-03-18
 
 ### Added

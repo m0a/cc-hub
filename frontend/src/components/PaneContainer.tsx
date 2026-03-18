@@ -529,6 +529,11 @@ function TerminalPane({
         <FileViewer
           sessionWorkingDir={session.currentPath}
           onClose={() => setShowFileViewer(false)}
+          onCopyPrompt={(text) => {
+            const ref = terminalRefs.current?.get(paneId);
+            ref?.setInputText(text);
+            setShowFileViewer(false);
+          }}
         />
       )}
     </div>

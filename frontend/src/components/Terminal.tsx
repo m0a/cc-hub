@@ -133,6 +133,8 @@ export interface TerminalRef {
   /** Resize xterm to exact cols/rows without triggering resize-back-to-tmux. */
   setExactSize: (cols: number, rows: number) => void;
   scrollToBottom: () => void;
+  /** Set text into the Japanese input textarea and switch to input mode (without sending). */
+  setInputText: (text: string) => void;
 }
 
 export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(function TerminalComponent({
@@ -348,6 +350,11 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     },
     scrollToBottom: () => {
       terminalRef.current?.scrollToBottom();
+    },
+    setInputText: (text: string) => {
+      setInputValue(text);
+      setInputMode('input');
+      setTimeout(() => inputRef.current?.focus(), 100);
     },
   }), []);
 

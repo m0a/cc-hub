@@ -30,6 +30,7 @@ interface FileViewerProps {
   sessionWorkingDir: string;
   onClose: () => void;
   initialPath?: string;
+  onCopyPrompt?: (text: string) => void;
 }
 
 // Image extensions
@@ -62,7 +63,7 @@ function getFileName(path: string): string {
   return path.split('/').pop() || path;
 }
 
-export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileViewerProps) {
+export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyPrompt }: FileViewerProps) {
   const { t } = useTranslation();
   const {
     currentPath,
@@ -448,7 +449,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                           fileName={getFileName(selectedFile.path)}
                         />
                       ) : (
-                        <CodeViewer
+                        <CodeViewer onCopyPrompt={onCopyPrompt}
                           content={selectedFile.content}
                           language={getLanguageFromPath(selectedFile.path)}
                           fileName={getFileName(selectedFile.path)}
@@ -458,7 +459,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                       )
                     )}
                     {viewMode === 'diff' && selectedChange && (
-                      <DiffViewer
+                      <DiffViewer onCopyPrompt={onCopyPrompt}
                         oldContent={selectedChange.oldContent}
                         newContent={selectedChange.newContent}
                         fileName={getFileName(selectedChange.path)}
@@ -466,7 +467,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                       />
                     )}
                     {viewMode === 'diff' && selectedGitDiff && (
-                      <DiffViewer
+                      <DiffViewer onCopyPrompt={onCopyPrompt}
                         unifiedDiff={selectedGitDiff.diff}
                         fileName={getFileName(selectedGitDiff.path)}
                         toolName="git"
@@ -535,7 +536,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
                 fileName={getFileName(selectedFile.path)}
               />
             ) : (
-              <CodeViewer
+              <CodeViewer onCopyPrompt={onCopyPrompt}
                 content={selectedFile.content}
                 language={getLanguageFromPath(selectedFile.path)}
                 fileName={getFileName(selectedFile.path)}
@@ -556,7 +557,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
           )}
 
           {viewMode === 'diff' && selectedChange && (
-            <DiffViewer
+            <DiffViewer onCopyPrompt={onCopyPrompt}
               oldContent={selectedChange.oldContent}
               newContent={selectedChange.newContent}
               fileName={getFileName(selectedChange.path)}
@@ -565,7 +566,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath }: FileView
           )}
 
           {viewMode === 'diff' && selectedGitDiff && (
-            <DiffViewer
+            <DiffViewer onCopyPrompt={onCopyPrompt}
               unifiedDiff={selectedGitDiff.diff}
               fileName={getFileName(selectedGitDiff.path)}
               toolName="git"

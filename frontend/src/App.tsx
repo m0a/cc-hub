@@ -930,6 +930,10 @@ export function App() {
         <FileViewer
           sessionWorkingDir={activeSession.currentPath}
           onClose={() => setShowFileViewer(false)}
+          onCopyPrompt={(text) => {
+            mobileTerminalRef.current?.setInputText(text);
+            setShowFileViewer(false);
+          }}
         />
       )}
 

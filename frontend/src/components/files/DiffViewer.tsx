@@ -2,6 +2,8 @@ import { useMemo, useState, useRef, useCallback } from 'react';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import { getLanguageFromPath } from './language-detect';
+import { useLineSelection } from '../../hooks/useLineSelection';
+import { PromptComposer } from './PromptComposer';
 
 const WORDWRAP_STORAGE_KEY = 'cchub-wordwrap';
 
@@ -33,8 +35,10 @@ interface DiffViewerProps {
   oldContent?: string;
   newContent?: string;
   fileName?: string;
+  filePath?: string;
   toolName?: 'Write' | 'Edit' | 'git';
   unifiedDiff?: string;
+  onCopyPrompt?: (text: string) => void;
 }
 
 interface DiffLine {
@@ -232,11 +236,14 @@ export function DiffViewer({
   oldContent,
   newContent,
   fileName,
+  filePath,
   toolName = 'Edit',
   unifiedDiff,
+  onCopyPrompt,
 }: DiffViewerProps) {
   const [wordWrap, setWordWrap] = useState(() => getWordWrapSetting(fileName || ''));
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const { selection, handleLineClick, isLineSelected, clearSelection } = useLineSelection();
 
   const toggleWordWrap = useCallback(() => {
     const newValue = !wordWrap;
@@ -399,11 +406,19 @@ export function DiffViewer({
               }`}
             >
               {/* Line numbers - hidden when word wrap is enabled */}
-              {!wordWrap && (
-                <div className="shrink-0 text-th-text-muted text-right select-none border-r border-th-border bg-th-surface/50 text-xs leading-6 px-1 min-w-[2rem]">
-                  {line.type === 'hunk' ? '...' : (toolName === 'Write' ? line.newLineNum : (line.newLineNum || line.oldLineNum || ''))}
-                </div>
-              )}
+              {!wordWrap && (() => {
+                const lineNum = line.type === 'hunk' ? null : (line.newLineNum || line.oldLineNum || null);
+                return (
+                  <div
+                    className={`shrink-0 text-th-text-muted text-right select-none border-r border-th-border bg-th-surface/50 text-xs leading-6 px-1 min-w-[2rem] ${
+                      onCopyPrompt && lineNum ? 'cursor-pointer hover:text-th-text hover:bg-blue-900/30' : ''
+                    } ${lineNum && isLineSelected(lineNum) ? 'bg-blue-800/40 text-blue-300' : ''}`}
+                    onClick={onCopyPrompt && lineNum ? () => handleLineClick(lineNum) : undefined}
+                  >
+                    {line.type === 'hunk' ? '...' : (toolName === 'Write' ? line.newLineNum : (line.newLineNum || line.oldLineNum || ''))}
+                  </div>
+                );
+              })()}
 
               {/* Indicator */}
               <div className={`w-4 shrink-0 text-center leading-6 text-xs ${
@@ -426,6 +441,32 @@ export function DiffViewer({
           ))}
         </div>
       </div>
+
+      {/* Prompt Composer */}
+      {selection && onCopyPrompt && (() => {
+        // Extract selected lines from diff (context + add lines with newLineNum in range)
+        const selectedLines = diffLines
+          .filter(l => {
+            const num = l.newLineNum || l.oldLineNum;
+            return num && num >= selection.start && num <= selection.end && l.type !== 'hunk';
+          })
+          .map(l => (l.type === 'add' ? '+' : l.type === 'remove' ? '-' : ' ') + l.content);
+
+        return (
+          <PromptComposer
+            filePath={filePath || fileName || 'unknown'}
+            startLine={selection.start}
+            endLine={selection.end}
+            selectedCode={selectedLines.join('\n')}
+            language={language}
+            onSubmit={(text) => {
+              onCopyPrompt(text);
+              clearSelection();
+            }}
+            onClose={clearSelection}
+          />
+        );
+      })()}
     </div>
   );
 }

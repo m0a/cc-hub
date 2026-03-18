@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import hljs from 'highlight.js'; // 全言語サポート
+import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
+import { useLineSelection } from '../../hooks/useLineSelection';
+import { PromptComposer } from './PromptComposer';
 
 const WORDWRAP_STORAGE_KEY = 'cchub-wordwrap';
 const FONTSIZE_STORAGE_KEY = 'cchub-fontsize';
@@ -67,21 +69,26 @@ interface CodeViewerProps {
   content: string;
   language?: string;
   fileName?: string;
+  filePath?: string;
   showLineNumbers?: boolean;
   truncated?: boolean;
+  onCopyPrompt?: (text: string) => void;
 }
 
 export function CodeViewer({
   content,
   language = 'plaintext',
   fileName,
+  filePath,
   showLineNumbers = true,
   truncated = false,
+  onCopyPrompt,
 }: CodeViewerProps) {
   const codeRef = useRef<HTMLElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [wordWrap, setWordWrap] = useState(() => getWordWrapSetting(fileName || ''));
   const [fontSize, setFontSize] = useState(() => getFontSizeSetting());
+  const { selection, handleLineClick, isLineSelected, clearSelection } = useLineSelection();
 
   // Pinch zoom state
   const pinchStateRef = useRef<{
@@ -187,7 +194,11 @@ export function CodeViewer({
               style={{ fontSize: `${Math.max(10, fontSize - 2)}px`, lineHeight: `${fontSize * 1.5}px` }}
             >
               {lines.map((_, i) => (
-                <div key={i} className="px-1.5">
+                <div
+                  key={i}
+                  className={`px-1.5 ${onCopyPrompt ? 'cursor-pointer hover:text-th-text hover:bg-blue-900/30' : ''} ${isLineSelected(i + 1) ? 'bg-blue-800/40 text-blue-300' : ''}`}
+                  onClick={onCopyPrompt ? () => handleLineClick(i + 1) : undefined}
+                >
                   {i + 1}
                 </div>
               ))}
@@ -225,6 +236,22 @@ export function CodeViewer({
           </svg>
         </button>
       </div>
+
+      {/* Prompt Composer */}
+      {selection && onCopyPrompt && (
+        <PromptComposer
+          filePath={filePath || fileName || 'unknown'}
+          startLine={selection.start}
+          endLine={selection.end}
+          selectedCode={lines.slice(selection.start - 1, selection.end).join('\n')}
+          language={language}
+          onSubmit={(text) => {
+            onCopyPrompt(text);
+            clearSelection();
+          }}
+          onClose={clearSelection}
+        />
+      )}
     </div>
   );
 }

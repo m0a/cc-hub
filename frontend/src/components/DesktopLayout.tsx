@@ -1255,6 +1255,11 @@ export function DesktopLayout({
         <FileViewer
           sessionWorkingDir={activeSession.currentPath}
           onClose={() => setShowFileViewer(false)}
+          onCopyPrompt={(text) => {
+            const ref = terminalRefs.current?.get(desktopState.activePane);
+            ref?.setInputText(text);
+            setShowFileViewer(false);
+          }}
         />
       )}
 

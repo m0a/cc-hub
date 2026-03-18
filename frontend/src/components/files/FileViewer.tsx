@@ -84,6 +84,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
 
   const [viewMode, setViewMode] = useState<ViewMode>('browser');
   const [listMode, setListMode] = useState<ListMode>('browser');
+  const [previewMode, setPreviewMode] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
   const [selectedChange, setSelectedChange] = useState<FileChange | null>(null);
   const [selectedGitDiff, setSelectedGitDiff] = useState<{ path: string; diff: string } | null>(null);
@@ -199,7 +200,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
   const handleSelectFile = useCallback(async (file: FileInfo) => {
     pushToHistory({ viewMode, listMode, selectedChange, selectedGitDiff });
     await readFile(file.path);
-    setViewMode('file');
+    setViewMode('file'); setPreviewMode(false);
   }, [readFile, viewMode, listMode, selectedChange, selectedGitDiff]);
 
   // Handle browser back gesture / back button
@@ -272,7 +273,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
       await readFile(filePath);
       setSelectedChange(null);
       setSelectedGitDiff(null);
-      setViewMode('file');
+      setViewMode('file'); setPreviewMode(false);
     }
   }, [selectedChange, selectedGitDiff, readFile, sessionWorkingDir, viewMode, listMode]);
 
@@ -418,6 +419,14 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                         ? getFileName(selectedFile.path)
                         : ''}
                     </span>
+                    {viewMode === 'file' && selectedFile && (isMarkdownFile(selectedFile.path) || isHtmlFile(selectedFile.path)) && (
+                      <button
+                        onClick={() => setPreviewMode(prev => !prev)}
+                        className={`px-2 py-1 text-xs rounded transition-colors ${previewMode ? 'bg-blue-600 text-white' : 'bg-th-surface-hover hover:bg-th-surface-active text-th-text-secondary'}`}
+                      >
+                        {previewMode ? 'Source' : 'Preview'}
+                      </button>
+                    )}
                     {viewMode === 'diff' && (
                       <button
                         onClick={handleOpenFileFromDiff}
@@ -437,13 +446,13 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                           fileName={getFileName(selectedFile.path)}
                           size={selectedFile.size}
                         />
-                      ) : isMarkdownFile(selectedFile.path) ? (
+                      ) : previewMode && isMarkdownFile(selectedFile.path) ? (
                         <MarkdownViewer
                           content={selectedFile.content}
                           fileName={getFileName(selectedFile.path)}
                           truncated={selectedFile.truncated}
                         />
-                      ) : isHtmlFile(selectedFile.path) ? (
+                      ) : previewMode && isHtmlFile(selectedFile.path) ? (
                         <HtmlViewer
                           content={selectedFile.content}
                           fileName={getFileName(selectedFile.path)}
@@ -455,6 +464,8 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                           fileName={getFileName(selectedFile.path)}
                           truncated={selectedFile.truncated}
                           showLineNumbers={true}
+                          hasPreview={isMarkdownFile(selectedFile.path) || isHtmlFile(selectedFile.path)}
+                          onTogglePreview={() => setPreviewMode(true)}
                         />
                       )
                     )}
@@ -524,13 +535,13 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                 fileName={getFileName(selectedFile.path)}
                 size={selectedFile.size}
               />
-            ) : isMarkdownFile(selectedFile.path) ? (
+            ) : previewMode && isMarkdownFile(selectedFile.path) ? (
               <MarkdownViewer
                 content={selectedFile.content}
                 fileName={getFileName(selectedFile.path)}
                 truncated={selectedFile.truncated}
               />
-            ) : isHtmlFile(selectedFile.path) ? (
+            ) : previewMode && isHtmlFile(selectedFile.path) ? (
               <HtmlViewer
                 content={selectedFile.content}
                 fileName={getFileName(selectedFile.path)}
@@ -541,6 +552,8 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                 language={getLanguageFromPath(selectedFile.path)}
                 fileName={getFileName(selectedFile.path)}
                 truncated={selectedFile.truncated}
+                hasPreview={isMarkdownFile(selectedFile.path) || isHtmlFile(selectedFile.path)}
+                onTogglePreview={() => setPreviewMode(true)}
               />
             )
           )}

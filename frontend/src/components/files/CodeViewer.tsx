@@ -73,6 +73,8 @@ interface CodeViewerProps {
   showLineNumbers?: boolean;
   truncated?: boolean;
   onCopyPrompt?: (text: string) => void;
+  onTogglePreview?: () => void;
+  hasPreview?: boolean;
 }
 
 export function CodeViewer({
@@ -83,6 +85,8 @@ export function CodeViewer({
   showLineNumbers = true,
   truncated = false,
   onCopyPrompt,
+  onTogglePreview,
+  hasPreview = false,
 }: CodeViewerProps) {
   const codeRef = useRef<HTMLElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -219,6 +223,15 @@ export function CodeViewer({
 
       {/* Floating controls - top right */}
       <div className="absolute top-2 right-2 flex items-center gap-1 bg-th-surface/90 rounded-lg p-1 backdrop-blur-sm">
+        {hasPreview && onTogglePreview && (
+          <button
+            onClick={onTogglePreview}
+            className="px-1.5 py-0.5 text-xs text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
+            title="Preview"
+          >
+            Preview
+          </button>
+        )}
         <button
           onClick={resetFontSize}
           className="px-1.5 py-0.5 text-xs text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"

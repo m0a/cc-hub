@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.96] - 2026-03-18
+
+### Removed
+- 非推奨TabletLayoutコンポーネント削除（478行、DesktopLayout+isTabletに統合済み）
+- 未使用isExternalフィールド、onReload prop、レガシーsessionsフラット配列
+- ext:プレフィックス正規化、旧localStorageキー掃除、旧ペインタイプ変換等のマイグレーションコード
+
 ## [0.0.95] - 2026-03-18
 
 ### Fixed

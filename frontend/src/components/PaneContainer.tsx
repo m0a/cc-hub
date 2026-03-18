@@ -107,26 +107,8 @@ export function PaneContainer({
     );
   }
 
-  // Fallback for unknown/legacy pane types (empty, sessions, dashboard)
-  // Treat them as terminal panes with no session selected
-  const legacyNode = node as { id: string };
-  return (
-    <TerminalPane
-      paneId={legacyNode.id}
-      sessionId={null}
-      isActive={activePane === legacyNode.id}
-      onFocus={() => onFocusPane(legacyNode.id)}
-      onSelectSession={(sessionId) => onSelectSession(legacyNode.id, sessionId)}
-      onSessionStateChange={onSessionStateChange}
-      onClose={() => onClosePane(legacyNode.id)}
-      onSplit={onSplit}
-      sessions={sessions}
-      terminalRefs={terminalRefs}
-      globalReloadKey={globalReloadKey}
-      isTablet={isTablet}
-      controlModeContext={controlModeContext}
-    />
-  );
+  // Unknown pane type - should not happen
+  return null;
 }
 
 interface TerminalPaneProps {

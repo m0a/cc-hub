@@ -14,18 +14,6 @@ const getPositionKey = (mode: 'keyboard' | 'input', orientation?: Orientation) =
   return `cchub-floating-keyboard-position-${mode}-${orient}-v3`;
 };
 
-// Clean up old position keys
-const cleanupOldKeys = () => {
-  try {
-    localStorage.removeItem('cchub-floating-keyboard-position');
-    localStorage.removeItem('cchub-floating-keyboard-position-keyboard');
-    localStorage.removeItem('cchub-floating-keyboard-position-input');
-    localStorage.removeItem('cchub-floating-keyboard-position-keyboard-v2');
-    localStorage.removeItem('cchub-floating-keyboard-position-input-v2');
-  } catch {}
-};
-cleanupOldKeys();
-
 interface Position {
   x: number;
   y: number;

@@ -382,9 +382,7 @@ export function App() {
           const sessionsToOpen: OpenSession[] = [];
 
           for (const id of savedSessionIds) {
-            // Handle legacy ext: prefix by stripping it
-            const normalizedId = id.startsWith('ext:') ? id.slice(4) : id;
-            const session = allSessions.find(s => s.id === normalizedId);
+            const session = allSessions.find(s => s.id === id);
             if (session) {
               const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string; theme?: SessionTheme };
               sessionsToOpen.push({
@@ -399,18 +397,13 @@ export function App() {
             }
           }
 
-          // Normalize lastSessionId too
-          const normalizedLastId = lastSessionId?.startsWith('ext:')
-            ? lastSessionId.slice(4)
-            : lastSessionId;
-
           if (sessionsToOpen.length > 0) {
             setOpenSessions(sessionsToOpen);
 
             // Set active session: prefer last active, fallback to first open
             const validIds = sessionsToOpen.map(s => s.id);
-            const activeId = normalizedLastId && validIds.includes(normalizedLastId)
-              ? normalizedLastId
+            const activeId = lastSessionId && validIds.includes(lastSessionId)
+              ? lastSessionId
               : validIds[0];
             setActiveSessionId(activeId);
           } else if (allSessions.length > 0) {

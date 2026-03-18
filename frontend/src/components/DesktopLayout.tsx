@@ -285,27 +285,14 @@ export function DesktopLayout({
   }, [showKeyboard, isTablet]);
 
   // Migrate old pane types to terminal
-  const migratePaneNode = (node: PaneNode): PaneNode => {
-    // Handle legacy types (empty, sessions, dashboard) - convert to terminal
-    const nodeType = (node as { type: string }).type;
-    if (nodeType === 'empty' || nodeType === 'sessions' || nodeType === 'dashboard') {
-      return { type: 'terminal', sessionId: null, id: node.id };
-    }
-    if (node.type === 'split') {
-      return { ...node, children: node.children.map(migratePaneNode) };
-    }
-    return node;
-  };
-
   // Load/save desktop state
   const [desktopState, setDesktopState] = useState<DesktopState>(() => {
     try {
       const saved = localStorage.getItem(DESKTOP_STATE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved) as DesktopState;
-        // Validate structure and migrate old types
         if (parsed.root && parsed.activePane) {
-          return { ...parsed, root: migratePaneNode(parsed.root) };
+          return parsed;
         }
       }
     } catch {

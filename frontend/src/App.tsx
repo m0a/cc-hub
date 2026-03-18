@@ -738,7 +738,6 @@ export function App() {
           sessions={openSessions}
           activeSessionId={activeSessionId}
           onSessionStateChange={updateSessionState}
-          onReload={handleReload}
         />
         {showOnboarding && <Onboarding onComplete={completeOnboarding} />}
       </>
@@ -753,7 +752,6 @@ export function App() {
           sessions={openSessions}
           activeSessionId={activeSessionId}
           onSessionStateChange={updateSessionState}
-          onReload={handleReload}
           isTablet={true}
           keyboardControlRef={keyboardControlRef}
         />

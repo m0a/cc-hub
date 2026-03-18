@@ -33,7 +33,6 @@ interface DesktopLayoutProps {
   sessions: OpenSession[];
   activeSessionId: string | null;
   onSessionStateChange: (id: string, state: SessionState) => void;
-  onReload: () => void;
   isTablet?: boolean;
   keyboardControlRef?: React.RefObject<{ open: () => void; close: () => void } | null>;
 }
@@ -200,7 +199,6 @@ export function DesktopLayout({
   sessions: propSessions,
   activeSessionId,
   onSessionStateChange,
-  onReload,
   isTablet = false,
   keyboardControlRef,
 }: DesktopLayoutProps) {
@@ -278,9 +276,6 @@ export function DesktopLayout({
   const handleGlobalReload = useCallback(() => {
     window.location.reload();
   }, []);
-
-  // Keep onReload reference for compatibility
-  void onReload;
 
   // Save keyboard visibility state
   useEffect(() => {

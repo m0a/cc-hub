@@ -1,7 +1,7 @@
 import { useRef, useCallback, useState, useEffect, useMemo } from 'react';
 import { PaneContainer, type PaneNode, type ControlModeContext } from './PaneContainer';
 import { FileViewer } from './files/FileViewer';
-import { FloatingKeyboard } from './FloatingKeyboard';
+import { FloatingKeyboard, type FloatingKeyboardRef } from './FloatingKeyboard';
 import { SessionModal } from './SessionModal';
 import { DashboardPanel } from './DashboardPanel';
 import { ShareDialog } from './ShareDialog';
@@ -203,6 +203,7 @@ export function DesktopLayout({
   keyboardControlRef,
 }: DesktopLayoutProps) {
   const terminalRefs = useRef<Map<string, TerminalRef | null>>(new Map());
+  const floatingKeyboardRef = useRef<FloatingKeyboardRef>(null);
   const activePaneRef = useRef<string>('');
   const paneContainerRef = useRef<HTMLDivElement>(null);
 
@@ -1256,8 +1257,14 @@ export function DesktopLayout({
           sessionWorkingDir={activeSession.currentPath}
           onClose={() => setShowFileViewer(false)}
           onCopyPrompt={(text) => {
-            const ref = terminalRefs.current?.get(desktopState.activePane);
-            ref?.setInputText(text);
+            if (isTablet) {
+              // Tablet: set text into FloatingKeyboard's input
+              setShowKeyboard(true);
+              floatingKeyboardRef.current?.setInputText(text);
+            } else {
+              // Desktop: copy to clipboard
+              navigator.clipboard.writeText(text).catch(() => {});
+            }
             setShowFileViewer(false);
           }}
         />
@@ -1276,6 +1283,7 @@ export function DesktopLayout({
           />
 
           <FloatingKeyboard
+            ref={floatingKeyboardRef}
             visible={showKeyboard}
             onClose={() => setShowKeyboard(false)}
             onSend={handleKeyboardSend}

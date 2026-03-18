@@ -1,5 +1,9 @@
-import { useRef, useCallback, useState, useEffect } from 'react';
+import { useRef, useCallback, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Keyboard } from './Keyboard';
+
+export interface FloatingKeyboardRef {
+  setInputText: (text: string) => void;
+}
 
 const MINIMIZED_KEY = 'cchub-floating-keyboard-minimized';
 const TRANSPARENT_KEY = 'cchub-floating-keyboard-transparent';
@@ -34,7 +38,7 @@ interface FloatingKeyboardProps {
   elevated?: boolean; // Raise z-index above onboarding overlay
 }
 
-export function FloatingKeyboard({
+export const FloatingKeyboard = forwardRef<FloatingKeyboardRef, FloatingKeyboardProps>(function FloatingKeyboard({
   visible,
   onClose,
   onSend,
@@ -42,7 +46,7 @@ export function FloatingKeyboard({
   onUrlExtract,
   isUploading = false,
   elevated = false,
-}: FloatingKeyboardProps) {
+}, ref) {
   const [inputMode, setInputMode] = useState<'keyboard' | 'input'>('keyboard');
   const [inputValue, setInputValue] = useState('');
   const [showHistory, setShowHistory] = useState(false);
@@ -56,6 +60,14 @@ export function FloatingKeyboard({
   );
   const historyIndexRef = useRef(-1); // -1 = not browsing history
   const savedInputRef = useRef(''); // save current input when browsing history
+
+  useImperativeHandle(ref, () => ({
+    setInputText: (text: string) => {
+      setInputValue(text);
+      setInputMode('input');
+      setTimeout(() => inputRef.current?.focus(), 100);
+    },
+  }), []);
 
   // Helper to load position for a mode
   const loadPositionForMode = useCallback((mode: 'keyboard' | 'input'): Position => {
@@ -494,4 +506,4 @@ export function FloatingKeyboard({
       </div>
     </div>
   );
-}
+});

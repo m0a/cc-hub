@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.97] - 2026-03-18
+
+### Added
+- share-tokenサービスのユニットテスト追加（18テスト）
+
+### Changed
+- パッチ/マイナー依存関係更新（hono, react, tailwindcss, i18next等）
+
 ## [0.0.96] - 2026-03-18
 
 ### Removed

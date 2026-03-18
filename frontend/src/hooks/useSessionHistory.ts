@@ -30,9 +30,6 @@ interface UseSessionHistoryResult {
   searchSessions: (query: string) => Promise<void>;
   clearSearch: () => void;
 
-  // Legacy: all sessions (for backward compatibility)
-  sessions: HistorySession[];
-  isLoading: boolean;
   error: string | null;
 
   // Actions
@@ -221,10 +218,6 @@ export function useSessionHistory(): UseSessionHistoryResult {
     fetchProjects();
   }, [fetchProjects]);
 
-  // Compute all sessions for backward compatibility
-  const sessions = Array.from(sessionsByProject.values()).flat();
-  const isLoading = isLoadingProjects;
-
   return {
     projects,
     isLoadingProjects,
@@ -237,8 +230,6 @@ export function useSessionHistory(): UseSessionHistoryResult {
     searchQuery,
     searchSessions,
     clearSearch,
-    sessions,
-    isLoading,
     error,
     refresh: fetchProjects,
     resumeSession,

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.2] - 2026-03-20
+
+### Added
+- セッション一覧でペインを長押しして閉じる機能（確認ダイアログ付き）
+
+### Fixed
+- zod v4でペイン操作API（close/focus/split/respawn）が500エラーになる問題を修正
+
 ## [0.1.1] - 2026-03-19
 
 ### Fixed

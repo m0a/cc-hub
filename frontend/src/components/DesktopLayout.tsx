@@ -668,6 +668,15 @@ export function DesktopLayout({
       controlTerminalRef.current.respawnPane(paneId);
     },
     deadPanes: controlTerminal.deadPanes,
+    setKeyboardVisible: isTablet ? (visible: boolean) => setShowKeyboard(visible) : undefined,
+    onCopyPrompt: (text: string) => {
+      if (isTablet) {
+        setShowKeyboard(true);
+        setTimeout(() => floatingKeyboardRef.current?.setInputText(text), 200);
+      } else {
+        navigator.clipboard.writeText(text).catch(() => {});
+      }
+    },
   };
 
   const handleSplit = useCallback((direction: 'horizontal' | 'vertical') => {
@@ -1258,11 +1267,9 @@ export function DesktopLayout({
           onClose={() => setShowFileViewer(false)}
           onCopyPrompt={(text) => {
             if (isTablet) {
-              // Tablet: set text into FloatingKeyboard's input
               setShowKeyboard(true);
-              floatingKeyboardRef.current?.setInputText(text);
+              setTimeout(() => floatingKeyboardRef.current?.setInputText(text), 200);
             } else {
-              // Desktop: copy to clipboard
               navigator.clipboard.writeText(text).catch(() => {});
             }
             setShowFileViewer(false);

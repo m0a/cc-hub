@@ -1687,6 +1687,41 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                   className="flex-1 px-3 py-2 bg-th-surface border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-green-500 resize-none"
                   style={{ fontSize: '16px' }}
                 />
+                {/* Send button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (inputValue) {
+                      addToInputHistory(inputValue);
+                      if (inputValue.includes('\n')) {
+                        sendRef.current(`\x1b[200~${inputValue}\x1b[201~`);
+                      } else {
+                        sendRef.current(inputValue);
+                      }
+                    }
+                    sendRef.current('\r');
+                    setInputValue('');
+                    setShowInputHistory(false);
+                  }}
+                  className="h-10 self-end px-2.5 rounded bg-emerald-600 active:bg-emerald-700 text-white"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="6,15 3,12 6,9" />
+                    <path d="M3 12h11V3" />
+                  </svg>
+                </button>
+                {/* Clear button */}
+                {inputValue && (
+                  <button
+                    type="button"
+                    onClick={() => { setInputValue(''); inputRef.current?.focus(); }}
+                    className="h-10 self-end px-2 rounded bg-th-surface border border-th-border text-th-text-muted active:bg-th-surface-active"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
                 {/* History button */}
                 <button
                   type="button"

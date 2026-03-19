@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import { useLineSelection } from '../../hooks/useLineSelection';
@@ -65,6 +65,32 @@ function getTouchDistance(touches: TouchList): number {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
+// Split highlighted HTML into lines, handling unclosed span tags
+function splitHighlightedHtml(html: string): string[] {
+  const rawLines = html.split('\n');
+  const result: string[] = [];
+  let openTags: string[] = [];
+
+  for (const rawLine of rawLines) {
+    const line = openTags.join('') + rawLine;
+    const tags: string[] = [];
+    const tagRe = /<(\/?)span([^>]*)>/g;
+    let m: RegExpExecArray | null = tagRe.exec(line);
+    while (m !== null) {
+      if (m[1] === '/') {
+        if (tags.length > 0) tags.pop();
+      } else {
+        tags.push(m[0]);
+      }
+      m = tagRe.exec(line);
+    }
+    result.push(line + '</span>'.repeat(tags.length));
+    openTags = tags;
+  }
+
+  return result;
+}
+
 interface CodeViewerProps {
   content: string;
   language?: string;
@@ -88,7 +114,6 @@ export function CodeViewer({
   onTogglePreview,
   hasPreview = false,
 }: CodeViewerProps) {
-  const codeRef = useRef<HTMLElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [wordWrap, setWordWrap] = useState(() => getWordWrapSetting(fileName || ''));
   const [fontSize, setFontSize] = useState(() => getFontSizeSetting());
@@ -160,24 +185,21 @@ export function CodeViewer({
     };
   }, [fontSize]);
 
-  useEffect(() => {
-    if (codeRef.current) {
-      // Reset previous highlighting
-      codeRef.current.removeAttribute('data-highlighted');
-      codeRef.current.className = `language-${language}`;
-
-      // Apply highlighting
-      try {
-        if (language !== 'plaintext' && hljs.getLanguage(language)) {
-          hljs.highlightElement(codeRef.current);
-        }
-      } catch (err) {
-        console.warn('Highlight error:', err);
-      }
+  // Highlight and split into per-line HTML
+  const highlightedLines = useMemo(() => {
+    const rawLines = content.split('\n');
+    if (language === 'plaintext' || !hljs.getLanguage(language)) {
+      return rawLines.map(l => ({ text: l, html: null }));
+    }
+    try {
+      const result = hljs.highlight(content, { language, ignoreIllegals: true });
+      const htmlLines = splitHighlightedHtml(result.value);
+      return rawLines.map((text, i) => ({ text, html: htmlLines[i] ?? null }));
+    } catch {
+      return rawLines.map(l => ({ text: l, html: null }));
     }
   }, [content, language]);
 
-  const lines = content.split('\n');
 
   return (
     <div className="relative flex flex-col h-full bg-th-bg text-th-text font-mono text-sm">
@@ -190,34 +212,42 @@ export function CodeViewer({
 
       {/* Code content */}
       <div ref={containerRef} className="flex-1 overflow-auto touch-pan-y">
-        <div className="flex min-h-full">
-          {/* Line numbers - hidden when word wrap is enabled */}
-          {showLineNumbers && !wordWrap && (
-            <div
-              className="flex-shrink-0 select-none text-right bg-th-surface/50 border-r border-th-border text-th-text-muted sticky left-0"
-              style={{ fontSize: `${Math.max(10, fontSize - 2)}px`, lineHeight: `${fontSize * 1.5}px` }}
-            >
-              {lines.map((_, i) => (
-                <div
-                  key={i}
-                  className={`px-1.5 ${onCopyPrompt ? 'cursor-pointer hover:text-th-text hover:bg-blue-900/30' : ''} ${isLineSelected(i + 1) ? 'bg-blue-800/40 text-blue-300' : ''}`}
-                  onClick={onCopyPrompt ? () => handleLineClick(i + 1) : undefined}
-                >
-                  {i + 1}
-                </div>
-              ))}
-            </div>
-          )}
+        <div className={`min-h-full ${wordWrap ? '' : 'min-w-fit'}`}>
+          {highlightedLines.map((line, i) => {
+            const lineNum = i + 1;
+            const selected = isLineSelected(lineNum);
+            return (
+              <div
+                key={i}
+                className={`flex ${selected ? 'bg-blue-900/30' : ''} ${onCopyPrompt ? 'cursor-pointer' : ''}`}
+                onClick={onCopyPrompt ? () => handleLineClick(lineNum) : undefined}
+              >
+                {/* Line number */}
+                {showLineNumbers && (
+                  <div
+                    className={`shrink-0 select-none text-right border-r border-th-border sticky left-0 px-1.5 ${
+                      selected ? 'bg-blue-800/40 text-blue-300' : 'bg-th-surface/50 text-th-text-muted'
+                    }`}
+                    style={{ fontSize: `${Math.max(10, fontSize - 2)}px`, lineHeight: `${fontSize * 1.5}px`, minWidth: '2.5rem' }}
+                  >
+                    {lineNum}
+                  </div>
+                )}
 
-          {/* Code */}
-          <pre
-            className={`flex-1 m-0 ${wordWrap ? 'whitespace-pre-wrap break-all' : 'overflow-x-auto'}`}
-            style={{ fontSize: `${fontSize}px`, lineHeight: `${fontSize * 1.5}px` }}
-          >
-            <code ref={codeRef} className={`language-${language}`}>
-              {content}
-            </code>
-          </pre>
+                {/* Code line */}
+                <pre
+                  className={`flex-1 m-0 px-2 ${wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'}`}
+                  style={{ fontSize: `${fontSize}px`, lineHeight: `${fontSize * 1.5}px` }}
+                >
+                  {line.html ? (
+                    <code dangerouslySetInnerHTML={{ __html: line.html || '&nbsp;' }} />
+                  ) : (
+                    <code>{line.text || ' '}</code>
+                  )}
+                </pre>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -256,7 +286,7 @@ export function CodeViewer({
           filePath={filePath || fileName || 'unknown'}
           startLine={selection.start}
           endLine={selection.end}
-          selectedCode={lines.slice(selection.start - 1, selection.end).join('\n')}
+          selectedCode={highlightedLines.slice(selection.start - 1, selection.end).map(l => l.text).join('\n')}
           language={language}
           onSubmit={(text) => {
             onCopyPrompt(text);

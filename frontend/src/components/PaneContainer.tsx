@@ -34,6 +34,8 @@ export interface ControlModeContext {
   isZoomed?: boolean;
   respawnPane?: (paneId: string) => void;
   deadPanes?: Set<string>;
+  onCopyPrompt?: (text: string) => void;
+  setKeyboardVisible?: (visible: boolean) => void;
 }
 
 interface PaneContainerProps {
@@ -167,11 +169,12 @@ function TerminalPane({
     }
   }, []);
 
-  // Open file viewer
+  // Open file viewer (hide keyboard while open)
   const handleOpenFileViewer = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     setShowFileViewer(true);
-  }, []);
+    controlModeContext.setKeyboardVisible?.(false);
+  }, [controlModeContext]);
 
   // Cleanup confirm close timer on unmount
   useEffect(() => {
@@ -528,10 +531,9 @@ function TerminalPane({
       {showFileViewer && session?.currentPath && (
         <FileViewer
           sessionWorkingDir={session.currentPath}
-          onClose={() => setShowFileViewer(false)}
+          onClose={() => { setShowFileViewer(false); controlModeContext.setKeyboardVisible?.(true); }}
           onCopyPrompt={(text) => {
-            const ref = terminalRefs.current?.get(paneId);
-            ref?.setInputText(text);
+            controlModeContext.onCopyPrompt?.(text);
             setShowFileViewer(false);
           }}
         />

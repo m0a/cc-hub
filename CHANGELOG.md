@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.99] - 2026-03-19
+
+### Added
+- FileViewerにCopy Prompt機能（行選択→コメント→ターミナル入力欄にセット）
+- 日本語入力に送信ボタン(↵)とクリアボタン(×)を追加（スマホ・タブレット両対応）
+- Markdown/HTMLファイルのSource/Preview切替ボタン
+
+### Changed
+- FileViewerの行番号を常時表示（ワードラップ時も）
+- 行全体をタップで選択可能に（行番号以外も）
+- タブレットでFileViewer表示中はFloatingKeyboardを非表示に
+
 ## [0.0.98] - 2026-03-18
 
 ### Changed

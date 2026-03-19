@@ -455,6 +455,7 @@ function SessionItem({
   onSelectPane,
   onShowMenu,
   onResume,
+  onClosePane,
 }: {
   session: SessionResponse;
   onSelect: (session: SessionResponse) => void;
@@ -463,6 +464,7 @@ function SessionItem({
   onResume?: (sessionId: string, ccSessionId?: string) => void;
   onShowConversation?: (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => void;
   onPaneAction?: (sessionId: string, action: 'focus' | 'close' | 'split', paneId: string, direction?: 'h' | 'v') => void;
+  onClosePane?: (sessionId: string, paneId: string, name: string) => void;
 }) {
   const { t } = useTranslation();
   const longPressTimerRef = useRef<number | null>(null);
@@ -732,16 +734,30 @@ function SessionItem({
                 ? 'bg-green-900/30 active:bg-green-800/40'
                 : 'bg-th-surface-hover/40 active:bg-th-surface-active/50';
 
+            let paneTimer: number | null = null;
+            let paneLongPressed = false;
             return (
               <button
                 key={pane.paneId}
                 onClick={() => {
+                  if (paneLongPressed) { paneLongPressed = false; return; }
                   if (onSelectPane) {
                     onSelectPane(session, pane.paneId);
                   } else {
                     onSelect(session);
                   }
                 }}
+                onTouchStart={() => {
+                  paneLongPressed = false;
+                  paneTimer = window.setTimeout(() => {
+                    paneTimer = null;
+                    paneLongPressed = true;
+                    onClosePane?.(session.id, pane.paneId, displayName);
+                  }, 600);
+                }}
+                onTouchEnd={() => { if (paneTimer) { clearTimeout(paneTimer); paneTimer = null; } }}
+                onTouchMove={() => { if (paneTimer) { clearTimeout(paneTimer); paneTimer = null; } }}
+                onContextMenu={(e) => e.preventDefault()}
                 className={`w-full flex items-center gap-2 px-3 py-2.5 rounded text-left transition-colors active:scale-[0.98] ${paneBgClass}`}
               >
                 {/* Per-pane status dot */}
@@ -790,6 +806,7 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
   const { fetchConversation } = useSessionHistory();
 
   const [sessionForMenu, setSessionForMenu] = useState<SessionResponse | null>(null);
+  const [paneToClose, setPaneToClose] = useState<{ sessionId: string; paneId: string; name: string } | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'sessions' | 'history' | 'dashboard'>('sessions');
   const [hookConfigured, setHookConfigured] = useState<boolean | null>(null);
@@ -1023,6 +1040,7 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
                         onResume={handleResume}
                         onShowConversation={handleShowConversation}
                         onPaneAction={handlePaneAction}
+                        onClosePane={(sid, pid, name) => setPaneToClose({ sessionId: sid, paneId: pid, name })}
                       />
                     </div>
                   ))}
@@ -1119,6 +1137,41 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
           )}
         </div>
       </div>
+
+      {/* Pane close confirmation dialog */}
+      {paneToClose && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay)] animate-backdrop-in" onClick={() => setPaneToClose(null)}>
+          <div className="bg-th-surface rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl animate-modal-in" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-th-text mb-2">Close Pane</h3>
+            <p className="text-th-text-secondary mb-4">
+              <span className="font-medium text-th-text">{paneToClose.name}</span> を閉じますか？
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setPaneToClose(null)}
+                className="px-4 py-2 bg-th-surface-active hover:bg-th-surface-hover rounded font-medium transition-colors text-th-text"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    await authFetch(`${API_BASE}/api/sessions/${encodeURIComponent(paneToClose.sessionId)}/panes/close`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ paneId: paneToClose.paneId }),
+                    });
+                  } catch {}
+                  setPaneToClose(null);
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded font-medium transition-colors text-white"
+              >
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Session menu dialog */}
       {sessionForMenu && (

@@ -601,21 +601,24 @@ sessions.put('/:id/title', async (c) => {
 // Pane Operations
 // =============================================================================
 
+// Use local paneId schema to avoid cross-package zod instance mismatch in dev
+const paneIdSchema = z.string().regex(/^%\d+$/, 'Invalid pane ID');
+
 const PaneFocusSchema = z.object({
-  paneId: PaneIdSchema,
+  paneId: paneIdSchema,
 });
 
 const PaneCloseSchema = z.object({
-  paneId: PaneIdSchema,
+  paneId: paneIdSchema,
 });
 
 const PaneSplitSchema = z.object({
-  paneId: PaneIdSchema,
+  paneId: paneIdSchema,
   direction: z.enum(['h', 'v']),
 });
 
 const PaneRespawnSchema = z.object({
-  paneId: PaneIdSchema,
+  paneId: paneIdSchema,
 });
 
 // POST /sessions/:id/panes/focus - Focus a specific pane

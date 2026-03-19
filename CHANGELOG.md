@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.0] - 2026-03-19
+
+### Added
+- ターミナル長押しテキスト選択（タッチデバイス対応）
+  - 長押しで選択モード開始、ドラッグで文字レベル選択
+  - S/Eハンドルで選択範囲をドラッグ調整
+  - 選択テキストのプレビューパネル表示
+  - Copy/Cancelボタン、クリップボードコピー対応
+
 ## [0.0.99] - 2026-03-19
 
 ### Added

@@ -175,6 +175,11 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [showFontSizeIndicator, setShowFontSizeIndicator] = useState(false);
   const [scrollIndicator, setScrollIndicator] = useState<string | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [copyButtonPos, setCopyButtonPos] = useState<{ x: number; y: number } | null>(null);
+  const [selectionRange, setSelectionRange] = useState<{ startCol: number; startRow: number; endCol: number; endRow: number } | null>(null);
+  const selectionStartRef = useRef<{ col: number; row: number; viewportRow: number } | null>(null);
+  const selectionModeRef = useRef(false);
   const scrollIndicatorTimerRef = useRef<number | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [detectedUrls, setDetectedUrls] = useState<string[]>([]);
@@ -376,6 +381,122 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     }
   }, []);
 
+  // Selection mode helpers
+  useEffect(() => { selectionModeRef.current = selectionMode; }, [selectionMode]);
+
+  const exitSelectionMode = useCallback(() => {
+    setSelectionMode(false);
+    selectionModeRef.current = false;
+    setCopyButtonPos(null);
+    setSelectionRange(null);
+    selectionStartRef.current = null;
+    terminalRef.current?.clearSelection();
+  }, []);
+  const exitSelectionModeRef = useRef(exitSelectionMode);
+  exitSelectionModeRef.current = exitSelectionMode;
+
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+
+  const draggingHandleRef = useRef<'start' | 'end' | null>(null);
+
+  const handleHandleDragStart = useCallback((e: React.TouchEvent, edge: 'start' | 'end') => {
+    e.preventDefault();
+    draggingHandleRef.current = edge;
+
+    const handleMove = (ev: TouchEvent) => {
+      ev.preventDefault();
+      const term = terminalRef.current;
+      const container = containerRef.current;
+      if (!term || !container) return;
+
+      const core = (term as any)._core;
+      const cellW = core?._renderService?.dimensions?.css?.cell?.width;
+      const cellH = core?._renderService?.dimensions?.css?.cell?.height;
+      if (!cellW || !cellH) return;
+
+      const screenEl = container.querySelector('.xterm-screen');
+      if (!screenEl) return;
+      const rect = screenEl.getBoundingClientRect();
+      const touch = ev.touches[0];
+      // Offset finger position upward so the cursor appears above the finger
+      const fingerOffsetY = 30;
+      const col = Math.max(0, Math.min(term.cols - 1, Math.floor((touch.clientX - rect.left) / cellW)));
+      const vRow = Math.max(0, Math.min(term.rows - 1, Math.floor((touch.clientY - fingerOffsetY - rect.top) / cellH)));
+      const viewportY = term.buffer.active.viewportY;
+
+      setSelectionRange(prev => {
+        if (!prev) return null;
+        let newRange: typeof prev;
+        if (draggingHandleRef.current === 'start') {
+          const endOffset = prev.endRow * term.cols + prev.endCol;
+          const newOffset = vRow * term.cols + col;
+          if (newOffset > endOffset) return prev;
+          newRange = { ...prev, startCol: col, startRow: vRow };
+          selectionStartRef.current = { col, row: viewportY + vRow, viewportRow: vRow };
+        } else {
+          const startOffset = prev.startRow * term.cols + prev.startCol;
+          const newOffset = vRow * term.cols + col;
+          if (newOffset < startOffset) return prev;
+          newRange = { ...prev, endCol: col, endRow: vRow };
+        }
+        // Update xterm selection
+        const sOffset = newRange.startRow * term.cols + newRange.startCol;
+        const eOffset = newRange.endRow * term.cols + newRange.endCol;
+        term.select(newRange.startCol, viewportY + newRange.startRow, eOffset - sOffset + 1);
+        return newRange;
+      });
+    };
+
+    const handleEnd = () => {
+      draggingHandleRef.current = null;
+      document.removeEventListener('touchmove', handleMove);
+      document.removeEventListener('touchend', handleEnd);
+    };
+
+    document.addEventListener('touchmove', handleMove, { passive: false });
+    document.addEventListener('touchend', handleEnd);
+  }, []);
+
+  const handleCopySelection = useCallback(() => {
+    const sel = terminalRef.current?.getSelection();
+    if (!sel) {
+      setCopyFeedback('No selection');
+      setTimeout(() => setCopyFeedback(null), 1500);
+      exitSelectionMode();
+      return;
+    }
+    // Save text before clearing selection
+    const text = sel;
+    exitSelectionMode();
+    // Copy after selection is cleared
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopyFeedback('Copied!');
+        setTimeout(() => setCopyFeedback(null), 1500);
+      }).catch(() => {
+        copyFallback(text);
+      });
+    } else {
+      copyFallback(text);
+    }
+  }, [exitSelectionMode]);
+
+  const copyFallback = (text: string) => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopyFeedback('Copied!');
+    } catch {
+      setCopyFeedback('Failed');
+    }
+    setTimeout(() => setCopyFeedback(null), 1500);
+  };
+
   // Notify parent when ready and trigger resize on connect
   useEffect(() => {
     if (isConnected) {
@@ -418,7 +539,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         foreground: themeColors.foreground,
         cursor: themeColors.foreground,
         cursorAccent: themeColors.background,
-        selectionBackground: isLightMode() ? 'rgba(0, 0, 0, 0.15)' : 'rgba(255, 255, 255, 0.3)',
+        selectionBackground: isLightMode() ? 'rgba(59, 130, 246, 0.3)' : 'rgba(59, 130, 246, 0.5)',
         ...(isLightMode() ? LIGHT_ANSI_COLORS : {}),
       },
     });
@@ -686,7 +807,42 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
     let stoppedMomentum = false;
 
+    // Convert touch coordinates to terminal cell position
+    // Returns viewport-relative row (for overlay) and buffer-absolute row (for select API)
+    const touchToCell = (clientX: number, clientY: number): { col: number; row: number; viewportRow: number } | null => {
+      const core = (term as any)._core;
+      const cellW = core?._renderService?.dimensions?.css?.cell?.width;
+      const cellH = core?._renderService?.dimensions?.css?.cell?.height;
+      if (!cellW || !cellH || !container) return null;
+      const screenEl = container.querySelector('.xterm-screen');
+      if (!screenEl) return null;
+      const rect = screenEl.getBoundingClientRect();
+      const col = Math.max(0, Math.min(term.cols - 1, Math.floor((clientX - rect.left) / cellW)));
+      const viewportRow = Math.max(0, Math.min(term.rows - 1, Math.floor((clientY - rect.top) / cellH)));
+      // select() takes buffer-absolute row = viewportY + viewport-relative row
+      const row = term.buffer.active.viewportY + viewportRow;
+      return { col, row, viewportRow };
+    };
+
+    let touchStartClientX = 0;
+    let touchStartClientY = 0;
+
     const handleTouchStart = (e: TouchEvent) => {
+      // If in selection mode, check if touch is on a control element
+      if (selectionModeRef.current) {
+        const target = e.target as HTMLElement;
+        // Let selection control elements (handles, copy/cancel buttons, preview) handle their own events
+        if (target.closest('[data-selection-control]')) return;
+        // Check if touch point hits any selection control element (handles may overlay terminal)
+        const touch = e.touches[0];
+        if (touch) {
+          const els = document.elementsFromPoint(touch.clientX, touch.clientY);
+          if (els.some(el => (el as HTMLElement).closest?.('[data-selection-control]'))) return;
+        }
+        exitSelectionModeRef.current();
+        return;
+      }
+
       // Clear any xterm.js selection on touch to prevent accidental selection
       term.clearSelection();
 
@@ -708,6 +864,8 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       } else if (e.touches.length === 1) {
         // Scroll start
         touchStartY = e.touches[0].clientY;
+        touchStartClientX = e.touches[0].clientX;
+        touchStartClientY = e.touches[0].clientY;
         lastTouchY = e.touches[0].clientY;
         lastTouchTime = e.timeStamp;
         touchMoved = false;
@@ -715,21 +873,56 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         accumulatedDelta = 0;
         velocityHistory.length = 0;
 
-        // Start long press timer
+        // Start long press timer → enter selection mode
         longPressTimer = window.setTimeout(() => {
           longPressTriggered = true;
           touchMoved = true; // Prevent tap action
-          // Show custom keyboard on long press
-          showKeyboardRef.current();
+
+          const start = touchToCell(touchStartClientX, touchStartClientY);
+          if (start) {
+            selectionStartRef.current = start;
+            selectionModeRef.current = true;
+            setSelectionMode(true);
+            setCopyButtonPos(null);
+            term.select(start.col, start.row, 1);
+            setSelectionRange({ startCol: start.col, startRow: start.viewportRow, endCol: start.col, endRow: start.viewportRow });
+            navigator.vibrate?.(30);
+          } else {
+            showKeyboardRef.current();
+          }
         }, LONG_PRESS_DURATION);
       }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      // Cancel long press on move
+      // Cancel long press on move (only if not yet triggered)
       if (longPressTimer && !longPressTriggered) {
         clearTimeout(longPressTimer);
         longPressTimer = null;
+      }
+
+      // Selection mode: drag to extend selection
+      if (selectionModeRef.current && selectionStartRef.current && e.touches.length === 1) {
+        e.preventDefault();
+        const current = touchToCell(e.touches[0].clientX, e.touches[0].clientY);
+        if (!current) return;
+        const start = selectionStartRef.current;
+        const cols = term.cols;
+        // Use buffer-absolute row for select()
+        const startOffset = start.row * cols + start.col;
+        const currentOffset = current.row * cols + current.col;
+        // Use viewport-relative row for overlay
+        const startVRow = start.viewportRow;
+        const currentVRow = current.viewportRow;
+
+        if (currentOffset >= startOffset) {
+          term.select(start.col, start.row, currentOffset - startOffset + 1);
+          setSelectionRange({ startCol: start.col, startRow: startVRow, endCol: current.col, endRow: currentVRow });
+        } else {
+          term.select(current.col, current.row, startOffset - currentOffset + 1);
+          setSelectionRange({ startCol: current.col, startRow: currentVRow, endCol: start.col, endRow: startVRow });
+        }
+        return;
       }
 
       // Pinch zoom (2 fingers)
@@ -801,11 +994,30 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       }
     };
 
-    const handleTouchEnd = () => {
+    const handleTouchEnd = (e: TouchEvent) => {
       // Cancel long press timer
       if (longPressTimer) {
         clearTimeout(longPressTimer);
         longPressTimer = null;
+      }
+
+      // Selection mode: show copy button
+      if (selectionModeRef.current && selectionStartRef.current) {
+        const sel = term.getSelection();
+        if (sel && sel.length > 0) {
+          // Position copy button near last touch
+          const touch = e.changedTouches[0];
+          if (touch && container) {
+            const rect = container.getBoundingClientRect();
+            setCopyButtonPos({
+              x: touch.clientX - rect.left,
+              y: touch.clientY - rect.top - 50,
+            });
+          }
+        } else {
+          exitSelectionModeRef.current();
+        }
+        return;
       }
 
       // Cancel pending scroll RAF
@@ -1399,6 +1611,130 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         {scrollIndicator && (
           <div className="absolute top-2 right-2 z-30 bg-[var(--color-overlay)] px-2 py-1 rounded text-xs text-yellow-400/80 pointer-events-none font-mono">
             {scrollIndicator}
+          </div>
+        )}
+        {/* Selection mode controls */}
+        {selectionMode && (
+          <>
+            {/* Selection highlight overlay */}
+            {selectionRange && (() => {
+              const term = terminalRef.current;
+              const core = (term as any)?._core;
+              const cellW = core?._renderService?.dimensions?.css?.cell?.width;
+              const cellH = core?._renderService?.dimensions?.css?.cell?.height;
+              if (!cellW || !cellH || !term) return null;
+
+              const { startCol, startRow, endCol, endRow } = selectionRange;
+              const rects: { x: number; y: number; w: number; h: number }[] = [];
+
+              if (startRow === endRow) {
+                // Single line
+                rects.push({ x: startCol * cellW, y: startRow * cellH, w: (endCol - startCol + 1) * cellW, h: cellH });
+              } else {
+                // First line: from startCol to end of line
+                rects.push({ x: startCol * cellW, y: startRow * cellH, w: (term.cols - startCol) * cellW, h: cellH });
+                // Middle lines: full width
+                for (let r = startRow + 1; r < endRow; r++) {
+                  rects.push({ x: 0, y: r * cellH, w: term.cols * cellW, h: cellH });
+                }
+                // Last line: from start to endCol
+                rects.push({ x: 0, y: endRow * cellH, w: (endCol + 1) * cellW, h: cellH });
+              }
+
+              // Get offset from .xterm-screen inside container
+              const screenEl = containerRef.current?.querySelector('.xterm-screen');
+              const containerEl = containerRef.current;
+              let offsetX = 0, offsetY = 0;
+              if (screenEl && containerEl) {
+                const sr = screenEl.getBoundingClientRect();
+                const cr = containerEl.getBoundingClientRect();
+                offsetX = sr.left - cr.left;
+                offsetY = sr.top - cr.top;
+              }
+
+              // Start/end marker positions
+              const startX = startCol * cellW + offsetX;
+              const startY = startRow * cellH + offsetY;
+              const endX = (endCol + 1) * cellW + offsetX;
+              const endY = (endRow + 1) * cellH + offsetY;
+
+              return (
+                <>
+                  {rects.map((r, i) => (
+                    <div
+                      key={i}
+                      className="absolute pointer-events-none"
+                      style={{
+                        left: r.x + offsetX,
+                        top: r.y + offsetY,
+                        width: r.w,
+                        height: r.h,
+                        backgroundColor: 'rgba(59, 130, 246, 0.35)',
+                      }}
+                    />
+                  ))}
+                  {/* Start handle */}
+                  <div
+                    data-selection-control
+                    className="absolute z-50 touch-none flex items-center justify-center select-none"
+                    style={{ left: startX - 16, top: startY - 32, width: 32, height: 32, borderRadius: '50%', backgroundColor: 'rgba(59,130,246,0.9)', border: '2px solid white', boxShadow: '0 2px 8px rgba(0,0,0,0.5)', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
+                    onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); handleHandleDragStart(e, 'start'); }}
+                    onContextMenu={(e) => e.preventDefault()}
+                  >
+                    <span className="text-white text-xs font-bold">S</span>
+                  </div>
+                  {/* End handle */}
+                  <div
+                    data-selection-control
+                    className="absolute z-50 touch-none flex items-center justify-center select-none"
+                    style={{ left: endX - 16, top: endY + 4, width: 32, height: 32, borderRadius: '50%', backgroundColor: 'rgba(59,130,246,0.9)', border: '2px solid white', boxShadow: '0 2px 8px rgba(0,0,0,0.5)', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
+                    onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); handleHandleDragStart(e, 'end'); }}
+                    onContextMenu={(e) => e.preventDefault()}
+                  >
+                    <span className="text-white text-xs font-bold">E</span>
+                  </div>
+                </>
+              );
+            })()}
+            <div className="absolute top-2 left-2 z-40 bg-blue-600/80 px-2 py-1 rounded text-xs text-white pointer-events-none">
+              Selection Mode
+            </div>
+            {/* Selected text preview + actions */}
+            {(() => {
+              const sel = terminalRef.current?.getSelection();
+              if (!sel) return null;
+              return (
+                <div data-selection-control className="absolute top-8 left-2 right-2 z-40 bg-black/90 border border-blue-500/50 rounded-lg px-3 py-2 shadow-xl max-h-[40vh] overflow-auto select-none" onContextMenu={(e) => e.preventDefault()} style={{ WebkitTouchCallout: 'none' }}>
+                  <pre className="text-blue-200 font-mono text-xs whitespace-pre-wrap break-all mb-2">{sel}</pre>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      data-selection-control
+                      className="px-4 py-1.5 bg-emerald-600 active:bg-emerald-700 text-white rounded text-sm font-medium"
+                      onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); handleCopySelection(); }}
+                      onClick={handleCopySelection}
+                    >
+                      Copy
+                    </button>
+                    <button
+                      type="button"
+                      data-selection-control
+                      className="px-4 py-1.5 bg-gray-600 active:bg-gray-700 text-white rounded text-sm font-medium"
+                      onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); exitSelectionMode(); }}
+                      onClick={exitSelectionMode}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+          </>
+        )}
+        {/* Copy feedback toast */}
+        {copyFeedback && (
+          <div className="absolute top-12 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 px-3 py-1.5 rounded-lg text-sm text-white font-medium shadow-lg pointer-events-none">
+            {copyFeedback}
           </div>
         )}
         {/* URL menu */}

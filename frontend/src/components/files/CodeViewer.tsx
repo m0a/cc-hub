@@ -219,8 +219,10 @@ export function CodeViewer({
             return (
               <div
                 key={i}
-                className={`flex ${selected ? 'bg-blue-900/30' : ''} ${onCopyPrompt ? 'cursor-pointer' : ''}`}
+                className={`flex ${selected ? 'bg-blue-900/30' : ''} ${onCopyPrompt ? 'cursor-pointer select-none' : ''}`}
                 onClick={onCopyPrompt ? () => handleLineClick(lineNum) : undefined}
+                onContextMenu={onCopyPrompt ? (e) => e.preventDefault() : undefined}
+                style={onCopyPrompt ? { WebkitTouchCallout: 'none' } : undefined}
               >
                 {/* Line number */}
                 {showLineNumbers && (

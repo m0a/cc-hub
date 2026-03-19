@@ -17,6 +17,7 @@
 
 import type { ChildProcess } from 'node:child_process';
 import { spawn } from 'node:child_process';
+import { platform } from 'node:os';
 import { decodeOctalOutput, decodeOctalOutputRaw, encodeHexInput } from './tmux-octal-decoder';
 import { parseTmuxLayout, toFrontendLayout } from './tmux-layout-parser';
 import type { TmuxLayoutNode } from '../../../shared/types';
@@ -139,19 +140,21 @@ export class TmuxControlSession {
     });
 
     try {
-      // Use `script` to create a PTY for tmux while our I/O stays on pipes.
-      // `stty -echo` prevents the PTY from echoing commands back into stdout.
-      // `rows 24 cols 80` sets a reasonable initial PTY size to prevent tmux
+      // tmux requires a PTY (tcgetattr). We wrap it so our I/O stays on pipes.
+      // On Linux: `script -qfc '...' /dev/null` provides a PTY with pipe-friendly I/O.
+      // On macOS: `script` fails when stdin is a pipe, so we use `expect` instead.
+      // `stty -echo rows 24 cols 80` sets initial PTY size to prevent tmux
       // from resizing panes to 0x0 (the default PTY size), which destroys
       // content via reflow before the client sends the actual viewport size.
-      this.proc = spawn(
-        'script',
-        ['-qfc', `stty -echo rows 24 cols 80 && exec tmux -CC attach -t ${this.sessionId}`, '/dev/null'],
-        {
-          stdio: ['pipe', 'pipe', 'pipe'],
-          env: { ...process.env, TERM: 'xterm-256color' },
-        },
-      );
+      const isDarwin = platform() === 'darwin';
+      const cmd = isDarwin ? '/usr/bin/expect' : 'script';
+      const args = isDarwin
+        ? ['-c', `set timeout -1; spawn -noecho sh -c {stty -echo rows 24 cols 80 && exec tmux -CC attach -t ${this.sessionId}}; interact`]
+        : ['-qfc', `stty -echo rows 24 cols 80 && exec tmux -CC attach -t ${this.sessionId}`, '/dev/null'];
+      this.proc = spawn(cmd, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, TERM: 'xterm-256color' },
+      });
       console.log(`[tmux-control] Process spawned for: ${this.sessionId} (pid=${this.proc.pid})`);
 
       // Read stdout as raw bytes (no StringDecoder) to preserve byte-level

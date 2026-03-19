@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2026-03-19
+
+### Fixed
+- macOSでtmux制御モードが動作しない問題を修正（`script`→`expect`でPTYラッパー）
+
 ## [0.1.0] - 2026-03-19
 
 ### Added

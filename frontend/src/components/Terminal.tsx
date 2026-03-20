@@ -1595,8 +1595,9 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           style={{ touchAction: 'none' }}
         />
         {(!isInitialized || !isConnected) && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[var(--color-overlay)] z-30 pointer-events-none">
-            <div className="text-th-text text-lg">
+          <div className="absolute top-2 left-2 z-30 pointer-events-none">
+            <div className="flex items-center gap-2 bg-yellow-900/80 text-yellow-200 text-xs px-2.5 py-1 rounded-lg shadow">
+              <div className="w-3 h-3 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
               {!isInitialized ? 'Loading...' : 'Connecting...'}
             </div>
           </div>

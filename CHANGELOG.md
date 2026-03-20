@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.5] - 2026-03-20
+
+### Changed
+- スマホ日本語入力を二段レイアウトに変更（上:入力欄幅いっぱい、下:ボタン列）
+- ボタン配置: 左に履歴/ファイル/ABC/クリア、右にカーソル上下/送信
+- ボタンサイズを44pxタッチターゲットに拡大
+
+### Fixed
+- UserPromptSubmitフックの不要な通知を抑制
+
 ## [0.1.4] - 2026-03-20
 
 ### Changed

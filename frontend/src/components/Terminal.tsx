@@ -1984,8 +1984,8 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
               </div>
             </div>
           ) : (
-            // Input mode
-            <div className="p-2 bg-th-bg">
+            // Input mode - two rows: textarea on top, buttons below
+            <div className="px-2 pt-2 pb-1 bg-th-bg">
               {/* History list (above input) */}
               {showInputHistory && inputHistoryRef.current.length > 0 && (
                 <div className="max-h-40 overflow-y-auto border border-th-border rounded bg-th-bg mb-1">
@@ -2005,81 +2005,47 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                   ))}
                 </div>
               )}
-              <div className="flex gap-1.5 items-end">
-                <textarea
-                  ref={inputRef as React.RefObject<HTMLTextAreaElement | null>}
-                  inputMode="text"
-                  lang="ja"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={handleInputKeyDown}
-                  autoCapitalize="off"
-                  autoCorrect="off"
-                  autoComplete="off"
-                  spellCheck={false}
-                  // biome-ignore lint/a11y/noAutofocus: required to show OS keyboard on mode switch
-                  autoFocus
-                  placeholder="日本語入力 - Enter×2で送信"
-                  rows={Math.min(Math.max(inputValue.split('\n').length, 1), 5)}
-                  className="flex-1 px-3 py-2 bg-th-surface border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-green-500 resize-none"
-                  style={{ fontSize: '16px' }}
-                />
-                {/* Send button */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (inputValue) {
-                      addToInputHistory(inputValue);
-                      if (inputValue.includes('\n')) {
-                        sendRef.current(`\x1b[200~${inputValue}\x1b[201~`);
-                      } else {
-                        sendRef.current(inputValue);
-                      }
-                    }
-                    sendRef.current('\r');
-                    setInputValue('');
-                    setShowInputHistory(false);
-                  }}
-                  className="h-10 self-end px-2.5 rounded bg-emerald-600 active:bg-emerald-700 text-white"
-                >
-                  <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="6,15 3,12 6,9" />
-                    <path d="M3 12h11V3" />
-                  </svg>
-                </button>
-                {/* Clear button */}
-                {inputValue && (
-                  <button
-                    type="button"
-                    onClick={() => { setInputValue(''); inputRef.current?.focus(); }}
-                    className="h-10 self-end px-2 rounded bg-th-surface border border-th-border text-th-text-muted active:bg-th-surface-active"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                )}
-                {/* History button */}
+              {/* Row 1: Textarea full width */}
+              <textarea
+                ref={inputRef as React.RefObject<HTMLTextAreaElement | null>}
+                inputMode="text"
+                lang="ja"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleInputKeyDown}
+                autoCapitalize="off"
+                autoCorrect="off"
+                autoComplete="off"
+                spellCheck={false}
+                // biome-ignore lint/a11y/noAutofocus: required to show OS keyboard on mode switch
+                autoFocus
+                placeholder="日本語入力 - Enter×2で送信"
+                rows={Math.min(Math.max(inputValue.split('\n').length, 1), 5)}
+                className="w-full px-3 py-2 bg-th-surface border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-green-500 resize-none"
+                style={{ fontSize: '16px' }}
+              />
+              {/* Row 2: Buttons - left: tools, right: cursor/send */}
+              <div className="flex items-center gap-1.5 mt-1">
+                {/* Left: History, File, ABC, Clear */}
                 <button
                   type="button"
                   onClick={() => {
                     inputHistoryRef.current = (() => { try { return JSON.parse(localStorage.getItem('cchub-input-history') || '[]'); } catch { return []; } })();
                     setShowInputHistory(prev => !prev);
                   }}
-                  className={`px-2.5 h-10 self-end rounded border ${showInputHistory ? 'bg-blue-700 text-white border-blue-700' : 'bg-th-surface border-th-border text-th-text-secondary'}`}
+                  className={`h-11 px-2.5 rounded border ${showInputHistory ? 'bg-blue-700 text-white border-blue-700' : 'bg-th-surface border-th-border text-th-text-secondary'}`}
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </button>
-                {/* File picker button */}
                 <button
                   onClick={handleOpenFilePicker}
                   disabled={isUploading}
-                  className={`px-3 h-10 self-end rounded font-medium ${
+                  className={`h-11 px-3 rounded font-medium ${
                     isUploading
                       ? 'bg-th-surface-active text-th-text-muted'
-                      : 'bg-th-surface-hover hover:bg-th-surface-active active:bg-th-surface text-th-text'
+                      : 'bg-th-surface-hover active:bg-th-surface text-th-text'
                   }`}
                 >
                   {isUploading ? '⏳' : '📁'}
@@ -2095,9 +2061,63 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                       fitTerminal();
                     }, 350);
                   }}
-                  className="px-3 h-10 self-end bg-th-surface-hover hover:bg-th-surface-active active:bg-th-surface rounded text-th-text font-medium"
+                  className="h-11 px-3 bg-th-surface-hover active:bg-th-surface rounded text-th-text font-medium text-sm"
                 >
                   ABC
+                </button>
+                {inputValue && (
+                  <button
+                    type="button"
+                    onClick={() => { setInputValue(''); inputRef.current?.focus(); }}
+                    className="h-11 px-2.5 rounded bg-th-surface border border-th-border text-th-text-muted active:bg-th-surface-active"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+                {/* Spacer */}
+                <div className="flex-1" />
+                {/* Right: Cursor Up, Down, Send */}
+                <button
+                  type="button"
+                  onClick={() => sendRef.current('\x1b[A')}
+                  className="h-11 px-3 rounded bg-th-surface border border-th-border text-th-text-secondary active:bg-th-surface-active"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => sendRef.current('\x1b[B')}
+                  className="h-11 px-3 rounded bg-th-surface border border-th-border text-th-text-secondary active:bg-th-surface-active"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (inputValue) {
+                      addToInputHistory(inputValue);
+                      if (inputValue.includes('\n')) {
+                        sendRef.current(`\x1b[200~${inputValue}\x1b[201~`);
+                      } else {
+                        sendRef.current(inputValue);
+                      }
+                    }
+                    sendRef.current('\r');
+                    setInputValue('');
+                    setShowInputHistory(false);
+                  }}
+                  className="h-11 px-3 rounded bg-emerald-600 active:bg-emerald-700 text-white"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="6,15 3,12 6,9" />
+                    <path d="M3 12h11V3" />
+                  </svg>
                 </button>
               </div>
             </div>

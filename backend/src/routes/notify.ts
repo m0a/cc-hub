@@ -137,14 +137,17 @@ notify.post('/', async (c) => {
       message = await generateSmartMessage(transcriptPath, event);
     }
 
-    broadcastToAllClients({
-      type: 'hook-event',
-      event,
-      cwd,
-      sessionId,
-      message,
-      data: Object.keys(rest).length > 0 ? rest : undefined,
-    });
+    // Skip notification for UserPromptSubmit (user's own action, not useful as notification)
+    if (event !== 'UserPromptSubmit') {
+      broadcastToAllClients({
+        type: 'hook-event',
+        event,
+        cwd,
+        sessionId,
+        message,
+        data: Object.keys(rest).length > 0 ? rest : undefined,
+      });
+    }
 
     return c.json({ ok: true });
   } catch {

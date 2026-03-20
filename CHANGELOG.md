@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.4] - 2026-03-20
+
+### Changed
+- Connecting表示を全画面オーバーレイから左上の小さなバナーに変更（接続中もターミナル操作可能に）
+
 ## [0.1.3] - 2026-03-20
 
 ### Fixed

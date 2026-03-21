@@ -475,7 +475,6 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                       ) : previewMode && isMarkdownFile(selectedFile.path) ? (
                         <MarkdownViewer
                           content={selectedFile.content}
-                          fileName={getFileName(selectedFile.path)}
                           truncated={selectedFile.truncated}
                           initialScrollRatio={scrollRatioRef.current}
                           onScrollRatioChange={handleScrollRatioChange}
@@ -490,6 +489,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                           content={selectedFile.content}
                           language={getLanguageFromPath(selectedFile.path)}
                           fileName={getFileName(selectedFile.path)}
+                          filePath={selectedFile.path}
                           truncated={selectedFile.truncated}
                           showLineNumbers={true}
                           hasPreview={isMarkdownFile(selectedFile.path) || isHtmlFile(selectedFile.path)}
@@ -568,7 +568,6 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
             ) : previewMode && isMarkdownFile(selectedFile.path) ? (
               <MarkdownViewer
                 content={selectedFile.content}
-                fileName={getFileName(selectedFile.path)}
                 truncated={selectedFile.truncated}
                 initialScrollRatio={scrollRatioRef.current}
                 onScrollRatioChange={handleScrollRatioChange}

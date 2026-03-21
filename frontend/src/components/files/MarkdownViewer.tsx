@@ -33,7 +33,6 @@ function getTouchDistance(touches: TouchList): number {
 
 interface MarkdownViewerProps {
   content: string;
-  fileName?: string;
   truncated?: boolean;
   initialScrollRatio?: number;
   onScrollRatioChange?: (ratio: number) => void;

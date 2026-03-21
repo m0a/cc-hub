@@ -238,6 +238,14 @@ export function DesktopLayout({
   const [fileViewerDirs, setFileViewerDirs] = useState<string[]>([]);
   const [activeFileViewerDir, setActiveFileViewerDir] = useState<string | null>(null);
   const [fileViewerOpenDirs, setFileViewerOpenDirs] = useState<Set<string>>(new Set());
+  const openFileViewer = useCallback((dir: string) => {
+    setFileViewerDirs(prev => prev.includes(dir) ? prev : [...prev, dir]);
+    setActiveFileViewerDir(dir);
+    setFileViewerOpenDirs(prev => { const next = new Set(prev); next.add(dir); return next; });
+  }, []);
+  const closeFileViewer = useCallback((dir: string) => {
+    setFileViewerOpenDirs(prev => { const next = new Set(prev); next.delete(dir); return next; });
+  }, []);
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
@@ -680,11 +688,7 @@ export function DesktopLayout({
       }
     },
     onShowSessions: () => setShowSessionModal(true),
-    onOpenFileViewer: (dir: string) => {
-      setFileViewerDirs(prev => prev.includes(dir) ? prev : [...prev, dir]);
-      setActiveFileViewerDir(dir);
-      setFileViewerOpenDirs(prev => { const next = new Set(prev); next.add(dir); return next; });
-    },
+    onOpenFileViewer: openFileViewer,
   };
 
   const handleSplit = useCallback((direction: 'horizontal' | 'vertical') => {
@@ -1278,7 +1282,7 @@ export function DesktopLayout({
         <FileViewer
           key={dir}
           sessionWorkingDir={dir}
-          onClose={() => setFileViewerOpenDirs(prev => { const next = new Set(prev); next.delete(dir); return next; })}
+          onClose={() => closeFileViewer(dir)}
           hidden={!fileViewerOpenDirs.has(dir) || dir !== activeFileViewerDir || showSessionModal}
           onCopyPrompt={(text) => {
             if (isTablet) {
@@ -1287,7 +1291,7 @@ export function DesktopLayout({
             } else {
               navigator.clipboard.writeText(text).catch(() => {});
             }
-            setFileViewerOpenDirs(prev => { const next = new Set(prev); next.delete(dir); return next; });
+            closeFileViewer(dir);
           }}
           onShowSessions={() => {
             setShowSessionModal(true);

@@ -230,9 +230,7 @@ export function App() {
   const closeFileViewer = useCallback((dir: string) => {
     setFileViewerOpenDirs(prev => { const next = new Set(prev); next.delete(dir); return next; });
   }, []);
-  const isFileViewerOpen = useCallback(() => {
-    return activeFileViewerDir ? fileViewerOpenDirs.has(activeFileViewerDir) : false;
-  }, [activeFileViewerDir, fileViewerOpenDirs]);
+  const fileViewerVisible = activeFileViewerDir ? fileViewerOpenDirs.has(activeFileViewerDir) : false;
   const [showShareDialog, setShowShareDialog] = useState(false);
   const overlayTimeoutRef = useRef<number | null>(null);
 
@@ -315,7 +313,7 @@ export function App() {
       if (showSessionList) {
         setShowSessionList(false);
         window.history.pushState({ view: 'terminal' }, '', window.location.href);
-      } else if (isFileViewerOpen()) {
+      } else if (fileViewerVisible) {
         if (activeFileViewerDir) closeFileViewer(activeFileViewerDir);
         window.history.pushState({ view: 'terminal' }, '', window.location.href);
       } else if (showConversation) {
@@ -329,14 +327,14 @@ export function App() {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [showSessionList, isFileViewerOpen, activeFileViewerDir, closeFileViewer, showConversation]);
+  }, [showSessionList, fileViewerVisible, activeFileViewerDir, closeFileViewer, showConversation]);
 
   // Push history state when opening overlays
   useEffect(() => {
-    if (showSessionList || isFileViewerOpen() || showConversation) {
+    if (showSessionList || fileViewerVisible || showConversation) {
       window.history.pushState({ view: 'overlay' }, '', window.location.href);
     }
-  }, [showSessionList, isFileViewerOpen, showConversation]);
+  }, [showSessionList, fileViewerVisible, showConversation]);
 
   // Create initial session for first-time users
   const createInitialSession = async (): Promise<OpenSession | null> => {

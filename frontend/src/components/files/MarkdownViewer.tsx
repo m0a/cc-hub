@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import hljs from 'highlight.js';
@@ -24,14 +24,6 @@ function getFontSizeSetting(): number {
   return DEFAULT_FONTSIZE;
 }
 
-function setFontSizeSetting(size: number) {
-  try {
-    localStorage.setItem(FONTSIZE_STORAGE_KEY, String(size));
-  } catch {
-    // ignore
-  }
-}
-
 function getTouchDistance(touches: TouchList): number {
   if (touches.length < 2) return 0;
   const dx = touches[0].clientX - touches[1].clientX;
@@ -43,27 +35,24 @@ interface MarkdownViewerProps {
   content: string;
   fileName?: string;
   truncated?: boolean;
+  initialScrollRatio?: number;
+  onScrollRatioChange?: (ratio: number) => void;
 }
 
 export function MarkdownViewer({
   content,
   truncated = false,
+  initialScrollRatio = 0,
+  onScrollRatioChange,
 }: MarkdownViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [showSource, setShowSource] = useState(false);
-  const [fontSize, setFontSize] = useState(() => getFontSizeSetting());
+  const fontSizeRef = useRef(getFontSizeSetting());
 
   // Pinch zoom state
   const pinchStateRef = useRef<{
     initialDistance: number;
     initialFontSize: number;
   } | null>(null);
-
-  // Reset font size to default
-  const resetFontSize = useCallback(() => {
-    setFontSize(DEFAULT_FONTSIZE);
-    setFontSizeSetting(DEFAULT_FONTSIZE);
-  }, []);
 
   // Pinch zoom handlers
   useEffect(() => {
@@ -75,7 +64,7 @@ export function MarkdownViewer({
         e.preventDefault();
         pinchStateRef.current = {
           initialDistance: getTouchDistance(e.touches),
-          initialFontSize: fontSize,
+          initialFontSize: fontSizeRef.current,
         };
       }
     };
@@ -87,13 +76,18 @@ export function MarkdownViewer({
         const scale = currentDistance / pinchStateRef.current.initialDistance;
         const newSize = Math.round(pinchStateRef.current.initialFontSize * scale);
         const clampedSize = Math.max(MIN_FONTSIZE, Math.min(MAX_FONTSIZE, newSize));
-        setFontSize(clampedSize);
+        fontSizeRef.current = clampedSize;
+        if (container) {
+          container.style.fontSize = `${clampedSize}px`;
+        }
       }
     };
 
     const handleTouchEnd = (e: TouchEvent) => {
       if (pinchStateRef.current && e.touches.length < 2) {
-        setFontSizeSetting(fontSize);
+        try {
+          localStorage.setItem(FONTSIZE_STORAGE_KEY, String(fontSizeRef.current));
+        } catch { /* ignore */ }
         pinchStateRef.current = null;
       }
     };
@@ -107,52 +101,44 @@ export function MarkdownViewer({
       container.removeEventListener('touchmove', handleTouchMove);
       container.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [fontSize]);
+  }, []);
 
-  // Source view (plain markdown)
-  if (showSource) {
-    return (
-      <div className="relative flex flex-col h-full bg-th-bg text-th-text font-mono text-sm">
-        {truncated && (
-          <div className="px-3 py-1.5 bg-yellow-900/50 text-yellow-300 text-xs border-b border-yellow-800">
-            ファイルが大きすぎるため一部のみ表示しています
-          </div>
-        )}
+  // Restore scroll position from ratio on mount
+  useEffect(() => {
+    if (initialScrollRatio > 0 && containerRef.current) {
+      const el = containerRef.current;
+      requestAnimationFrame(() => {
+        el.scrollTop = initialScrollRatio * (el.scrollHeight - el.clientHeight);
+      });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-        <div ref={containerRef} className="flex-1 overflow-auto touch-pan-y select-text" style={{ WebkitUserSelect: 'text', userSelect: 'text' }}>
-          <pre
-            className="whitespace-pre-wrap break-all p-3"
-            style={{ fontSize: `${fontSize}px`, lineHeight: `${fontSize * 1.5}px` }}
-          >
-            {content}
-          </pre>
-        </div>
+  // Track scroll ratio for parent
+  const onScrollRatioChangeRef = useRef(onScrollRatioChange);
+  onScrollRatioChangeRef.current = onScrollRatioChange;
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      const maxScroll = el.scrollHeight - el.clientHeight;
+      const ratio = maxScroll > 0 ? el.scrollTop / maxScroll : 0;
+      onScrollRatioChangeRef.current?.(ratio);
+    };
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, []);
 
-        {/* Controls */}
-        <div className="absolute top-2 right-2 flex items-center gap-1 bg-th-surface/90 rounded-lg p-1 backdrop-blur-sm">
-          <button
-            onClick={resetFontSize}
-            className="px-1.5 py-0.5 text-xs text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
-            title="フォントサイズをリセット"
-          >
-            {fontSize}px
-          </button>
-          <button
-            onClick={() => setShowSource(false)}
-            className="p-1 rounded text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover transition-colors"
-            title="プレビュー表示"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // Reset font size to default
+  const resetFontSize = useCallback(() => {
+    fontSizeRef.current = DEFAULT_FONTSIZE;
+    try {
+      localStorage.setItem(FONTSIZE_STORAGE_KEY, String(DEFAULT_FONTSIZE));
+    } catch { /* ignore */ }
+    if (containerRef.current) {
+      containerRef.current.style.fontSize = `${DEFAULT_FONTSIZE}px`;
+    }
+  }, []);
 
-  // Preview (rendered markdown)
   return (
     <div className="relative flex flex-col h-full bg-th-bg text-th-text">
       {truncated && (
@@ -164,7 +150,7 @@ export function MarkdownViewer({
       <div
         ref={containerRef}
         className="flex-1 overflow-auto touch-pan-y p-4 markdown-content select-text"
-        style={{ fontSize: `${fontSize}px`, WebkitUserSelect: 'text', userSelect: 'text' }}
+        style={{ fontSize: `${fontSizeRef.current}px`, WebkitUserSelect: 'text', userSelect: 'text' }}
       >
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
@@ -258,23 +244,14 @@ export function MarkdownViewer({
         </ReactMarkdown>
       </div>
 
-      {/* Controls */}
+      {/* Controls - font size only */}
       <div className="absolute top-2 right-2 flex items-center gap-1 bg-th-surface/90 rounded-lg p-1 backdrop-blur-sm">
         <button
           onClick={resetFontSize}
           className="px-1.5 py-0.5 text-xs text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
-          title="フォントサイズをリセット"
+          title="フォントサイズをリセット (ピンチでズーム)"
         >
-          {fontSize}px
-        </button>
-        <button
-          onClick={() => setShowSource(true)}
-          className="p-1 rounded text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover transition-colors"
-          title="ソース表示"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-          </svg>
+          {fontSizeRef.current}px
         </button>
       </div>
     </div>

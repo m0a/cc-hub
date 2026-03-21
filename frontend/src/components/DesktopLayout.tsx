@@ -235,7 +235,9 @@ export function DesktopLayout({
             };
       })
     : propSessions;
-  const [showFileViewer, setShowFileViewer] = useState(false);
+  const [fileViewerDirs, setFileViewerDirs] = useState<string[]>([]);
+  const [activeFileViewerDir, setActiveFileViewerDir] = useState<string | null>(null);
+  const [fileViewerOpenDirs, setFileViewerOpenDirs] = useState<Set<string>>(new Set());
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
@@ -677,6 +679,12 @@ export function DesktopLayout({
         navigator.clipboard.writeText(text).catch(() => {});
       }
     },
+    onShowSessions: () => setShowSessionModal(true),
+    onOpenFileViewer: (dir: string) => {
+      setFileViewerDirs(prev => prev.includes(dir) ? prev : [...prev, dir]);
+      setActiveFileViewerDir(dir);
+      setFileViewerOpenDirs(prev => { const next = new Set(prev); next.add(dir); return next; });
+    },
   };
 
   const handleSplit = useCallback((direction: 'horizontal' | 'vertical') => {
@@ -1057,7 +1065,12 @@ export function DesktopLayout({
   const handleModalSelectSession = useCallback((session: { id: string }) => {
     const paneId = activePaneRef.current;
     handleSelectSessionForPane(paneId, session.id);
-  }, [handleSelectSessionForPane]);
+    // Update FileViewer active dir to follow session
+    const s = sessions.find(s => s.id === session.id);
+    if (s?.currentPath) {
+      setActiveFileViewerDir(s.currentPath);
+    }
+  }, [handleSelectSessionForPane, sessions]);
 
   return (
     <div className="h-screen flex bg-th-bg">
@@ -1260,11 +1273,13 @@ export function DesktopLayout({
         />
       )}
 
-      {/* File Viewer Modal */}
-      {showFileViewer && activeSession?.currentPath && (
+      {/* File Viewer Modal - per-session instances kept mounted */}
+      {fileViewerDirs.map(dir => (
         <FileViewer
-          sessionWorkingDir={activeSession.currentPath}
-          onClose={() => setShowFileViewer(false)}
+          key={dir}
+          sessionWorkingDir={dir}
+          onClose={() => setFileViewerOpenDirs(prev => { const next = new Set(prev); next.delete(dir); return next; })}
+          hidden={!fileViewerOpenDirs.has(dir) || dir !== activeFileViewerDir || showSessionModal}
           onCopyPrompt={(text) => {
             if (isTablet) {
               setShowKeyboard(true);
@@ -1272,10 +1287,13 @@ export function DesktopLayout({
             } else {
               navigator.clipboard.writeText(text).catch(() => {});
             }
-            setShowFileViewer(false);
+            setFileViewerOpenDirs(prev => { const next = new Set(prev); next.delete(dir); return next; });
+          }}
+          onShowSessions={() => {
+            setShowSessionModal(true);
           }}
         />
-      )}
+      ))}
 
       {/* Floating Keyboard (tablet only) */}
       {isTablet && (

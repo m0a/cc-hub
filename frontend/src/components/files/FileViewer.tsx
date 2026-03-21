@@ -31,6 +31,8 @@ interface FileViewerProps {
   onClose: () => void;
   initialPath?: string;
   onCopyPrompt?: (text: string) => void;
+  hidden?: boolean;
+  onShowSessions?: () => void;
 }
 
 // Image extensions
@@ -63,7 +65,7 @@ function getFileName(path: string): string {
   return path.split('/').pop() || path;
 }
 
-export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyPrompt }: FileViewerProps) {
+export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyPrompt, hidden, onShowSessions }: FileViewerProps) {
   const { t } = useTranslation();
   const {
     currentPath,
@@ -85,6 +87,17 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
   const [viewMode, setViewMode] = useState<ViewMode>('browser');
   const [listMode, setListMode] = useState<ListMode>('browser');
   const [previewMode, setPreviewMode] = useState(false);
+  // Scroll ratio to preserve scroll position across preview/source toggle
+  const scrollRatioRef = useRef(0);
+  const handleScrollRatioChange = useCallback((ratio: number) => {
+    scrollRatioRef.current = ratio;
+  }, []);
+  const togglePreviewMode = useCallback(() => {
+    setPreviewMode(prev => !prev);
+  }, []);
+  const enablePreviewMode = useCallback(() => {
+    setPreviewMode(true);
+  }, []);
   const [showHidden, setShowHidden] = useState(false);
   const [selectedChange, setSelectedChange] = useState<FileChange | null>(null);
   const [selectedGitDiff, setSelectedGitDiff] = useState<{ path: string; diff: string } | null>(null);
@@ -201,6 +214,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
     pushToHistory({ viewMode, listMode, selectedChange, selectedGitDiff });
     await readFile(file.path);
     setViewMode('file'); setPreviewMode(false);
+    scrollRatioRef.current = 0;
   }, [readFile, viewMode, listMode, selectedChange, selectedGitDiff]);
 
   // Handle browser back gesture / back button
@@ -300,7 +314,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
   // Two-pane layout for wide screens
   if (isWideScreen) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className={`fixed inset-0 z-50 flex items-center justify-center ${hidden ? 'hidden' : ''}`}>
         <div className="bg-th-bg w-full h-full overflow-hidden flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between px-3 py-2 border-b border-th-border bg-th-surface">
@@ -314,6 +328,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                 </svg>
               </button>
               <h2 className="text-sm font-medium">{t('files.title')}</h2>
+
             </div>
 
             <div className="flex items-center gap-2">
@@ -352,6 +367,17 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
               )}
 
               {/* Close button */}
+              {onShowSessions && (
+                <button
+                  onClick={onShowSessions}
+                  className="p-1.5 hover:bg-th-surface-hover rounded transition-colors"
+                  title="Sessions"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </button>
+              )}
               <button
                 onClick={onClose}
                 className="p-1.5 hover:bg-th-surface-hover rounded transition-colors"
@@ -421,7 +447,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                     </span>
                     {viewMode === 'file' && selectedFile && (isMarkdownFile(selectedFile.path) || isHtmlFile(selectedFile.path)) && (
                       <button
-                        onClick={() => setPreviewMode(prev => !prev)}
+                        onClick={togglePreviewMode}
                         className={`px-2 py-1 text-xs rounded transition-colors ${previewMode ? 'bg-blue-600 text-white' : 'bg-th-surface-hover hover:bg-th-surface-active text-th-text-secondary'}`}
                       >
                         {previewMode ? 'Source' : 'Preview'}
@@ -451,6 +477,8 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                           content={selectedFile.content}
                           fileName={getFileName(selectedFile.path)}
                           truncated={selectedFile.truncated}
+                          initialScrollRatio={scrollRatioRef.current}
+                          onScrollRatioChange={handleScrollRatioChange}
                         />
                       ) : previewMode && isHtmlFile(selectedFile.path) ? (
                         <HtmlViewer
@@ -465,7 +493,9 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                           truncated={selectedFile.truncated}
                           showLineNumbers={true}
                           hasPreview={isMarkdownFile(selectedFile.path) || isHtmlFile(selectedFile.path)}
-                          onTogglePreview={() => setPreviewMode(true)}
+                          onTogglePreview={enablePreviewMode}
+                          initialScrollRatio={scrollRatioRef.current}
+                          onScrollRatioChange={handleScrollRatioChange}
                         />
                       )
                     )}
@@ -505,7 +535,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
 
   // Single-pane layout for narrow screens (mobile)
   return (
-    <div className="fixed inset-0 z-50 bg-[var(--color-overlay)] flex items-center justify-center">
+    <div className={`fixed inset-0 z-50 bg-[var(--color-overlay)] flex items-center justify-center ${hidden ? 'hidden' : ''}`}>
       <div className="bg-th-bg w-full h-full overflow-hidden flex flex-col">
         {/* Error */}
         {error && (
@@ -540,6 +570,8 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                 content={selectedFile.content}
                 fileName={getFileName(selectedFile.path)}
                 truncated={selectedFile.truncated}
+                initialScrollRatio={scrollRatioRef.current}
+                onScrollRatioChange={handleScrollRatioChange}
               />
             ) : previewMode && isHtmlFile(selectedFile.path) ? (
               <HtmlViewer
@@ -553,7 +585,9 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                 fileName={getFileName(selectedFile.path)}
                 truncated={selectedFile.truncated}
                 hasPreview={isMarkdownFile(selectedFile.path) || isHtmlFile(selectedFile.path)}
-                onTogglePreview={() => setPreviewMode(true)}
+                onTogglePreview={enablePreviewMode}
+                initialScrollRatio={scrollRatioRef.current}
+                onScrollRatioChange={handleScrollRatioChange}
               />
             )
           )}
@@ -598,7 +632,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
-            <h2 className="text-sm font-medium">
+            <h2 className="text-sm font-medium truncate max-w-[120px]">
               {viewMode === 'browser' ? t('files.title')
                 : viewMode === 'changes' ? t('files.changes')
                 : viewMode === 'diff' ? currentDiffFileName
@@ -628,6 +662,16 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
               </button>
             </div>
 
+            {/* Preview/Source toggle for markdown/html files */}
+            {viewMode === 'file' && selectedFile && (isMarkdownFile(selectedFile.path) || isHtmlFile(selectedFile.path)) && (
+              <button
+                onClick={togglePreviewMode}
+                className={`px-2 py-1 text-xs rounded transition-colors ${previewMode ? 'bg-blue-600 text-white' : 'bg-th-surface-hover hover:bg-th-surface-active text-th-text-secondary'}`}
+              >
+                {previewMode ? 'Source' : 'Preview'}
+              </button>
+            )}
+
             {/* Hidden files toggle */}
             {viewMode === 'browser' && (
               <button
@@ -638,6 +682,19 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              </button>
+            )}
+
+            {/* Sessions button */}
+            {onShowSessions && (
+              <button
+                onClick={onShowSessions}
+                className="p-1.5 hover:bg-th-surface-hover rounded transition-colors"
+                title="Sessions"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
               </button>
             )}

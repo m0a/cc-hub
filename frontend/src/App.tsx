@@ -217,7 +217,22 @@ export function App() {
   const [showSessionList, setShowSessionList] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<OpenSession | null>(null);
   const [showOverlay, setShowOverlay] = useState(true);
-  const [showFileViewer, setShowFileViewer] = useState(false);
+  // FileViewer state: per-session instances kept mounted for state preservation
+  const [fileViewerDirs, setFileViewerDirs] = useState<string[]>([]);
+  const [activeFileViewerDir, setActiveFileViewerDir] = useState<string | null>(null);
+  // Tracks which session dirs have FileViewer "open" (per-session)
+  const [fileViewerOpenDirs, setFileViewerOpenDirs] = useState<Set<string>>(new Set());
+  const openFileViewer = useCallback((dir: string) => {
+    setFileViewerDirs(prev => prev.includes(dir) ? prev : [...prev, dir]);
+    setActiveFileViewerDir(dir);
+    setFileViewerOpenDirs(prev => { const next = new Set(prev); next.add(dir); return next; });
+  }, []);
+  const closeFileViewer = useCallback((dir: string) => {
+    setFileViewerOpenDirs(prev => { const next = new Set(prev); next.delete(dir); return next; });
+  }, []);
+  const isFileViewerOpen = useCallback(() => {
+    return activeFileViewerDir ? fileViewerOpenDirs.has(activeFileViewerDir) : false;
+  }, [activeFileViewerDir, fileViewerOpenDirs]);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const overlayTimeoutRef = useRef<number | null>(null);
 
@@ -300,8 +315,8 @@ export function App() {
       if (showSessionList) {
         setShowSessionList(false);
         window.history.pushState({ view: 'terminal' }, '', window.location.href);
-      } else if (showFileViewer) {
-        setShowFileViewer(false);
+      } else if (isFileViewerOpen()) {
+        if (activeFileViewerDir) closeFileViewer(activeFileViewerDir);
         window.history.pushState({ view: 'terminal' }, '', window.location.href);
       } else if (showConversation) {
         setShowConversation(false);
@@ -314,14 +329,14 @@ export function App() {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [showSessionList, showFileViewer, showConversation]);
+  }, [showSessionList, isFileViewerOpen, activeFileViewerDir, closeFileViewer, showConversation]);
 
   // Push history state when opening overlays
   useEffect(() => {
-    if (showSessionList || showFileViewer || showConversation) {
+    if (showSessionList || isFileViewerOpen() || showConversation) {
       window.history.pushState({ view: 'overlay' }, '', window.location.href);
     }
-  }, [showSessionList, showFileViewer, showConversation]);
+  }, [showSessionList, isFileViewerOpen, showConversation]);
 
   // Create initial session for first-time users
   const createInitialSession = async (): Promise<OpenSession | null> => {
@@ -499,6 +514,11 @@ export function App() {
         theme: extSession.theme,
       }]);
       setActiveSessionId(session.id);
+    }
+    // Update FileViewer active dir to follow session
+    const extSession = session as SessionResponse & { currentPath?: string };
+    if (extSession.currentPath) {
+      setActiveFileViewerDir(extSession.currentPath);
     }
     setShowSessionList(false);
     setMobileActivePaneId(null);
@@ -794,7 +814,7 @@ export function App() {
         )}
         <button
           onClick={() => {
-            setShowFileViewer(true);
+            openFileViewer(activeSession?.currentPath || '/');
           }}
           className="p-2.5 text-amber-400/70 hover:text-amber-300 active:text-amber-200 hover:bg-th-surface-hover active:bg-th-surface-active rounded-lg transition-colors"
           title="ファイルブラウザ"
@@ -925,17 +945,23 @@ export function App() {
         />
       )}
 
-      {/* File Viewer Modal */}
-      {showFileViewer && activeSession?.currentPath && (
+      {/* File Viewer Modal - per-session instances kept mounted */}
+      {fileViewerDirs.map(dir => (
         <FileViewer
-          sessionWorkingDir={activeSession.currentPath}
-          onClose={() => setShowFileViewer(false)}
+          key={dir}
+          sessionWorkingDir={dir}
+          onClose={() => closeFileViewer(dir)}
+          hidden={!fileViewerOpenDirs.has(dir) || dir !== activeFileViewerDir || showSessionList}
           onCopyPrompt={(text) => {
             mobileTerminalRef.current?.setInputText(text);
-            setShowFileViewer(false);
+            closeFileViewer(dir);
+          }}
+          onShowSessions={() => {
+            // Keep FileViewer "open" for this session, just show session list
+            setShowSessionList(true);
           }}
         />
-      )}
+      ))}
 
       {/* Conversation Viewer Modal */}
       {showConversation && (

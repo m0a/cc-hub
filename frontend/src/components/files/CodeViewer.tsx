@@ -101,6 +101,8 @@ interface CodeViewerProps {
   onCopyPrompt?: (text: string) => void;
   onTogglePreview?: () => void;
   hasPreview?: boolean;
+  initialScrollRatio?: number;
+  onScrollRatioChange?: (ratio: number) => void;
 }
 
 export function CodeViewer({
@@ -113,6 +115,8 @@ export function CodeViewer({
   onCopyPrompt,
   onTogglePreview,
   hasPreview = false,
+  initialScrollRatio = 0,
+  onScrollRatioChange,
 }: CodeViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [wordWrap, setWordWrap] = useState(() => getWordWrapSetting(fileName || ''));
@@ -184,6 +188,28 @@ export function CodeViewer({
       container.removeEventListener('touchend', handleTouchEnd);
     };
   }, [fontSize]);
+
+  // Restore scroll position from ratio on mount
+  useEffect(() => {
+    if (initialScrollRatio > 0 && containerRef.current) {
+      const el = containerRef.current;
+      requestAnimationFrame(() => {
+        el.scrollTop = initialScrollRatio * (el.scrollHeight - el.clientHeight);
+      });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Track scroll ratio for parent
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !onScrollRatioChange) return;
+    const handleScroll = () => {
+      const maxScroll = el.scrollHeight - el.clientHeight;
+      onScrollRatioChange(maxScroll > 0 ? el.scrollTop / maxScroll : 0);
+    };
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, [onScrollRatioChange]);
 
   // Highlight and split into per-line HTML
   const highlightedLines = useMemo(() => {

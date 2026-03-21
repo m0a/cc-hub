@@ -2,7 +2,7 @@ import { useRef, useCallback, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { TerminalComponent, type TerminalRef } from './Terminal';
 import { ConversationViewer } from './ConversationViewer';
-import { FileViewer } from './files/FileViewer';
+
 import { authFetch } from '../services/api';
 import type { SessionState, ConversationMessage, SessionTheme } from '../../../shared/types';
 import type { ControlModeConfig } from './Terminal';
@@ -36,6 +36,8 @@ export interface ControlModeContext {
   deadPanes?: Set<string>;
   onCopyPrompt?: (text: string) => void;
   setKeyboardVisible?: (visible: boolean) => void;
+  onShowSessions?: () => void;
+  onOpenFileViewer?: (dir: string) => void;
 }
 
 interface PaneContainerProps {
@@ -154,7 +156,6 @@ function TerminalPane({
   const [currentCcSessionId, setCurrentCcSessionId] = useState<string | null>(null);
   const [isClaudeRunning, setIsClaudeRunning] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  const [showFileViewer, setShowFileViewer] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const confirmCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -172,9 +173,10 @@ function TerminalPane({
   // Open file viewer (hide keyboard while open)
   const handleOpenFileViewer = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    setShowFileViewer(true);
+    const s = sessionId ? sessions.find(s => s.id === sessionId) : null;
+    controlModeContext.onOpenFileViewer?.(s?.currentPath || '/');
     controlModeContext.setKeyboardVisible?.(false);
-  }, [controlModeContext]);
+  }, [controlModeContext, sessionId, sessions]);
 
   // Cleanup confirm close timer on unmount
   useEffect(() => {
@@ -527,17 +529,6 @@ function TerminalPane({
         )}
       </div>
 
-      {/* File Viewer Modal */}
-      {showFileViewer && session?.currentPath && (
-        <FileViewer
-          sessionWorkingDir={session.currentPath}
-          onClose={() => { setShowFileViewer(false); controlModeContext.setKeyboardVisible?.(true); }}
-          onCopyPrompt={(text) => {
-            controlModeContext.onCopyPrompt?.(text);
-            setShowFileViewer(false);
-          }}
-        />
-      )}
     </div>
   );
 }

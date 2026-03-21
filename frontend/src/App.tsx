@@ -724,22 +724,20 @@ export function App() {
     );
   }
 
-  // Show session list
-  if (showSessionList) {
-    return (
-      <>
-        <SessionList
-          onSelectSession={handleSelectSession}
-          onSelectPane={handleSelectPane}
-          onBack={openSessions.length > 0 ? handleBackFromList : undefined}
-          isOnboarding={showSessionListOnboarding}
-        />
-        {showSessionListOnboarding && (
-          <Onboarding type="sessionList" onComplete={completeSessionListOnboarding} />
-        )}
-      </>
-    );
-  }
+  // Show session list (mobile overlay - no early return to keep FileViewer mounted)
+  const sessionListOverlay = showSessionList ? (
+    <div className="fixed inset-0 z-[60]">
+      <SessionList
+        onSelectSession={handleSelectSession}
+        onSelectPane={handleSelectPane}
+        onBack={openSessions.length > 0 ? handleBackFromList : undefined}
+        isOnboarding={showSessionListOnboarding}
+      />
+      {showSessionListOnboarding && (
+        <Onboarding type="sessionList" onComplete={completeSessionListOnboarding} />
+      )}
+    </div>
+  ) : null;
 
   // Desktop layout: PC向け分割ペインレイアウト
   if (deviceType === 'desktop') {
@@ -960,6 +958,9 @@ export function App() {
           }}
         />
       ))}
+
+      {/* Session List Overlay */}
+      {sessionListOverlay}
 
       {/* Conversation Viewer Modal */}
       {showConversation && (

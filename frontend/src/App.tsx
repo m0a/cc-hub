@@ -806,50 +806,46 @@ export function App() {
       <div className="flex-1" />
 
       {/* Right: Core actions */}
-      <div className="flex items-center">
+      <div className="flex items-center gap-1">
         {activeSession?.ccSessionId && (
           <button
             onClick={handleShowConversation}
-            className="p-1.5 text-zinc-600 hover:text-zinc-400 transition-colors"
+            className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
             title="会話履歴"
             data-onboarding="conversation"
           >
-            <MessageSquare className="w-4 h-4" />
+            <MessageSquare className="w-5 h-5" />
           </button>
         )}
         <button
           onClick={() => openFileViewer(activeSession?.currentPath || '/')}
-          className="p-1.5 text-zinc-600 hover:text-zinc-400 transition-colors"
+          className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
           title="ファイルブラウザ"
           data-onboarding="file-browser"
         >
-          <FileText className="w-4 h-4" />
+          <FileText className="w-5 h-5" />
         </button>
         <button
           onClick={() => handleShowSessionList()}
-          className="p-1.5 text-zinc-600 hover:text-zinc-400 transition-colors"
+          className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
           title="ダッシュボード"
         >
-          <BarChart3 className="w-4 h-4" />
+          <BarChart3 className="w-5 h-5" />
         </button>
-
-        {/* Divider */}
-        <div className="w-px h-4 bg-white/[0.06] mx-1" />
-
         <button
           onClick={handleReload}
-          className="p-1.5 text-zinc-600 hover:text-zinc-400 transition-colors"
+          className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
           title="リロード"
           data-onboarding="reload"
         >
-          <RotateCw className="w-3.5 h-3.5" />
+          <RotateCw className="w-5 h-5" />
         </button>
         <button
           onClick={() => setShowShareDialog(true)}
-          className="p-1.5 text-zinc-600 hover:text-zinc-400 transition-colors"
+          className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
           title="共有"
         >
-          <Share2 className="w-3.5 h-3.5" />
+          <Share2 className="w-5 h-5" />
         </button>
       </div>
     </div>

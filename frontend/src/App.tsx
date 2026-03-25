@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RotateCw, MessageSquare, FileText, Share2, BarChart3, ChevronDown } from 'lucide-react';
+import { RotateCw, MessageSquare, FileText, Share2, BarChart3, ChevronDown, X as XIcon, Settings } from 'lucide-react';
+import { Dashboard } from './components/dashboard/Dashboard';
 import { ViewerPage } from './pages/ViewerPage';
 import { DesignPreview } from './pages/DesignPreview';
 import { TerminalPage } from './pages/TerminalPage';
@@ -222,6 +223,7 @@ export function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [showSessionList, setShowSessionList] = useState(false);
+  const [showMobileDashboard, setShowMobileDashboard] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<OpenSession | null>(null);
   const [showOverlay, setShowOverlay] = useState(true);
   // FileViewer state: per-session instances kept mounted for state preservation
@@ -826,7 +828,7 @@ export function App() {
           <FileText className="w-5 h-5" />
         </button>
         <button
-          onClick={() => handleShowSessionList()}
+          onClick={() => setShowMobileDashboard(true)}
           className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
           title="ダッシュボード"
         >
@@ -936,6 +938,28 @@ export function App() {
           onConfirm={handleConfirmDelete}
           onCancel={handleCancelDelete}
         />
+      )}
+
+      {/* Mobile Dashboard Overlay */}
+      {showMobileDashboard && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-[#0a0a0a] animate-modal-in">
+          <div className="shrink-0 px-4 pt-3 pb-3 border-b border-white/[0.06]">
+            <div className="flex items-center justify-between">
+              <h1 className="text-[18px] font-semibold tracking-[-0.02em] text-white">
+                Dashboard
+              </h1>
+              <button
+                onClick={() => setShowMobileDashboard(false)}
+                className="p-2 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
+              >
+                <XIcon className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <Dashboard className="h-full" />
+          </div>
+        </div>
       )}
 
       {/* Share Dialog */}

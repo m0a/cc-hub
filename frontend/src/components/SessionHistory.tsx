@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Clock, MessageCircle, Tag, ChevronRight, Search, X } from 'lucide-react';
+import { Clock, MessageCircle, Tag, ChevronRight, Search, X, FolderOpen } from 'lucide-react';
 import { useSessionHistory, type ProjectInfo } from '../hooks/useSessionHistory';
 import { authFetch } from '../services/api';
 import type { HistorySession, ConversationMessage, SessionResponse } from '../../../shared/types';
@@ -167,6 +167,7 @@ function ProjectGroupItem({
         <ChevronRight
           className={`w-3.5 h-3.5 text-zinc-600 transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}`}
         />
+        <FolderOpen className="w-3.5 h-3.5 text-zinc-600" />
         <span className="flex-1 text-left text-[13px] text-zinc-400 truncate">
           {project.projectName}
         </span>

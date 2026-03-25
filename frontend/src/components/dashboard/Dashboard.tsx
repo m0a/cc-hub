@@ -15,9 +15,10 @@ const ONBOARDING_SESSIONLIST_KEY = 'cchub-onboarding-sessionlist-completed';
 
 interface DashboardProps {
   className?: string;
+  compact?: boolean; // true when in narrow side panel
 }
 
-export function Dashboard({ className = '' }: DashboardProps) {
+export function Dashboard({ className = '', compact = false }: DashboardProps) {
   const { t, i18n } = useTranslation();
   const { data, isLoading, error } = useDashboard(300000);
   const { theme, toggleTheme } = useTheme();
@@ -67,7 +68,7 @@ export function Dashboard({ className = '' }: DashboardProps) {
 
   return (
     <div className={`overflow-y-auto overscroll-contain px-4 py-4 ${className}`}>
-      <div className="md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0">
+      <div className={compact ? 'space-y-3' : 'md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0'}>
         <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
           <NetworkLatency />
         </div>

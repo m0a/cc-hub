@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
+import { X, Copy, Check, Trash2, Clock, Link } from 'lucide-react';
 import { authFetch } from '../services/api';
 import type { ShareTokenInfo } from '../../../shared/types';
 
@@ -102,7 +103,7 @@ export function ShareDialog({ sessionId, sessionName, onClose }: ShareDialogProp
       className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay)] animate-backdrop-in"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-th-surface rounded-lg p-5 max-w-md w-full mx-4 shadow-xl animate-modal-in max-h-[90vh] overflow-y-auto">
+      <div className="bg-th-surface rounded-md p-5 max-w-md w-full mx-4 shadow-xl animate-modal-in max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-bold text-th-text">Share Session</h3>
           <button
@@ -110,16 +111,14 @@ export function ShareDialog({ sessionId, sessionName, onClose }: ShareDialogProp
             onClick={onClose}
             className="text-th-text-muted hover:text-th-text p-1"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X className="w-5 h-5" />
           </button>
         </div>
 
         <p className="text-th-text-secondary text-sm mb-4">
           Read-only link for <span className="font-medium text-th-text">{sessionName}</span>
           {externalBaseUrl && (
-            <span className="block text-xs text-emerald-400 mt-1">External access via Tailscale Funnel</span>
+            <span className="block text-xs text-blue-400 mt-1">External access via Tailscale Funnel</span>
           )}
         </p>
 
@@ -140,9 +139,9 @@ export function ShareDialog({ sessionId, sessionName, onClose }: ShareDialogProp
             type="button"
             onClick={handleCreate}
             disabled={creating || tokens.length >= 5}
-            className="flex-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed rounded text-white text-sm font-medium transition-colors"
+            className="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded text-white text-sm font-medium transition-colors"
           >
-            {creating ? 'Creating...' : 'Create Share Link'}
+            {creating ? 'Creating...' : <><Link className="w-3.5 h-3.5 inline-block mr-1" />Create Share Link</>}
           </button>
         </div>
 
@@ -156,7 +155,7 @@ export function ShareDialog({ sessionId, sessionName, onClose }: ShareDialogProp
         ) : (
           <div className="space-y-3">
             {tokens.map((t) => (
-              <div key={t.token} className="bg-th-surface-active rounded-lg p-3">
+              <div key={t.token} className="bg-th-surface-active rounded-md p-3">
                 {/* QR Code */}
                 <div className="flex justify-center mb-3 bg-white rounded p-2">
                   <QRCodeSVG
@@ -176,24 +175,26 @@ export function ShareDialog({ sessionId, sessionName, onClose }: ShareDialogProp
                     onClick={() => handleCopy(t.token)}
                     className={`px-2 py-1 rounded text-xs font-medium transition-colors shrink-0 ${
                       copied === t.token
-                        ? 'bg-emerald-600 text-white'
+                        ? 'bg-blue-600 text-white'
                         : 'bg-th-surface-hover text-th-text hover:bg-th-surface-active'
                     }`}
                   >
-                    {copied === t.token ? 'Copied!' : 'Copy'}
+                    {copied === t.token ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                 </div>
 
                 {/* Info + Revoke */}
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-th-text-muted">
+                  <span className="text-xs text-th-text-muted flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
                     {formatRemaining(t.expiresAt)} remaining
                   </span>
                   <button
                     type="button"
                     onClick={() => handleRevoke(t.token)}
-                    className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                    className="text-xs text-red-400 hover:text-red-300 transition-colors flex items-center gap-1"
                   >
+                    <Trash2 className="w-3 h-3" />
                     Revoke
                   </button>
                 </div>

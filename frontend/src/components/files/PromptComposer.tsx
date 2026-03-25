@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { X, Copy } from 'lucide-react';
 
 interface PromptComposerProps {
   filePath: string;
@@ -55,9 +56,7 @@ export function PromptComposer({
             onClick={onClose}
             className="text-th-text-muted hover:text-th-text p-1"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X className="w-4 h-4" />
           </button>
         </div>
 
@@ -73,7 +72,7 @@ export function PromptComposer({
           onChange={(e) => setComment(e.target.value)}
           placeholder="コメントを追加..."
           rows={2}
-          className="w-full px-3 py-2 bg-th-bg border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-emerald-500 resize-none text-sm"
+          className="w-full px-3 py-2 bg-th-bg border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-blue-500 resize-none text-sm"
         />
 
         {/* Actions */}
@@ -88,8 +87,9 @@ export function PromptComposer({
           <button
             type="button"
             onClick={handleSubmit}
-            className="px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded font-medium transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors"
           >
+            <Copy className="w-3.5 h-3.5" />
             Copy Prompt
           </button>
         </div>

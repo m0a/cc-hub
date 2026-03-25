@@ -7,7 +7,7 @@ interface CostEstimateProps {
 export function CostEstimate({ data }: CostEstimateProps) {
   if (data.length === 0) {
     return (
-      <div className="p-3 bg-th-surface rounded-lg">
+      <div className="p-3 bg-th-surface rounded-md">
         <div className="text-th-text-muted text-xs">No cost data</div>
       </div>
     );
@@ -17,7 +17,7 @@ export function CostEstimate({ data }: CostEstimateProps) {
   const outputCostOnly = data.reduce((sum, m) => sum + m.outputCost, 0);
 
   return (
-    <div className="p-3 bg-th-surface rounded-lg">
+    <div className="p-3 bg-th-surface rounded-md">
       <div className="flex items-center justify-between mb-2">
         <div>
           <span className="text-sm font-medium text-th-text">Output Tokens</span>

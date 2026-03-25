@@ -397,7 +397,7 @@ export function Onboarding({ onComplete, type = 'main', onStepAction }: Onboardi
         {/* Highlight border around target */}
         {targetRect && (
           <div
-            className="absolute border-2 border-blue-400 rounded-lg pointer-events-none animate-pulse"
+            className="absolute border-2 border-blue-400 rounded-md pointer-events-none animate-pulse"
             style={{
               top: targetRect.top - 4,
               left: targetRect.left - 4,
@@ -450,7 +450,7 @@ export function Onboarding({ onComplete, type = 'main', onStepAction }: Onboardi
           </button>
           <button
             onClick={handleNext}
-            className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-th-text rounded-lg text-sm font-medium transition-colors"
+            className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 text-th-text rounded-md text-sm font-medium transition-colors"
           >
             {isLastStep ? t('onboarding.start') : t('onboarding.next')}
           </button>

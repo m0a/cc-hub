@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { X } from "lucide-react";
 import type { SessionResponse } from "../../../shared/types";
 import { SessionList } from "./SessionList";
 
@@ -53,19 +54,7 @@ export function SessionModal({
 					onClick={onClose}
 					className="p-1 text-white/50 hover:text-th-text transition-colors"
 				>
-					<svg
-						className="w-4 h-4"
-						fill="none"
-						stroke="currentColor"
-						viewBox="0 0 24 24"
-					>
-						<path
-							strokeLinecap="round"
-							strokeLinejoin="round"
-							strokeWidth={2}
-							d="M6 18L18 6M6 6l12 12"
-						/>
-					</svg>
+					<X className="w-4 h-4" />
 				</button>
 			</div>
 

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ArrowLeft, X, Eye, EyeOff, Menu, FileText, ChevronRight, List, FolderTree, GitBranch } from 'lucide-react';
 import { useFileViewer } from '../../hooks/useFileViewer';
 import { FileBrowser } from './FileBrowser';
 import { CodeViewer } from './CodeViewer';
@@ -323,9 +324,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                 onClick={handleBack}
                 className="p-1 hover:bg-th-surface-hover rounded transition-colors"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
+                <ArrowLeft className="w-4 h-4" />
               </button>
               <h2 className="text-sm font-medium">{t('files.title')}</h2>
 
@@ -333,7 +332,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
 
             <div className="flex items-center gap-2">
               {/* Tab buttons */}
-              <div className="flex items-center bg-th-surface-hover rounded-lg p-0.5">
+              <div className="flex items-center bg-th-surface-hover rounded-md p-0.5">
                 <button
                   onClick={handleShowBrowser}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
@@ -359,32 +358,25 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                   className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600' : 'hover:bg-th-surface-hover'}`}
                   title={t('files.showHidden')}
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                  </svg>
+                  {showHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                 </button>
               )}
 
-              {/* Close button */}
+              {/* Sessions button */}
               {onShowSessions && (
                 <button
                   onClick={onShowSessions}
                   className="p-1.5 hover:bg-th-surface-hover rounded transition-colors"
                   title="Sessions"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
+                  <Menu className="w-4 h-4" />
                 </button>
               )}
               <button
                 onClick={onClose}
                 className="p-1.5 hover:bg-th-surface-hover rounded transition-colors"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <X className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -519,9 +511,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
               ) : (
                 <div className="flex-1 flex items-center justify-center text-th-text-muted">
                   <div className="text-center">
-                    <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
+                    <FileText className="w-12 h-12 mx-auto mb-2" strokeWidth={1.5} />
                     <div>{t('files.selectFile')}</div>
                   </div>
                 </div>
@@ -627,9 +617,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
               onClick={handleBack}
               className="p-1.5 hover:bg-th-surface-hover rounded transition-colors"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
+              <ArrowLeft className="w-4 h-4" />
             </button>
             <h2 className="text-sm font-medium truncate max-w-[120px]">
               {viewMode === 'browser' ? t('files.title')
@@ -642,7 +630,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
 
           <div className="flex items-center gap-2">
             {/* Tab buttons */}
-            <div className="flex items-center bg-th-surface-hover rounded-lg p-0.5">
+            <div className="flex items-center bg-th-surface-hover rounded-md p-0.5">
               <button
                 onClick={handleShowBrowser}
                 className={`px-2 py-1 text-xs rounded transition-colors ${
@@ -678,10 +666,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                 className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600' : 'hover:bg-th-surface-hover'}`}
                 title={t('files.showHidden')}
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                </svg>
+                {showHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
               </button>
             )}
 
@@ -692,9 +677,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                 className="p-2.5 hover:bg-th-surface-hover rounded transition-colors"
                 title="Sessions"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
+                <Menu className="w-5 h-5" />
               </button>
             )}
 
@@ -703,9 +686,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
               onClick={onClose}
               className="p-2.5 hover:bg-th-surface-hover rounded transition-colors"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X className="w-5 h-5" />
             </button>
           </div>
         </div>
@@ -799,9 +780,7 @@ function TreeView({
                 className="flex items-center gap-1 px-2 py-1 hover:bg-th-surface cursor-pointer text-sm text-th-text-secondary"
                 style={{ paddingLeft: `${depth * 16 + 8}px` }}
               >
-                <svg className={`w-3 h-3 transition-transform ${isCollapsed ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
+                <ChevronRight className={`w-3 h-3 transition-transform ${isCollapsed ? '' : 'rotate-90'}`} />
                 <span className="truncate">{node.name}</span>
                 <span className="text-xs text-th-text-muted ml-auto shrink-0">
                   {countLeaves(node)}
@@ -959,9 +938,7 @@ function ChangesView({
             }`}
             title={t('files.listView')}
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
+            <List className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => handleDisplayChange('tree')}
@@ -970,15 +947,14 @@ function ChangesView({
             }`}
             title={t('files.treeView')}
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
+            <FolderTree className="w-3.5 h-3.5" />
           </button>
         </div>
 
         {/* Branch indicator for git */}
         {source === 'git' && gitBranch && (
-          <span className="text-xs text-th-text-muted truncate ml-auto">
+          <span className="text-xs text-th-text-muted truncate ml-auto flex items-center gap-1">
+            <GitBranch className="w-3 h-3" />
             {gitBranch}
           </span>
         )}
@@ -987,9 +963,7 @@ function ChangesView({
       {/* Content */}
       {currentChanges.length === 0 ? (
         <div className="flex flex-col items-center justify-center flex-1 text-th-text-muted">
-          <svg className="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
+          <FileText className="w-12 h-12 mb-2" strokeWidth={1.5} />
           <div>{t('files.noChanges')}</div>
         </div>
       ) : display === 'tree' ? (

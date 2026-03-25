@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Clock, MessageCircle, Tag, ChevronRight, Search, X } from 'lucide-react';
 import { useSessionHistory, type ProjectInfo } from '../hooks/useSessionHistory';
 import { authFetch } from '../services/api';
 import type { HistorySession, ConversationMessage, SessionResponse } from '../../../shared/types';
@@ -79,25 +80,19 @@ function HistoryItem({
             <span>{formatRelativeTime(session.modified, t, i18n.language)}</span>
             {duration && (
               <span className="text-th-text-secondary">
-                <svg className="w-3 h-3 inline mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+                <Clock className="w-3 h-3 inline mr-0.5" />
                 {duration}
               </span>
             )}
             {messageCount !== undefined && messageCount > 0 && (
               <span className="text-th-text-secondary">
-                <svg className="w-3 h-3 inline mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
+                <MessageCircle className="w-3 h-3 inline mr-0.5" />
                 {messageCount}
               </span>
             )}
             {gitBranch && (
               <span className="text-purple-400 truncate max-w-[100px]">
-                <svg className="w-3 h-3 inline mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                </svg>
+                <Tag className="w-3 h-3 inline mr-0.5" />
                 {gitBranch}
               </span>
             )}
@@ -120,7 +115,7 @@ function HistoryItem({
               onResume();
             }}
             disabled={isResuming}
-            className="shrink-0 px-2 py-1 text-xs bg-emerald-600 hover:bg-emerald-500 disabled:bg-th-surface-active text-th-text rounded transition-colors"
+            className="shrink-0 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-th-surface-active text-th-text rounded transition-colors"
           >
             {isResuming ? '...' : t('session.resume')}
           </button>
@@ -169,17 +164,9 @@ function ProjectGroupItem({
         onClick={handleToggle}
         className="w-full px-3 py-2 flex items-center gap-2 hover:bg-th-surface-hover/50 transition-colors text-left"
       >
-        <svg
+        <ChevronRight
           className={`w-3 h-3 text-th-text-secondary transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-          fill="currentColor"
-          viewBox="0 0 20 20"
-        >
-          <path
-            fillRule="evenodd"
-            d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-            clipRule="evenodd"
-          />
-        </svg>
+        />
         <div className="flex-1 min-w-0">
           <div className="text-sm text-th-text break-all">
             {project.projectName}
@@ -405,25 +392,16 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
             value={searchInput}
             onChange={handleSearchInput}
             placeholder={t('history.searchPlaceholder')}
-            className="w-full px-3 py-1.5 pl-8 text-sm bg-th-surface border border-th-border rounded focus:outline-none focus:border-emerald-500 text-th-text placeholder-th-text-muted"
+            className="w-full px-3 py-1.5 pl-8 text-sm bg-th-surface border border-th-border rounded focus:outline-none focus:border-blue-500 text-th-text placeholder-th-text-muted"
           />
-          <svg
-            className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-th-text-muted"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
+          <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-th-text-muted" />
           {(searchInput || searchQuery) && (
             <button
               type="button"
               onClick={handleClearSearch}
               className="absolute right-2 top-1/2 transform -translate-y-1/2 text-th-text-muted hover:text-th-text-secondary"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X className="w-4 h-4" />
             </button>
           )}
         </div>

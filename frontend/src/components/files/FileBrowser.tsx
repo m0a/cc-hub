@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { Folder, FolderOpen, FileCode, Image, FileText, File, ChevronRight } from 'lucide-react';
 import type { FileInfo } from '../../../../shared/types';
 import { authFetch } from '../../services/api';
 
@@ -16,15 +17,9 @@ interface FileBrowserProps {
 // File type icons
 function FileIcon({ file, isExpanded }: { file: FileInfo; isExpanded?: boolean }) {
   if (file.type === 'directory') {
-    return isExpanded ? (
-      <svg className="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-        <path fillRule="evenodd" d="M2 6a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1H2V6zm0 3v5a2 2 0 002 2h12a2 2 0 002-2V9H2z" clipRule="evenodd" />
-      </svg>
-    ) : (
-      <svg className="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-        <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-      </svg>
-    );
+    return isExpanded
+      ? <FolderOpen className="w-5 h-5 text-yellow-400" />
+      : <Folder className="w-5 h-5 text-yellow-400" />;
   }
 
   // File type detection
@@ -32,37 +27,21 @@ function FileIcon({ file, isExpanded }: { file: FileInfo; isExpanded?: boolean }
 
   // Code files
   if (['.ts', '.tsx', '.js', '.jsx', '.json', '.html', '.css', '.scss'].includes(ext || '')) {
-    return (
-      <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-      </svg>
-    );
+    return <FileCode className="w-5 h-5 text-blue-400" />;
   }
 
   // Image files
   if (['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico'].includes(ext || '')) {
-    return (
-      <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-      </svg>
-    );
+    return <Image className="w-5 h-5 text-green-400" />;
   }
 
   // Markdown/text
   if (['.md', '.txt', '.yaml', '.yml', '.toml'].includes(ext || '')) {
-    return (
-      <svg className="w-5 h-5 text-th-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-      </svg>
-    );
+    return <FileText className="w-5 h-5 text-th-text-secondary" />;
   }
 
   // Default file icon
-  return (
-    <svg className="w-5 h-5 text-th-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-    </svg>
-  );
+  return <File className="w-5 h-5 text-th-text-muted" />;
 }
 
 function formatFileSize(bytes: number): string {
@@ -76,14 +55,9 @@ function formatFileSize(bytes: number): string {
 // Chevron icon for expand/collapse
 function ChevronIcon({ isExpanded }: { isExpanded: boolean }) {
   return (
-    <svg
+    <ChevronRight
       className={`w-4 h-4 text-th-text-muted transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-    </svg>
+    />
   );
 }
 

@@ -32,14 +32,14 @@ export function UsageLimits({ data, history }: UsageLimitsProps) {
 
   if (!data) {
     return (
-      <div className="p-3 bg-th-surface rounded-lg">
+      <div className="p-3 bg-th-surface rounded-md">
         <div className="text-th-text-muted text-xs">{t('dashboard.usageDataUnavailable')}</div>
       </div>
     );
   }
 
   return (
-    <div className="p-3 bg-th-surface rounded-lg">
+    <div className="p-3 bg-th-surface rounded-md">
       <div className="text-sm font-medium text-th-text mb-3">{t('dashboard.usageLimits')}</div>
 
       <UsageChart

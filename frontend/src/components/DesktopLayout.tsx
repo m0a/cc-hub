@@ -1,4 +1,5 @@
 import { useRef, useCallback, useState, useEffect, useMemo } from 'react';
+import { List, LayoutDashboard, Share2, SplitSquareHorizontal, SplitSquareVertical, RefreshCw, Keyboard } from 'lucide-react';
 import { PaneContainer, type PaneNode, type ControlModeContext } from './PaneContainer';
 import { FileViewer } from './files/FileViewer';
 import { FloatingKeyboard, type FloatingKeyboardRef } from './FloatingKeyboard';
@@ -1087,40 +1088,34 @@ export function DesktopLayout({
               <button
                 type="button"
                 onClick={() => setShowSessionModal(prev => !prev)}
-                className={`p-1 rounded transition-colors ${
+                className={`p-1 rounded-md transition-colors ${
                   showSessionModal
                     ? 'text-blue-400 bg-blue-500/20'
                     : 'text-th-text-muted hover:text-th-text-secondary hover:bg-th-surface-hover'
                 }`}
                 title="Sessions (Ctrl+B)"
               >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                </svg>
+                <List className="w-3.5 h-3.5" />
               </button>
               <button
                 type="button"
                 onClick={() => setShowDashboard(prev => !prev)}
-                className={`p-1 rounded transition-colors ${
+                className={`p-1 rounded-md transition-colors ${
                   showDashboard
                     ? 'text-blue-400 bg-blue-500/20'
                     : 'text-th-text-muted hover:text-th-text-secondary hover:bg-th-surface-hover'
                 }`}
                 title="Dashboard (Ctrl+Shift+B)"
               >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1v-2zM14 13a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1h-4a1 1 0 01-1-1v-5z" />
-                </svg>
+                <LayoutDashboard className="w-3.5 h-3.5" />
               </button>
               <button
                 type="button"
                 onClick={() => setShowShareDialog(true)}
-                className="p-1 rounded transition-colors text-th-text-muted hover:text-th-text-secondary hover:bg-th-surface-hover"
+                className="p-1 rounded-md transition-colors text-th-text-muted hover:text-th-text-secondary hover:bg-th-surface-hover"
                 title="Share Session"
               >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                </svg>
+                <Share2 className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
@@ -1137,7 +1132,7 @@ export function DesktopLayout({
               {/* Session list */}
               <button
                 onClick={() => setShowSessionModal(prev => !prev)}
-                className={`p-2.5 rounded transition-colors ${
+                className={`p-2.5 rounded-md transition-colors ${
                   showSessionModal
                     ? 'text-blue-400 bg-blue-500/20 hover:bg-blue-500/30'
                     : 'text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover'
@@ -1145,92 +1140,71 @@ export function DesktopLayout({
                 title="セッション一覧"
                 data-onboarding="session-list"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                </svg>
+                <List className="w-5 h-5" />
               </button>
 
               {/* Dashboard */}
               <button
                 onClick={() => setShowDashboard(prev => !prev)}
-                className={`p-2.5 rounded transition-colors ${
+                className={`p-2.5 rounded-md transition-colors ${
                   showDashboard
                     ? 'text-blue-400 bg-blue-500/20 hover:bg-blue-500/30'
                     : 'text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover'
                 }`}
                 title="ダッシュボード"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1v-2zM14 13a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1h-4a1 1 0 01-1-1v-5z" />
-                </svg>
+                <LayoutDashboard className="w-5 h-5" />
               </button>
 
               {/* Share */}
               <button
                 onClick={() => setShowShareDialog(true)}
-                className="p-2.5 rounded transition-colors text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover"
+                className="p-2.5 rounded-md transition-colors text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover"
                 title="共有"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                </svg>
+                <Share2 className="w-5 h-5" />
               </button>
 
               {/* Split buttons */}
               <div className="flex items-center" data-onboarding="split-pane">
                 <button
                   onClick={() => handleSplit('horizontal')}
-                  className="p-2.5 text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
+                  className="p-2.5 text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded-md transition-colors"
                   title="縦分割 (Ctrl+D)"
                 >
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                    <line x1="12" y1="3" x2="12" y2="21" />
-                  </svg>
+                  <SplitSquareHorizontal className="w-5 h-5" />
                 </button>
                 <button
                   onClick={() => handleSplit('vertical')}
-                  className="p-2.5 text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
+                  className="p-2.5 text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded-md transition-colors"
                   title="横分割 (Ctrl+Shift+D)"
                 >
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                    <line x1="3" y1="12" x2="21" y2="12" />
-                  </svg>
+                  <SplitSquareVertical className="w-5 h-5" />
                 </button>
               </div>
 
               {/* Reload all panes */}
               <button
                 onClick={handleGlobalReload}
-                className="p-2.5 text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
+                className="p-2.5 text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded-md transition-colors"
                 title="全ペインをリロード"
                 data-onboarding="reload"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
+                <RefreshCw className="w-5 h-5" />
               </button>
 
               {/* Keyboard toggle */}
               <button
                 onClick={() => setShowKeyboard(prev => !prev)}
-                className={`p-2.5 rounded transition-colors ${
+                className={`p-2.5 rounded-md transition-colors ${
                   showKeyboard
-                    ? 'text-green-400 bg-green-500/20 hover:bg-green-500/30'
+                    ? 'text-blue-400 bg-blue-500/20 hover:bg-blue-500/30'
                     : 'text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover'
                 }`}
                 title={showKeyboard ? 'キーボードを隠す' : 'キーボードを表示'}
                 data-onboarding="keyboard"
               >
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <rect x="2" y="6" width="20" height="12" rx="2" />
-                  <line x1="6" y1="10" x2="6" y2="10" strokeLinecap="round" />
-                  <line x1="10" y1="10" x2="10" y2="10" strokeLinecap="round" />
-                  <line x1="14" y1="10" x2="14" y2="10" strokeLinecap="round" />
-                  <line x1="18" y1="10" x2="18" y2="10" strokeLinecap="round" />
-                  <line x1="6" y1="14" x2="18" y2="14" />
-                </svg>
+                <Keyboard className="w-5 h-5" />
               </button>
             </div>
           </div>
@@ -1332,7 +1306,7 @@ export function DesktopLayout({
 
         return (
           <div className="fixed inset-0 z-50 bg-[var(--color-overlay)] flex items-center justify-center p-4">
-            <div className="bg-th-surface rounded-lg w-full max-w-md max-h-[80vh] flex flex-col">
+            <div className="bg-th-surface rounded-md w-full max-w-md max-h-[80vh] flex flex-col">
               <div className="flex items-center justify-between px-4 py-3 border-b border-th-border">
                 <span className="text-th-text font-medium">
                   URL一覧 {detectedUrls.length > 0 && `(${startIdx + 1}-${Math.min(startIdx + URL_PAGE_SIZE, detectedUrls.length)}/${detectedUrls.length})`}
@@ -1359,7 +1333,7 @@ export function DesktopLayout({
                       </button>
                       <button
                         onClick={() => handleOpenUrl(url)}
-                        className="px-2 py-1 text-xs bg-emerald-600 hover:bg-emerald-500 text-th-text rounded"
+                        className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-th-text rounded-md"
                       >
                         開く
                       </button>

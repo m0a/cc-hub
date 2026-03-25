@@ -107,7 +107,8 @@
     "api": "API",
     "latencyNA": "N/A",
     "chartNow": "現在",
-    "chartReset": "リセット"
+    "chartReset": "リセット",
+    "clearCache": "キャッシュクリア & リロード"
   },
   "files": {
     "title": "ファイルブラウザ",

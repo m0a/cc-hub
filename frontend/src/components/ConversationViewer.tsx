@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ConversationMessage, ToolUseInfo, ToolResultInfo } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -45,14 +46,12 @@ function CollapsibleSection({
   };
 
   return (
-    <div className={`my-2 border rounded ${variantStyles[variant]}`}>
+    <div className={`my-2 border rounded-md ${variantStyles[variant]}`}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center gap-2 p-2 text-xs text-th-text-secondary hover:bg-th-surface-hover/50"
       >
-        <span className="transform transition-transform" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>
-          ▶
-        </span>
+        <ChevronRight className={`w-3 h-3 shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
         <span>{icon}</span>
         <span className="flex-1 text-left truncate">{title}</span>
       </button>
@@ -264,7 +263,7 @@ const MessageItem = memo(function MessageItem({ msg }: { msg: ConversationMessag
   }
 
   return (
-    <div className={`${containerStyle} p-2 rounded`}>
+    <div className={`${containerStyle} p-2 rounded-md`}>
       <div className="text-xs text-th-text-secondary mb-1">
         {displayRole}
       </div>
@@ -412,9 +411,7 @@ export function ConversationViewer({
             onClick={onClose}
             className="text-th-text-secondary hover:text-th-text p-1"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
+            <ChevronLeft className="w-5 h-5" />
           </button>
           <div className="flex-1 min-w-0 ml-2">
             <h2 className="text-sm font-medium text-th-text truncate">{title}</h2>
@@ -426,7 +423,7 @@ export function ConversationViewer({
             <button
               onClick={onResume}
               disabled={isResuming}
-              className="ml-2 px-3 py-1 text-sm bg-emerald-600 hover:bg-emerald-500 disabled:bg-th-surface-active text-th-text rounded shrink-0"
+              className="ml-2 px-3 py-1 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-th-surface-active text-th-text rounded-md shrink-0"
             >
               {isResuming ? t('session.resuming') : t('session.resume')}
             </button>

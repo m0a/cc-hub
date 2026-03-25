@@ -1,4 +1,5 @@
 import { useMemo, useState, useRef, useCallback } from 'react';
+import { FileText, ChevronLeft, ChevronRight, WrapText, Plus, Minus } from 'lucide-react';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import { getLanguageFromPath } from './language-detect';
@@ -336,9 +337,7 @@ export function DiffViewer({
     <div className="flex flex-col h-full bg-th-bg text-th-text font-mono text-sm">
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-th-border bg-th-surface">
-        <svg className="w-4 h-4 text-yellow-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
+        <FileText className="w-4 h-4 text-yellow-400 shrink-0" />
         {fileName && (
           <span className="text-sm text-th-text-secondary truncate flex-1">{fileName}</span>
         )}
@@ -353,8 +352,8 @@ export function DiffViewer({
 
       {/* Stats */}
       <div className="flex items-center gap-4 px-3 py-1.5 border-b border-th-border bg-th-surface/50 text-xs">
-        <span className="text-green-400">+{stats.added} 追加</span>
-        <span className="text-red-400">-{stats.removed} 削除</span>
+        <span className="text-green-400 flex items-center gap-0.5"><Plus className="w-3 h-3" />{stats.added} 追加</span>
+        <span className="text-red-400 flex items-center gap-0.5"><Minus className="w-3 h-3" />{stats.removed} 削除</span>
         <div className="flex items-center gap-1 ml-auto">
           {/* Scroll buttons */}
           {!wordWrap && (
@@ -364,18 +363,14 @@ export function DiffViewer({
                 className="p-1 rounded text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover transition-colors"
                 title="左へスクロール"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
+                <ChevronLeft className="w-4 h-4" />
               </button>
               <button
                 onClick={scrollRight}
                 className="p-1 rounded text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover transition-colors"
                 title="右へスクロール"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
+                <ChevronRight className="w-4 h-4" />
               </button>
             </>
           )}
@@ -385,9 +380,7 @@ export function DiffViewer({
             className={`p-1 rounded transition-colors ${wordWrap ? 'bg-blue-600 text-th-text' : 'text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover'}`}
             title={wordWrap ? '折り返しOFF' : '折り返しON'}
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h10m-10 6h16M17 9l3 3-3 3" />
-            </svg>
+            <WrapText className="w-4 h-4" />
           </button>
         </div>
       </div>

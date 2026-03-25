@@ -3,6 +3,7 @@ import { useControlTerminal } from '../hooks/useControlTerminal';
 import { TerminalComponent, type TerminalRef } from '../components/Terminal';
 import type { ControlModeConfig } from '../components/Terminal';
 import type { TmuxLayoutNode } from '../../../shared/types';
+import { Lock, Minus, Plus, Clock, Eye } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -278,11 +279,13 @@ export function ViewerPage({ token }: ViewerPageProps) {
 
   if (error) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#1a1a1a] text-white">
+      <div className="h-screen flex items-center justify-center bg-th-bg text-th-text">
         <div className="text-center">
-          <div className="text-6xl mb-4">🔒</div>
-          <h1 className="text-xl font-bold mb-2">Access Denied</h1>
-          <p className="text-gray-400">{error}</p>
+          <div className="w-12 h-12 rounded-md bg-th-surface border border-th-border flex items-center justify-center mx-auto mb-4">
+            <Lock className="w-6 h-6 text-th-text-muted" />
+          </div>
+          <h1 className="text-lg font-semibold mb-2 tracking-tight">Access Denied</h1>
+          <p className="text-th-text-secondary text-sm">{error}</p>
         </div>
       </div>
     );
@@ -290,21 +293,24 @@ export function ViewerPage({ token }: ViewerPageProps) {
 
   if (!sessionInfo) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#1a1a1a]">
-        <div className="w-6 h-6 border-2 border-gray-600 border-t-emerald-400 rounded-full animate-spin" />
+      <div className="h-screen flex items-center justify-center bg-th-bg">
+        <div className="w-5 h-5 border-2 border-th-surface-active border-t-blue-500 rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-[#1a1a1a] overflow-hidden">
+    <div className="h-screen flex flex-col bg-th-bg overflow-hidden">
       {/* Info bar */}
-      <div className="flex items-center justify-between px-3 py-1 bg-[#111] text-gray-400 text-xs border-b border-gray-800 shrink-0">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-th-surface text-th-text-secondary text-xs border-b border-th-border shrink-0">
         <div className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full ${controlTerminal.isConnected ? 'bg-emerald-400' : 'bg-gray-600'}`} />
-          <span className="text-gray-300 font-medium">{sessionInfo.sessionName}</span>
-          <span className="text-gray-600">|</span>
-          <span>Read-only</span>
+          <span className={`w-1.5 h-1.5 rounded-full ${controlTerminal.isConnected ? 'bg-blue-500' : 'bg-th-text-muted'}`} />
+          <span className="text-th-text font-medium">{sessionInfo.sessionName}</span>
+          <span className="text-th-border">|</span>
+          <span className="flex items-center gap-1">
+            <Eye className="w-3 h-3" />
+            Read-only
+          </span>
         </div>
         <div className="flex items-center gap-1.5">
           {/* Font size controls */}
@@ -312,21 +318,24 @@ export function ViewerPage({ token }: ViewerPageProps) {
             type="button"
             onClick={() => changeFontSize(-1)}
             disabled={fontSize <= MIN_FONT_SIZE}
-            className="w-6 h-6 flex items-center justify-center rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-30 text-gray-300"
+            className="w-6 h-6 flex items-center justify-center rounded-md bg-th-surface-hover hover:bg-th-surface-active disabled:opacity-30 text-th-text-secondary transition-colors"
           >
-            <span className="text-sm font-bold">-</span>
+            <Minus className="w-3 h-3" />
           </button>
-          <span className="text-gray-500 w-8 text-center">{fontSize}px</span>
+          <span className="text-th-text-muted w-8 text-center tabular-nums">{fontSize}px</span>
           <button
             type="button"
             onClick={() => changeFontSize(1)}
             disabled={fontSize >= MAX_FONT_SIZE}
-            className="w-6 h-6 flex items-center justify-center rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-30 text-gray-300"
+            className="w-6 h-6 flex items-center justify-center rounded-md bg-th-surface-hover hover:bg-th-surface-active disabled:opacity-30 text-th-text-secondary transition-colors"
           >
-            <span className="text-sm font-bold">+</span>
+            <Plus className="w-3 h-3" />
           </button>
-          <span className="text-gray-600 mx-1">|</span>
-          <span className="text-gray-500">{remainingTime}</span>
+          <span className="text-th-border mx-1">|</span>
+          <span className="text-th-text-muted flex items-center gap-1">
+            <Clock className="w-3 h-3" />
+            {remainingTime}
+          </span>
         </div>
       </div>
 
@@ -346,7 +355,7 @@ export function ViewerPage({ token }: ViewerPageProps) {
             cellSize={cellSize}
           />
         ) : (
-          <div className="h-full flex items-center justify-center text-gray-500">
+          <div className="h-full flex items-center justify-center text-th-text-muted text-sm">
             Waiting for terminal...
           </div>
         )}

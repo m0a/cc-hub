@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Lock } from 'lucide-react';
 
 interface LoginFormProps {
   onLogin: (password: string) => Promise<void>;
@@ -22,10 +23,15 @@ export function LoginForm({ onLogin, isLoading, error }: LoginFormProps) {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-th-bg">
-      <div className="bg-th-surface p-8 rounded-lg shadow-xl w-full max-w-md">
-        <h1 className="text-2xl font-bold text-th-text mb-6 text-center">
-          CC Hub
-        </h1>
+      <div className="bg-th-surface p-8 rounded-md border border-th-border w-full max-w-sm">
+        <div className="flex flex-col items-center gap-3 mb-8">
+          <div className="w-10 h-10 rounded-md bg-th-surface-hover flex items-center justify-center">
+            <Lock className="w-5 h-5 text-th-text-secondary" />
+          </div>
+          <h1 className="text-xl font-semibold text-th-text tracking-tight">
+            CC Hub
+          </h1>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -37,14 +43,14 @@ export function LoginForm({ onLogin, isLoading, error }: LoginFormProps) {
               id="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-2 bg-th-surface-hover border border-th-border rounded-lg text-th-text focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 bg-th-surface-hover border border-th-border rounded-md text-th-text placeholder:text-th-text-muted focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
               required
               disabled={isLoading}
             />
           </div>
 
           {error && (
-            <div className="text-red-400 text-sm bg-red-900/20 p-3 rounded-lg">
+            <div className="text-red-400 text-sm bg-red-900/20 p-3 rounded-md">
               {error}
             </div>
           )}
@@ -52,7 +58,7 @@ export function LoginForm({ onLogin, isLoading, error }: LoginFormProps) {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-2 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-800 disabled:cursor-not-allowed text-th-text font-medium rounded-lg transition-colors"
+            className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-medium rounded-md transition-colors"
           >
             {isLoading ? t('auth.authenticating') : t('auth.login')}
           </button>

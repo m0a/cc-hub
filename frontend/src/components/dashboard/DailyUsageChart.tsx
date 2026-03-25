@@ -10,7 +10,7 @@ export function DailyUsageChart({ data }: DailyUsageChartProps) {
 
   if (data.length === 0) {
     return (
-      <div className="p-3 bg-th-surface rounded-lg">
+      <div className="p-3 bg-th-surface rounded-md">
         <div className="text-th-text-muted text-xs">{t('dashboard.noActivityData')}</div>
       </div>
     );
@@ -22,7 +22,7 @@ export function DailyUsageChart({ data }: DailyUsageChartProps) {
   const locale = i18n.language === 'ja' ? 'ja' : 'en';
 
   return (
-    <div className="p-3 bg-th-surface rounded-lg">
+    <div className="p-3 bg-th-surface rounded-md">
       <div className="text-sm font-medium text-th-text mb-2">{t('dashboard.dailyStats')}</div>
       <div className="flex items-end gap-1" style={{ height: '64px' }}>
         {recentData.map((day) => {

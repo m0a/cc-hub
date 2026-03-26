@@ -322,7 +322,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
             <div className="flex items-center gap-2">
               <button
                 onClick={handleBack}
-                className="p-1 hover:bg-th-surface-hover rounded transition-colors"
+                className="p-1 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 rounded transition-colors"
               >
                 <ArrowLeft className="w-4 h-4" />
               </button>
@@ -366,7 +366,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
               {onShowSessions && (
                 <button
                   onClick={onShowSessions}
-                  className="p-1.5 hover:bg-th-surface-hover rounded transition-colors"
+                  className="p-1.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 rounded transition-colors"
                   title="Sessions"
                 >
                   <Menu className="w-4 h-4" />
@@ -374,7 +374,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
               )}
               <button
                 onClick={onClose}
-                className="p-1.5 hover:bg-th-surface-hover rounded transition-colors"
+                className="p-1.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 rounded transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -440,7 +440,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                     {viewMode === 'file' && selectedFile && (isMarkdownFile(selectedFile.path) || isHtmlFile(selectedFile.path)) && (
                       <button
                         onClick={togglePreviewMode}
-                        className={`px-2 py-1 text-xs rounded transition-colors ${previewMode ? 'bg-blue-600 text-white' : 'bg-th-surface-hover hover:bg-th-surface-active text-th-text-secondary'}`}
+                        className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${previewMode ? 'bg-blue-600 text-white' : 'bg-white/[0.04] hover:bg-white/[0.08] text-zinc-500'}`}
                       >
                         {previewMode ? 'Source' : 'Preview'}
                       </button>
@@ -615,7 +615,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
           <div className="flex items-center gap-2">
             <button
               onClick={handleBack}
-              className="p-1.5 hover:bg-th-surface-hover rounded transition-colors"
+              className="p-1.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 rounded transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
@@ -630,19 +630,19 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
 
           <div className="flex items-center gap-2">
             {/* Tab buttons */}
-            <div className="flex items-center bg-th-surface-hover rounded-md p-0.5">
+            <div className="inline-flex items-center bg-white/[0.04] rounded-md p-0.5">
               <button
                 onClick={handleShowBrowser}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
-                  viewMode === 'browser' || viewMode === 'file' ? 'bg-th-surface-active text-th-text' : 'text-th-text-secondary hover:text-th-text'
+                className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
+                  viewMode === 'browser' || viewMode === 'file' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600 hover:text-zinc-400'
                 }`}
               >
                 {t('files.browser')}
               </button>
               <button
                 onClick={handleShowChanges}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
-                  viewMode === 'changes' || viewMode === 'diff' ? 'bg-th-surface-active text-th-text' : 'text-th-text-secondary hover:text-th-text'
+                className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
+                  viewMode === 'changes' || viewMode === 'diff' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600 hover:text-zinc-400'
                 }`}
               >
                 {t('files.changes')}
@@ -653,7 +653,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
             {viewMode === 'file' && selectedFile && (isMarkdownFile(selectedFile.path) || isHtmlFile(selectedFile.path)) && (
               <button
                 onClick={togglePreviewMode}
-                className={`px-2 py-1 text-xs rounded transition-colors ${previewMode ? 'bg-blue-600 text-white' : 'bg-th-surface-hover hover:bg-th-surface-active text-th-text-secondary'}`}
+                className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${previewMode ? 'bg-blue-600 text-white' : 'bg-white/[0.04] hover:bg-white/[0.08] text-zinc-500'}`}
               >
                 {previewMode ? 'Source' : 'Preview'}
               </button>
@@ -674,7 +674,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
             {onShowSessions && (
               <button
                 onClick={onShowSessions}
-                className="p-2.5 hover:bg-th-surface-hover rounded transition-colors"
+                className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
                 title="Sessions"
               >
                 <Menu className="w-5 h-5" />
@@ -684,7 +684,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
             {/* Close button */}
             <button
               onClick={onClose}
-              className="p-2.5 hover:bg-th-surface-hover rounded transition-colors"
+              className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
             >
               <X className="w-5 h-5" />
             </button>

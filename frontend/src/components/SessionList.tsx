@@ -1151,10 +1151,10 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
                 ) : (
                   <>
                     {/* Tablet: 2-column layout / Mobile: single column */}
-                    <div className="md:grid md:grid-cols-2 md:gap-4">
+                    <div className="sm:grid sm:grid-cols-2 sm:gap-4">
                       {/* Active group */}
                       {activeSessions.length > 0 && (
-                        <div className="mb-4 md:mb-0">
+                        <div className="mb-4 sm:mb-0">
                           <div className="flex items-center gap-2 px-1 mb-2">
                             <span className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
                               Active
@@ -1216,7 +1216,7 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
                     {/* New session button at bottom */}
                     <button
                       onClick={() => setShowCreateModal(true)}
-                      className="mt-4 md:mt-3 md:w-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-dashed border-white/[0.08] text-zinc-500 hover:text-zinc-400 hover:border-white/[0.12] hover:bg-white/[0.02] transition-all max-md:w-full max-md:justify-center"
+                      className="mt-4 sm:mt-3 sm:w-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-dashed border-white/[0.08] text-zinc-500 hover:text-zinc-400 hover:border-white/[0.12] hover:bg-white/[0.02] transition-all max-sm:w-full max-sm:justify-center"
                     >
                       <Plus className="w-4 h-4" />
                       <span className="text-[13px]">{t('session.newSession')}</span>

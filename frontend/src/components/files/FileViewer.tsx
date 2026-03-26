@@ -324,62 +324,9 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
     return (
       <div className={`fixed inset-0 z-50 flex items-center justify-center ${hidden ? 'hidden' : ''}`}>
         <div className="bg-[#0a0a0a] w-full h-full overflow-hidden flex flex-col">
-          {/* Header - 2 rows matching terminal toolbar */}
+          {/* Header - 2 rows: session bar on top, file controls below */}
           <div className="border-b border-white/[0.06]">
-            {/* Row 1: File controls */}
-            <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/[0.06]">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleBack}
-                  className="p-1 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 rounded transition-colors"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                </button>
-                <h2 className="text-[13px] font-medium text-zinc-300">{t('files.title')}</h2>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                {/* Tab buttons */}
-                <div className="inline-flex items-center bg-white/[0.04] rounded-md p-0.5">
-                  <button
-                    onClick={handleShowBrowser}
-                    className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
-                      listMode === 'browser' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600 hover:text-zinc-400'
-                    }`}
-                  >
-                    {t('files.browser')}
-                  </button>
-                  <button
-                    onClick={handleShowChanges}
-                    className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
-                      listMode === 'changes' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600 hover:text-zinc-400'
-                    }`}
-                  >
-                    {t('files.changes')}
-                  </button>
-                </div>
-
-                {/* Hidden files toggle */}
-                {listMode === 'browser' && (
-                  <button
-                    onClick={() => setShowHidden(!showHidden)}
-                    className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-                    title={t('files.showHidden')}
-                  >
-                    {showHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                  </button>
-                )}
-
-                <button
-                  onClick={onClose}
-                  className="p-1.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Row 2: Session bar (same as terminal toolbar) */}
+            {/* Row 1: Session bar (same as terminal toolbar) */}
             <div className="flex items-center gap-2 px-3 py-1.5">
               <button
                 onClick={onShowSessions}
@@ -417,6 +364,55 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                     <Share2 className="w-[18px] h-[18px]" />
                   </button>
                 )}
+              </div>
+            </div>
+
+            {/* Row 2: File controls */}
+            <div className="flex items-center justify-between px-3 py-1.5">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleBack}
+                  className="p-1 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 rounded transition-colors"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
+                <h2 className="text-[13px] font-medium text-zinc-300">{t('files.title')}</h2>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <div className="inline-flex items-center bg-white/[0.04] rounded-md p-0.5">
+                  <button
+                    onClick={handleShowBrowser}
+                    className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
+                      listMode === 'browser' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600 hover:text-zinc-400'
+                    }`}
+                  >
+                    {t('files.browser')}
+                  </button>
+                  <button
+                    onClick={handleShowChanges}
+                    className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
+                      listMode === 'changes' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600 hover:text-zinc-400'
+                    }`}
+                  >
+                    {t('files.changes')}
+                  </button>
+                </div>
+                {listMode === 'browser' && (
+                  <button
+                    onClick={() => setShowHidden(!showHidden)}
+                    className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                    title={t('files.showHidden')}
+                  >
+                    {showHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                  </button>
+                )}
+                <button
+                  onClick={onClose}
+                  className="p-1.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             </div>
           </div>

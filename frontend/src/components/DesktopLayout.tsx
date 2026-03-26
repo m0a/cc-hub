@@ -1,5 +1,5 @@
 import { useRef, useCallback, useState, useEffect, useMemo } from 'react';
-import { List, Share2, SplitSquareHorizontal, SplitSquareVertical, RefreshCw, Keyboard, ChevronDown, MessageSquare, FileText, BarChart3 } from 'lucide-react';
+import { List, Share2, SplitSquareHorizontal, SplitSquareVertical, RefreshCw, Keyboard, ChevronDown, FileText, BarChart3 } from 'lucide-react';
 import { PaneContainer, type PaneNode, type ControlModeContext } from './PaneContainer';
 import { FileViewer } from './files/FileViewer';
 import { FloatingKeyboard, type FloatingKeyboardRef } from './FloatingKeyboard';
@@ -1145,26 +1145,10 @@ export function DesktopLayout({
 
               {/* Right: Action icons */}
               <div className="flex items-center gap-0.5">
-                {activeSession?.ccSessionId && (
-                  <button
-                    onClick={() => {
-                      const dir = activeSession?.currentPath;
-                      if (dir) {
-                        // Open conversation - handled by parent
-                      }
-                    }}
-                    className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
-                    title="会話履歴"
-                  >
-                    <MessageSquare className="w-[18px] h-[18px]" />
-                  </button>
-                )}
                 <button
                   onClick={() => {
                     const dir = activeSession?.currentPath;
-                    if (dir) {
-                      // File viewer - handled by existing logic
-                    }
+                    if (dir) openFileViewer(dir);
                   }}
                   className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
                   title="ファイル"

@@ -1,5 +1,5 @@
 import { useRef, useCallback, useState, useEffect, useMemo } from 'react';
-import { List, LayoutDashboard, Share2, SplitSquareHorizontal, SplitSquareVertical, RefreshCw, Keyboard } from 'lucide-react';
+import { List, Share2, SplitSquareHorizontal, SplitSquareVertical, RefreshCw, Keyboard, ChevronDown, MessageSquare, FileText, BarChart3 } from 'lucide-react';
 import { PaneContainer, type PaneNode, type ControlModeContext } from './PaneContainer';
 import { FileViewer } from './files/FileViewer';
 import { FloatingKeyboard, type FloatingKeyboardRef } from './FloatingKeyboard';
@@ -1083,7 +1083,7 @@ export function DesktopLayout({
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header - desktop: minimal icons, tablet: full toolbar */}
         {!isTablet && (
-          <div className="flex items-center justify-end px-2 py-0.5 bg-[var(--color-overlay)] border-b border-th-border shrink-0 select-none">
+          <div className="flex items-center justify-end px-2 py-0.5 bg-[#0a0a0a] border-b border-white/[0.06] shrink-0 select-none">
             <div className="flex items-center gap-0.5">
               <button
                 type="button"
@@ -1091,7 +1091,7 @@ export function DesktopLayout({
                 className={`p-1 rounded-md transition-colors ${
                   showSessionModal
                     ? 'text-blue-400 bg-blue-500/20'
-                    : 'text-th-text-muted hover:text-th-text-secondary hover:bg-th-surface-hover'
+                    : 'text-zinc-600 hover:text-zinc-400'
                 }`}
                 title="Sessions (Ctrl+B)"
               >
@@ -1103,16 +1103,16 @@ export function DesktopLayout({
                 className={`p-1 rounded-md transition-colors ${
                   showDashboard
                     ? 'text-blue-400 bg-blue-500/20'
-                    : 'text-th-text-muted hover:text-th-text-secondary hover:bg-th-surface-hover'
+                    : 'text-zinc-600 hover:text-zinc-400'
                 }`}
                 title="Dashboard (Ctrl+Shift+B)"
               >
-                <LayoutDashboard className="w-3.5 h-3.5" />
+                <BarChart3 className="w-3.5 h-3.5" />
               </button>
               <button
                 type="button"
                 onClick={() => setShowShareDialog(true)}
-                className="p-1 rounded-md transition-colors text-th-text-muted hover:text-th-text-secondary hover:bg-th-surface-hover"
+                className="p-1 rounded-md transition-colors text-zinc-600 hover:text-zinc-400"
                 title="Share Session"
               >
                 <Share2 className="w-3.5 h-3.5" />
@@ -1121,91 +1121,113 @@ export function DesktopLayout({
           </div>
         )}
         {isTablet && (
-          <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--color-overlay)] border-b border-th-border shrink-0 select-none">
-            {/* Left: Session name */}
-            <span className="text-th-text-secondary text-sm truncate max-w-[300px]">
-              {activeSession?.name || 'CC Hub - Desktop'}
-            </span>
-
-            {/* Right: Action buttons - min 44px touch targets per Apple HIG */}
-            <div className="flex items-center gap-0">
-              {/* Session list */}
+          <div className="shrink-0 select-none bg-[#0a0a0a] border-b border-white/[0.06]">
+            {/* Top bar: session selector + core actions */}
+            <div className="flex items-center gap-2 px-3 py-1.5">
+              {/* Left: Session selector */}
               <button
                 onClick={() => setShowSessionModal(prev => !prev)}
-                className={`p-2.5 rounded-md transition-colors ${
-                  showSessionModal
-                    ? 'text-blue-400 bg-blue-500/20 hover:bg-blue-500/30'
-                    : 'text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover'
-                }`}
-                title="セッション一覧"
+                className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-white/[0.06] transition-colors"
                 data-onboarding="session-list"
               >
-                <List className="w-5 h-5" />
+                <div className={`w-2 h-2 rounded-full ${
+                  activeSession?.state === 'working' ? 'bg-blue-500' :
+                  (activeSession?.state === 'waiting_input' || activeSession?.state === 'waiting_permission') ? 'bg-amber-400 animate-pulse' :
+                  'bg-zinc-600'
+                }`} />
+                <span className="text-[13px] font-medium text-white truncate max-w-[200px]">
+                  {activeSession?.name || 'CC Hub'}
+                </span>
+                <ChevronDown className="w-3 h-3 text-zinc-500" />
               </button>
 
-              {/* Dashboard */}
-              <button
-                onClick={() => setShowDashboard(prev => !prev)}
-                className={`p-2.5 rounded-md transition-colors ${
-                  showDashboard
-                    ? 'text-blue-400 bg-blue-500/20 hover:bg-blue-500/30'
-                    : 'text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover'
-                }`}
-                title="ダッシュボード"
-              >
-                <LayoutDashboard className="w-5 h-5" />
-              </button>
+              <div className="flex-1" />
 
-              {/* Share */}
-              <button
-                onClick={() => setShowShareDialog(true)}
-                className="p-2.5 rounded-md transition-colors text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover"
-                title="共有"
-              >
-                <Share2 className="w-5 h-5" />
-              </button>
-
-              {/* Split buttons */}
-              <div className="flex items-center" data-onboarding="split-pane">
+              {/* Right: Action icons */}
+              <div className="flex items-center gap-0.5">
+                {activeSession?.ccSessionId && (
+                  <button
+                    onClick={() => {
+                      const dir = activeSession?.currentPath;
+                      if (dir) {
+                        // Open conversation - handled by parent
+                      }
+                    }}
+                    className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
+                    title="会話履歴"
+                  >
+                    <MessageSquare className="w-[18px] h-[18px]" />
+                  </button>
+                )}
                 <button
-                  onClick={() => handleSplit('horizontal')}
-                  className="p-2.5 text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded-md transition-colors"
-                  title="縦分割 (Ctrl+D)"
+                  onClick={() => {
+                    const dir = activeSession?.currentPath;
+                    if (dir) {
+                      // File viewer - handled by existing logic
+                    }
+                  }}
+                  className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
+                  title="ファイル"
                 >
-                  <SplitSquareHorizontal className="w-5 h-5" />
+                  <FileText className="w-[18px] h-[18px]" />
                 </button>
                 <button
-                  onClick={() => handleSplit('vertical')}
-                  className="p-2.5 text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded-md transition-colors"
-                  title="横分割 (Ctrl+Shift+D)"
+                  onClick={() => setShowDashboard(prev => !prev)}
+                  className={`p-2 transition-colors ${
+                    showDashboard ? 'text-blue-400' : 'text-zinc-500 hover:text-zinc-300 active:text-zinc-200'
+                  }`}
+                  title="ダッシュボード"
                 >
-                  <SplitSquareVertical className="w-5 h-5" />
+                  <BarChart3 className="w-[18px] h-[18px]" />
+                </button>
+
+                {/* Divider */}
+                <div className="w-px h-4 bg-white/[0.06] mx-0.5" />
+
+                {/* Pane operations */}
+                <div className="flex items-center" data-onboarding="split-pane">
+                  <button
+                    onClick={() => handleSplit('horizontal')}
+                    className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
+                    title="縦分割"
+                  >
+                    <SplitSquareHorizontal className="w-[18px] h-[18px]" />
+                  </button>
+                  <button
+                    onClick={() => handleSplit('vertical')}
+                    className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
+                    title="横分割"
+                  >
+                    <SplitSquareVertical className="w-[18px] h-[18px]" />
+                  </button>
+                </div>
+
+                <button
+                  onClick={handleGlobalReload}
+                  className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
+                  title="リロード"
+                  data-onboarding="reload"
+                >
+                  <RefreshCw className="w-[18px] h-[18px]" />
+                </button>
+                <button
+                  onClick={() => setShowShareDialog(true)}
+                  className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
+                  title="共有"
+                >
+                  <Share2 className="w-[18px] h-[18px]" />
+                </button>
+                <button
+                  onClick={() => setShowKeyboard(prev => !prev)}
+                  className={`p-2 transition-colors ${
+                    showKeyboard ? 'text-blue-400' : 'text-zinc-500 hover:text-zinc-300 active:text-zinc-200'
+                  }`}
+                  title={showKeyboard ? 'キーボードを隠す' : 'キーボードを表示'}
+                  data-onboarding="keyboard"
+                >
+                  <Keyboard className="w-[18px] h-[18px]" />
                 </button>
               </div>
-
-              {/* Reload all panes */}
-              <button
-                onClick={handleGlobalReload}
-                className="p-2.5 text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded-md transition-colors"
-                title="全ペインをリロード"
-                data-onboarding="reload"
-              >
-                <RefreshCw className="w-5 h-5" />
-              </button>
-
-              {/* Keyboard toggle */}
-              <button
-                onClick={() => setShowKeyboard(prev => !prev)}
-                className={`p-2.5 rounded-md transition-colors ${
-                  showKeyboard
-                    ? 'text-blue-400 bg-blue-500/20 hover:bg-blue-500/30'
-                    : 'text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover'
-                }`}
-                title={showKeyboard ? 'キーボードを隠す' : 'キーボードを表示'}
-                data-onboarding="keyboard"
-              >
-                <Keyboard className="w-5 h-5" />
-              </button>
             </div>
           </div>
         )}

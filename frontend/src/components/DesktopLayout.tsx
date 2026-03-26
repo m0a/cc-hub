@@ -1276,6 +1276,11 @@ export function DesktopLayout({
           onShowSessions={() => {
             setShowSessionModal(true);
           }}
+          sessionName={activeSession?.name}
+          sessionStatus={activeSession?.state}
+          onShowDashboard={() => setShowDashboard(prev => !prev)}
+          onReload={handleGlobalReload}
+          onShare={() => setShowShareDialog(true)}
         />
       ))}
 

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, X, Eye, EyeOff, Menu, FileText, ChevronRight, List, FolderTree, GitBranch } from 'lucide-react';
+import { ArrowLeft, X, Eye, EyeOff, FileText, ChevronRight, ChevronDown, List, FolderTree, GitBranch, MessageSquare, BarChart3, RotateCw, Share2, Menu } from 'lucide-react';
 import { useFileViewer } from '../../hooks/useFileViewer';
 import { FileBrowser } from './FileBrowser';
 import { CodeViewer } from './CodeViewer';
@@ -34,6 +34,13 @@ interface FileViewerProps {
   onCopyPrompt?: (text: string) => void;
   hidden?: boolean;
   onShowSessions?: () => void;
+  // Terminal-style toolbar props
+  sessionName?: string;
+  sessionStatus?: 'working' | 'waiting_input' | 'waiting_permission' | 'idle' | 'disconnected';
+  onShowConversation?: () => void;
+  onShowDashboard?: () => void;
+  onReload?: () => void;
+  onShare?: () => void;
 }
 
 // Image extensions
@@ -66,7 +73,7 @@ function getFileName(path: string): string {
   return path.split('/').pop() || path;
 }
 
-export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyPrompt, hidden, onShowSessions }: FileViewerProps) {
+export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyPrompt, hidden, onShowSessions, sessionName, sessionStatus, onShowConversation, onShowDashboard, onReload, onShare }: FileViewerProps) {
   const { t } = useTranslation();
   const {
     currentPath,
@@ -610,84 +617,124 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
           )}
         </div>
 
-        {/* Footer controls - at bottom for easier touch access */}
-        <div className="flex items-center justify-between px-3 py-2 border-t border-th-border bg-th-surface">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleBack}
-              className="p-1.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 rounded transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-            <h2 className="text-sm font-medium truncate max-w-[120px]">
-              {viewMode === 'browser' ? t('files.title')
-                : viewMode === 'changes' ? t('files.changes')
-                : viewMode === 'diff' ? currentDiffFileName
-                : selectedFile ? getFileName(selectedFile.path)
-                : t('files.title')}
-            </h2>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Tab buttons */}
-            <div className="inline-flex items-center bg-white/[0.04] rounded-md p-0.5">
+        {/* Footer controls - 2 rows for consistency with terminal toolbar */}
+        <div className="border-t border-white/[0.06] bg-[#0a0a0a]">
+          {/* Row 1: File viewer controls */}
+          <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/[0.06]">
+            <div className="flex items-center gap-2">
               <button
-                onClick={handleShowBrowser}
-                className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
-                  viewMode === 'browser' || viewMode === 'file' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600 hover:text-zinc-400'
-                }`}
+                onClick={handleBack}
+                className="p-1.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 rounded transition-colors"
               >
-                {t('files.browser')}
+                <ArrowLeft className="w-4 h-4" />
               </button>
-              <button
-                onClick={handleShowChanges}
-                className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
-                  viewMode === 'changes' || viewMode === 'diff' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600 hover:text-zinc-400'
-                }`}
-              >
-                {t('files.changes')}
-              </button>
+              <h2 className="text-[13px] font-medium text-zinc-300 truncate max-w-[120px]">
+                {viewMode === 'browser' ? t('files.title')
+                  : viewMode === 'changes' ? t('files.changes')
+                  : viewMode === 'diff' ? currentDiffFileName
+                  : selectedFile ? getFileName(selectedFile.path)
+                  : t('files.title')}
+              </h2>
             </div>
 
-            {/* Preview/Source toggle for markdown/html files */}
-            {viewMode === 'file' && selectedFile && (isMarkdownFile(selectedFile.path) || isHtmlFile(selectedFile.path)) && (
-              <button
-                onClick={togglePreviewMode}
-                className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${previewMode ? 'bg-blue-600 text-white' : 'bg-white/[0.04] hover:bg-white/[0.08] text-zinc-500'}`}
-              >
-                {previewMode ? 'Source' : 'Preview'}
-              </button>
-            )}
+            <div className="flex items-center gap-1.5">
+              {/* Tab buttons */}
+              <div className="inline-flex items-center bg-white/[0.04] rounded-md p-0.5">
+                <button
+                  onClick={handleShowBrowser}
+                  className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
+                    viewMode === 'browser' || viewMode === 'file' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600 hover:text-zinc-400'
+                  }`}
+                >
+                  {t('files.browser')}
+                </button>
+                <button
+                  onClick={handleShowChanges}
+                  className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
+                    viewMode === 'changes' || viewMode === 'diff' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600 hover:text-zinc-400'
+                  }`}
+                >
+                  {t('files.changes')}
+                </button>
+              </div>
 
-            {/* Hidden files toggle */}
-            {viewMode === 'browser' && (
-              <button
-                onClick={() => setShowHidden(!showHidden)}
-                className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600' : 'hover:bg-th-surface-hover'}`}
-                title={t('files.showHidden')}
-              >
-                {showHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-              </button>
-            )}
+              {/* Preview/Source toggle */}
+              {viewMode === 'file' && selectedFile && (isMarkdownFile(selectedFile.path) || isHtmlFile(selectedFile.path)) && (
+                <button
+                  onClick={togglePreviewMode}
+                  className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${previewMode ? 'bg-blue-600 text-white' : 'bg-white/[0.04] hover:bg-white/[0.08] text-zinc-500'}`}
+                >
+                  {previewMode ? 'Source' : 'Preview'}
+                </button>
+              )}
 
-            {/* Sessions button */}
-            {onShowSessions && (
-              <button
-                onClick={onShowSessions}
-                className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
-                title="Sessions"
-              >
-                <Menu className="w-5 h-5" />
-              </button>
-            )}
+              {/* Hidden files toggle */}
+              {viewMode === 'browser' && (
+                <button
+                  onClick={() => setShowHidden(!showHidden)}
+                  className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                  title={t('files.showHidden')}
+                >
+                  {showHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                </button>
+              )}
 
-            {/* Close button */}
+              {/* Close file viewer */}
+              <button
+                onClick={onClose}
+                className="p-1.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Row 2: Terminal-style session bar (same as terminal toolbar) */}
+          <div className="flex items-center gap-2 px-3 py-1.5">
+            {/* Session selector */}
             <button
-              onClick={onClose}
-              className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
+              onClick={onShowSessions}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-white/[0.06] transition-colors"
             >
-              <X className="w-5 h-5" />
+              <div className={`w-2 h-2 rounded-full ${
+                sessionStatus === 'working' ? 'bg-blue-500' :
+                (sessionStatus === 'waiting_input' || sessionStatus === 'waiting_permission') ? 'bg-amber-400 animate-pulse' :
+                'bg-zinc-600'
+              }`} />
+              <span className="text-[13px] font-medium text-white truncate max-w-[140px]">
+                {sessionName || '-'}
+              </span>
+              <ChevronDown className="w-3 h-3 text-zinc-500" />
             </button>
+
+            <div className="flex-1" />
+
+            {/* Same icons as terminal toolbar */}
+            <div className="flex items-center gap-1">
+              {onShowConversation && (
+                <button onClick={onShowConversation} className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors">
+                  <MessageSquare className="w-5 h-5" />
+                </button>
+              )}
+              <button onClick={onClose} className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors" title="ファイル">
+                <FileText className="w-5 h-5 text-zinc-300" />
+              </button>
+              {onShowDashboard && (
+                <button onClick={onShowDashboard} className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors">
+                  <BarChart3 className="w-5 h-5" />
+                </button>
+              )}
+              {onReload && (
+                <button onClick={onReload} className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors">
+                  <RotateCw className="w-5 h-5" />
+                </button>
+              )}
+              {onShare && (
+                <button onClick={onShare} className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors">
+                  <Share2 className="w-5 h-5" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

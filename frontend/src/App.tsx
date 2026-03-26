@@ -983,9 +983,14 @@ export function App() {
             closeFileViewer(dir);
           }}
           onShowSessions={() => {
-            // Keep FileViewer "open" for this session, just show session list
             setShowSessionList(true);
           }}
+          sessionName={activeSession?.name}
+          sessionStatus={activeSession?.state}
+          onShowConversation={activeSession?.ccSessionId ? handleShowConversation : undefined}
+          onShowDashboard={() => setShowMobileDashboard(true)}
+          onReload={handleReload}
+          onShare={() => setShowShareDialog(true)}
         />
       ))}
 

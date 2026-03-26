@@ -323,68 +323,101 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
   if (isWideScreen) {
     return (
       <div className={`fixed inset-0 z-50 flex items-center justify-center ${hidden ? 'hidden' : ''}`}>
-        <div className="bg-th-bg w-full h-full overflow-hidden flex flex-col">
-          {/* Header */}
-          <div className="flex items-center justify-between px-3 py-2 border-b border-th-border bg-th-surface">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleBack}
-                className="p-1 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 rounded transition-colors"
-              >
-                <ArrowLeft className="w-4 h-4" />
-              </button>
-              <h2 className="text-sm font-medium">{t('files.title')}</h2>
-
-            </div>
-
-            <div className="flex items-center gap-2">
-              {/* Tab buttons */}
-              <div className="flex items-center bg-th-surface-hover rounded-md p-0.5">
+        <div className="bg-[#0a0a0a] w-full h-full overflow-hidden flex flex-col">
+          {/* Header - 2 rows matching terminal toolbar */}
+          <div className="border-b border-white/[0.06]">
+            {/* Row 1: File controls */}
+            <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/[0.06]">
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={handleShowBrowser}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${
-                    listMode === 'browser' ? 'bg-th-surface-active text-th-text' : 'text-th-text-secondary hover:text-th-text'
-                  }`}
+                  onClick={handleBack}
+                  className="p-1 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 rounded transition-colors"
                 >
-                  {t('files.browser')}
+                  <ArrowLeft className="w-4 h-4" />
                 </button>
-                <button
-                  onClick={handleShowChanges}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${
-                    listMode === 'changes' ? 'bg-th-surface-active text-th-text' : 'text-th-text-secondary hover:text-th-text'
-                  }`}
-                >
-                  {t('files.changes')}
-                </button>
+                <h2 className="text-[13px] font-medium text-zinc-300">{t('files.title')}</h2>
               </div>
 
-              {/* Hidden files toggle */}
-              {listMode === 'browser' && (
-                <button
-                  onClick={() => setShowHidden(!showHidden)}
-                  className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600' : 'hover:bg-th-surface-hover'}`}
-                  title={t('files.showHidden')}
-                >
-                  {showHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                </button>
-              )}
+              <div className="flex items-center gap-1.5">
+                {/* Tab buttons */}
+                <div className="inline-flex items-center bg-white/[0.04] rounded-md p-0.5">
+                  <button
+                    onClick={handleShowBrowser}
+                    className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
+                      listMode === 'browser' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600 hover:text-zinc-400'
+                    }`}
+                  >
+                    {t('files.browser')}
+                  </button>
+                  <button
+                    onClick={handleShowChanges}
+                    className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
+                      listMode === 'changes' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600 hover:text-zinc-400'
+                    }`}
+                  >
+                    {t('files.changes')}
+                  </button>
+                </div>
 
-              {/* Sessions button */}
-              {onShowSessions && (
+                {/* Hidden files toggle */}
+                {listMode === 'browser' && (
+                  <button
+                    onClick={() => setShowHidden(!showHidden)}
+                    className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                    title={t('files.showHidden')}
+                  >
+                    {showHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                  </button>
+                )}
+
                 <button
-                  onClick={onShowSessions}
-                  className="p-1.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 rounded transition-colors"
-                  title="Sessions"
+                  onClick={onClose}
+                  className="p-1.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
                 >
-                  <Menu className="w-4 h-4" />
+                  <X className="w-4 h-4" />
                 </button>
-              )}
+              </div>
+            </div>
+
+            {/* Row 2: Session bar (same as terminal toolbar) */}
+            <div className="flex items-center gap-2 px-3 py-1.5">
               <button
-                onClick={onClose}
-                className="p-1.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 rounded transition-colors"
+                onClick={onShowSessions}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-white/[0.06] transition-colors"
               >
-                <X className="w-4 h-4" />
+                <div className={`w-2 h-2 rounded-full ${
+                  sessionStatus === 'working' ? 'bg-blue-500' :
+                  (sessionStatus === 'waiting_input' || sessionStatus === 'waiting_permission') ? 'bg-amber-400 animate-pulse' :
+                  'bg-zinc-600'
+                }`} />
+                <span className="text-[13px] font-medium text-white truncate max-w-[200px]">
+                  {sessionName || '-'}
+                </span>
+                <ChevronDown className="w-3 h-3 text-zinc-500" />
               </button>
+
+              <div className="flex-1" />
+
+              <div className="flex items-center gap-0.5">
+                <button onClick={onClose} className="p-2 text-zinc-300 transition-colors" title="ファイル">
+                  <FileText className="w-[18px] h-[18px]" />
+                </button>
+                {onShowDashboard && (
+                  <button onClick={onShowDashboard} className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors" title="ダッシュボード">
+                    <BarChart3 className="w-[18px] h-[18px]" />
+                  </button>
+                )}
+                {onReload && (
+                  <button onClick={onReload} className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors" title="リロード">
+                    <RotateCw className="w-[18px] h-[18px]" />
+                  </button>
+                )}
+                {onShare && (
+                  <button onClick={onShare} className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors" title="共有">
+                    <Share2 className="w-[18px] h-[18px]" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 

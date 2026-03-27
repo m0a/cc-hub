@@ -100,7 +100,7 @@ export function ShareDialog({ sessionId, sessionName, onClose }: ShareDialogProp
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay)] animate-backdrop-in"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--color-overlay)] animate-backdrop-in"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="bg-th-surface rounded-md p-5 max-w-md w-full mx-4 shadow-xl animate-modal-in max-h-[90vh] overflow-y-auto">

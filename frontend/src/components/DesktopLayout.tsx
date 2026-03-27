@@ -1278,17 +1278,8 @@ export function DesktopLayout({
           }}
           sessionName={activeSession?.name}
           sessionStatus={activeSession?.state}
-          onShowDashboard={() => {
-            closeFileViewer(dir);
-            setShowDashboard(prev => !prev);
-          }}
-          onReload={() => {
-            // Handled internally by FileViewer (refresh file list)
-          }}
-          onShare={() => {
-            closeFileViewer(dir);
-            setShowShareDialog(true);
-          }}
+          onShowDashboard={() => setShowDashboard(prev => !prev)}
+          onShare={() => setShowShareDialog(true)}
         />
       ))}
 

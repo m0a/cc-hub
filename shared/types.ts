@@ -259,6 +259,8 @@ export interface SystemMetricsSnapshot {
   memUsedPercent: number;
   memUsedMB: number;
   memTotalMB: number;
+  swapUsedMB: number;
+  swapTotalMB: number;
 }
 
 export interface SystemMetrics {

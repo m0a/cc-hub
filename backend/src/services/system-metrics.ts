@@ -1,5 +1,20 @@
 import { cpus, freemem, totalmem, loadavg } from 'node:os';
+import { readFileSync } from 'node:fs';
 import type { SystemMetrics, SystemMetricsSnapshot } from '../../../shared/types';
+
+function getSwapInfo(): { usedMB: number; totalMB: number } {
+  try {
+    const meminfo = readFileSync('/proc/meminfo', 'utf-8');
+    const swapTotal = meminfo.match(/SwapTotal:\s+(\d+)/)?.[1];
+    const swapFree = meminfo.match(/SwapFree:\s+(\d+)/)?.[1];
+    if (swapTotal && swapFree) {
+      const totalMB = Math.round(Number(swapTotal) / 1024);
+      const usedMB = totalMB - Math.round(Number(swapFree) / 1024);
+      return { usedMB, totalMB };
+    }
+  } catch { /* /proc/meminfo not available (non-Linux) */ }
+  return { usedMB: 0, totalMB: 0 };
+}
 
 const MAX_HISTORY = 60;
 const MIN_INTERVAL_MS = 3000; // Minimum 3s between snapshots
@@ -67,6 +82,7 @@ export class SystemMetricsService {
     const usedMB = Math.round((total - free) / 1024 / 1024);
     const totalMB = Math.round(total / 1024 / 1024);
     const usedPercent = Math.round(((total - free) / total) * 1000) / 10;
+    const swap = getSwapInfo();
 
     return {
       timestamp: Date.now(),
@@ -74,6 +90,8 @@ export class SystemMetricsService {
       memUsedPercent: usedPercent,
       memUsedMB: usedMB,
       memTotalMB: totalMB,
+      swapUsedMB: swap.usedMB,
+      swapTotalMB: swap.totalMB,
     };
   }
 }

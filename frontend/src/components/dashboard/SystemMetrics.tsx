@@ -183,6 +183,30 @@ export function SystemMetricsChart({ data }: SystemMetricsChartProps) {
           {(current.memUsedMB / 1024).toFixed(1)} GB / {(current.memTotalMB / 1024).toFixed(1)} GB
         </div>
       </div>
+
+      {/* Swap */}
+      {current.swapTotalMB > 0 && (
+        <div>
+          <div className="flex items-baseline justify-between mb-1">
+            <span className="text-[12px] font-semibold uppercase tracking-widest text-zinc-500">
+              Swap
+            </span>
+            <span className="text-lg font-medium text-amber-400 tabular-nums">
+              {current.swapTotalMB > 0 ? ((current.swapUsedMB / current.swapTotalMB) * 100).toFixed(1) : '0.0'}%
+            </span>
+          </div>
+          {/* Swap bar */}
+          <div className="h-2 bg-white/[0.06] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-amber-500 rounded-full transition-all"
+              style={{ width: `${current.swapTotalMB > 0 ? (current.swapUsedMB / current.swapTotalMB) * 100 : 0}%` }}
+            />
+          </div>
+          <div className="text-[10px] text-th-text-muted mt-0.5">
+            {(current.swapUsedMB / 1024).toFixed(1)} GB / {(current.swapTotalMB / 1024).toFixed(1)} GB
+          </div>
+        </div>
+      )}
     </div>
   );
 }

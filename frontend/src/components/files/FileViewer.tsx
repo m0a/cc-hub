@@ -354,11 +354,9 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                     <BarChart3 className="w-[18px] h-[18px]" />
                   </button>
                 )}
-                {onReload && (
-                  <button onClick={onReload} className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors" title="リロード">
-                    <RotateCw className="w-[18px] h-[18px]" />
-                  </button>
-                )}
+                <button onClick={() => listDirectory(currentPath)} className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors" title="リロード">
+                  <RotateCw className="w-[18px] h-[18px]" />
+                </button>
                 {onShare && (
                   <button onClick={onShare} className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors" title="共有">
                     <Share2 className="w-[18px] h-[18px]" />
@@ -753,11 +751,9 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                   <BarChart3 className="w-5 h-5" />
                 </button>
               )}
-              {onReload && (
-                <button onClick={onReload} className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors">
-                  <RotateCw className="w-5 h-5" />
-                </button>
-              )}
+              <button onClick={() => listDirectory(currentPath)} className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors" title="リロード">
+                <RotateCw className="w-5 h-5" />
+              </button>
               {onShare && (
                 <button onClick={onShare} className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors">
                   <Share2 className="w-5 h-5" />

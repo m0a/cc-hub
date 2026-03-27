@@ -27,36 +27,27 @@ function CollapsibleSection({
   icon,
   defaultOpen = false,
   children,
-  variant = 'default',
 }: {
   title: string;
   icon: string;
   defaultOpen?: boolean;
   children: React.ReactNode;
-  variant?: 'default' | 'thinking' | 'tool' | 'result' | 'error';
+  variant?: string;
 }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
-  const variantStyles = {
-    default: 'bg-white/[0.03] border-white/[0.06]',
-    thinking: 'bg-purple-500/10 border-purple-500/30',
-    tool: 'bg-blue-500/10 border-blue-500/30',
-    result: 'bg-green-500/10 border-green-500/30',
-    error: 'bg-red-500/10 border-red-500/30',
-  };
-
   return (
-    <div className={`my-2 border rounded-md ${variantStyles[variant]}`}>
+    <div className="my-1">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center gap-2 p-2 text-xs text-zinc-500 hover:bg-white/[0.03]"
+        className="flex items-center gap-1.5 py-1 text-[11px] text-zinc-600 hover:text-zinc-400"
       >
         <ChevronRight className={`w-3 h-3 shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
         <span>{icon}</span>
-        <span className="flex-1 text-left truncate">{title}</span>
+        <span className="truncate">{title}</span>
       </button>
       {isOpen && (
-        <div className="p-2 border-t border-white/[0.06] text-xs overflow-x-auto">
+        <div className="ml-4 pl-2 border-l border-white/[0.06] text-[11px] text-zinc-500 overflow-x-auto">
           {children}
         </div>
       )}
@@ -180,16 +171,16 @@ interface ConversationViewerProps {
 // Markdown components configuration
 const markdownComponents = {
   pre: ({ children }: { children?: React.ReactNode }) => (
-    <pre className="bg-th-bg p-2 rounded overflow-x-auto my-2 text-xs">
+    <pre className="bg-white/[0.03] p-2 rounded overflow-x-auto my-1.5 text-[11px]">
       {children}
     </pre>
   ),
   code: ({ children, className }: { children?: React.ReactNode; className?: string }) => {
     const isBlock = className?.includes('language-');
     return isBlock ? (
-      <code className="text-green-300">{children}</code>
+      <code className="text-zinc-300">{children}</code>
     ) : (
-      <code className="bg-th-surface-hover px-1 rounded text-blue-300">{children}</code>
+      <code className="bg-white/[0.06] px-1 rounded text-zinc-300">{children}</code>
     );
   },
   p: ({ children }: { children?: React.ReactNode }) => <p className="my-1">{children}</p>,
@@ -225,7 +216,7 @@ const markdownComponents = {
     <img
       src={src}
       alt={alt || 'Screenshot'}
-      className="max-w-full h-auto rounded my-2 border border-th-border"
+      className="max-w-[280px] h-auto rounded my-2 border border-white/[0.06]"
       loading="lazy"
     />
   ),
@@ -244,27 +235,24 @@ const MessageItem = memo(function MessageItem({ msg }: { msg: ConversationMessag
   const isSummaryMessage = msg.role === 'user' &&
     msg.content && isSystemSummary(msg.content);
 
-  // Get display role and style
+  // Get display role
   let displayRole: string;
-  let containerStyle: string;
 
   if (isSummaryMessage) {
     displayRole = t('conversation.systemSummary');
-    containerStyle = 'mx-4 bg-amber-500/10 border-l-2 border-amber-500/50';
   } else if (isToolResultOnly) {
     displayRole = t('conversation.system');
-    containerStyle = 'mr-8 bg-white/[0.03] border-l-2 border-zinc-700';
   } else if (msg.role === 'user') {
     displayRole = t('conversation.you');
-    containerStyle = 'ml-8 bg-blue-500/10 border-l-2 border-blue-500/50';
   } else {
     displayRole = t('conversation.claude');
-    containerStyle = 'mr-8 bg-white/[0.03] border-l-2 border-white/[0.08]';
   }
 
+  const roleColor = msg.role === 'user' ? 'text-blue-400' : isSummaryMessage ? 'text-amber-400' : 'text-zinc-500';
+
   return (
-    <div className={`${containerStyle} p-2 rounded-md`}>
-      <div className="text-xs text-th-text-secondary mb-1">
+    <div className="py-2">
+      <div className={`text-[11px] font-medium ${roleColor} mb-1`}>
         {displayRole}
       </div>
 
@@ -273,7 +261,7 @@ const MessageItem = memo(function MessageItem({ msg }: { msg: ConversationMessag
 
       {/* Main text content */}
       {msg.content && (
-        <div className="text-sm text-th-text markdown-content">
+        <div className="text-[13px] text-zinc-300 markdown-content leading-relaxed">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={markdownComponents}

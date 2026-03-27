@@ -155,7 +155,7 @@ export function MarkdownViewer({
           remarkPlugins={[remarkGfm]}
           components={{
             pre: ({ children }) => (
-              <pre className="bg-th-surface p-3 rounded-lg overflow-x-auto my-3 text-sm">
+              <pre className="bg-th-surface p-3 rounded-md overflow-x-auto my-3 text-sm">
                 {children}
               </pre>
             ),
@@ -244,7 +244,7 @@ export function MarkdownViewer({
       </div>
 
       {/* Controls - font size only */}
-      <div className="absolute top-2 right-2 flex items-center gap-1 bg-th-surface/90 rounded-lg p-1 backdrop-blur-sm">
+      <div className="absolute top-2 right-2 flex items-center gap-1 bg-th-surface/90 rounded-md p-1 backdrop-blur-sm">
         <button
           onClick={resetFontSize}
           className="px-1.5 py-0.5 text-xs text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"

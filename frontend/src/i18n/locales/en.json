@@ -107,7 +107,8 @@
     "api": "API",
     "latencyNA": "N/A",
     "chartNow": "Now",
-    "chartReset": "Reset"
+    "chartReset": "Reset",
+    "clearCache": "Clear Cache & Reload"
   },
   "files": {
     "title": "File Browser",

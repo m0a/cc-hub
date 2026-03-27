@@ -1,12 +1,12 @@
 import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Sun, Moon, Globe } from 'lucide-react';
 import { useDashboard } from '../../hooks/useDashboard';
 import { UsageLimits } from './UsageLimits';
 import { DailyUsageChart } from './DailyUsageChart';
 import { ModelUsageChart } from './ModelUsageChart';
 import { HourlyHeatmap } from './HourlyHeatmap';
 import { NetworkLatency } from './NetworkLatency';
-import { LanguageSwitcher } from '../LanguageSwitcher';
 import { useTheme } from '../../hooks/useTheme';
 
 // Onboarding localStorage keys
@@ -15,10 +15,11 @@ const ONBOARDING_SESSIONLIST_KEY = 'cchub-onboarding-sessionlist-completed';
 
 interface DashboardProps {
   className?: string;
+  compact?: boolean; // true when in narrow side panel
 }
 
-export function Dashboard({ className = '' }: DashboardProps) {
-  const { t } = useTranslation();
+export function Dashboard({ className = '', compact = false }: DashboardProps) {
+  const { t, i18n } = useTranslation();
   const { data, isLoading, error } = useDashboard(300000);
   const { theme, toggleTheme } = useTheme();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -66,50 +67,69 @@ export function Dashboard({ className = '' }: DashboardProps) {
   }
 
   return (
-    <div className={`p-2 space-y-2 overflow-y-auto ${className}`}>
-      <NetworkLatency />
-      <UsageLimits data={data?.usageLimits || null} history={data?.usageHistory || []} />
-      <DailyUsageChart data={data?.dailyActivity || []} />
-      <ModelUsageChart data={data?.modelUsage || []} />
-      {data?.hourlyActivity && Object.keys(data.hourlyActivity).length > 0 && (
-        <HourlyHeatmap data={data.hourlyActivity} />
-      )}
+    <div className={`overflow-y-auto overscroll-contain px-4 py-4 ${className}`}>
+      <div className={compact ? 'space-y-3' : 'md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0'}>
+        <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
+          <NetworkLatency />
+        </div>
+        <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
+          <UsageLimits data={data?.usageLimits || null} history={data?.usageHistory || []} />
+        </div>
+        <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
+          <DailyUsageChart data={data?.dailyActivity || []} />
+        </div>
+        <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
+          <ModelUsageChart data={data?.modelUsage || []} />
+        </div>
+        {data?.hourlyActivity && Object.keys(data.hourlyActivity).length > 0 && (
+          <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2">
+            <HourlyHeatmap data={data.hourlyActivity} />
+          </div>
+        )}
+      </div>
+
       {/* Settings section */}
-      <div className="border-t border-th-border pt-3 mt-3">
-        <div className="flex items-center justify-between px-2">
+      <div className="mt-6 pt-4 border-t border-white/[0.06]">
+        <div className="flex flex-wrap items-center gap-2 max-w-lg">
+          <button
+            onClick={toggleTheme}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] text-zinc-500 hover:text-zinc-300 bg-white/[0.04] hover:bg-white/[0.06] rounded-md transition-colors"
+            title={theme === 'dark' ? t('appearance.light') : t('appearance.dark')}
+          >
+            {theme === 'dark' ? (
+              <Sun className="w-3.5 h-3.5" />
+            ) : (
+              <Moon className="w-3.5 h-3.5" />
+            )}
+            <span>{theme === 'dark' ? t('appearance.light') : t('appearance.dark')}</span>
+          </button>
+          <button
+            onClick={() => {
+              const newLang = i18n.language === 'ja' ? 'en' : 'ja';
+              i18n.changeLanguage(newLang);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] text-zinc-500 hover:text-zinc-300 bg-white/[0.04] hover:bg-white/[0.06] rounded-md transition-colors"
+            title={i18n.language === 'ja' ? 'Switch to English' : '日本語に切替'}
+          >
+            <Globe className="w-3.5 h-3.5" />
+            {i18n.language === 'ja' ? 'EN' : 'JA'}
+          </button>
           <button
             onClick={() => setShowResetConfirm(true)}
-            className="text-xs text-th-text-muted hover:text-th-text-secondary transition-colors"
+            className="text-[12px] text-zinc-600 hover:text-zinc-400 px-3 py-1.5 transition-colors"
           >
             {t('onboarding.resetTutorial')}
           </button>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={toggleTheme}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-th-border text-th-text hover:bg-th-surface-hover active:bg-th-surface-active transition-colors"
-              title={theme === 'dark' ? t('appearance.light') : t('appearance.dark')}
-            >
-              {theme === 'dark' ? (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-              ) : (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
-              )}
-              <span>{theme === 'dark' ? t('appearance.light') : t('appearance.dark')}</span>
-            </button>
-            <LanguageSwitcher />
-          </div>
-        </div>
-        <div className="flex items-center justify-center px-2 pt-2">
           <button
             onClick={handleClearCache}
             disabled={cacheClearing}
-            className="text-xs text-th-text-muted hover:text-red-400 transition-colors disabled:opacity-50"
+            className="text-[12px] text-zinc-600 hover:text-red-400 px-3 py-1.5 transition-colors disabled:opacity-50"
           >
-            {cacheClearing ? 'クリア中...' : 'キャッシュクリア & リロード'}
+            {cacheClearing ? t('common.loading') : t('dashboard.clearCache')}
           </button>
         </div>
         {data?.version && (
-          <div className="text-center text-th-text-muted text-xs pt-2">
+          <div className="text-[11px] text-zinc-700 mt-3">
             CC Hub v{data.version}
           </div>
         )}
@@ -118,7 +138,7 @@ export function Dashboard({ className = '' }: DashboardProps) {
       {/* Reset confirmation dialog */}
       {showResetConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay)]">
-          <div className="bg-th-surface rounded-lg p-4 max-w-xs w-full mx-4 shadow-xl">
+          <div className="bg-th-surface rounded-md p-4 max-w-xs w-full mx-4 shadow-xl">
             <h3 className="text-sm font-medium text-th-text mb-2">{t('onboarding.resetTutorial')}</h3>
             <p className="text-xs text-th-text-secondary mb-4">{t('onboarding.resetConfirm')}</p>
             <div className="flex gap-2 justify-end">
@@ -130,7 +150,7 @@ export function Dashboard({ className = '' }: DashboardProps) {
               </button>
               <button
                 onClick={handleResetOnboarding}
-                className="px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 rounded text-th-text transition-colors"
+                className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 rounded text-th-text transition-colors"
               >
                 {t('common.confirm')}
               </button>

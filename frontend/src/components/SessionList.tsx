@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Plus, Folder, ChevronRight, ChevronLeft, Search, X, Play } from 'lucide-react';
 import type { SessionResponse, IndicatorState, ConversationMessage, FileInfo, SessionTheme, PaneInfo } from '../../../shared/types';
 import { useSessions } from '../hooks/useSessions';
 
@@ -17,9 +18,15 @@ const THEME_COLORS: Record<SessionTheme, { border: string; bg: string }> = {
 };
 
 const THEME_OPTIONS: (SessionTheme | null)[] = [null, 'red', 'orange', 'amber', 'green', 'teal', 'blue', 'indigo', 'purple', 'pink'];
+
+// Accent color hex values for redesigned card left bar
+const ACCENT_HEX: Record<SessionTheme, string> = {
+  red: '#ef4444', orange: '#f97316', amber: '#f59e0b', green: '#22c55e',
+  teal: '#14b8a6', blue: '#3b82f6', indigo: '#6366f1', purple: '#a855f7', pink: '#ec4899',
+};
+
 import { useSessionHistory } from '../hooks/useSessionHistory';
 import { authFetch } from '../services/api';
-import { Dashboard } from './dashboard/Dashboard';
 import { SessionHistory } from './SessionHistory';
 import { ConversationViewer } from './ConversationViewer';
 
@@ -56,6 +63,7 @@ interface SessionListProps {
   onSelectSession: (session: SessionResponse) => void;
   onSelectPane?: (session: SessionResponse, paneId: string) => void;
   onBack?: () => void;
+  onClose?: () => void;  // Close button in header (used in modal)
   inline?: boolean;  // true for side panel, false for fullscreen
   contentScale?: number;  // Scale factor for content (tabs remain fixed)
   isOnboarding?: boolean;  // Show dummy session for onboarding
@@ -315,7 +323,7 @@ function CreateSessionModal({
             value={name}
             onChange={handleNameChange}
             onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-            className="w-full px-3 py-2 bg-th-bg border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-emerald-500 text-sm"
+            className="w-full px-3 py-2 bg-th-bg border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-blue-500 text-sm"
           />
         </div>
 
@@ -328,9 +336,7 @@ function CreateSessionModal({
               className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
               disabled={showNewFolderInput}
             >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
+              <Plus className="w-3 h-3" />
               {t('session.newFolder')}
             </button>
           </div>
@@ -356,13 +362,13 @@ function CreateSessionModal({
                     setNewFolderName('');
                   }
                 }}
-                className="flex-1 px-2 py-1 bg-th-bg border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-emerald-500 text-sm"
+                className="flex-1 px-2 py-1 bg-th-bg border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-blue-500 text-sm"
                 disabled={creatingFolder}
               />
               <button
                 onClick={handleCreateFolder}
                 disabled={creatingFolder || !newFolderName.trim()}
-                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-th-surface-active rounded text-sm transition-colors"
+                className="px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-th-surface-active rounded text-sm transition-colors"
               >
                 {creatingFolder ? '...' : t('common.create')}
               </button>
@@ -395,9 +401,7 @@ function CreateSessionModal({
                     onClick={handleGoUp}
                     className="w-full px-3 py-2 text-left hover:bg-th-surface flex items-center gap-2 text-sm"
                   >
-                    <svg className="w-4 h-4 text-th-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                    </svg>
+                    <Folder className="w-4 h-4 text-th-text-secondary" />
                     <span className="text-th-text-secondary">..</span>
                   </button>
                 )}
@@ -409,9 +413,7 @@ function CreateSessionModal({
                     onClick={() => handleDirectoryClick(dir)}
                     className="w-full px-3 py-2 text-left hover:bg-th-surface flex items-center gap-2 text-sm"
                   >
-                    <svg className="w-4 h-4 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                    </svg>
+                    <Folder className="w-4 h-4 text-yellow-500" />
                     <span className={`truncate ${dir.isHidden ? 'text-th-text-muted' : 'text-th-text'}`}>
                       {dir.name}
                     </span>
@@ -438,7 +440,7 @@ function CreateSessionModal({
           </button>
           <button
             onClick={handleSubmit}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded font-medium transition-colors text-sm"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded font-medium transition-colors text-sm"
           >
             {t('common.create')}
           </button>
@@ -557,8 +559,6 @@ function SessionItem({
     panes?: PaneInfo[];
   };
   const isClaudeRunning = extSession.currentCommand === 'claude';
-  const themeColor = extSession.theme ? THEME_COLORS[extSession.theme] : null;
-
   // Derive card-level indicatorState from panes (priority: waiting_input > processing > idle)
   const cardIndicator: IndicatorState | undefined = (() => {
     if (extSession.panes && extSession.panes.length > 0) {
@@ -595,30 +595,15 @@ function SessionItem({
     onResume?.(session.id, extSession.ccSessionId);
   };
 
-  // Determine border class based on theme or claude running state
-  const getBorderClass = () => {
-    if (themeColor) {
-      return `border-l-2 ${themeColor.border}`;
-    }
-    if (isClaudeRunning) {
-      return 'border-l-2 border-green-500';
-    }
-    return '';
-  };
-
-  // Status dot color (use cardIndicator for hook-derived state)
-  const statusDotClass = cardIndicator === 'waiting_input'
-    ? 'bg-yellow-400 animate-status-glow'
-    : cardIndicator === 'processing' || isClaudeRunning
-      ? 'bg-emerald-400'
-      : 'bg-gray-500';
-
   // Show long-press hint only for first few visits
   const hintKey = 'cchub-longpress-hint-seen';
   const hintSeen = typeof localStorage !== 'undefined' && localStorage.getItem(hintKey);
   if (!hintSeen && typeof localStorage !== 'undefined') {
     localStorage.setItem(hintKey, '1');
   }
+
+  const isLive = cardIndicator === 'processing' || cardIndicator === 'waiting_input';
+  const accentColor = extSession.theme ? ACCENT_HEX[extSession.theme] : undefined;
 
   return (
     <div
@@ -632,72 +617,90 @@ function SessionItem({
       onMouseLeave={handleMouseLeave}
       onContextMenu={handleContextMenu}
       style={{ touchAction: 'pan-y', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
-      className={`p-3 md:p-4 rounded cursor-pointer transition-colors select-none ${
-        isClaudeRunning
-          ? `bg-th-surface hover:bg-th-surface-hover active:bg-th-surface-active ${getBorderClass()}`
-          : `bg-th-surface/60 hover:bg-th-surface-hover/70 active:bg-th-surface-active/70 ${getBorderClass()}`
-      }`}
+      className="group relative rounded-lg transition-all duration-200 cursor-pointer select-none hover:bg-white/[0.04] active:bg-white/[0.06]"
     >
-      <div className="flex items-center gap-2">
-        {/* Status dot */}
-        <span className={`w-2 h-2 rounded-full shrink-0 ${statusDotClass}`} />
-        <span className={`font-medium truncate flex-1 ${!isClaudeRunning ? 'text-th-text-secondary' : ''}`}>{displayTitle}</span>
-        {/* Primary badge: status (max 1) */}
-        {isWaiting && hasWaitingTool ? (
-          <span className="text-xs text-yellow-400 bg-yellow-900/50 px-1.5 py-0.5 rounded shrink-0">{waitingLabel}</span>
-        ) : cardIndicator === 'processing' ? (
-          <span className="text-xs text-emerald-400 bg-emerald-900/50 px-1.5 py-0.5 rounded shrink-0">{t('session.processing')}</span>
-        ) : showResumeButton ? (
-          <button
-            onClick={handleResume}
-            onMouseDown={(e) => e.stopPropagation()}
-            onTouchStart={(e) => e.stopPropagation()}
-            className="text-xs text-emerald-400 bg-emerald-900/50 px-1.5 py-0.5 rounded shrink-0 hover:bg-emerald-800/50"
-          >
-            {t('session.resume')}
-          </button>
-        ) : null}
-        {/* Secondary badge: pane count (only if > 1) */}
-        {extSession.panes && extSession.panes.length > 1 && (() => {
-          const deadCount = extSession.panes.filter(p => p.isDead).length;
-          return (
-            <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${
-              deadCount > 0
-                ? 'text-red-400 bg-red-900/50'
-                : 'text-cyan-400 bg-cyan-900/50'
-            }`}>
-              {deadCount > 0
-                ? `${extSession.panes.length} (${deadCount} ${t('pane.dead')})`
-                : extSession.panes.length}
+      {/* Accent bar */}
+      {accentColor && (
+        <div
+          className="absolute left-0 top-3 bottom-3 w-[3px] rounded-full"
+          style={{ backgroundColor: accentColor }}
+        />
+      )}
+
+      <div className={`px-4 py-3 ${accentColor ? 'pl-5' : ''}`}>
+        {/* Top row: title + status badges */}
+        <div className="flex items-center gap-2 mb-1">
+          <h3 className={`text-[15px] font-medium truncate flex-1 tracking-[-0.01em] ${
+            isLive ? 'text-white' : isClaudeRunning ? 'text-zinc-300' : 'text-zinc-400'
+          }`}>
+            {displayTitle}
+          </h3>
+
+          {/* Status badge - pill style */}
+          {isWaiting && hasWaitingTool ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/15 text-amber-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+              {waitingLabel}
             </span>
-          );
-        })()}
+          ) : cardIndicator === 'processing' ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/15 text-blue-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+              {t('session.processing')}
+            </span>
+          ) : showResumeButton ? (
+            <button
+              onClick={handleResume}
+              onMouseDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              <Play className="w-3 h-3" />
+              {t('session.resume')}
+            </button>
+          ) : null}
+
+          {/* Secondary badge: pane count (only if > 1) */}
+          {extSession.panes && extSession.panes.length > 1 && (() => {
+            const deadCount = extSession.panes.filter(p => p.isDead).length;
+            return (
+              <span className={`text-[11px] px-2 py-0.5 rounded-full shrink-0 ${
+                deadCount > 0
+                  ? 'text-red-400 bg-red-500/15'
+                  : 'text-cyan-400 bg-cyan-500/15'
+              }`}>
+                {deadCount > 0
+                  ? `${extSession.panes.length} (${deadCount} ${t('pane.dead')})`
+                  : `${extSession.panes.length} panes`}
+              </span>
+            );
+          })()}
+        </div>
+
+        {/* Path row */}
+        <div className="flex items-center gap-3 text-[12px] text-zinc-500">
+          {shortPath && (
+            <span className="truncate font-mono">{shortPath}</span>
+          )}
+        </div>
+
+        {/* Last prompt / summary */}
+        {(extSession.ccSummary || extSession.ccFirstPrompt) && (
+          <p className="mt-1.5 text-[12px] text-zinc-600 truncate leading-relaxed">
+            {extSession.ccSummary || extSession.ccFirstPrompt}
+          </p>
+        )}
+
+        {!hintSeen && (
+          <div className="text-[11px] text-zinc-700 mt-1">
+            {t('session.longPressHint')}
+          </div>
+        )}
       </div>
-      {shortPath && (
-        <div className="text-xs text-th-text-muted mt-1 truncate pl-4">
-          {shortPath}
-        </div>
-      )}
-      {extSession.ccFirstPrompt && (
-        <div className="hidden md:block text-xs text-th-text-muted mt-1 truncate pl-4">
-          {extSession.ccFirstPrompt}
-        </div>
-      )}
-      {(extSession.ccSummary || extSession.ccFirstPrompt) && (
-        <div className="text-xs text-th-text-secondary mt-1 truncate md:line-clamp-2 md:whitespace-normal pl-4">
-          {extSession.ccSummary || extSession.ccFirstPrompt}
-        </div>
-      )}
-      {!hintSeen && (
-        <div className="text-xs text-th-text-muted mt-1 pl-4">
-          {t('session.longPressHint')}
-        </div>
-      )}
 
       {/* Pane list (expandable, shows per-pane status indicators) */}
       {panesExpanded && extSession.panes && extSession.panes.length > 1 && (
         <div
-          className="mt-2 pt-2 border-t border-th-border space-y-1"
+          className="mx-4 mb-3 pt-2 border-t border-white/[0.06] space-y-1"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
@@ -705,11 +708,8 @@ function SessionItem({
           {extSession.panes.map((pane) => {
             const cmd = pane.currentCommand || 'shell';
             const isClaudePane = cmd === 'claude' || !!pane.agentName;
-            // Use pane title (set by Claude Code) for display, strip status icons
             const paneTitle = pane.title?.replace(/^[✳★●◆⠂⠈⠐⠠⠄⠁✻✽⏳]\s*/, '').trim();
-            // Priority: agentName > paneTitle > command
             const displayName = pane.agentName || paneTitle || cmd;
-            // Agent color mapping
             const agentColorMap: Record<string, string> = {
               red: 'text-red-300', orange: 'text-orange-300', amber: 'text-amber-300',
               green: 'text-green-300', teal: 'text-teal-300', blue: 'text-blue-300',
@@ -718,21 +718,20 @@ function SessionItem({
             };
             const nameColor = pane.agentColor && agentColorMap[pane.agentColor]
               ? agentColorMap[pane.agentColor]
-              : isClaudePane ? 'text-green-300' : 'text-th-text';
-            // Per-pane status styling
+              : isClaudePane ? 'text-green-300' : 'text-zinc-300';
             const paneIndicator = pane.indicatorState;
             const paneDotClass = pane.isDead
               ? 'bg-red-400'
               : paneIndicator === 'processing'
-                ? 'bg-emerald-400'
+                ? 'bg-blue-400'
                 : paneIndicator === 'waiting_input'
-                  ? 'bg-yellow-400 animate-status-glow'
-                  : 'bg-gray-500';
+                  ? 'bg-yellow-400 animate-pulse'
+                  : 'bg-zinc-600';
             const paneBgClass = pane.isDead
-              ? 'bg-red-900/30 active:bg-red-800/40'
+              ? 'bg-red-900/20 hover:bg-red-900/30'
               : isClaudePane
-                ? 'bg-green-900/30 active:bg-green-800/40'
-                : 'bg-th-surface-hover/40 active:bg-th-surface-active/50';
+                ? 'hover:bg-white/[0.04]'
+                : 'hover:bg-white/[0.04]';
 
             let paneTimer: number | null = null;
             let paneLongPressed = false;
@@ -758,31 +757,27 @@ function SessionItem({
                 onTouchEnd={() => { if (paneTimer) { clearTimeout(paneTimer); paneTimer = null; } }}
                 onTouchMove={() => { if (paneTimer) { clearTimeout(paneTimer); paneTimer = null; } }}
                 onContextMenu={(e) => e.preventDefault()}
-                className={`w-full flex items-center gap-2 px-3 py-2.5 rounded text-left transition-colors active:scale-[0.98] ${paneBgClass}`}
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${paneBgClass}`}
               >
-                {/* Per-pane status dot */}
                 <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${paneDotClass}`} />
-                <span className={`text-sm font-medium truncate ${nameColor}`}>
+                <span className={`text-[13px] font-medium truncate ${nameColor}`}>
                   {displayName}
                 </span>
                 {pane.agentName && paneTitle && (
-                  <span className="text-th-text-muted text-xs truncate flex-1">{paneTitle}</span>
+                  <span className="text-zinc-600 text-[11px] truncate flex-1">{paneTitle}</span>
                 )}
                 {!pane.agentName && !paneTitle && (
-                  <span className="text-th-text-muted text-xs truncate flex-1" />
+                  <span className="flex-1" />
                 )}
-                {/* Per-pane status badge */}
                 {pane.isDead ? (
-                  <span className="text-[10px] text-red-400 bg-red-900/40 px-1 rounded shrink-0">{t('pane.dead')}</span>
+                  <span className="text-[10px] text-red-400 bg-red-500/15 px-1.5 py-0.5 rounded-full shrink-0">{t('pane.dead')}</span>
                 ) : paneIndicator === 'processing' ? (
-                  <span className="text-[10px] text-emerald-400 bg-emerald-900/40 px-1 rounded shrink-0">{t('session.processing')}</span>
+                  <span className="text-[10px] text-blue-400 bg-blue-500/15 px-1.5 py-0.5 rounded-full shrink-0">{t('session.processing')}</span>
                 ) : null}
                 {pane.isActive && !pane.isDead && (
-                  <span className="text-[10px] text-cyan-400 bg-cyan-900/40 px-1 rounded shrink-0">active</span>
+                  <span className="text-[10px] text-cyan-400 bg-cyan-500/15 px-1.5 py-0.5 rounded-full shrink-0">active</span>
                 )}
-                <svg className="w-4 h-4 text-th-text-muted shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
+                <ChevronRight className="w-3.5 h-3.5 text-zinc-700 shrink-0" />
               </button>
             );
           })}
@@ -792,7 +787,7 @@ function SessionItem({
   );
 }
 
-export function SessionList({ onSelectSession, onSelectPane, onBack, inline = false, contentScale, isOnboarding = false, hideDashboardTab = false }: SessionListProps) {
+export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, inline = false, contentScale, isOnboarding = false, hideDashboardTab = false }: SessionListProps) {
   const { t } = useTranslation();
   const {
     sessions,
@@ -808,7 +803,9 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
   const [sessionForMenu, setSessionForMenu] = useState<SessionResponse | null>(null);
   const [paneToClose, setPaneToClose] = useState<{ sessionId: string; paneId: string; name: string } | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'sessions' | 'history' | 'dashboard'>('sessions');
+  const [activeTab, setActiveTab] = useState<'sessions' | 'history'>('sessions');
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [hookConfigured, setHookConfigured] = useState<boolean | null>(null);
   const [hookBannerDismissed, setHookBannerDismissed] = useState(() =>
     typeof localStorage !== 'undefined' && localStorage.getItem('cchub-hook-banner-dismissed') === '1'
@@ -973,30 +970,155 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
     setSessionForMenu(session);
   };
 
-  // Container class: h-full for inline (side panel), h-screen for fullscreen
-  const containerClass = inline
-    ? "h-full flex flex-col bg-th-bg text-th-text overflow-hidden"
-    : "h-screen flex flex-col bg-th-bg text-th-text";
-
   // Don't show loading screen during onboarding (need to show UI elements)
   if (isLoading && sessions.length === 0 && !isOnboarding) {
     return (
-      <div className={`flex items-center justify-center bg-th-bg ${inline ? 'h-full' : 'h-screen'}`}>
-        <div className="text-th-text-secondary">{t('common.loading')}</div>
+      <div className={`flex items-center justify-center bg-[#0a0a0a] ${inline ? 'h-full' : 'h-screen'}`}>
+        <div className="text-zinc-500">{t('common.loading')}</div>
       </div>
     );
   }
 
+  // Group sessions by state for the redesigned layout
+  const getSessionIndicator = (s: SessionResponse) => {
+    const ext = s as SessionResponse & { panes?: PaneInfo[]; indicatorState?: IndicatorState };
+    if (ext.panes && ext.panes.length > 0) {
+      if (ext.panes.some(p => p.indicatorState === 'waiting_input')) return 'waiting_input';
+      if (ext.panes.some(p => p.indicatorState === 'processing')) return 'processing';
+    }
+    return ext.indicatorState;
+  };
+
+  // Filter sessions by search query
+  const filteredSessions = searchQuery
+    ? sessions.filter(s => {
+        const ext = s as SessionResponse & { ccFirstPrompt?: string; ccSummary?: string; currentPath?: string };
+        const q = searchQuery.toLowerCase();
+        return s.name.toLowerCase().includes(q)
+          || (s.customTitle || '').toLowerCase().includes(q)
+          || (ext.currentPath || '').toLowerCase().includes(q)
+          || (ext.ccFirstPrompt || '').toLowerCase().includes(q)
+          || (ext.ccSummary || '').toLowerCase().includes(q);
+      })
+    : sessions;
+
+  const activeSessions = filteredSessions.filter(s => {
+    const ind = getSessionIndicator(s);
+    return ind === 'processing' || ind === 'waiting_input';
+  });
+  const otherSessions = filteredSessions.filter(s => {
+    const ind = getSessionIndicator(s);
+    return ind !== 'processing' && ind !== 'waiting_input';
+  });
+
+  const containerClass = inline
+    ? "h-full flex flex-col bg-[#0a0a0a] text-white overflow-hidden"
+    : "h-screen flex flex-col bg-[#0a0a0a] text-white";
+
   return (
     <div className={containerClass}>
+      {/* ─── Header: frosted glass ─── */}
+      <div className="shrink-0 px-4 pt-3 pb-2 bg-[#0a0a0a]/80 backdrop-blur-xl border-b border-white/[0.06] sticky top-0 z-10">
+        <div className="max-w-lg">
+          {/* Top row: title + actions */}
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              {onBack && (
+                <button
+                  onClick={onBack}
+                  className="p-1.5 -ml-1.5 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
+                >
+                  <ChevronLeft className="w-[18px] h-[18px]" />
+                </button>
+              )}
+              <h1 className="text-[18px] font-semibold tracking-[-0.02em] text-white">
+                Sessions
+              </h1>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setShowSearch(!showSearch)}
+                className="p-2 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
+              >
+                <Search className="w-[18px] h-[18px]" />
+              </button>
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="p-2 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
+                data-onboarding="new-session"
+              >
+                <Plus className="w-[18px] h-[18px]" />
+              </button>
+              {onClose && (
+                <button
+                  onClick={onClose}
+                  className="p-2 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
+                >
+                  <X className="w-[18px] h-[18px]" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Search bar (expandable) */}
+          {showSearch && (
+            <div className="mb-2">
+              <div className="relative max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <input
+                  autoFocus
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={t('session.title') + '...'}
+                  className="w-full pl-9 pr-3 py-2 bg-white/[0.05] border border-white/[0.08] rounded-lg text-[13px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-zinc-500 hover:text-zinc-300"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Segmented tabs */}
+          <div className="inline-flex bg-white/[0.04] rounded-lg p-0.5">
+            <button
+              onClick={() => setActiveTab('sessions')}
+              className={`px-5 py-1.5 text-[13px] font-medium rounded-md transition-all duration-200 ${
+                activeTab === 'sessions'
+                  ? 'bg-white/[0.09] text-white shadow-sm'
+                  : 'text-zinc-500 hover:text-zinc-400'
+              }`}
+            >
+              {t('session.title')}
+            </button>
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`px-5 py-1.5 text-[13px] font-medium rounded-md transition-all duration-200 ${
+                activeTab === 'history'
+                  ? 'bg-white/[0.09] text-white shadow-sm'
+                  : 'text-zinc-500 hover:text-zinc-400'
+              }`}
+              data-onboarding="history-tab"
+            >
+              {t('history.title')}
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Error message */}
       {error && activeTab === 'sessions' && (
-        <div className="p-4 bg-red-900/50 text-red-300 text-sm shrink-0">
+        <div className="px-4 py-2.5 bg-red-900/30 text-red-400 text-[12px] border-b border-red-500/20 shrink-0">
           {error}
         </div>
       )}
 
-      {/* Tab content - with optional scaling */}
+      {/* ─── Content ─── */}
       <div className="flex-1 min-h-0 overflow-hidden">
         <div
           className="h-full"
@@ -1008,49 +1130,113 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
           } : undefined}
         >
           {activeTab === 'sessions' && (
-            <div className="h-full overflow-y-auto p-4">
-              {/* Hook configuration banner */}
-              {hookConfigured === false && !hookBannerDismissed && (
-                <div className="mb-3 p-2.5 bg-amber-900/30 border border-amber-700/50 rounded text-xs text-amber-300 flex items-start gap-2">
-                  <span className="flex-1">{t('onboarding.hookNotConfigured')}</span>
-                  <button
-                    onClick={() => {
-                      setHookBannerDismissed(true);
-                      localStorage.setItem('cchub-hook-banner-dismissed', '1');
-                    }}
-                    className="shrink-0 text-amber-400 hover:text-amber-200"
-                  >
-                    {t('onboarding.hookNotConfiguredDismiss')}
-                  </button>
-                </div>
-              )}
-              {sessions.length === 0 ? (
-                <div className="text-center text-th-text-muted py-8">
-                  {t('session.noSessions')} {t('session.noSessionsHint')}
-                </div>
-              ) : (
-                <div className="space-y-2 md:grid md:grid-cols-2 md:gap-3 md:space-y-0">
-                  {sessions.map((session, index) => (
-                    <div key={session.id} data-onboarding={index === 0 ? 'session-item' : undefined}>
-                      <SessionItem
-                        session={session}
-                        onSelect={onSelectSession}
-                        onSelectPane={onSelectPane}
-                        onShowMenu={handleShowMenu}
-                        onResume={handleResume}
-                        onShowConversation={handleShowConversation}
-                        onPaneAction={handlePaneAction}
-                        onClosePane={(sid, pid, name) => setPaneToClose({ sessionId: sid, paneId: pid, name })}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div className="h-full overflow-y-auto overscroll-contain">
+              <div className="px-3 py-3">
+                {/* Hook configuration banner */}
+                {hookConfigured === false && !hookBannerDismissed && (
+                  <div className="mb-3 p-2.5 bg-amber-900/20 border border-amber-700/30 rounded-lg text-[12px] text-amber-400 flex items-start gap-2">
+                    <span className="flex-1">{t('onboarding.hookNotConfigured')}</span>
+                    <button
+                      onClick={() => {
+                        setHookBannerDismissed(true);
+                        localStorage.setItem('cchub-hook-banner-dismissed', '1');
+                      }}
+                      className="shrink-0 text-amber-500 hover:text-amber-300"
+                    >
+                      {t('onboarding.hookNotConfiguredDismiss')}
+                    </button>
+                  </div>
+                )}
+
+                {filteredSessions.length === 0 && sessions.length === 0 ? (
+                  <div className="text-center text-zinc-600 py-12">
+                    <p className="text-[14px]">{t('session.noSessions')}</p>
+                    <p className="text-[12px] mt-1">{t('session.noSessionsHint')}</p>
+                  </div>
+                ) : filteredSessions.length === 0 && searchQuery ? (
+                  <div className="text-center text-zinc-600 py-12">
+                    <p className="text-[13px]">No matching sessions</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Active group */}
+                    {activeSessions.length > 0 && (
+                      <div className="mb-4">
+                        <div className="flex items-center gap-2 px-1 mb-2">
+                          <span className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
+                            Active
+                          </span>
+                          <span className="text-[11px] tabular-nums text-zinc-600">
+                            {activeSessions.length}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                          {activeSessions.map((session, index) => (
+                            <div key={session.id} data-onboarding={index === 0 && otherSessions.length === 0 ? 'session-item' : undefined}>
+                              <SessionItem
+                                session={session}
+                                onSelect={onSelectSession}
+                                onSelectPane={onSelectPane}
+                                onShowMenu={handleShowMenu}
+                                onResume={handleResume}
+                                onShowConversation={handleShowConversation}
+                                onPaneAction={handlePaneAction}
+                                onClosePane={(sid, pid, name) => setPaneToClose({ sessionId: sid, paneId: pid, name })}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Other sessions */}
+                    {otherSessions.length > 0 && (
+                      <div>
+                        {activeSessions.length > 0 && (
+                          <div className="flex items-center gap-2 px-1 mb-2">
+                            <span className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
+                              Sessions
+                            </span>
+                            <span className="text-[11px] tabular-nums text-zinc-600">
+                              {otherSessions.length}
+                            </span>
+                          </div>
+                        )}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                          {otherSessions.map((session, index) => (
+                            <div key={session.id} data-onboarding={index === 0 ? 'session-item' : undefined}>
+                              <SessionItem
+                                session={session}
+                                onSelect={onSelectSession}
+                                onSelectPane={onSelectPane}
+                                onShowMenu={handleShowMenu}
+                                onResume={handleResume}
+                                onShowConversation={handleShowConversation}
+                                onPaneAction={handlePaneAction}
+                                onClosePane={(sid, pid, name) => setPaneToClose({ sessionId: sid, paneId: pid, name })}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* New session button at bottom */}
+                    <button
+                      onClick={() => setShowCreateModal(true)}
+                      className="mt-4 sm:mt-3 sm:w-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-dashed border-white/[0.08] text-zinc-500 hover:text-zinc-400 hover:border-white/[0.12] hover:bg-white/[0.02] transition-all max-sm:w-full max-sm:justify-center"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span className="text-[13px]">{t('session.newSession')}</span>
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           )}
 
           {activeTab === 'history' && (
-            <div className="h-full overflow-y-auto">
+            <div className="h-full overflow-y-auto overscroll-contain">
               <SessionHistory
                 onSelectSession={onSelectSession}
                 onSessionResumed={() => {
@@ -1060,80 +1246,6 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
                 activeSessions={sessions}
               />
             </div>
-          )}
-
-          {activeTab === 'dashboard' && (
-            <div className="h-full overflow-y-auto">
-              <Dashboard className="h-full" />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Bottom bar with tabs */}
-      <div className="border-t border-th-border bg-[var(--color-overlay)] shrink-0 mt-auto">
-        {/* Action buttons (only for sessions tab) */}
-        {activeTab === 'sessions' && (
-          <div className="flex items-center justify-between px-3 py-2 border-b border-th-border">
-            {onBack ? (
-              <button
-                onClick={onBack}
-                className="p-2 text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-            ) : (
-              <div className="w-9" />
-            )}
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="p-2 text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
-              data-onboarding="new-session"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-            </button>
-          </div>
-        )}
-
-        {/* Tab navigation */}
-        <div className="flex min-w-0">
-          <button
-            onClick={() => setActiveTab('sessions')}
-            className={`flex-1 min-w-0 px-1 py-2 text-xs font-medium truncate transition-colors ${
-              activeTab === 'sessions'
-                ? 'text-th-text bg-th-surface border-t-2 border-emerald-400'
-                : 'text-th-text-secondary hover:text-th-text-secondary'
-            }`}
-          >
-            {t('session.title')}
-          </button>
-          <button
-            onClick={() => setActiveTab('history')}
-            className={`flex-1 min-w-0 px-1 py-2 text-xs font-medium truncate transition-colors ${
-              activeTab === 'history'
-                ? 'text-th-text bg-th-surface border-t-2 border-emerald-400'
-                : 'text-th-text-secondary hover:text-th-text-secondary'
-            }`}
-            data-onboarding="history-tab"
-          >
-            {t('history.title')}
-          </button>
-          {!hideDashboardTab && (
-            <button
-              onClick={() => setActiveTab('dashboard')}
-              className={`flex-1 min-w-0 px-1 py-2 text-xs font-medium truncate transition-colors ${
-                activeTab === 'dashboard'
-                  ? 'text-th-text bg-th-surface border-t-2 border-emerald-400'
-                  : 'text-th-text-secondary hover:text-th-text-secondary'
-              }`}
-              data-onboarding="dashboard-tab"
-            >
-              {t('dashboard.title')}
-            </button>
           )}
         </div>
       </div>

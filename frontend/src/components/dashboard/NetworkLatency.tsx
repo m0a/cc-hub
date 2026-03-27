@@ -72,7 +72,7 @@ export function NetworkLatency({ className = '' }: { className?: string }) {
   const { wsLatency, apiLatency, wsHistory, apiHistory, wsConnected } = useNetworkLatency();
 
   return (
-    <div className={`bg-th-surface/50 rounded-lg p-3 ${className}`}>
+    <div className={`bg-th-surface/50 rounded-md p-3 ${className}`}>
       <h3 className="text-xs text-th-text-secondary mb-3">{t('dashboard.networkLatency')}</h3>
       <div className="space-y-1.5">
         <LatencyRow

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ArrowLeft, X, Eye, EyeOff, FileText, ChevronRight, ChevronDown, List, FolderTree, GitBranch, MessageSquare, BarChart3, RotateCw, Share2, Menu } from 'lucide-react';
 import { useFileViewer } from '../../hooks/useFileViewer';
 import { FileBrowser } from './FileBrowser';
 import { CodeViewer } from './CodeViewer';
@@ -33,6 +34,13 @@ interface FileViewerProps {
   onCopyPrompt?: (text: string) => void;
   hidden?: boolean;
   onShowSessions?: () => void;
+  // Terminal-style toolbar props
+  sessionName?: string;
+  sessionStatus?: 'working' | 'waiting_input' | 'waiting_permission' | 'idle' | 'disconnected';
+  onShowConversation?: () => void;
+  onShowDashboard?: () => void;
+  onReload?: () => void;
+  onShare?: () => void;
 }
 
 // Image extensions
@@ -65,7 +73,7 @@ function getFileName(path: string): string {
   return path.split('/').pop() || path;
 }
 
-export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyPrompt, hidden, onShowSessions }: FileViewerProps) {
+export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyPrompt, hidden, onShowSessions, sessionName, sessionStatus, onShowConversation, onShowDashboard, onReload, onShare }: FileViewerProps) {
   const { t } = useTranslation();
   const {
     currentPath,
@@ -315,77 +323,95 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
   if (isWideScreen) {
     return (
       <div className={`fixed inset-0 z-50 flex items-center justify-center ${hidden ? 'hidden' : ''}`}>
-        <div className="bg-th-bg w-full h-full overflow-hidden flex flex-col">
-          {/* Header */}
-          <div className="flex items-center justify-between px-3 py-2 border-b border-th-border bg-th-surface">
-            <div className="flex items-center gap-2">
+        <div className="bg-[#0a0a0a] w-full h-full overflow-hidden flex flex-col">
+          {/* Header - 2 rows: session bar on top, file controls below */}
+          <div className="border-b border-white/[0.06]">
+            {/* Row 1: Session bar (same as terminal toolbar) */}
+            <div className="flex items-center gap-2 px-3 py-1.5">
               <button
-                onClick={handleBack}
-                className="p-1 hover:bg-th-surface-hover rounded transition-colors"
+                onClick={onShowSessions}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-white/[0.06] transition-colors"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
+                <div className={`w-2 h-2 rounded-full ${
+                  sessionStatus === 'working' ? 'bg-blue-500' :
+                  (sessionStatus === 'waiting_input' || sessionStatus === 'waiting_permission') ? 'bg-amber-400 animate-pulse' :
+                  'bg-zinc-600'
+                }`} />
+                <span className="text-[13px] font-medium text-white truncate max-w-[200px]">
+                  {sessionName || '-'}
+                </span>
+                <ChevronDown className="w-3 h-3 text-zinc-500" />
               </button>
-              <h2 className="text-sm font-medium">{t('files.title')}</h2>
 
+              <div className="flex-1" />
+
+              <div className="flex items-center gap-0.5">
+                <button onClick={onClose} className="p-2 text-zinc-300 transition-colors" title="ファイル">
+                  <FileText className="w-[18px] h-[18px]" />
+                </button>
+                {onShowDashboard && (
+                  <button onClick={onShowDashboard} className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors" title="ダッシュボード">
+                    <BarChart3 className="w-[18px] h-[18px]" />
+                  </button>
+                )}
+                <button onClick={() => listDirectory(currentPath)} className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors" title="リロード">
+                  <RotateCw className="w-[18px] h-[18px]" />
+                </button>
+                {onShare && (
+                  <button onClick={onShare} className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors" title="共有">
+                    <Share2 className="w-[18px] h-[18px]" />
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              {/* Tab buttons */}
-              <div className="flex items-center bg-th-surface-hover rounded-lg p-0.5">
+            {/* Row 2: File controls */}
+            <div className="flex items-center justify-between px-3 py-1.5">
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={handleShowBrowser}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${
-                    listMode === 'browser' ? 'bg-th-surface-active text-th-text' : 'text-th-text-secondary hover:text-th-text'
-                  }`}
+                  onClick={handleBack}
+                  className="p-1 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 rounded transition-colors"
                 >
-                  {t('files.browser')}
+                  <ArrowLeft className="w-4 h-4" />
                 </button>
-                <button
-                  onClick={handleShowChanges}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${
-                    listMode === 'changes' ? 'bg-th-surface-active text-th-text' : 'text-th-text-secondary hover:text-th-text'
-                  }`}
-                >
-                  {t('files.changes')}
-                </button>
+                <h2 className="text-[13px] font-medium text-zinc-300">{t('files.title')}</h2>
               </div>
 
-              {/* Hidden files toggle */}
-              {listMode === 'browser' && (
+              <div className="flex items-center gap-1.5">
+                <div className="inline-flex items-center bg-white/[0.04] rounded-md p-0.5">
+                  <button
+                    onClick={handleShowBrowser}
+                    className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
+                      listMode === 'browser' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600 hover:text-zinc-400'
+                    }`}
+                  >
+                    {t('files.browser')}
+                  </button>
+                  <button
+                    onClick={handleShowChanges}
+                    className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
+                      listMode === 'changes' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600 hover:text-zinc-400'
+                    }`}
+                  >
+                    {t('files.changes')}
+                  </button>
+                </div>
+                {listMode === 'browser' && (
+                  <button
+                    onClick={() => setShowHidden(!showHidden)}
+                    className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                    title={t('files.showHidden')}
+                  >
+                    {showHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                  </button>
+                )}
                 <button
-                  onClick={() => setShowHidden(!showHidden)}
-                  className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600' : 'hover:bg-th-surface-hover'}`}
-                  title={t('files.showHidden')}
+                  onClick={onClose}
+                  className="p-1.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                  </svg>
+                  <X className="w-4 h-4" />
                 </button>
-              )}
-
-              {/* Close button */}
-              {onShowSessions && (
-                <button
-                  onClick={onShowSessions}
-                  className="p-1.5 hover:bg-th-surface-hover rounded transition-colors"
-                  title="Sessions"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
-                </button>
-              )}
-              <button
-                onClick={onClose}
-                className="p-1.5 hover:bg-th-surface-hover rounded transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+              </div>
             </div>
           </div>
 
@@ -448,7 +474,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                     {viewMode === 'file' && selectedFile && (isMarkdownFile(selectedFile.path) || isHtmlFile(selectedFile.path)) && (
                       <button
                         onClick={togglePreviewMode}
-                        className={`px-2 py-1 text-xs rounded transition-colors ${previewMode ? 'bg-blue-600 text-white' : 'bg-th-surface-hover hover:bg-th-surface-active text-th-text-secondary'}`}
+                        className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${previewMode ? 'bg-blue-600 text-white' : 'bg-white/[0.04] hover:bg-white/[0.08] text-zinc-500'}`}
                       >
                         {previewMode ? 'Source' : 'Preview'}
                       </button>
@@ -519,9 +545,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
               ) : (
                 <div className="flex-1 flex items-center justify-center text-th-text-muted">
                   <div className="text-center">
-                    <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
+                    <FileText className="w-12 h-12 mx-auto mb-2" strokeWidth={1.5} />
                     <div>{t('files.selectFile')}</div>
                   </div>
                 </div>
@@ -620,93 +644,122 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
           )}
         </div>
 
-        {/* Footer controls - at bottom for easier touch access */}
-        <div className="flex items-center justify-between px-3 py-2 border-t border-th-border bg-th-surface">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleBack}
-              className="p-1.5 hover:bg-th-surface-hover rounded transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <h2 className="text-sm font-medium truncate max-w-[120px]">
-              {viewMode === 'browser' ? t('files.title')
-                : viewMode === 'changes' ? t('files.changes')
-                : viewMode === 'diff' ? currentDiffFileName
-                : selectedFile ? getFileName(selectedFile.path)
-                : t('files.title')}
-            </h2>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Tab buttons */}
-            <div className="flex items-center bg-th-surface-hover rounded-lg p-0.5">
+        {/* Footer controls - 2 rows for consistency with terminal toolbar */}
+        <div className="border-t border-white/[0.06] bg-[#0a0a0a]">
+          {/* Row 1: File viewer controls */}
+          <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/[0.06]">
+            <div className="flex items-center gap-2">
               <button
-                onClick={handleShowBrowser}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
-                  viewMode === 'browser' || viewMode === 'file' ? 'bg-th-surface-active text-th-text' : 'text-th-text-secondary hover:text-th-text'
-                }`}
+                onClick={handleBack}
+                className="p-1.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 rounded transition-colors"
               >
-                {t('files.browser')}
+                <ArrowLeft className="w-4 h-4" />
               </button>
-              <button
-                onClick={handleShowChanges}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
-                  viewMode === 'changes' || viewMode === 'diff' ? 'bg-th-surface-active text-th-text' : 'text-th-text-secondary hover:text-th-text'
-                }`}
-              >
-                {t('files.changes')}
-              </button>
+              <h2 className="text-[13px] font-medium text-zinc-300 truncate max-w-[120px]">
+                {viewMode === 'browser' ? t('files.title')
+                  : viewMode === 'changes' ? t('files.changes')
+                  : viewMode === 'diff' ? currentDiffFileName
+                  : selectedFile ? getFileName(selectedFile.path)
+                  : t('files.title')}
+              </h2>
             </div>
 
-            {/* Preview/Source toggle for markdown/html files */}
-            {viewMode === 'file' && selectedFile && (isMarkdownFile(selectedFile.path) || isHtmlFile(selectedFile.path)) && (
-              <button
-                onClick={togglePreviewMode}
-                className={`px-2 py-1 text-xs rounded transition-colors ${previewMode ? 'bg-blue-600 text-white' : 'bg-th-surface-hover hover:bg-th-surface-active text-th-text-secondary'}`}
-              >
-                {previewMode ? 'Source' : 'Preview'}
-              </button>
-            )}
+            <div className="flex items-center gap-1.5">
+              {/* Tab buttons */}
+              <div className="inline-flex items-center bg-white/[0.04] rounded-md p-0.5">
+                <button
+                  onClick={handleShowBrowser}
+                  className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
+                    viewMode === 'browser' || viewMode === 'file' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600 hover:text-zinc-400'
+                  }`}
+                >
+                  {t('files.browser')}
+                </button>
+                <button
+                  onClick={handleShowChanges}
+                  className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
+                    viewMode === 'changes' || viewMode === 'diff' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600 hover:text-zinc-400'
+                  }`}
+                >
+                  {t('files.changes')}
+                </button>
+              </div>
 
-            {/* Hidden files toggle */}
-            {viewMode === 'browser' && (
-              <button
-                onClick={() => setShowHidden(!showHidden)}
-                className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600' : 'hover:bg-th-surface-hover'}`}
-                title={t('files.showHidden')}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                </svg>
-              </button>
-            )}
+              {/* Preview/Source toggle */}
+              {viewMode === 'file' && selectedFile && (isMarkdownFile(selectedFile.path) || isHtmlFile(selectedFile.path)) && (
+                <button
+                  onClick={togglePreviewMode}
+                  className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${previewMode ? 'bg-blue-600 text-white' : 'bg-white/[0.04] hover:bg-white/[0.08] text-zinc-500'}`}
+                >
+                  {previewMode ? 'Source' : 'Preview'}
+                </button>
+              )}
 
-            {/* Sessions button */}
-            {onShowSessions && (
-              <button
-                onClick={onShowSessions}
-                className="p-2.5 hover:bg-th-surface-hover rounded transition-colors"
-                title="Sessions"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
-            )}
+              {/* Hidden files toggle */}
+              {viewMode === 'browser' && (
+                <button
+                  onClick={() => setShowHidden(!showHidden)}
+                  className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                  title={t('files.showHidden')}
+                >
+                  {showHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                </button>
+              )}
 
-            {/* Close button */}
+              {/* Close file viewer */}
+              <button
+                onClick={onClose}
+                className="p-1.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Row 2: Terminal-style session bar (same as terminal toolbar) */}
+          <div className="flex items-center gap-2 px-3 py-1.5">
+            {/* Session selector */}
             <button
-              onClick={onClose}
-              className="p-2.5 hover:bg-th-surface-hover rounded transition-colors"
+              onClick={onShowSessions}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-white/[0.06] transition-colors"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <div className={`w-2 h-2 rounded-full ${
+                sessionStatus === 'working' ? 'bg-blue-500' :
+                (sessionStatus === 'waiting_input' || sessionStatus === 'waiting_permission') ? 'bg-amber-400 animate-pulse' :
+                'bg-zinc-600'
+              }`} />
+              <span className="text-[13px] font-medium text-white truncate max-w-[140px]">
+                {sessionName || '-'}
+              </span>
+              <ChevronDown className="w-3 h-3 text-zinc-500" />
             </button>
+
+            <div className="flex-1" />
+
+            {/* Same icons as terminal toolbar */}
+            <div className="flex items-center gap-1">
+              {onShowConversation && (
+                <button onClick={onShowConversation} className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors">
+                  <MessageSquare className="w-5 h-5" />
+                </button>
+              )}
+              <button onClick={onClose} className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors" title="ファイル">
+                <FileText className="w-5 h-5 text-zinc-300" />
+              </button>
+              {onShowDashboard && (
+                <button onClick={onShowDashboard} className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors">
+                  <BarChart3 className="w-5 h-5" />
+                </button>
+              )}
+              <button onClick={() => listDirectory(currentPath)} className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors" title="リロード">
+                <RotateCw className="w-5 h-5" />
+              </button>
+              {onShare && (
+                <button onClick={onShare} className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors">
+                  <Share2 className="w-5 h-5" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -799,9 +852,7 @@ function TreeView({
                 className="flex items-center gap-1 px-2 py-1 hover:bg-th-surface cursor-pointer text-sm text-th-text-secondary"
                 style={{ paddingLeft: `${depth * 16 + 8}px` }}
               >
-                <svg className={`w-3 h-3 transition-transform ${isCollapsed ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
+                <ChevronRight className={`w-3 h-3 transition-transform ${isCollapsed ? '' : 'rotate-90'}`} />
                 <span className="truncate">{node.name}</span>
                 <span className="text-xs text-th-text-muted ml-auto shrink-0">
                   {countLeaves(node)}
@@ -959,9 +1010,7 @@ function ChangesView({
             }`}
             title={t('files.listView')}
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
+            <List className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => handleDisplayChange('tree')}
@@ -970,15 +1019,14 @@ function ChangesView({
             }`}
             title={t('files.treeView')}
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
+            <FolderTree className="w-3.5 h-3.5" />
           </button>
         </div>
 
         {/* Branch indicator for git */}
         {source === 'git' && gitBranch && (
-          <span className="text-xs text-th-text-muted truncate ml-auto">
+          <span className="text-xs text-th-text-muted truncate ml-auto flex items-center gap-1">
+            <GitBranch className="w-3 h-3" />
             {gitBranch}
           </span>
         )}
@@ -987,9 +1035,7 @@ function ChangesView({
       {/* Content */}
       {currentChanges.length === 0 ? (
         <div className="flex flex-col items-center justify-center flex-1 text-th-text-muted">
-          <svg className="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
+          <FileText className="w-12 h-12 mb-2" strokeWidth={1.5} />
           <div>{t('files.noChanges')}</div>
         </div>
       ) : display === 'tree' ? (

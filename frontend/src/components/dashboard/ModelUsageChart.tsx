@@ -20,7 +20,7 @@ function formatTokens(tokens: number): string {
 export function ModelUsageChart({ data }: ModelUsageChartProps) {
   if (data.length === 0) {
     return (
-      <div className="p-3 bg-th-surface rounded-lg">
+      <div className="p-3 bg-th-surface rounded-md">
         <div className="text-th-text-muted text-xs">No model usage data</div>
       </div>
     );
@@ -37,7 +37,7 @@ export function ModelUsageChart({ data }: ModelUsageChartProps) {
   };
 
   return (
-    <div className="p-3 bg-th-surface rounded-lg">
+    <div className="p-3 bg-th-surface rounded-md">
       <div className="text-sm font-medium text-th-text mb-2">Model Usage</div>
 
       {/* Bar chart */}

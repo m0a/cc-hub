@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { WrapText, Eye } from 'lucide-react';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import { useLineSelection } from '../../hooks/useLineSelection';
@@ -280,13 +281,14 @@ export function CodeViewer({
       </div>
 
       {/* Floating controls - top right */}
-      <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-th-surface/90 rounded-lg p-1.5 backdrop-blur-sm">
+      <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-th-surface/90 rounded-md p-1.5 backdrop-blur-sm">
         {hasPreview && onTogglePreview && (
           <button
             onClick={onTogglePreview}
-            className="px-2.5 py-1.5 text-sm text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
+            className="flex items-center gap-1 px-2.5 py-1.5 text-sm text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
             title="Preview"
           >
+            <Eye className="w-4 h-4" />
             Preview
           </button>
         )}
@@ -302,9 +304,7 @@ export function CodeViewer({
           className={`p-2 rounded transition-colors ${wordWrap ? 'bg-blue-600 text-th-text' : 'text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover'}`}
           title={wordWrap ? '折り返しOFF' : '折り返しON'}
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h10m-10 6h16M17 9l3 3-3 3" />
-          </svg>
+          <WrapText className="w-5 h-5" />
         </button>
       </div>
 

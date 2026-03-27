@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import { CornerDownLeft, X } from 'lucide-react';
 
 // Keyboard key definition
 interface KeyDef {
@@ -12,7 +13,7 @@ interface KeyDef {
   color?: 'green' | 'red' | 'blue' | 'default';  // Action button colors
 }
 
-// Top action bar for Claude Code specific actions
+// Top action bar for Claude Code specific actions (removed 'あ' - mode switching is now in header)
 const ACTION_BAR: KeyDef[] = [
   { label: 'ESC', key: '\x1b', type: 'action' },
   { label: 'TAB', key: '\t', type: 'action' },
@@ -21,7 +22,6 @@ const ACTION_BAR: KeyDef[] = [
   { label: '^O', key: '\x0f', type: 'action' },  // Ctrl+O
   { label: '📁', key: 'FILE_PICKER', type: 'special' },
   { label: '🔗', key: 'URL_EXTRACT', type: 'special' },
-  { label: 'あ', key: 'MODE_SWITCH', type: 'special' },
 ];
 
 // Main layer: QWERTY with cursors
@@ -142,10 +142,14 @@ interface KeyboardProps {
   onFilePicker?: () => void;
   onUrlExtract?: () => void;
   onModeSwitch?: () => void;
+  onClose?: () => void;
   isUploading?: boolean;
   compact?: boolean;
   transparent?: boolean;
   className?: string;
+  inputMode?: 'keyboard' | 'input';
+  onInputModeChange?: (mode: 'keyboard' | 'input') => void;
+  showModeToggle?: boolean;
 }
 
 export function Keyboard({
@@ -153,10 +157,14 @@ export function Keyboard({
   onFilePicker,
   onUrlExtract,
   onModeSwitch,
+  onClose,
   isUploading = false,
   compact = false,
   transparent = false,
-  className = ''
+  className = '',
+  inputMode = 'keyboard',
+  onInputModeChange,
+  showModeToggle = false,
 }: KeyboardProps) {
   const [layer, setLayer] = useState<Layer>('main');
   const [ctrlPressed, setCtrlPressed] = useState(false);
@@ -302,32 +310,28 @@ export function Keyboard({
     const getBgColor = () => {
       if (transparent) {
         if (isActive) return 'bg-blue-600/30';
-        if (keyDef.color === 'red') return 'bg-red-700/25 active:bg-red-600/40';
-        return 'bg-th-surface/15 active:bg-th-surface-active/25';
+        if (keyDef.color === 'red') return 'bg-red-500/15 active:bg-red-500/25';
+        if (keyDef.type === 'modifier' || keyDef.type === 'layer') return 'bg-white/[0.06] active:bg-white/[0.12]';
+        return 'bg-white/[0.08] active:bg-white/[0.15]';
       }
       if (isActive) return 'bg-blue-600';
-      if (keyDef.color === 'green') return 'bg-green-700 active:bg-green-600';
-      if (keyDef.color === 'red') return 'bg-red-700 active:bg-red-600';
-      if (keyDef.color === 'blue') return 'bg-blue-700 active:bg-blue-600';
-      if (keyDef.type === 'layer') return 'bg-th-surface-hover';
-      return 'bg-th-surface';
+      if (keyDef.color === 'red') return 'bg-red-500/15 active:bg-red-500/25';
+      if (keyDef.type === 'modifier' || keyDef.type === 'layer') return 'bg-white/[0.06] active:bg-white/[0.12]';
+      return 'bg-white/[0.08] active:bg-white/[0.15]';
     };
 
-    // SVG Enter icon
+    // Enter icon
     const EnterIcon = () => (
-      <svg
-        viewBox="0 0 20 20"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className={compact ? 'w-5 h-5' : 'w-6 h-6'}
-      >
-        <polyline points="6,15 3,12 6,9" />
-        <path d="M3 12h11V3" />
-      </svg>
+      <CornerDownLeft className={compact ? 'w-5 h-5' : 'w-6 h-6'} strokeWidth={1.5} />
     );
+
+    // Get text color
+    const getTextColor = () => {
+      if (isActive) return 'text-white';
+      if (keyDef.color === 'red') return 'text-red-400';
+      if (keyDef.type === 'modifier' || keyDef.type === 'layer') return 'text-blue-400';
+      return 'text-white';
+    };
 
     return (
       <button
@@ -339,16 +343,16 @@ export function Keyboard({
         onTouchCancel={handleCancel}
         onContextMenu={(e) => e.preventDefault()}
         className={`
-          ${compact ? 'py-2 text-sm' : 'py-3 text-base'} text-th-text font-medium active:bg-th-surface-active select-none relative
-          border ${transparent ? 'border-th-border/20' : 'border-th-border'} rounded m-0.5 flex items-center justify-center
-          ${getBgColor()}
-          ${keyDef.type === 'modifier' || keyDef.type === 'layer' ? 'text-xs' : ''}
+          ${compact ? 'h-8 text-[11px]' : 'h-[38px] text-[13px]'} font-medium select-none relative
+          rounded-md m-0.5 flex items-center justify-center
+          ${getBgColor()} ${getTextColor()}
+          ${keyDef.type === 'modifier' || keyDef.type === 'layer' ? (compact ? 'text-[9px]' : 'text-[10px]') : ''}
         `}
         style={{ flex: width, minWidth: 0 }}
       >
         {isEnterKey ? <EnterIcon /> : isSpaceKey ? '' : displayLabel}
         {keyDef.longLabel && !shiftPressed && !isEnterKey && (
-          <span className={`absolute top-0.5 right-1 ${compact ? 'text-[7px]' : 'text-[9px]'} text-th-text-muted`}>{keyDef.longLabel}</span>
+          <span className={`absolute top-0.5 right-1 ${compact ? 'text-[7px]' : 'text-[9px]'} text-zinc-500`}>{keyDef.longLabel}</span>
         )}
       </button>
     );
@@ -369,24 +373,16 @@ export function Keyboard({
     };
 
     const getBgColor = () => {
-      if (transparent) {
-        if (keyDef.color === 'red') return 'bg-red-700/25 active:bg-red-600/40';
-        return 'bg-th-surface-hover/15 active:bg-th-surface-active/25';
-      }
-      if (keyDef.color === 'green') return 'bg-green-700 active:bg-green-600';
-      if (keyDef.color === 'red') return 'bg-red-700 active:bg-red-600';
-      return 'bg-th-surface-hover active:bg-th-surface-active';
+      if (keyDef.color === 'red') return 'bg-red-500/15 text-red-400 active:bg-white/[0.12]';
+      return 'bg-white/[0.06] text-zinc-400 active:bg-white/[0.12]';
     };
-
-    const width = keyDef.width || 1;
 
     // Handle uploading state for file picker
     if (keyDef.key === 'FILE_PICKER' && isUploading) {
       return (
         <button
           disabled
-          className={`${compact ? 'py-1.5 text-xs' : 'py-2 text-sm'} font-medium select-none border border-th-border rounded m-0.5 text-center bg-th-surface-active text-th-text-secondary`}
-          style={{ flex: width, minWidth: 0 }}
+          className={`${compact ? 'h-[26px] text-[10px]' : 'h-[30px] text-[11px]'} min-w-[34px] px-1.5 flex items-center justify-center rounded-md font-medium select-none bg-white/[0.06] text-zinc-600`}
           data-onboarding="image-upload"
         >
           ⏳
@@ -405,8 +401,7 @@ export function Keyboard({
       <button
         onClick={handleClick}
         onContextMenu={(e) => e.preventDefault()}
-        className={`${compact ? 'py-1.5 text-xs' : 'py-2 text-sm'} font-medium select-none border ${transparent ? 'border-th-border/20' : 'border-th-border'} rounded m-0.5 text-center text-th-text ${getBgColor()}`}
-        style={{ flex: width, minWidth: 0 }}
+        className={`${compact ? 'h-[26px] text-[10px]' : 'h-[30px] text-[11px]'} min-w-[34px] px-1.5 flex items-center justify-center rounded-md font-medium select-none ${getBgColor()}`}
         data-onboarding={getOnboardingAttr()}
       >
         {keyDef.label}
@@ -415,22 +410,59 @@ export function Keyboard({
   };
 
   return (
-    <div className={`${transparent ? 'bg-transparent' : 'bg-th-bg'} px-0.5 pb-1 ${className}`}>
+    <div className={`${transparent ? 'bg-transparent' : 'bg-[#111111]'} pb-1 ${className}`}>
+      {/* Mode toggle header */}
+      {showModeToggle && (
+        <div className="flex items-center justify-between px-2 py-1.5 border-b border-white/[0.04]">
+          <div className="inline-flex bg-white/[0.04] rounded-md p-0.5">
+            <button
+              onClick={() => onInputModeChange?.('keyboard')}
+              className={`px-3 py-1 text-[11px] rounded font-medium transition-colors ${
+                inputMode === 'keyboard' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600'
+              }`}
+            >
+              キーボード
+            </button>
+            <button
+              onClick={() => onInputModeChange?.('input')}
+              className={`px-3 py-1 text-[11px] rounded font-medium transition-colors ${
+                inputMode === 'input' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600'
+              }`}
+            >
+              入力
+            </button>
+          </div>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1.5 text-zinc-600 hover:text-zinc-400 rounded transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Action bar */}
-      <div className="flex mb-0.5">
+      <div className="flex gap-1 px-0.5 py-1 overflow-x-auto">
         {ACTION_BAR.map((keyDef, index) => (
           <ActionButton key={index} keyDef={keyDef} />
         ))}
       </div>
 
+      {/* Separator */}
+      <div className="h-px bg-white/[0.04] mx-0.5" />
+
       {/* Main keyboard */}
-      {getCurrentRows().map((row, rowIndex) => (
-        <div key={rowIndex} className="flex">
-          {row.map((keyDef, keyIndex) => (
-            <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />
-          ))}
-        </div>
-      ))}
+      <div className="px-0.5 py-1 space-y-[3px]">
+        {getCurrentRows().map((row, rowIndex) => (
+          <div key={rowIndex} className="flex gap-[3px]">
+            {row.map((keyDef, keyIndex) => (
+              <KeyboardKey key={`${rowIndex}-${keyIndex}`} keyDef={keyDef} />
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Image, ZoomIn, ZoomOut } from 'lucide-react';
 
 interface ImageViewerProps {
   content: string; // base64 encoded
@@ -39,9 +40,7 @@ export function ImageViewer({
     <div className="flex flex-col h-full bg-th-bg text-th-text">
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-th-border bg-th-surface">
-        <svg className="w-4 h-4 text-green-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-        </svg>
+        <Image className="w-4 h-4 text-green-400 shrink-0" />
         {fileName && (
           <span className="text-sm text-th-text-secondary truncate flex-1">{fileName}</span>
         )}
@@ -58,9 +57,7 @@ export function ImageViewer({
           className="p-1.5 hover:bg-th-surface-hover rounded transition-colors"
           title="縮小"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-          </svg>
+          <ZoomOut className="w-4 h-4" />
         </button>
         <button
           onClick={handleZoomReset}
@@ -73,9 +70,7 @@ export function ImageViewer({
           className="p-1.5 hover:bg-th-surface-hover rounded transition-colors"
           title="拡大"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
+          <ZoomIn className="w-4 h-4" />
         </button>
       </div>
 

@@ -1,6 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { RotateCw, MessageSquare, FileText, Share2, BarChart3, ChevronDown, X as XIcon, Settings } from 'lucide-react';
+import { Dashboard } from './components/dashboard/Dashboard';
 import { ViewerPage } from './pages/ViewerPage';
+import { DesignPreview } from './pages/DesignPreview';
 import { TerminalPage } from './pages/TerminalPage';
 import type { TerminalRef } from './components/Terminal';
 import { SessionList } from './components/SessionList';
@@ -51,14 +54,14 @@ function LoadingScreen({
           <button
             type="button"
             onClick={onRetry}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded text-th-text text-sm transition-colors"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-md text-white text-sm font-medium transition-colors"
           >
             {t('loading.retry')}
           </button>
         </>
       ) : (
         <>
-          <div className="w-6 h-6 border-2 border-th-surface-active border-t-emerald-400 rounded-full animate-spin" />
+          <div className="w-5 h-5 border-2 border-th-surface-active border-t-blue-500 rounded-full animate-spin" />
           <div className="text-th-text-secondary text-sm">{phaseText}</div>
           {elapsed >= 5 && (
             <div className="text-th-text-muted text-xs">
@@ -153,6 +156,11 @@ function getSavedOpenSessionIds(): string[] {
 }
 
 export function App() {
+  // Route: /preview → design preview (temporary)
+  if (window.location.pathname === '/preview') {
+    return <DesignPreview />;
+  }
+
   // Route: /view/:token → read-only viewer (no auth)
   const viewMatch = window.location.pathname.match(/^\/view\/(.+)$/);
   if (viewMatch) {
@@ -215,6 +223,7 @@ export function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [showSessionList, setShowSessionList] = useState(false);
+  const [showMobileDashboard, setShowMobileDashboard] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<OpenSession | null>(null);
   const [showOverlay, setShowOverlay] = useState(true);
   // FileViewer state: per-session instances kept mounted for state preservation
@@ -775,71 +784,70 @@ export function App() {
   // Overlay bar content (shared between positions)
   const overlayBar = (
     <div
-      className={`flex items-center justify-between px-2 py-0.5 bg-[var(--color-overlay)] transition-opacity duration-300 ${
+      className={`flex items-center gap-2 px-3 py-1.5 bg-[#0a0a0a] border-b border-white/[0.06] transition-opacity duration-300 ${
         showOverlay ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}
     >
-      {/* Left: Session name */}
-      <span className="text-th-text-secondary text-sm truncate max-w-[150px]">
-        {activeSession?.name || '-'}
-      </span>
+      {/* Left: Session selector */}
+      <button
+        onClick={() => handleShowSessionList()}
+        className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-white/[0.06] transition-colors"
+        data-onboarding="session-list"
+      >
+        <div className={`w-2 h-2 rounded-full ${
+          activeSession?.state === 'working' ? 'bg-blue-500' :
+          (activeSession?.state === 'waiting_input' || activeSession?.state === 'waiting_permission') ? 'bg-amber-400 animate-pulse' :
+          'bg-zinc-600'
+        }`} />
+        <span className="text-[13px] font-medium text-white truncate max-w-[140px]">
+          {activeSession?.name || '-'}
+        </span>
+        <ChevronDown className="w-3 h-3 text-zinc-500" />
+      </button>
 
-      {/* Right: Reload + History + File browser + Session list buttons */}
-      <div className="flex items-center gap-2">
-        <button
-          onClick={handleReload}
-          className="p-2.5 text-emerald-400/70 hover:text-emerald-300 active:text-emerald-200 hover:bg-th-surface-hover active:bg-th-surface-active rounded-lg transition-colors"
-          title="リロード"
-          data-onboarding="reload"
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-        </button>
+      <div className="flex-1" />
+
+      {/* Right: Core actions */}
+      <div className="flex items-center gap-1">
         {activeSession?.ccSessionId && (
           <button
             onClick={handleShowConversation}
-            className="p-2.5 text-sky-400/70 hover:text-sky-300 active:text-sky-200 hover:bg-th-surface-hover active:bg-th-surface-active rounded-lg transition-colors"
+            className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
             title="会話履歴"
             data-onboarding="conversation"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-            </svg>
+            <MessageSquare className="w-5 h-5" />
           </button>
         )}
         <button
-          onClick={() => {
-            openFileViewer(activeSession?.currentPath || '/');
-          }}
-          className="p-2.5 text-amber-400/70 hover:text-amber-300 active:text-amber-200 hover:bg-th-surface-hover active:bg-th-surface-active rounded-lg transition-colors"
+          onClick={() => openFileViewer(activeSession?.currentPath || '/')}
+          className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
           title="ファイルブラウザ"
           data-onboarding="file-browser"
         >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-          </svg>
+          <FileText className="w-5 h-5" />
+        </button>
+        <button
+          onClick={() => setShowMobileDashboard(true)}
+          className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
+          title="ダッシュボード"
+        >
+          <BarChart3 className="w-5 h-5" />
+        </button>
+        <button
+          onClick={handleReload}
+          className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
+          title="リロード"
+          data-onboarding="reload"
+        >
+          <RotateCw className="w-5 h-5" />
         </button>
         <button
           onClick={() => setShowShareDialog(true)}
-          className="p-2.5 text-cyan-400/70 hover:text-cyan-300 active:text-cyan-200 hover:bg-th-surface-hover active:bg-th-surface-active rounded-lg transition-colors"
+          className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
           title="共有"
         >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-          </svg>
-        </button>
-        <button
-          onClick={() => {
-            handleShowSessionList();
-          }}
-          className="p-2.5 text-violet-400/70 hover:text-violet-300 active:text-violet-200 hover:bg-th-surface-hover active:bg-th-surface-active rounded-lg transition-colors"
-          title={t('session.list')}
-          data-onboarding="session-list"
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
+          <Share2 className="w-5 h-5" />
         </button>
       </div>
     </div>
@@ -898,7 +906,7 @@ export function App() {
                       onClick={() => setMobileActivePaneId(pane.paneId)}
                       className={`px-3 py-1.5 text-xs font-mono whitespace-nowrap transition-colors ${
                         isActive
-                          ? `${colorCls || 'text-th-text'} bg-th-surface-hover border-t-2 border-emerald-400`
+                          ? `${colorCls || 'text-th-text'} bg-th-surface-hover border-t-2 border-blue-400`
                           : `${colorCls || 'text-th-text-secondary'} hover:text-th-text hover:bg-th-surface-hover/50`
                       }`}
                     >
@@ -915,7 +923,7 @@ export function App() {
           <p className="text-th-text-muted">{t('pane.selectSession')}</p>
           <button
             onClick={handleShowSessionList}
-            className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-th-text rounded transition-colors"
+            className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-th-text rounded transition-colors"
             data-onboarding="session-list"
           >
             {t('session.list')}
@@ -930,6 +938,28 @@ export function App() {
           onConfirm={handleConfirmDelete}
           onCancel={handleCancelDelete}
         />
+      )}
+
+      {/* Mobile Dashboard Overlay */}
+      {showMobileDashboard && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-[#0a0a0a] animate-modal-in">
+          <div className="shrink-0 px-4 pt-3 pb-3 border-b border-white/[0.06]">
+            <div className="flex items-center justify-between">
+              <h1 className="text-[18px] font-semibold tracking-[-0.02em] text-white">
+                Dashboard
+              </h1>
+              <button
+                onClick={() => setShowMobileDashboard(false)}
+                className="p-2 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
+              >
+                <XIcon className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <Dashboard className="h-full" />
+          </div>
+        </div>
       )}
 
       {/* Share Dialog */}
@@ -953,9 +983,14 @@ export function App() {
             closeFileViewer(dir);
           }}
           onShowSessions={() => {
-            // Keep FileViewer "open" for this session, just show session list
             setShowSessionList(true);
           }}
+          sessionName={activeSession?.name}
+          sessionStatus={activeSession?.state}
+          onShowConversation={activeSession?.ccSessionId ? handleShowConversation : undefined}
+          onShowDashboard={() => setShowMobileDashboard(true)}
+          onReload={handleReload}
+          onShare={() => setShowShareDialog(true)}
         />
       ))}
 

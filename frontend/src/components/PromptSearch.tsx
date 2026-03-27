@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { Search } from 'lucide-react';
 import { authFetch } from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -74,14 +75,14 @@ export function PromptSearch({ onSelectPrompt }: PromptSearchProps) {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="プロンプトを検索..."
-            className="flex-1 text-xs bg-th-surface text-th-text border border-th-border rounded px-2 py-1.5 focus:outline-none focus:border-emerald-500"
+            className="flex-1 text-xs bg-th-surface text-th-text border border-th-border rounded px-2 py-1.5 focus:outline-none focus:border-blue-500"
           />
           <button
             onClick={handleSearch}
             disabled={isLoading}
-            className="px-2 py-1 text-xs bg-emerald-600 hover:bg-emerald-500 disabled:bg-th-surface-active text-th-text rounded"
+            className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-th-surface-active text-th-text rounded-md flex items-center"
           >
-            {isLoading ? '...' : '検索'}
+            {isLoading ? '...' : <Search className="w-3.5 h-3.5" />}
           </button>
         </div>
       </div>

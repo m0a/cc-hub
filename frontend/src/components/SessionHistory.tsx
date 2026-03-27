@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Clock, MessageCircle, Tag, ChevronRight, Search, X, FolderOpen } from 'lucide-react';
 import { useSessionHistory, type ProjectInfo } from '../hooks/useSessionHistory';
 import { authFetch } from '../services/api';
 import type { HistorySession, ConversationMessage, SessionResponse } from '../../../shared/types';
@@ -68,36 +69,30 @@ function HistoryItem({
   return (
     <div
       onClick={onTap}
-      className="px-3 py-2 hover:bg-th-surface-hover/50 transition-colors border-l-2 border-th-border ml-2 cursor-pointer"
+      className="group px-3 py-2.5 hover:bg-white/[0.04] rounded-md cursor-pointer transition-colors"
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <div className="text-sm text-th-text break-words">
+          <p className="text-[13px] text-zinc-300 leading-snug truncate">
             {truncatedText}
-          </div>
-          <div className="flex flex-wrap items-center gap-2 mt-1 text-[10px] text-th-text-muted">
+          </p>
+          <div className="flex items-center gap-3 mt-1.5 text-[11px] text-zinc-600">
             <span>{formatRelativeTime(session.modified, t, i18n.language)}</span>
             {duration && (
-              <span className="text-th-text-secondary">
-                <svg className="w-3 h-3 inline mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+              <span className="inline-flex items-center gap-1">
+                <Clock className="w-3 h-3" />
                 {duration}
               </span>
             )}
             {messageCount !== undefined && messageCount > 0 && (
-              <span className="text-th-text-secondary">
-                <svg className="w-3 h-3 inline mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
+              <span className="inline-flex items-center gap-1">
+                <MessageCircle className="w-3 h-3" />
                 {messageCount}
               </span>
             )}
             {gitBranch && (
-              <span className="text-purple-400 truncate max-w-[100px]">
-                <svg className="w-3 h-3 inline mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                </svg>
+              <span className="inline-flex items-center gap-1 text-purple-500 truncate max-w-[120px]">
+                <Tag className="w-3 h-3" />
                 {gitBranch}
               </span>
             )}
@@ -109,7 +104,7 @@ function HistoryItem({
               e.stopPropagation();
               onNavigate();
             }}
-            className="shrink-0 px-2 py-1 text-xs bg-green-600 hover:bg-green-500 text-th-text rounded transition-colors"
+            className="shrink-0 mt-0.5 px-2.5 py-1 text-[11px] font-medium text-zinc-500 hover:text-zinc-300 bg-white/[0.04] hover:bg-white/[0.08] rounded-md transition-colors"
           >
             {t('session.navigate')}
           </button>
@@ -120,7 +115,7 @@ function HistoryItem({
               onResume();
             }}
             disabled={isResuming}
-            className="shrink-0 px-2 py-1 text-xs bg-emerald-600 hover:bg-emerald-500 disabled:bg-th-surface-active text-th-text rounded transition-colors"
+            className="shrink-0 mt-0.5 px-2.5 py-1 text-[11px] font-medium text-zinc-500 hover:text-zinc-300 bg-white/[0.04] hover:bg-white/[0.08] rounded-md transition-colors disabled:opacity-50"
           >
             {isResuming ? '...' : t('session.resume')}
           </button>
@@ -164,38 +159,29 @@ function ProjectGroupItem({
   };
 
   return (
-    <div className="border-b border-th-border">
+    <div>
       <button
         onClick={handleToggle}
-        className="w-full px-3 py-2 flex items-center gap-2 hover:bg-th-surface-hover/50 transition-colors text-left"
+        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/[0.03] rounded-md transition-colors"
       >
-        <svg
-          className={`w-3 h-3 text-th-text-secondary transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-          fill="currentColor"
-          viewBox="0 0 20 20"
-        >
-          <path
-            fillRule="evenodd"
-            d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-            clipRule="evenodd"
-          />
-        </svg>
-        <div className="flex-1 min-w-0">
-          <div className="text-sm text-th-text break-all">
-            {project.projectName}
-          </div>
-        </div>
-        <span className="text-xs text-th-text-muted shrink-0">
+        <ChevronRight
+          className={`w-3.5 h-3.5 text-zinc-600 transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}`}
+        />
+        <FolderOpen className="w-3.5 h-3.5 text-zinc-600" />
+        <span className="flex-1 text-left text-[13px] text-zinc-400 truncate">
+          {project.projectName}
+        </span>
+        <span className="text-[11px] text-zinc-600 tabular-nums">
           {project.sessionCount}
         </span>
       </button>
 
       {isExpanded && (
-        <div className="bg-th-bg/50">
+        <div className="ml-5 border-l border-white/[0.06] mb-1">
           {isLoading ? (
-            <div className="px-3 py-2 text-xs text-th-text-muted">{t('common.loading')}</div>
+            <div className="px-3 py-2 text-[12px] text-zinc-700">{t('common.loading')}</div>
           ) : sessions && sessions.length > 0 ? (
-            <div className="md:grid md:grid-cols-2 md:gap-1 md:px-1">
+            <div className="md:grid md:grid-cols-2 md:gap-x-2">
             {sessions.map((session) => (
               <HistoryItem
                 key={session.sessionId}
@@ -209,7 +195,7 @@ function ProjectGroupItem({
             ))}
             </div>
           ) : (
-            <div className="px-3 py-2 text-xs text-th-text-muted">{t('history.noSessionsInProject')}</div>
+            <div className="px-3 py-2 text-[12px] text-zinc-700">{t('history.noSessionsInProject')}</div>
           )}
         </div>
       )}
@@ -396,34 +382,25 @@ export function SessionHistory({ onSessionResumed, onSelectSession, activeSessio
   }
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col px-3 py-3">
       {/* Search input */}
-      <form onSubmit={handleSearchSubmit} className="p-2 border-b border-th-border">
-        <div className="relative">
+      <form onSubmit={handleSearchSubmit} className="mb-3">
+        <div className="relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-600" />
           <input
             type="text"
             value={searchInput}
             onChange={handleSearchInput}
             placeholder={t('history.searchPlaceholder')}
-            className="w-full px-3 py-1.5 pl-8 text-sm bg-th-surface border border-th-border rounded focus:outline-none focus:border-emerald-500 text-th-text placeholder-th-text-muted"
+            className="w-full pl-9 pr-3 py-1.5 bg-white/[0.04] border border-white/[0.06] rounded-md text-[13px] text-white placeholder:text-zinc-700 focus:outline-none focus:border-white/[0.12] transition-colors"
           />
-          <svg
-            className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-th-text-muted"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
           {(searchInput || searchQuery) && (
             <button
               type="button"
               onClick={handleClearSearch}
-              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-th-text-muted hover:text-th-text-secondary"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-zinc-600 hover:text-zinc-400"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X className="w-3.5 h-3.5" />
             </button>
           )}
         </div>

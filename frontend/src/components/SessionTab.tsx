@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { X } from 'lucide-react';
 import type { SessionState } from '../../../shared/types';
 
 interface SessionTabProps {
@@ -96,7 +97,7 @@ export function SessionTab({ id, name, state, isActive, onSelect, onClose, onDel
         flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors
         border-b-2 min-w-0
         ${isActive
-          ? 'bg-th-surface border-emerald-400 text-th-text'
+          ? 'bg-th-surface border-blue-400 text-th-text'
           : 'bg-th-bg border-transparent text-th-text-secondary hover:bg-th-surface hover:text-th-text'
         }
       `}
@@ -111,12 +112,10 @@ export function SessionTab({ id, name, state, isActive, onSelect, onClose, onDel
       <button
         onClick={handleClose}
         onTouchEnd={(e) => e.stopPropagation()}
-        className="p-1 rounded hover:bg-th-surface-hover active:bg-th-surface-active text-th-text-muted hover:text-th-text-secondary shrink-0"
+        className="p-1 rounded-md hover:bg-th-surface-hover active:bg-th-surface-active text-th-text-muted hover:text-th-text-secondary shrink-0"
         title="タブを閉じる"
       >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-        </svg>
+        <X className="w-3.5 h-3.5" />
       </button>
     </div>
   );

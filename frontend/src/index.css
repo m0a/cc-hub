@@ -2,32 +2,37 @@
 
 /* Theme CSS variables: dark = default, light = data-theme="light" */
 :root {
-  /* Brand colors */
-  --color-brand: #34d399;
-  --color-brand-dim: #059669;
-  --color-brand-glow: rgba(52, 211, 153, 0.3);
+  /* Brand / Accent */
+  --color-brand: #3b82f6;
+  --color-brand-dim: #2563eb;
+  --color-brand-glow: rgba(59, 130, 246, 0.3);
 
   /* Surfaces */
-  --color-bg: #1a1a1a;
-  --color-surface: #1f2937;
-  --color-surface-hover: #374151;
-  --color-surface-active: #4b5563;
-  --color-overlay: rgba(0, 0, 0, 0.7);
+  --color-bg: #0a0a0a;
+  --color-surface: #141414;
+  --color-surface-hover: #1e1e1e;
+  --color-surface-active: #262626;
+  --color-overlay: rgba(0, 0, 0, 0.6);
 
   /* Text */
-  --color-text: #e0e0e0;
-  --color-text-secondary: rgba(255, 255, 255, 0.6);
-  --color-text-muted: rgba(255, 255, 255, 0.4);
+  --color-text: #fafafa;
+  --color-text-secondary: #a1a1aa;
+  --color-text-muted: #71717a;
 
   /* Borders */
-  --color-border: #374151;
-  --color-border-dim: #1f2937;
+  --color-border: #262626;
+  --color-border-dim: #1a1a1a;
+
+  /* Semantic */
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
 
   /* Typography */
-  font-family: 'JetBrains Mono', 'M PLUS 1 Code', 'SF Mono', 'Cascadia Code', monospace;
+  font-family: 'Inter', 'Noto Sans JP', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--color-text);
   background-color: var(--color-bg);
   font-synthesis: none;
@@ -37,16 +42,19 @@
 }
 
 [data-theme="light"] {
-  --color-bg: #f3f4f6;
-  --color-surface: #ffffff;
-  --color-surface-hover: #e5e7eb;
-  --color-surface-active: #d1d5db;
+  --color-bg: #ffffff;
+  --color-surface: #fafafa;
+  --color-surface-hover: #f4f4f5;
+  --color-surface-active: #e4e4e7;
   --color-overlay: rgba(0, 0, 0, 0.5);
-  --color-text: #111827;
-  --color-text-secondary: #4b5563;
-  --color-text-muted: #6b7280;
-  --color-border: #d1d5db;
-  --color-border-dim: #e5e7eb;
+  --color-text: #09090b;
+  --color-text-secondary: #52525b;
+  --color-text-muted: #a1a1aa;
+  --color-border: #e4e4e7;
+  --color-border-dim: #f4f4f5;
+  --color-brand: #2563eb;
+  --color-brand-dim: #1d4ed8;
+  --color-brand-glow: rgba(37, 99, 235, 0.3);
 }
 
 /* Tailwind v4 @theme: generate th-* utility classes from CSS variables */
@@ -60,6 +68,11 @@
   --color-th-text-muted: var(--color-text-muted);
   --color-th-border: var(--color-border);
   --color-th-border-dim: var(--color-border-dim);
+  --color-th-brand: var(--color-brand);
+  --color-th-brand-dim: var(--color-brand-dim);
+  --color-th-success: var(--color-success);
+  --color-th-warning: var(--color-warning);
+  --color-th-error: var(--color-error);
 }
 
 html, body {

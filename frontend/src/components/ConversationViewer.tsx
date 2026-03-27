@@ -351,8 +351,9 @@ export function ConversationViewer({
       {/* Messages */}
       <div
         ref={parentRef}
-        className="flex-1 overflow-y-auto p-3 select-text"
-        style={{ WebkitUserSelect: 'text', userSelect: 'text' }}
+        className="flex-1 overflow-y-auto p-3 select-text overscroll-contain"
+        style={{ WebkitUserSelect: 'text', userSelect: 'text', WebkitTouchCallout: 'none', willChange: 'transform' }}
+        onContextMenu={(e) => e.preventDefault()}
       >
         {isLoading ? (
           <div className="text-center text-th-text-muted py-8">

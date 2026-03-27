@@ -63,6 +63,7 @@ interface SessionListProps {
   onSelectSession: (session: SessionResponse) => void;
   onSelectPane?: (session: SessionResponse, paneId: string) => void;
   onBack?: () => void;
+  onClose?: () => void;  // Close button in header (used in modal)
   inline?: boolean;  // true for side panel, false for fullscreen
   contentScale?: number;  // Scale factor for content (tabs remain fixed)
   isOnboarding?: boolean;  // Show dummy session for onboarding
@@ -786,7 +787,7 @@ function SessionItem({
   );
 }
 
-export function SessionList({ onSelectSession, onSelectPane, onBack, inline = false, contentScale, isOnboarding = false, hideDashboardTab = false }: SessionListProps) {
+export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, inline = false, contentScale, isOnboarding = false, hideDashboardTab = false }: SessionListProps) {
   const { t } = useTranslation();
   const {
     sessions,
@@ -1048,6 +1049,14 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
               >
                 <Plus className="w-[18px] h-[18px]" />
               </button>
+              {onClose && (
+                <button
+                  onClick={onClose}
+                  className="p-2 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
+                >
+                  <X className="w-[18px] h-[18px]" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -1150,41 +1159,40 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
                   </div>
                 ) : (
                   <>
-                    {/* Tablet: 2-column layout / Mobile: single column */}
-                    <div className="sm:grid sm:grid-cols-2 sm:gap-4">
-                      {/* Active group */}
-                      {activeSessions.length > 0 && (
-                        <div className="mb-4 sm:mb-0">
-                          <div className="flex items-center gap-2 px-1 mb-2">
-                            <span className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
-                              Active
-                            </span>
-                            <span className="text-[11px] tabular-nums text-zinc-600">
-                              {activeSessions.length}
-                            </span>
-                          </div>
-                          <div className="space-y-1">
-                            {activeSessions.map((session, index) => (
-                              <div key={session.id} data-onboarding={index === 0 && otherSessions.length === 0 ? 'session-item' : undefined}>
-                                <SessionItem
-                                  session={session}
-                                  onSelect={onSelectSession}
-                                  onSelectPane={onSelectPane}
-                                  onShowMenu={handleShowMenu}
-                                  onResume={handleResume}
-                                  onShowConversation={handleShowConversation}
-                                  onPaneAction={handlePaneAction}
-                                  onClosePane={(sid, pid, name) => setPaneToClose({ sessionId: sid, paneId: pid, name })}
-                                />
-                              </div>
-                            ))}
-                          </div>
+                    {/* Active group */}
+                    {activeSessions.length > 0 && (
+                      <div className="mb-4">
+                        <div className="flex items-center gap-2 px-1 mb-2">
+                          <span className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
+                            Active
+                          </span>
+                          <span className="text-[11px] tabular-nums text-zinc-600">
+                            {activeSessions.length}
+                          </span>
                         </div>
-                      )}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                          {activeSessions.map((session, index) => (
+                            <div key={session.id} data-onboarding={index === 0 && otherSessions.length === 0 ? 'session-item' : undefined}>
+                              <SessionItem
+                                session={session}
+                                onSelect={onSelectSession}
+                                onSelectPane={onSelectPane}
+                                onShowMenu={handleShowMenu}
+                                onResume={handleResume}
+                                onShowConversation={handleShowConversation}
+                                onPaneAction={handlePaneAction}
+                                onClosePane={(sid, pid, name) => setPaneToClose({ sessionId: sid, paneId: pid, name })}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
-                      {/* Other sessions */}
+                    {/* Other sessions */}
+                    {otherSessions.length > 0 && (
                       <div>
-                        {activeSessions.length > 0 && otherSessions.length > 0 && (
+                        {activeSessions.length > 0 && (
                           <div className="flex items-center gap-2 px-1 mb-2">
                             <span className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
                               Sessions
@@ -1194,7 +1202,7 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
                             </span>
                           </div>
                         )}
-                        <div className="space-y-1">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
                           {otherSessions.map((session, index) => (
                             <div key={session.id} data-onboarding={index === 0 ? 'session-item' : undefined}>
                               <SessionItem
@@ -1211,7 +1219,7 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, inline = fa
                           ))}
                         </div>
                       </div>
-                    </div>
+                    )}
 
                     {/* New session button at bottom */}
                     <button

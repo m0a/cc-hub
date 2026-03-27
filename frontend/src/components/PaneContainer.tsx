@@ -289,18 +289,18 @@ function TerminalPane({
           </span>
         )}
         <div className={`flex items-center ${isTablet ? 'gap-0' : 'gap-1.5'}`}>
-          {/* Conversation toggle button - show for Claude sessions (desktop only, tablet has header) */}
-          {!isTablet && (hasCcSessionId || session?.currentCommand === 'claude') && (
+          {/* Conversation toggle button - show for Claude sessions */}
+          {(hasCcSessionId || session?.currentCommand === 'claude') && (
             <button
               onClick={handleToggleConversation}
-              className={`p-1 transition-colors ${
+              className={`${isTablet ? 'p-2.5' : 'p-1'} transition-colors ${
                 showConversation
                   ? 'text-blue-400 hover:text-blue-300'
                   : 'text-white/50 hover:text-th-text'
               }`}
               title={showConversation ? t('conversation.backToTerminal') : t('conversation.showHistory')}
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
               </svg>
             </button>

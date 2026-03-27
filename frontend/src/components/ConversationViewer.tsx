@@ -38,25 +38,25 @@ function CollapsibleSection({
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   const variantStyles = {
-    default: 'bg-th-surface-hover/50 border-th-border',
-    thinking: 'bg-purple-900/30 border-purple-600',
-    tool: 'bg-blue-900/30 border-blue-600',
-    result: 'bg-green-900/30 border-green-600',
-    error: 'bg-red-900/30 border-red-600',
+    default: 'bg-white/[0.03] border-white/[0.06]',
+    thinking: 'bg-purple-500/10 border-purple-500/30',
+    tool: 'bg-blue-500/10 border-blue-500/30',
+    result: 'bg-green-500/10 border-green-500/30',
+    error: 'bg-red-500/10 border-red-500/30',
   };
 
   return (
     <div className={`my-2 border rounded-md ${variantStyles[variant]}`}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center gap-2 p-2 text-xs text-th-text-secondary hover:bg-th-surface-hover/50"
+        className="w-full flex items-center gap-2 p-2 text-xs text-zinc-500 hover:bg-white/[0.03]"
       >
         <ChevronRight className={`w-3 h-3 shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
         <span>{icon}</span>
         <span className="flex-1 text-left truncate">{title}</span>
       </button>
       {isOpen && (
-        <div className="p-2 border-t border-th-border text-xs overflow-x-auto">
+        <div className="p-2 border-t border-white/[0.06] text-xs overflow-x-auto">
           {children}
         </div>
       )}
@@ -250,16 +250,16 @@ const MessageItem = memo(function MessageItem({ msg }: { msg: ConversationMessag
 
   if (isSummaryMessage) {
     displayRole = t('conversation.systemSummary');
-    containerStyle = 'mx-4 bg-amber-900/20 border-l-2 border-amber-500';
+    containerStyle = 'mx-4 bg-amber-500/10 border-l-2 border-amber-500/50';
   } else if (isToolResultOnly) {
     displayRole = t('conversation.system');
-    containerStyle = 'mr-8 bg-th-surface-hover/50 border-l-2 border-gray-500';
+    containerStyle = 'mr-8 bg-white/[0.03] border-l-2 border-zinc-700';
   } else if (msg.role === 'user') {
     displayRole = t('conversation.you');
-    containerStyle = 'ml-8 bg-blue-900/30 border-l-2 border-blue-500';
+    containerStyle = 'ml-8 bg-blue-500/10 border-l-2 border-blue-500/50';
   } else {
     displayRole = t('conversation.claude');
-    containerStyle = 'mr-8 bg-th-surface border-l-2 border-th-border';
+    containerStyle = 'mr-8 bg-white/[0.03] border-l-2 border-white/[0.08]';
   }
 
   return (
@@ -355,8 +355,8 @@ export function ConversationViewer({
 
   // Container class based on inline mode
   const containerClass = inline
-    ? 'h-full flex flex-col bg-th-bg'
-    : 'fixed inset-0 z-50 flex flex-col bg-th-bg';
+    ? 'h-full flex flex-col bg-[#0a0a0a]'
+    : 'fixed inset-0 z-50 flex flex-col bg-[#0a0a0a]';
 
   return (
     <div className={containerClass}>
@@ -406,24 +406,24 @@ export function ConversationViewer({
 
       {/* Footer - only show in modal mode */}
       {!inline && (
-        <div className="flex items-center px-3 py-2 border-t border-th-border bg-th-surface shrink-0">
+        <div className="flex items-center px-3 py-2 border-t border-white/[0.06] bg-[#0a0a0a] shrink-0">
           <button
             onClick={onClose}
-            className="text-th-text-secondary hover:text-th-text p-1"
+            className="p-1.5 text-zinc-500 hover:text-zinc-300 transition-colors"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
           <div className="flex-1 min-w-0 ml-2">
-            <h2 className="text-sm font-medium text-th-text truncate">{title}</h2>
+            <h2 className="text-[13px] font-medium text-white truncate">{title}</h2>
             {subtitle && (
-              <p className="text-xs text-th-text-secondary truncate">{subtitle}</p>
+              <p className="text-[11px] text-zinc-500 truncate">{subtitle}</p>
             )}
           </div>
           {onResume && (
             <button
               onClick={onResume}
               disabled={isResuming}
-              className="ml-2 px-3 py-1 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-th-surface-active text-th-text rounded-md shrink-0"
+              className="ml-2 px-3 py-1.5 text-[12px] font-medium bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-md shrink-0 transition-colors"
             >
               {isResuming ? t('session.resuming') : t('session.resume')}
             </button>

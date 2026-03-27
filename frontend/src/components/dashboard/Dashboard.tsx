@@ -7,6 +7,7 @@ import { DailyUsageChart } from './DailyUsageChart';
 import { ModelUsageChart } from './ModelUsageChart';
 import { HourlyHeatmap } from './HourlyHeatmap';
 import { NetworkLatency } from './NetworkLatency';
+import { SystemMetricsChart } from './SystemMetrics';
 import { useTheme } from '../../hooks/useTheme';
 
 // Onboarding localStorage keys
@@ -71,6 +72,9 @@ export function Dashboard({ className = '', compact = false }: DashboardProps) {
       <div className={compact ? 'space-y-3' : 'md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0'}>
         <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
           <NetworkLatency />
+        </div>
+        <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
+          <SystemMetricsChart data={data?.systemMetrics} />
         </div>
         <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
           <UsageLimits data={data?.usageLimits || null} history={data?.usageHistory || []} />

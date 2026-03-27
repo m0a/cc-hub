@@ -253,6 +253,21 @@ export interface UsageHistoryResponse {
   snapshots: UsageSnapshot[];
 }
 
+export interface SystemMetricsSnapshot {
+  timestamp: number;
+  cpuPercent: number;
+  memUsedPercent: number;
+  memUsedMB: number;
+  memTotalMB: number;
+}
+
+export interface SystemMetrics {
+  current: SystemMetricsSnapshot;
+  history: SystemMetricsSnapshot[];
+  loadAvg: [number, number, number]; // 1, 5, 15 min
+  cpuCount: number;
+}
+
 export interface DashboardResponse {
   limits: LimitsInfo | null; // Deprecated, kept for compatibility
   usageLimits: UsageLimits | null; // New: from Anthropic API
@@ -262,6 +277,7 @@ export interface DashboardResponse {
   costEstimates: CostEstimate[];
   hourlyActivity?: Record<number, number>; // Phase 3: Hour (0-23) -> session count
   version?: string; // CC Hub version
+  systemMetrics?: SystemMetrics; // System CPU/memory metrics
 }
 
 export interface ExtendedSessionResponse extends SessionResponse {

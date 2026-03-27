@@ -108,7 +108,11 @@
     "latencyNA": "N/A",
     "chartNow": "Now",
     "chartReset": "Reset",
-    "clearCache": "Clear Cache & Reload"
+    "clearCache": "Clear Cache & Reload",
+    "cpuUsage": "CPU Usage",
+    "memoryUsage": "Memory Usage",
+    "loadAverage": "Load avg",
+    "cores": "cores"
   },
   "files": {
     "title": "File Browser",

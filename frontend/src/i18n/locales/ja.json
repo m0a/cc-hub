@@ -108,7 +108,11 @@
     "latencyNA": "N/A",
     "chartNow": "現在",
     "chartReset": "リセット",
-    "clearCache": "キャッシュクリア & リロード"
+    "clearCache": "キャッシュクリア & リロード",
+    "cpuUsage": "CPU使用率",
+    "memoryUsage": "メモリ使用率",
+    "loadAverage": "負荷平均",
+    "cores": "コア"
   },
   "files": {
     "title": "ファイルブラウザ",

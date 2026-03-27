@@ -367,9 +367,9 @@ export const FloatingKeyboard = forwardRef<FloatingKeyboardRef, FloatingKeyboard
         left: position.x,
         top: position.y,
         width: 420,
-        backgroundColor: transparent ? 'rgba(17, 17, 17, 0.95)' : '#111111',
-        backdropFilter: transparent ? 'blur(8px)' : undefined,
-        WebkitBackdropFilter: transparent ? 'blur(8px)' : undefined,
+        backgroundColor: transparent ? 'rgba(17, 24, 39, 0.18)' : '#111111',
+        backdropFilter: transparent ? 'blur(1px)' : undefined,
+        WebkitBackdropFilter: transparent ? 'blur(1px)' : undefined,
       }}
     >
       {/* Header - drag handle with segmented control */}

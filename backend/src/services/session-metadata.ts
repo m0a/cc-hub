@@ -12,6 +12,7 @@ interface SessionMeta {
 
 interface MetadataStore {
   sessions: Record<string, SessionMeta>;
+  sessionOrder?: string[]; // ordered session IDs
 }
 
 async function getFilePath(): Promise<string> {
@@ -89,6 +90,17 @@ export async function setSessionTheme(sessionId: string, theme: SessionTheme | n
   } else {
     data.sessions[sessionId].theme = theme;
   }
+  await save(data);
+}
+
+export async function getSessionOrder(): Promise<string[]> {
+  const data = await load();
+  return data.sessionOrder || [];
+}
+
+export async function setSessionOrder(order: string[]): Promise<void> {
+  const data = await load();
+  data.sessionOrder = order;
   await save(data);
 }
 

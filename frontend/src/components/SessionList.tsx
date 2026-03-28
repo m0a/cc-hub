@@ -1,6 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Folder, ChevronRight, ChevronLeft, Search, X, Play } from 'lucide-react';
+import { Plus, Folder, ChevronRight, ChevronLeft, Search, X, Play, GripVertical } from 'lucide-react';
+import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { SessionResponse, IndicatorState, ConversationMessage, FileInfo, SessionTheme, PaneInfo } from '../../../shared/types';
 import { useSessions } from '../hooks/useSessions';
 
@@ -444,6 +447,53 @@ function CreateSessionModal({
           >
             {t('common.create')}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Sortable wrapper for SessionItem (drag-to-reorder)
+function SortableSessionItem({
+  session,
+  index,
+  isDraggable,
+  ...sessionItemProps
+}: {
+  session: SessionResponse;
+  index: number;
+  isDraggable: boolean;
+} & Omit<Parameters<typeof SessionItem>[0], 'session'>) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: session.id, disabled: !isDraggable });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} data-onboarding={index === 0 ? 'session-item' : undefined}>
+      <div className="flex items-stretch">
+        {isDraggable && (
+          <button
+            className="flex items-center px-1 text-zinc-600 hover:text-zinc-400 touch-none cursor-grab active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="w-4 h-4" />
+          </button>
+        )}
+        <div className="flex-1 min-w-0">
+          <SessionItem session={session} {...sessionItemProps} />
         </div>
       </div>
     </div>
@@ -895,6 +945,32 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
     }
   }, []);
 
+  // Drag-to-reorder handler
+  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = sessions.findIndex(s => s.id === active.id);
+    const newIndex = sessions.findIndex(s => s.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    // Compute new order
+    const newOrder = sessions.map(s => s.id);
+    const [moved] = newOrder.splice(oldIndex, 1);
+    newOrder.splice(newIndex, 0, moved);
+
+    // Save to backend
+    try {
+      await authFetch(`${API_BASE}/api/sessions/order`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order: newOrder }),
+      });
+    } catch (err) {
+      console.error('Failed to save session order:', err);
+    }
+  }, [sessions]);
+
   const [createError, setCreateError] = useState<string | null>(null);
 
   const handleCreateSession = async (name: string, workingDir?: string) => {
@@ -961,15 +1037,6 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
     );
   }
 
-  // Group sessions by state for the redesigned layout
-  const getSessionIndicator = (s: SessionResponse) => {
-    const ext = s as SessionResponse & { panes?: PaneInfo[]; indicatorState?: IndicatorState };
-    if (ext.panes && ext.panes.length > 0) {
-      if (ext.panes.some(p => p.indicatorState === 'waiting_input')) return 'waiting_input';
-      if (ext.panes.some(p => p.indicatorState === 'processing')) return 'processing';
-    }
-    return ext.indicatorState;
-  };
 
   // Filter sessions by search query
   const filteredSessions = searchQuery
@@ -984,14 +1051,7 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
       })
     : sessions;
 
-  const activeSessions = filteredSessions.filter(s => {
-    const ind = getSessionIndicator(s);
-    return ind === 'processing' || ind === 'waiting_input';
-  });
-  const otherSessions = filteredSessions.filter(s => {
-    const ind = getSessionIndicator(s);
-    return ind !== 'processing' && ind !== 'waiting_input';
-  });
+  const isDraggable = !searchQuery; // Disable drag during search
 
   const containerClass = inline
     ? "h-full flex flex-col bg-[#0a0a0a] text-white overflow-hidden"
@@ -1141,67 +1201,34 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
                   </div>
                 ) : (
                   <>
-                    {/* Active group */}
-                    {activeSessions.length > 0 && (
-                      <div className="mb-4">
-                        <div className="flex items-center gap-2 px-1 mb-2">
-                          <span className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
-                            Active
-                          </span>
-                          <span className="text-[11px] tabular-nums text-zinc-600">
-                            {activeSessions.length}
-                          </span>
-                        </div>
+                    <DndContext
+                      collisionDetection={closestCenter}
+                      onDragEnd={handleDragEnd}
+                    >
+                      <SortableContext
+                        items={filteredSessions.map(s => s.id)}
+                        strategy={verticalListSortingStrategy}
+                        disabled={!isDraggable}
+                      >
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
-                          {activeSessions.map((session, index) => (
-                            <div key={session.id} data-onboarding={index === 0 && otherSessions.length === 0 ? 'session-item' : undefined}>
-                              <SessionItem
-                                session={session}
-                                onSelect={onSelectSession}
-                                onSelectPane={onSelectPane}
-                                onShowMenu={handleShowMenu}
-                                onResume={handleResume}
-                                onShowConversation={handleShowConversation}
-                                onPaneAction={handlePaneAction}
-                                onClosePane={(sid, pid, name) => setPaneToClose({ sessionId: sid, paneId: pid, name })}
-                              />
-                            </div>
+                          {filteredSessions.map((session, index) => (
+                            <SortableSessionItem
+                              key={session.id}
+                              session={session}
+                              index={index}
+                              isDraggable={isDraggable}
+                              onSelect={onSelectSession}
+                              onSelectPane={onSelectPane}
+                              onShowMenu={handleShowMenu}
+                              onResume={handleResume}
+                              onShowConversation={handleShowConversation}
+                              onPaneAction={handlePaneAction}
+                              onClosePane={(sid, pid, name) => setPaneToClose({ sessionId: sid, paneId: pid, name })}
+                            />
                           ))}
                         </div>
-                      </div>
-                    )}
-
-                    {/* Other sessions */}
-                    {otherSessions.length > 0 && (
-                      <div>
-                        {activeSessions.length > 0 && (
-                          <div className="flex items-center gap-2 px-1 mb-2">
-                            <span className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
-                              Sessions
-                            </span>
-                            <span className="text-[11px] tabular-nums text-zinc-600">
-                              {otherSessions.length}
-                            </span>
-                          </div>
-                        )}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
-                          {otherSessions.map((session, index) => (
-                            <div key={session.id} data-onboarding={index === 0 ? 'session-item' : undefined}>
-                              <SessionItem
-                                session={session}
-                                onSelect={onSelectSession}
-                                onSelectPane={onSelectPane}
-                                onShowMenu={handleShowMenu}
-                                onResume={handleResume}
-                                onShowConversation={handleShowConversation}
-                                onPaneAction={handlePaneAction}
-                                onClosePane={(sid, pid, name) => setPaneToClose({ sessionId: sid, paneId: pid, name })}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                      </SortableContext>
+                    </DndContext>
 
                     {/* New session button at bottom */}
                     <button

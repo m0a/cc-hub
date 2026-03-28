@@ -97,6 +97,13 @@ export async function muxOpen(ws: ServerWebSocket<MuxData>) {
   console.log(`[mux] WebSocket opened: ${ws.data.visitorId}`);
   activeMuxConnections.add(ws);
   startSessionsPush();
+
+  // Send initial sessions list immediately so frontend has data before Terminal mounts
+  try {
+    const sessions = await buildSessionsList();
+    ws.send(JSON.stringify({ type: 'sessions-updated', sessions }));
+  } catch { /* best effort */ }
+
   ws.send(JSON.stringify({ type: 'ready' }));
 }
 

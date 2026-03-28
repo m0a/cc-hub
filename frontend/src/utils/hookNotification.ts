@@ -75,16 +75,17 @@ export function fireHookNotification(
   }
   lastNotification = { key, time: now };
 
-  const displayMessage = smartMessage || EVENT_MESSAGES[event] || `Hook: ${event}`;
-  const projectName = cwd?.replace(/^\/home\/[^/]+\//, '~/') || '';
-  const body = projectName ? `${displayMessage}\n${projectName}` : displayMessage;
+  // Title: project/directory name (e.g. "~/lifestyle-app-work-1")
+  const projectName = cwd?.replace(/^\/home\/[^/]+\//, '~/') || 'CC Hub';
+  // Body: smart message from transcript, or fallback
+  const body = smartMessage || EVENT_MESSAGES[event] || `Hook: ${event}`;
 
   // 通知発火時にセッションIDを記録（アプリ復帰時に切り替え用）
   if (_sessionId) {
     pendingSessionId = _sessionId;
   }
 
-  showNotification('CC Hub', {
+  showNotification(projectName, {
     body,
     icon: '/icon-192.png',
     tag: `hook-${event}-${now}`,

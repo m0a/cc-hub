@@ -133,7 +133,7 @@ notify.post('/', async (c) => {
 
     // transcriptからスマートなメッセージを生成
     let message: string | undefined;
-    if (transcriptPath && event === 'Stop') {
+    if (transcriptPath) {
       message = await generateSmartMessage(transcriptPath, event);
     }
 

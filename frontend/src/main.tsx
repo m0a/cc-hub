@@ -39,6 +39,14 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-createRoot(document.getElementById('root')!).render(
-  <App />
-);
+// Route /screen to ScreenViewerPage at the top level
+// to avoid infinite recursion with App
+import { ScreenViewerPage } from './pages/ScreenViewerPage';
+
+const root = createRoot(document.getElementById('root')!);
+
+if (window.location.pathname === '/screen') {
+  root.render(<ScreenViewerPage />);
+} else {
+  root.render(<App />);
+}

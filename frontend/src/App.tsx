@@ -248,7 +248,7 @@ export function App() {
   const [mobileActivePaneId, setMobileActivePaneId] = useState<string | null>(null);
 
   // Session API state (for theme updates in mobile view)
-  const { sessions: apiSessions } = useSessions();
+  const { sessions: apiSessions, createSession } = useSessions();
 
   // Device type detection
   // - desktop: PC (非タッチデバイス) → ソフトキーボード不要
@@ -491,7 +491,33 @@ export function App() {
     }
   }, [activeSessionId, isLoading]);
 
-  const handleSelectSession = useCallback((session: SessionResponse) => {
+  const handleSelectSession = useCallback(async (session: SessionResponse) => {
+    // Lost session: recreate with same name and working directory
+    if (session.state === 'lost') {
+      const extSession = session as SessionResponse & { currentPath?: string };
+      try {
+        const newSession = await createSession(session.name, extSession.currentPath);
+        if (newSession) {
+          const ext = newSession as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string; theme?: SessionTheme };
+          setOpenSessions(prev => [...prev, {
+            id: ext.id,
+            name: ext.name,
+            state: ext.state,
+            currentPath: ext.currentPath,
+            ccSessionId: ext.ccSessionId,
+            currentCommand: ext.currentCommand,
+            theme: ext.theme,
+          }]);
+          setActiveSessionId(ext.id);
+          if (ext.currentPath) setActiveFileViewerDir(ext.currentPath);
+          setShowSessionList(false);
+        }
+      } catch (err) {
+        console.error('Failed to recreate session:', err);
+      }
+      return;
+    }
+
     // Check if already open
     const existing = openSessions.find(s => s.id === session.id);
     if (existing) {

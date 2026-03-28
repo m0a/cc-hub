@@ -36,7 +36,7 @@ interface FileViewerProps {
   onShowSessions?: () => void;
   // Terminal-style toolbar props
   sessionName?: string;
-  sessionStatus?: 'working' | 'waiting_input' | 'waiting_permission' | 'idle' | 'disconnected';
+  sessionStatus?: 'working' | 'waiting_input' | 'waiting_permission' | 'idle' | 'disconnected' | 'lost';
   onShowConversation?: () => void;
   onShowDashboard?: () => void;
   onReload?: () => void;

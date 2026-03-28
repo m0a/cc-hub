@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, forwardRef, type ReactNode } from 'react';
 import { TerminalComponent, type TerminalRef, type ControlModeConfig } from '../components/Terminal';
-import { useControlTerminal } from '../hooks/useControlTerminal';
+import { useMultiplexedTerminal } from '../hooks/useMultiplexedTerminal';
 import type { SessionState, SessionTheme, TmuxLayoutNode } from '../../../shared/types';
 import { fireHookNotification } from '../utils/hookNotification';
 
@@ -65,7 +65,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
   // scrollback is preserved to avoid jarring scroll position jumps.
   const expectingContentRef = useRef(true);
 
-  const controlTerminal = useControlTerminal({
+  const controlTerminal = useMultiplexedTerminal({
     sessionId,
     token,
     onPaneOutput: (paneId, data) => {

@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { broadcastToAllClients } from './terminal';
+import { broadcastToMuxClients } from './terminal-mux';
 import type { IndicatorState } from '../../../shared/types';
 
 /** transcriptファイルからコンテキストに応じた通知メッセージを生成する */
@@ -139,14 +140,16 @@ notify.post('/', async (c) => {
 
     // Skip notification for UserPromptSubmit (user's own action, not useful as notification)
     if (event !== 'UserPromptSubmit') {
-      broadcastToAllClients({
+      const hookMsg = {
         type: 'hook-event',
         event,
         cwd,
         sessionId,
         message,
         data: Object.keys(rest).length > 0 ? rest : undefined,
-      });
+      };
+      broadcastToAllClients(hookMsg);
+      broadcastToMuxClients(hookMsg);
     }
 
     return c.json({ ok: true });

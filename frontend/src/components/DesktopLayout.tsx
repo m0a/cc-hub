@@ -8,7 +8,7 @@ import { DashboardPanel } from './DashboardPanel';
 import { ShareDialog } from './ShareDialog';
 import { authFetch } from '../services/api';
 import { useSessions, updateCachedSessionsByHookEvent } from '../hooks/useSessions';
-import { useControlTerminal } from '../hooks/useControlTerminal';
+import { useMultiplexedTerminal } from '../hooks/useMultiplexedTerminal';
 import type { TerminalRef, ControlModeConfig } from './Terminal';
 import type { SessionState, SessionTheme, TmuxLayoutNode } from '../../../shared/types';
 import { fireHookNotification } from '../utils/hookNotification';
@@ -378,7 +378,7 @@ export function DesktopLayout({
   // When true, initial-content clears scrollback. When false (reconnect), preserve scrollback.
   const expectingContentRef = useRef(true);
 
-  const controlTerminal = useControlTerminal({
+  const controlTerminal = useMultiplexedTerminal({
     sessionId: controlSessionId || '',
     onPaneOutput: (paneId, data) => {
       const callbacks = paneCallbacksRef.current.get(paneId);

@@ -1,11 +1,10 @@
 import { useRef, useCallback, useState, useEffect, useMemo } from 'react';
-import { List, Share2, SplitSquareHorizontal, SplitSquareVertical, RefreshCw, Keyboard, ChevronDown, FileText, BarChart3 } from 'lucide-react';
+import { List, SplitSquareHorizontal, SplitSquareVertical, RefreshCw, Keyboard, ChevronDown, FileText, BarChart3 } from 'lucide-react';
 import { PaneContainer, type PaneNode, type ControlModeContext } from './PaneContainer';
 import { FileViewer } from './files/FileViewer';
 import { FloatingKeyboard, type FloatingKeyboardRef } from './FloatingKeyboard';
 import { SessionModal } from './SessionModal';
 import { DashboardPanel } from './DashboardPanel';
-import { ShareDialog } from './ShareDialog';
 import { authFetch } from '../services/api';
 import { useSessions, updateCachedSessionsByHookEvent } from '../hooks/useSessions';
 import { useMultiplexedTerminal } from '../hooks/useMultiplexedTerminal';
@@ -242,7 +241,6 @@ export function DesktopLayout({
   }, []);
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
-  const [showShareDialog, setShowShareDialog] = useState(false);
 
   // Floating keyboard state (for tablet mode)
   const [showKeyboard, setShowKeyboard] = useState(() => {
@@ -1102,14 +1100,6 @@ export function DesktopLayout({
               >
                 <BarChart3 className="w-3.5 h-3.5" />
               </button>
-              <button
-                type="button"
-                onClick={() => setShowShareDialog(true)}
-                className="p-1 rounded-md transition-colors text-zinc-600 hover:text-zinc-400"
-                title="Share Session"
-              >
-                <Share2 className="w-3.5 h-3.5" />
-              </button>
             </div>
           </div>
         )}
@@ -1188,13 +1178,6 @@ export function DesktopLayout({
                   <RefreshCw className="w-[18px] h-[18px]" />
                 </button>
                 <button
-                  onClick={() => setShowShareDialog(true)}
-                  className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
-                  title="共有"
-                >
-                  <Share2 className="w-[18px] h-[18px]" />
-                </button>
-                <button
                   onClick={() => setShowKeyboard(prev => !prev)}
                   className={`p-2 transition-colors ${
                     showKeyboard ? 'text-blue-400' : 'text-zinc-500 hover:text-zinc-300 active:text-zinc-200'
@@ -1241,15 +1224,6 @@ export function DesktopLayout({
         onSelectSession={handleModalSelectSession}
       />
 
-      {/* Share Dialog */}
-      {showShareDialog && controlSessionId && (
-        <ShareDialog
-          sessionId={controlSessionId}
-          sessionName={activeSession?.name || controlSessionId}
-          onClose={() => setShowShareDialog(false)}
-        />
-      )}
-
       {/* File Viewer Modal - per-session instances kept mounted */}
       {fileViewerDirs.map(dir => (
         <FileViewer
@@ -1272,7 +1246,6 @@ export function DesktopLayout({
           sessionName={activeSession?.name}
           sessionStatus={activeSession?.state}
           onShowDashboard={() => setShowDashboard(prev => !prev)}
-          onShare={() => setShowShareDialog(true)}
         />
       ))}
 

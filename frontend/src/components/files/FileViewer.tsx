@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, X, Eye, EyeOff, FileText, ChevronRight, ChevronDown, List, FolderTree, GitBranch, MessageSquare, BarChart3, RotateCw, Share2, Menu } from 'lucide-react';
+import { ArrowLeft, X, Eye, EyeOff, FileText, ChevronRight, ChevronDown, List, FolderTree, GitBranch, MessageSquare, BarChart3, RotateCw, Menu } from 'lucide-react';
 import { useFileViewer } from '../../hooks/useFileViewer';
 import { FileBrowser } from './FileBrowser';
 import { CodeViewer } from './CodeViewer';
@@ -40,7 +40,6 @@ interface FileViewerProps {
   onShowConversation?: () => void;
   onShowDashboard?: () => void;
   onReload?: () => void;
-  onShare?: () => void;
 }
 
 // Image extensions
@@ -73,7 +72,7 @@ function getFileName(path: string): string {
   return path.split('/').pop() || path;
 }
 
-export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyPrompt, hidden, onShowSessions, sessionName, sessionStatus, onShowConversation, onShowDashboard, onReload, onShare }: FileViewerProps) {
+export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyPrompt, hidden, onShowSessions, sessionName, sessionStatus, onShowConversation, onShowDashboard, onReload }: FileViewerProps) {
   const { t } = useTranslation();
   const {
     currentPath,
@@ -357,11 +356,6 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                 <button onClick={() => listDirectory(currentPath)} className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors" title="リロード">
                   <RotateCw className="w-[18px] h-[18px]" />
                 </button>
-                {onShare && (
-                  <button onClick={onShare} className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors" title="共有">
-                    <Share2 className="w-[18px] h-[18px]" />
-                  </button>
-                )}
               </div>
             </div>
 
@@ -754,11 +748,6 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
               <button onClick={() => listDirectory(currentPath)} className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors" title="リロード">
                 <RotateCw className="w-5 h-5" />
               </button>
-              {onShare && (
-                <button onClick={onShare} className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors">
-                  <Share2 className="w-5 h-5" />
-                </button>
-              )}
             </div>
           </div>
         </div>

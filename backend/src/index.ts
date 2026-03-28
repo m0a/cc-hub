@@ -208,6 +208,14 @@ if (whichResult.exitCode !== 0) {
   process.exit(1);
 }
 
+// Check if tmux command exists
+const tmuxWhichResult = Bun.spawnSync(['which', 'tmux']);
+if (tmuxWhichResult.exitCode !== 0) {
+  console.error(`❌ ${t('server.tmuxNotFound')}`);
+  console.error(`   ${t('server.tmuxInstallHint')}`);
+  process.exit(1);
+}
+
 // Get Tailscale hostname
 const statusResult = Bun.spawnSync(['tailscale', 'status', '--json']);
 if (statusResult.exitCode !== 0) {

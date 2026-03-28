@@ -42,13 +42,15 @@ set -g remain-on-exit on
 `;
 
 /** Parsed process info from a single `ps` call, shared across consumers */
-interface ParsedProcessInfo {
+export interface ParsedProcessInfo {
   /** TTYs that have a Claude Code process running */
   claudeTtys: Set<string>;
   /** TTY → agent info (name/color) for team agent processes */
   agentInfo: Map<string, { agentName: string; agentColor?: string }>;
   /** TTY → whether the Claude process is actively running (not idle) */
   processRunning: Map<string, boolean>;
+  /** TTY → all process args lines (for session ID extraction etc.) */
+  ttyArgs: Map<string, string[]>;
 }
 
 export class TmuxService {
@@ -121,6 +123,7 @@ export class TmuxService {
       claudeTtys: new Set(),
       agentInfo: new Map(),
       processRunning: new Map(),
+      ttyArgs: new Map(),
     };
 
     if (ttyNames.length === 0) {
@@ -152,6 +155,10 @@ export class TmuxService {
         if (!ttySet.has(tty)) continue;
 
         const args = parts.slice(3).join(' ');
+
+        // Collect all args per TTY for external consumers
+        if (!result.ttyArgs.has(tty)) result.ttyArgs.set(tty, []);
+        result.ttyArgs.get(tty)!.push(args);
 
         // Consumer 1: Claude detection (batchCheckClaudeOnTtys)
         if (this.isClaudeProcess(args)) {

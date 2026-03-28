@@ -87,48 +87,39 @@ export class ClaudeCodeService {
   }
 
   /**
-   * Get Claude Code session ID from PTY by checking the running process
-   * Returns session ID from `-r <session-id>` argument or tries to find by process start time
+   * Get Claude Code session ID from PTY by checking the running process args.
+   * Uses pre-fetched process info to avoid spawning ps.
+   */
+  getSessionIdFromArgs(tty: string, ttyArgs: Map<string, string[]>): string | null {
+    const ttyMatch = tty.match(/(pts\/\d+|ttys\d+)$/);
+    if (!ttyMatch) return null;
+    const ttyName = ttyMatch[0];
+
+    // Check cache first
+    const cached = this.ttySessionCache.get(ttyName);
+    if (cached && Date.now() - cached.timestamp < ClaudeCodeService.TTY_SESSION_CACHE_TTL) {
+      return cached.sessionId;
+    }
+
+    // Look for "claude -r <session-id>" in pre-fetched args
+    const args = ttyArgs.get(ttyName) || [];
+    for (const line of args) {
+      const match = line.match(/claude\s+-r\s+([a-f0-9-]{36})/i);
+      if (match) {
+        this.ttySessionCache.set(ttyName, { sessionId: match[1], timestamp: Date.now() });
+        return match[1];
+      }
+    }
+
+    this.ttySessionCache.set(ttyName, { sessionId: null, timestamp: Date.now() });
+    return null;
+  }
+
+  /**
+   * @deprecated Use getSessionIdFromArgs with pre-fetched process info
    */
   async getSessionIdFromTty(tty: string): Promise<string | null> {
-    try {
-      const ttyMatch = tty.match(/(pts\/\d+|ttys\d+)$/);
-      if (!ttyMatch) return null;
-      const ttyName = ttyMatch[0];
-
-      // Check cache first
-      const cached = this.ttySessionCache.get(ttyName);
-      if (cached && Date.now() - cached.timestamp < ClaudeCodeService.TTY_SESSION_CACHE_TTL) {
-        return cached.sessionId;
-      }
-
-      // Find claude process running on this TTY
-      const proc = Bun.spawn(['ps', '-t', ttyName, '-o', 'args='], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-
-      const text = await new Response(proc.stdout).text();
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) {
-        this.ttySessionCache.set(ttyName, { sessionId: null, timestamp: Date.now() });
-        return null;
-      }
-
-      // Look for "claude -r <session-id>" pattern
-      for (const line of text.split('\n')) {
-        const match = line.match(/claude\s+-r\s+([a-f0-9-]{36})/i);
-        if (match) {
-          this.ttySessionCache.set(ttyName, { sessionId: match[1], timestamp: Date.now() });
-          return match[1];
-        }
-      }
-
-      this.ttySessionCache.set(ttyName, { sessionId: null, timestamp: Date.now() });
-      return null;
-    } catch {
-      return null;
-    }
+    return this.getSessionIdFromArgs(tty, new Map());
   }
 
   /**

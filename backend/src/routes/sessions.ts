@@ -62,26 +62,6 @@ sessions.get('/', async (c) => {
   const tmuxSessions = await tmuxService.listSessions();
   const sessionMetadata = await getAllSessionMetadata();
 
-  // Get Claude Code session IDs from PTY for each tmux session running claude
-  const sessionIdByTmuxId = new Map<string, string>();
-  await Promise.all(
-    tmuxSessions
-      .filter(s => s.currentCommand === 'claude' && s.paneTty)
-      .map(async (s) => {
-        const sessionId = await claudeCodeService.getSessionIdFromTty(s.paneTty ?? '');
-        if (sessionId) {
-          sessionIdByTmuxId.set(s.id, sessionId);
-        }
-      })
-  );
-  // Get Claude Code session info for sessions running claude
-  const claudePaths = tmuxSessions
-    .filter((s): s is typeof s & { currentPath: string } => s.currentCommand === 'claude' && !!s.currentPath)
-    .map(s => s.currentPath);
-
-  // Also get sessions by path for fallback (when session ID not found from PTY)
-  const ccSessionsByPath = await claudeCodeService.getSessionsForPaths(claudePaths);
-
   // Collect all pane TTYs once (used for process state, claude detection, and agent info)
   const allPaneTtys: string[] = [];
   for (const s of tmuxSessions) {
@@ -92,12 +72,28 @@ sessions.get('/', async (c) => {
     }
   }
 
-  // Batch check process state, claude presence, and agent info for all pane TTYs
-  const [processRunningByTty, claudeOnPaneTtys, agentInfoByTty] = await Promise.all([
-    tmuxService.batchCheckProcessRunning(allPaneTtys),
-    tmuxService.batchCheckClaudeOnTtys(allPaneTtys),
-    tmuxService.batchGetAgentInfo(allPaneTtys),
-  ]);
+  // Single batch call for all process info (1 ps call serves all consumers)
+  const processInfo = await tmuxService.batchProcessInfo(allPaneTtys);
+  const processRunningByTty = processInfo.processRunning;
+  const claudeOnPaneTtys = processInfo.claudeTtys;
+  const agentInfoByTty = processInfo.agentInfo;
+
+  // Get Claude Code session IDs from args (no subprocess - uses processInfo.ttyArgs)
+  const sessionIdByTmuxId = new Map<string, string>();
+  for (const s of tmuxSessions) {
+    if (s.currentCommand === 'claude' && s.paneTty) {
+      const sessionId = claudeCodeService.getSessionIdFromArgs(s.paneTty, processInfo.ttyArgs);
+      if (sessionId) {
+        sessionIdByTmuxId.set(s.id, sessionId);
+      }
+    }
+  }
+
+  // Get Claude Code session info for sessions running claude
+  const claudePaths = tmuxSessions
+    .filter((s): s is typeof s & { currentPath: string } => s.currentCommand === 'claude' && !!s.currentPath)
+    .map(s => s.currentPath);
+  const ccSessionsByPath = await claudeCodeService.getSessionsForPaths(claudePaths);
 
   const sessions = await Promise.all(tmuxSessions.map(async (s) => {
     let ccSession: Awaited<ReturnType<typeof claudeCodeService.getSessionForPath>> | undefined;

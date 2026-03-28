@@ -165,7 +165,7 @@ type TabType = 'sessions' | 'history' | 'search';
 
 export function SessionListMini({ onSelectSession, activeSessionId, onCreateSession }: SessionListMiniProps) {
   const { t } = useTranslation();
-  const { sessions, fetchSessions, updateSessionTheme, deleteSession } = useSessions();
+  const { sessions, updateSessionTheme, deleteSession } = useSessions();
   const { fetchConversation } = useSessionHistory();
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<TabType>('sessions');
@@ -181,17 +181,6 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
   const [conversation, setConversation] = useState<ConversationMessage[]>([]);
   const [loadingConversation, setLoadingConversation] = useState(false);
 
-  useEffect(() => {
-    fetchSessions();
-
-    // Poll every 5 seconds for updates (silent to prevent re-renders)
-    const interval = setInterval(() => {
-      fetchSessions(true);
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [fetchSessions]);
-
   // Scroll active session into view
   useEffect(() => {
     if (activeSessionId && containerRef.current) {
@@ -204,10 +193,9 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
   const handleMenuChangeTheme = useCallback(async (theme: SessionTheme | null) => {
     if (sessionForMenu) {
       await updateSessionTheme(sessionForMenu.id, theme);
-      await fetchSessions(true);
       setSessionForMenu(null);
     }
-  }, [sessionForMenu, updateSessionTheme, fetchSessions]);
+  }, [sessionForMenu, updateSessionTheme]);
 
   const handleMenuChangeTitle = useCallback(async (title: string | null) => {
     if (sessionForMenu) {
@@ -217,13 +205,12 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title }),
         });
-        await fetchSessions(true);
         setSessionForMenu(null);
       } catch (err) {
         console.error('Failed to update title:', err);
       }
     }
-  }, [sessionForMenu, fetchSessions]);
+  }, [sessionForMenu]);
 
   const handleMenuDelete = useCallback(async () => {
     if (sessionForMenu) {
@@ -246,23 +233,18 @@ export function SessionListMini({ onSelectSession, activeSessionId, onCreateSess
         if (session) {
           onSelectSession(session);
         }
-        // Refresh sessions after a short delay
-        setTimeout(fetchSessions, 1000);
       }
     } catch (err) {
       console.error('Failed to resume session:', err);
     }
-  }, [sessions, onSelectSession, fetchSessions]);
+  }, [sessions, onSelectSession]);
 
   // Handle session resumed from history - switch to sessions tab
   // Note: Session selection is already handled by SessionHistory via onSelectSession prop
   const handleHistorySessionResumed = useCallback(async () => {
     // Switch to sessions tab
     setActiveTab('sessions');
-
-    // Refresh the local sessions list
-    setTimeout(fetchSessions, 500);
-  }, [fetchSessions]);
+  }, []);
 
   // Show conversation for an active session
   const handleShowConversation = useCallback(async (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => {

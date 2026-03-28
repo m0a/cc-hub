@@ -793,7 +793,6 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
     sessions,
     isLoading,
     error,
-    fetchSessions,
     createSession,
     deleteSession,
     updateSessionTheme,
@@ -821,17 +820,6 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
   const [conversation, setConversation] = useState<ConversationMessage[]>([]);
   const [loadingConversation, setLoadingConversation] = useState(false);
 
-  useEffect(() => {
-    fetchSessions();
-
-    // Poll every 5 seconds for updates (silent to prevent re-renders)
-    const interval = setInterval(() => {
-      fetchSessions(true);
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [fetchSessions]);
-
   // Check hook configuration status
   useEffect(() => {
     if (hookBannerDismissed) return;
@@ -855,13 +843,11 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
         if (session) {
           onSelectSession(session);
         }
-        // Refresh sessions after a short delay
-        setTimeout(fetchSessions, 1000);
       }
     } catch (err) {
       console.error('Failed to resume session:', err);
     }
-  }, [sessions, onSelectSession, fetchSessions]);
+  }, [sessions, onSelectSession]);
 
   // Show conversation for an active session
   const handleShowConversation = useCallback(async (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => {
@@ -901,14 +887,13 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (response.ok) {
-        // Refresh sessions after pane operation
-        setTimeout(() => fetchSessions(true), 500);
+      if (!response.ok) {
+        console.error(`Pane ${action} failed: ${response.status}`);
       }
     } catch (err) {
       console.error(`Pane ${action} failed:`, err);
     }
-  }, [fetchSessions]);
+  }, []);
 
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -940,8 +925,6 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
   const handleMenuChangeTheme = async (theme: SessionTheme | null) => {
     if (sessionForMenu) {
       await updateSessionTheme(sessionForMenu.id, theme);
-      // 色変更後にセッション情報を再取得
-      await fetchSessions(true);
       setSessionForMenu(null);
     }
   };
@@ -954,7 +937,6 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title }),
         });
-        await fetchSessions(true);
         setSessionForMenu(null);
       } catch (err) {
         console.error('Failed to update title:', err);
@@ -1240,7 +1222,6 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
               <SessionHistory
                 onSelectSession={onSelectSession}
                 onSessionResumed={() => {
-                  fetchSessions();
                   setActiveTab('sessions');
                 }}
                 activeSessions={sessions}

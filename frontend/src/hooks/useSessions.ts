@@ -43,7 +43,6 @@ interface UseSessionsReturn {
   sessions: SessionResponse[];
   isLoading: boolean;
   error: string | null;
-  fetchSessions: (silent?: boolean) => Promise<void>;
   createSession: (name?: string, workingDir?: string) => Promise<SessionResponse | null>;
   deleteSession: (id: string) => Promise<boolean>;
   updateSessionTheme: (id: string, theme: SessionTheme | null) => Promise<boolean>;
@@ -111,9 +110,6 @@ export function useSessions(): UseSessionsReturn {
       window.removeEventListener('cchub-sessions-push', pushHandler);
     };
   }, []);
-
-  // No-op: sessions are now pushed via WS. Kept for API compatibility with callers.
-  const fetchSessions = useCallback(async (_silent = false) => {}, []);
 
   const createSession = useCallback(async (name?: string, workingDir?: string): Promise<SessionResponse | null> => {
     setError(null);
@@ -183,7 +179,6 @@ export function useSessions(): UseSessionsReturn {
     sessions,
     isLoading,
     error,
-    fetchSessions,
     createSession,
     deleteSession,
     updateSessionTheme,

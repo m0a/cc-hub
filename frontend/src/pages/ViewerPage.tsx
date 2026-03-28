@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useControlTerminal } from '../hooks/useControlTerminal';
+import { useViewerTerminal } from '../hooks/useViewerTerminal';
 import { TerminalComponent, type TerminalRef } from '../components/Terminal';
 import type { ControlModeConfig } from '../components/Terminal';
 import type { TmuxLayoutNode } from '../../../shared/types';
@@ -232,10 +232,9 @@ export function ViewerPage({ token }: ViewerPageProps) {
     }, 50);
   }, []);
 
-  const controlTerminal = useControlTerminal({
+  const controlTerminal = useViewerTerminal({
     sessionId: sessionInfo?.sessionId || '',
-    viewToken: token,
-    readOnly: true,
+    viewToken: token || '',
     onPaneOutput: handlePaneOutput,
     onInitialContent: handleInitialContent,
     onLayoutChange: handleLayoutChange,

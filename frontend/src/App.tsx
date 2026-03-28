@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { RotateCw, MessageSquare, FileText, Share2, BarChart3, ChevronDown, X as XIcon, Settings } from 'lucide-react';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { ViewerPage } from './pages/ViewerPage';
-import { DesignPreview } from './pages/DesignPreview';
 import { TerminalPage } from './pages/TerminalPage';
 import type { TerminalRef } from './components/Terminal';
 import { SessionList } from './components/SessionList';
@@ -156,11 +155,6 @@ function getSavedOpenSessionIds(): string[] {
 }
 
 export function App() {
-  // Route: /preview → design preview (temporary)
-  if (window.location.pathname === '/preview') {
-    return <DesignPreview />;
-  }
-
   // Route: /view/:token → read-only viewer (no auth)
   const viewMatch = window.location.pathname.match(/^\/view\/(.+)$/);
   if (viewMatch) {

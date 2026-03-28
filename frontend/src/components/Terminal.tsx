@@ -279,7 +279,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const noopFn = useCallback(() => {}, []);
 
   const isConnected = controlMode?.isConnected ?? false;
-  const connect = noopFn; // Connection managed by useControlTerminal in DesktopLayout
+  const connect = noopFn; // Connection managed by useMultiplexedTerminal in DesktopLayout
   const refresh = useCallback(() => {
     // Re-request terminal content from tmux (capture-pane)
     controlModeRef.current?.requestContent?.();

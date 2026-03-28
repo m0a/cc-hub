@@ -14,13 +14,8 @@ const claudeCodeService = new ClaudeCodeService();
 const sessionHistoryService = new SessionHistoryService();
 const promptHistoryService = new PromptHistoryService();
 
-// Response-level cache for GET /sessions (multiple clients polling within 3s get the same response)
-let sessionsResponseCache: { json: string; timestamp: number } | null = null;
-const SESSIONS_RESPONSE_CACHE_TTL = 3000; // 3 seconds
-
-/** Invalidate the response cache on mutations and push to mux clients */
-function invalidateSessionsResponseCache(): void {
-  sessionsResponseCache = null;
+/** Notify mux clients of session changes after mutations */
+function notifySessionChange(): void {
   pushSessionsNow();
 }
 
@@ -205,26 +200,15 @@ const ResumeSessionSchema = z.object({
   ccSessionId: z.string().optional(),
 });
 
-// GET /sessions - List all tmux sessions
+// GET /sessions - List all tmux sessions (debug/fallback only, frontend uses WS push)
 sessions.get('/', async (c) => {
-  // Return cached response if still fresh (multiple clients polling within 3s)
-  if (sessionsResponseCache && Date.now() - sessionsResponseCache.timestamp < SESSIONS_RESPONSE_CACHE_TTL) {
-    c.header('Content-Type', 'application/json');
-    c.header('X-Cache', 'HIT');
-    return c.body(sessionsResponseCache.json);
-  }
-
   const sessionsList = await buildSessionsList();
-  const responseJson = JSON.stringify({ sessions: sessionsList });
-  sessionsResponseCache = { json: responseJson, timestamp: Date.now() };
-  c.header('Content-Type', 'application/json');
-  c.header('X-Cache', 'MISS');
-  return c.body(responseJson);
+  return c.json({ sessions: sessionsList });
 });
 
 // POST /sessions - Create a new tmux session
 sessions.post('/', async (c) => {
-  invalidateSessionsResponseCache();
+  notifySessionChange();
   const body = await c.req.json().catch(() => ({}));
   const parsed = CreateSessionSchema.safeParse(body);
 
@@ -505,7 +489,7 @@ sessions.get('/:id/copy-mode', async (c) => {
 
 // DELETE /sessions/:id - Delete (kill) a tmux session
 sessions.delete('/:id', async (c) => {
-  invalidateSessionsResponseCache();
+  notifySessionChange();
   const id = c.req.param('id');
 
   const exists = await tmuxService.sessionExists(id);
@@ -653,7 +637,7 @@ sessions.post('/:id/panes/focus', async (c) => {
       return c.json({ error: `Failed to focus pane: ${error}` }, 500);
     }
     tmuxService.invalidateCache();
-    invalidateSessionsResponseCache();
+    notifySessionChange();
     return c.json({ success: true });
   } catch (_error) {
     return c.json({ error: 'Failed to focus pane' }, 500);
@@ -702,7 +686,7 @@ sessions.post('/:id/panes/close', async (c) => {
       return c.json({ error: `Failed to close pane: ${error}` }, 500);
     }
     tmuxService.invalidateCache();
-    invalidateSessionsResponseCache();
+    notifySessionChange();
     return c.json({ success: true });
   } catch (_error) {
     return c.json({ error: 'Failed to close pane' }, 500);
@@ -735,7 +719,7 @@ sessions.post('/:id/panes/split', async (c) => {
       return c.json({ error: `Failed to split pane: ${error}` }, 500);
     }
     tmuxService.invalidateCache();
-    invalidateSessionsResponseCache();
+    notifySessionChange();
     return c.json({ success: true });
   } catch (_error) {
     return c.json({ error: 'Failed to split pane' }, 500);
@@ -768,7 +752,7 @@ sessions.post('/:id/panes/respawn', async (c) => {
       return c.json({ error: `Failed to respawn pane: ${error}` }, 500);
     }
     tmuxService.invalidateCache();
-    invalidateSessionsResponseCache();
+    notifySessionChange();
     return c.json({ success: true });
   } catch (_error) {
     return c.json({ error: 'Failed to respawn pane' }, 500);

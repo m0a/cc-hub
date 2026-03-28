@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { SessionResponse, SessionTheme, IndicatorState, PaneInfo } from '../../../shared/types';
 import { authFetch, isTransientNetworkError } from '../services/api';
-import { fireHookNotification } from '../utils/hookNotification';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -48,29 +47,6 @@ interface UseSessionsReturn {
   updateSessionTheme: (id: string, theme: SessionTheme | null) => Promise<boolean>;
 }
 
-/** Track previous indicatorState per session for detecting transitions */
-let prevIndicatorStates = new Map<string, IndicatorState>();
-
-/** Detect processing→waiting_input transitions and fire OS notification */
-function detectAndNotifyTransitions(newSessions: SessionResponse[]) {
-  for (const session of newSessions) {
-    const ext = session as SessionResponse & { panes?: PaneInfo[]; ccSessionId?: string };
-    const currentIndicator = ext.panes?.some(p => p.indicatorState === 'waiting_input')
-      ? 'waiting_input' as IndicatorState
-      : ext.panes?.some(p => p.indicatorState === 'processing')
-        ? 'processing' as IndicatorState
-        : (session as SessionResponse & { indicatorState?: IndicatorState }).indicatorState;
-
-    if (!currentIndicator) continue;
-    const prevState = prevIndicatorStates.get(session.id);
-    if (prevState === 'processing' && currentIndicator === 'waiting_input') {
-      const cwd = (session as SessionResponse & { currentPath?: string }).currentPath;
-      fireHookNotification('Stop', cwd, ext.ccSessionId);
-    }
-    prevIndicatorStates.set(session.id, currentIndicator);
-  }
-}
-
 function updateSessions(
   setSessions: React.Dispatch<React.SetStateAction<SessionResponse[]>>,
   newSessions: SessionResponse[],
@@ -97,7 +73,6 @@ export function useSessions(): UseSessionsReturn {
     const pushHandler = (e: Event) => {
       const pushed = (e as CustomEvent).detail as SessionResponse[];
       if (pushed) {
-        detectAndNotifyTransitions(pushed);
         updateSessions(setSessions, pushed);
         setIsLoading(false);
       }

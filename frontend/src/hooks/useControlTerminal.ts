@@ -141,10 +141,27 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
     let wsOutputCount = 0;
     let wsLastMsgTime = Date.now();
 
+    ws.binaryType = 'arraybuffer';
     ws.onmessage = (event) => {
-      if (typeof event.data !== 'string') return;
       wsMsgCount++;
       wsLastMsgTime = Date.now();
+
+      // Binary frame: [0x01][paneId\0][raw data] — output without base64/JSON overhead
+      if (event.data instanceof ArrayBuffer) {
+        const view = new Uint8Array(event.data);
+        if (view.length < 3 || view[0] !== 0x01) return;
+        // Find null terminator after paneId
+        let nullIdx = 1;
+        while (nullIdx < view.length && view[nullIdx] !== 0) nullIdx++;
+        if (nullIdx >= view.length) return;
+        const paneId = new TextDecoder().decode(view.subarray(1, nullIdx));
+        const data = view.subarray(nullIdx + 1);
+        wsOutputCount++;
+        onPaneOutputRef.current?.(paneId, data);
+        return;
+      }
+
+      if (typeof event.data !== 'string') return;
 
       let msg: ControlServerMessage;
       try {
@@ -155,6 +172,7 @@ export function useControlTerminal(options: UseControlTerminalOptions): UseContr
 
       switch (msg.type) {
         case 'output': {
+          // Fallback for JSON-encoded output (backward compatibility)
           wsOutputCount++;
           const bytes = base64ToUint8Array(msg.data);
           onPaneOutputRef.current?.(msg.paneId, bytes);

@@ -79,11 +79,14 @@ export const terminalWebSocket = {
             return;
           }
           try {
-            const result = ws.send(JSON.stringify({
-              type: 'output',
-              paneId,
-              data: data.toString('base64'),
-            }));
+            // Binary frame: [0x01][paneId\0][raw data]
+            // Avoids base64 encoding + JSON.stringify overhead
+            const paneIdBuf = Buffer.from(`${paneId}\0`);
+            const frame = Buffer.allocUnsafe(1 + paneIdBuf.length + data.length);
+            frame[0] = 0x01; // type: output
+            paneIdBuf.copy(frame, 1);
+            data.copy(frame, 1 + paneIdBuf.length);
+            const result = ws.send(frame);
             // Bun ws.send returns number of bytes sent, or 0 if backpressure/dropped
             if (result === 0) {
               ws.data.sendFailCount = (ws.data.sendFailCount || 0) + 1;

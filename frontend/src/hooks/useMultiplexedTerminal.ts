@@ -136,9 +136,22 @@ function ensureConnection(token?: string | null) {
   let wsMsgCount = 0;
   let wsOutputCount = 0;
 
+  // Track bytes per second for throughput display
+  let wsBytesThisSec = 0;
+  const bytesTimer = setInterval(() => {
+    (window as any).__cchub_ws_bytes_per_sec = wsBytesThisSec;
+    wsBytesThisSec = 0;
+  }, 1000);
+
   ws.binaryType = 'arraybuffer';
   ws.onmessage = (event) => {
     wsMsgCount++;
+    // Count bytes for throughput
+    if (event.data instanceof ArrayBuffer) {
+      wsBytesThisSec += event.data.byteLength;
+    } else if (typeof event.data === 'string') {
+      wsBytesThisSec += event.data.length;
+    }
 
     const cb = activeCallbacks;
     const currentSession = cb?.sessionId;
@@ -256,6 +269,7 @@ function ensureConnection(token?: string | null) {
 
   ws.onclose = (event) => {
     console.log(`[MUX] WebSocket closed: code=${event.code} reason=${event.reason} msgs=${wsMsgCount} outputs=${wsOutputCount}`);
+    clearInterval(bytesTimer);
     if (sharedWs !== ws) return;
 
     sharedWs = null;

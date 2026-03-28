@@ -10,9 +10,18 @@ interface SessionMeta {
   title?: string;
 }
 
+export interface LastKnownSession {
+  id: string;
+  name: string;
+  currentPath?: string;
+  theme?: SessionTheme;
+  customTitle?: string;
+}
+
 interface MetadataStore {
   sessions: Record<string, SessionMeta>;
   sessionOrder?: string[]; // ordered session IDs
+  lastKnownSessions?: LastKnownSession[];
 }
 
 async function getFilePath(): Promise<string> {
@@ -101,6 +110,17 @@ export async function getSessionOrder(): Promise<string[]> {
 export async function setSessionOrder(order: string[]): Promise<void> {
   const data = await load();
   data.sessionOrder = order;
+  await save(data);
+}
+
+export async function getLastKnownSessions(): Promise<LastKnownSession[]> {
+  const data = await load();
+  return data.lastKnownSessions || [];
+}
+
+export async function saveLastKnownSessions(sessions: LastKnownSession[]): Promise<void> {
+  const data = await load();
+  data.lastKnownSessions = sessions;
   await save(data);
 }
 

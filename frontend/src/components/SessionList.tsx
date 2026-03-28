@@ -652,8 +652,40 @@ function SessionItem({
     localStorage.setItem(hintKey, '1');
   }
 
-  const isLive = cardIndicator === 'processing' || cardIndicator === 'waiting_input';
+  const isLost = session.state === 'lost';
+  const isLive = !isLost && (cardIndicator === 'processing' || cardIndicator === 'waiting_input');
   const accentColor = extSession.theme ? ACCENT_HEX[extSession.theme] : undefined;
+
+  // Lost session: show recreate UI
+  if (isLost) {
+    return (
+      <div className="group relative rounded-lg transition-all duration-200 select-none opacity-50 hover:opacity-70">
+        {accentColor && (
+          <div className="absolute left-0 top-3 bottom-3 w-[3px] rounded-full" style={{ backgroundColor: accentColor }} />
+        )}
+        <div className={`px-4 py-3 ${accentColor ? 'pl-5' : ''}`}>
+          <div className="flex items-center gap-2 mb-1">
+            <h3 className="text-[15px] font-medium truncate flex-1 tracking-[-0.01em] text-zinc-500">
+              {displayTitle}
+            </h3>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-zinc-500/15 text-zinc-500">
+              {t('session.lost', 'Lost')}
+            </span>
+          </div>
+          {shortPath && (
+            <p className="text-[12px] text-zinc-600 truncate mb-2">{shortPath}</p>
+          )}
+          <button
+            onClick={() => onSelect(session)}
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] font-medium bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition-colors"
+          >
+            <Play className="w-3 h-3" />
+            {t('session.recreate', 'Recreate')}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

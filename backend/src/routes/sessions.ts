@@ -5,7 +5,7 @@ import { TmuxService } from '../services/tmux';
 import { ClaudeCodeService } from '../services/claude-code';
 import { SessionHistoryService } from '../services/session-history';
 import { PromptHistoryService } from '../services/prompt-history';
-import { getAllSessionMetadata, setSessionTheme, setSessionTitle, getSessionOrder, setSessionOrder } from '../services/session-metadata';
+import { getAllSessionMetadata, setSessionTheme, setSessionTitle, getSessionOrder, setSessionOrder, getLastKnownSessions, saveLastKnownSessions, type LastKnownSession } from '../services/session-metadata';
 import { getIndicatorOverride } from './notify';
 import { pushSessionsNow } from './terminal-mux';
 
@@ -174,6 +174,35 @@ export async function buildSessionsList(): Promise<object[]> {
       }) : undefined,
     };
   }));
+
+  // Save snapshot of current sessions (for recovery after reboot)
+  const snapshot: LastKnownSession[] = results.map((s: any) => ({
+    id: s.id,
+    name: s.name,
+    currentPath: s.currentPath,
+    theme: s.theme,
+    customTitle: s.customTitle,
+  }));
+  // Fire async, don't block response
+  saveLastKnownSessions(snapshot).catch(() => {});
+
+  // Add lost sessions (existed before reboot but not in tmux now)
+  const activeIds = new Set(results.map((s: any) => s.id));
+  const lastKnown = await getLastKnownSessions();
+  for (const lost of lastKnown) {
+    if (!activeIds.has(lost.id)) {
+      results.push({
+        id: lost.id,
+        name: lost.name,
+        createdAt: '',
+        lastAccessedAt: '',
+        state: 'lost' as any,
+        currentPath: lost.currentPath,
+        theme: lost.theme,
+        customTitle: lost.customTitle,
+      } as any);
+    }
+  }
 
   // Apply custom order if set
   if (order.length > 0) {

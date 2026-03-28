@@ -9,7 +9,8 @@ export type SessionState =
   | 'working'
   | 'waiting_input'
   | 'waiting_permission'
-  | 'disconnected';
+  | 'disconnected'
+  | 'lost';
 
 // =============================================================================
 // Entities

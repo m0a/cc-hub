@@ -304,11 +304,19 @@ export function ConversationViewer({
   const virtualizer = useVirtualizer({
     count: messages.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 100,
-    overscan: 5,
+    estimateSize: (index) => {
+      // Better estimate based on content length to reduce scroll jank
+      const msg = messages[index];
+      if (!msg) return 100;
+      const len = msg.content?.length || 0;
+      if (len < 100) return 60;
+      if (len < 500) return 150;
+      if (len < 2000) return 300;
+      return 500;
+    },
+    overscan: 10,
   });
 
-  // Scroll to bottom only when NEW messages are added (not on every refresh)
   const scrollToEnd = useCallback(() => {
     if (messages.length > 0) {
       virtualizer.scrollToIndex(messages.length - 1, { align: 'end' });
@@ -317,9 +325,7 @@ export function ConversationViewer({
 
   useEffect(() => {
     if (scrollToBottom && messages.length > 0 && !isLoading) {
-      // Only scroll if message count increased (new message added)
       if (messages.length > prevMessageCount) {
-        // Use requestAnimationFrame to ensure virtualizer has measured items
         requestAnimationFrame(() => {
           scrollToEnd();
         });
@@ -352,7 +358,7 @@ export function ConversationViewer({
       <div
         ref={parentRef}
         className="flex-1 overflow-y-auto p-3 select-text overscroll-contain"
-        style={{ WebkitUserSelect: 'text', userSelect: 'text', WebkitTouchCallout: 'none', willChange: 'transform' }}
+        style={{ WebkitUserSelect: 'text', userSelect: 'text', WebkitTouchCallout: 'none' }}
         onContextMenu={(e) => e.preventDefault()}
       >
         {isLoading ? (
@@ -371,24 +377,27 @@ export function ConversationViewer({
               position: 'relative',
             }}
           >
-            {virtualizer.getVirtualItems().map((virtualRow) => (
-              <div
-                key={virtualRow.key}
-                data-index={virtualRow.index}
-                ref={virtualizer.measureElement}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
-              >
-                <div className="pb-3">
-                  <MessageItem msg={messages[virtualRow.index]} />
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualizer.getVirtualItems()[0]?.start ?? 0}px)`,
+              }}
+            >
+              {virtualizer.getVirtualItems().map((virtualRow) => (
+                <div
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={virtualizer.measureElement}
+                >
+                  <div className="pb-3">
+                    <MessageItem msg={messages[virtualRow.index]} />
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
       </div>

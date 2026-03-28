@@ -41,6 +41,16 @@ set -g set-clipboard on
 set -g remain-on-exit on
 `;
 
+/** Parsed process info from a single `ps` call, shared across consumers */
+interface ParsedProcessInfo {
+  /** TTYs that have a Claude Code process running */
+  claudeTtys: Set<string>;
+  /** TTY → agent info (name/color) for team agent processes */
+  agentInfo: Map<string, { agentName: string; agentColor?: string }>;
+  /** TTY → whether the Claude process is actively running (not idle) */
+  processRunning: Map<string, boolean>;
+}
+
 export class TmuxService {
   private configPath: string;
   private configEnsured = false;
@@ -48,6 +58,10 @@ export class TmuxService {
   // Cache for listSessions to avoid redundant subprocess spawns from concurrent polling
   private listSessionsCache: { data: TmuxSessionInfo[]; timestamp: number } | null = null;
   private static readonly LIST_SESSIONS_CACHE_TTL = 2000; // 2 seconds
+
+  // Cache for consolidated process info (single ps call serves all 3 consumers)
+  private processInfoCache: { data: ParsedProcessInfo; timestamp: number } | null = null;
+  private static readonly PROCESS_INFO_CACHE_TTL = 3000; // 3 seconds
 
   constructor() {
     const configDir = path.join(process.env.HOME || '/tmp', '.config', 'cchub');
@@ -88,6 +102,89 @@ export class TmuxService {
     await proc.exited;
     // Ignore errors (e.g., if no tmux server is running)
   }
+  /**
+   * Consolidated process info: runs `ps -eo tty,stat,wchan:20,args` ONCE
+   * and parses the result for all 3 consumers (claudeTtys, agentInfo, processRunning).
+   * Results are cached with a 3-second TTL.
+   */
+  async batchProcessInfo(ttyNames: string[]): Promise<ParsedProcessInfo> {
+    // Return cached result if still fresh
+    if (this.processInfoCache && Date.now() - this.processInfoCache.timestamp < TmuxService.PROCESS_INFO_CACHE_TTL) {
+      return this.processInfoCache.data;
+    }
+
+    const result: ParsedProcessInfo = {
+      claudeTtys: new Set(),
+      agentInfo: new Map(),
+      processRunning: new Map(),
+    };
+
+    if (ttyNames.length === 0) {
+      this.processInfoCache = { data: result, timestamp: Date.now() };
+      return result;
+    }
+
+    try {
+      // Single ps call with all fields needed by all consumers
+      const proc = Bun.spawn(['ps', '-eo', 'tty,stat,wchan:20,args', '--no-headers'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const output = await new Response(proc.stdout).text();
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) {
+        this.processInfoCache = { data: result, timestamp: Date.now() };
+        return result;
+      }
+
+      const ttySet = new Set(ttyNames);
+
+      for (const line of output.split('\n')) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length < 4) continue;
+
+        const [tty, stat, wchan] = parts;
+        if (!ttySet.has(tty)) continue;
+
+        const args = parts.slice(3).join(' ');
+
+        // Consumer 1: Claude detection (batchCheckClaudeOnTtys)
+        if (this.isClaudeProcess(args)) {
+          result.claudeTtys.add(tty);
+
+          // Consumer 3: Process running state (batchCheckProcessRunning)
+          if (stat.startsWith('R')) {
+            result.processRunning.set(tty, true);
+          } else if (stat.startsWith('S')) {
+            const isIdle = wchan.startsWith('do_epoll') || wchan.startsWith('ep_poll') || wchan.startsWith('poll_schedule');
+            // Only set to true if not already true (R state takes priority)
+            if (!result.processRunning.get(tty)) {
+              result.processRunning.set(tty, !isIdle);
+            }
+          }
+        }
+
+        // Consumer 2: Agent info (batchGetAgentInfo)
+        if (args.includes('--agent-name')) {
+          const nameMatch = args.match(/--agent-name\s+(\S+)/);
+          const colorMatch = args.match(/--agent-color\s+(\S+)/);
+          if (nameMatch) {
+            result.agentInfo.set(tty, {
+              agentName: nameMatch[1],
+              agentColor: colorMatch?.[1],
+            });
+          }
+        }
+      }
+    } catch {
+      // Fall back silently
+    }
+
+    this.processInfoCache = { data: result, timestamp: Date.now() };
+    return result;
+  }
+
   /**
    * List all tmux sessions with pane info
    */
@@ -264,86 +361,23 @@ export class TmuxService {
   }
 
   /**
-   * Batch check which TTYs have Claude Code process running (single ps call)
-   * Returns a Set of tty names that have claude running
+   * Batch check which TTYs have Claude Code process running.
+   * Delegates to consolidated batchProcessInfo() (single ps call).
    */
   async batchCheckClaudeOnTtys(ttyNames: string[]): Promise<Set<string>> {
-    const result = new Set<string>();
-    if (ttyNames.length === 0) return result;
-
-    try {
-      // Use args (full command line) to reliably detect both claude binary and team agents
-      const proc = Bun.spawn(['ps', '-eo', 'tty,args', '--no-headers'], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-
-      const output = await new Response(proc.stdout).text();
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) return result;
-
-      const ttySet = new Set(ttyNames);
-      for (const line of output.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        const spaceIdx = trimmed.indexOf(' ');
-        if (spaceIdx === -1) continue;
-        const tty = trimmed.substring(0, spaceIdx);
-        if (!ttySet.has(tty)) continue;
-        const args = trimmed.substring(spaceIdx + 1).trimStart();
-        if (this.isClaudeProcess(args)) {
-          result.add(tty);
-        }
-      }
-    } catch {
-      // Fall back silently
-    }
-    return result;
+    if (ttyNames.length === 0) return new Set();
+    const info = await this.batchProcessInfo(ttyNames);
+    return info.claudeTtys;
   }
 
   /**
-   * Batch get team agent info from process args for TTYs (single ps call)
-   * Returns a Map of tty name → { agentName, agentColor }
+   * Batch get team agent info from process args for TTYs.
+   * Delegates to consolidated batchProcessInfo() (single ps call).
    */
   async batchGetAgentInfo(ttyNames: string[]): Promise<Map<string, { agentName: string; agentColor?: string }>> {
-    const result = new Map<string, { agentName: string; agentColor?: string }>();
-    if (ttyNames.length === 0) return result;
-
-    try {
-      const proc = Bun.spawn(['ps', '-eo', 'tty,args', '--no-headers'], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-
-      const output = await new Response(proc.stdout).text();
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) return result;
-
-      const ttySet = new Set(ttyNames);
-      for (const line of output.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        // First field is TTY, rest is args
-        const spaceIdx = trimmed.indexOf(' ');
-        if (spaceIdx === -1) continue;
-        const tty = trimmed.substring(0, spaceIdx);
-        if (!ttySet.has(tty)) continue;
-        const args = trimmed.substring(spaceIdx + 1);
-        if (!args.includes('--agent-name')) continue;
-
-        const nameMatch = args.match(/--agent-name\s+(\S+)/);
-        const colorMatch = args.match(/--agent-color\s+(\S+)/);
-        if (nameMatch) {
-          result.set(tty, {
-            agentName: nameMatch[1],
-            agentColor: colorMatch?.[1],
-          });
-        }
-      }
-    } catch {
-      // Fall back silently
-    }
-    return result;
+    if (ttyNames.length === 0) return new Map();
+    const info = await this.batchProcessInfo(ttyNames);
+    return info.agentInfo;
   }
 
   /**
@@ -401,7 +435,8 @@ export class TmuxService {
   }
 
   /**
-   * Batch check if Claude processes are actively running on given TTYs (single ps call)
+   * Batch check if Claude processes are actively running on given TTYs.
+   * Delegates to consolidated batchProcessInfo() (single ps call).
    * Returns a Map of tty name → isActivelyRunning
    */
   async batchCheckProcessRunning(ttyNames: string[]): Promise<Map<string, boolean>> {
@@ -411,37 +446,11 @@ export class TmuxService {
     // Initialize all as false
     for (const tty of ttyNames) result.set(tty, false);
 
-    try {
-      // Single ps call: get TTY, state, wchan, and full args for all processes
-      const proc = Bun.spawn(['ps', '-eo', 'tty,stat,wchan:20,args', '--no-headers'], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-
-      const output = await new Response(proc.stdout).text();
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) return result;
-
-      const ttySet = new Set(ttyNames);
-      for (const line of output.split('\n')) {
-        const parts = line.trim().split(/\s+/);
-        if (parts.length < 4) continue;
-        const [tty, stat, wchan] = parts;
-        if (!ttySet.has(tty)) continue;
-        const args = parts.slice(3).join(' ');
-        if (!this.isClaudeProcess(args)) continue;
-
-        if (stat.startsWith('R')) {
-          result.set(tty, true); // Actively running
-        } else if (stat.startsWith('S')) {
-          // Sleeping: check if idle (waiting for user input via epoll) or active (network I/O, etc.)
-          // epoll_wait/poll_schedule = idle event loop = waiting for input
-          const isIdle = wchan.startsWith('do_epoll') || wchan.startsWith('ep_poll') || wchan.startsWith('poll_schedule');
-          result.set(tty, !isIdle); // Active if not in idle epoll
-        }
+    const info = await this.batchProcessInfo(ttyNames);
+    for (const tty of ttyNames) {
+      if (info.processRunning.has(tty)) {
+        result.set(tty, info.processRunning.get(tty) || false);
       }
-    } catch {
-      // Fall back silently
     }
     return result;
   }
@@ -528,9 +537,10 @@ export class TmuxService {
   /**
    * Create a new tmux session
    */
-  /** Invalidate the listSessions cache */
+  /** Invalidate the listSessions and processInfo caches */
   invalidateCache(): void {
     this.listSessionsCache = null;
+    this.processInfoCache = null;
   }
 
   async createSession(name: string): Promise<string> {

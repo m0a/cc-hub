@@ -35,12 +35,23 @@ interface SessionsIndex {
   originalPath?: string;
 }
 
+/** Cached session data with mtime for staleness check */
+interface CachedSessionData {
+  data: ClaudeCodeSession;
+  fileMtime: number;
+  timestamp: number;
+}
+
 export class ClaudeCodeService {
   private claudeDir: string;
 
   // Cache for TTY → SessionID mappings (avoids ps subprocess per session)
   private ttySessionCache = new Map<string, { sessionId: string | null; timestamp: number }>();
   private static readonly TTY_SESSION_CACHE_TTL = 10_000; // 10 seconds
+
+  // Cache for session data keyed by file path (avoids re-reading JSONL files)
+  private sessionDataCache = new Map<string, CachedSessionData>();
+  private static readonly SESSION_DATA_CACHE_TTL = 5000; // 5 seconds
 
   constructor() {
     this.claudeDir = join(homedir(), '.claude', 'projects');
@@ -448,6 +459,54 @@ export class ClaudeCodeService {
   }
 
   /**
+   * Read session data from a JSONL file with mtime-based caching.
+   * Returns cached data if file mtime hasn't changed and cache is within TTL.
+   */
+  private async readSessionDataCached(filePath: string, sessionId: string, projectPath: string): Promise<ClaudeCodeSession | null> {
+    try {
+      const fileStat = await stat(filePath);
+
+      // Check cache: if mtime unchanged and within TTL, return cached
+      const cached = this.sessionDataCache.get(filePath);
+      if (
+        cached &&
+        cached.fileMtime === fileStat.mtimeMs &&
+        Date.now() - cached.timestamp < ClaudeCodeService.SESSION_DATA_CACHE_TTL
+      ) {
+        return cached.data;
+      }
+
+      const [firstPrompt, lastUserMessage, waitingToolName, firstMessageId] = await Promise.all([
+        this.readFirstPromptFromFile(filePath),
+        this.readLastUserMessage(filePath),
+        this.checkWaitingState(filePath),
+        this.readFirstMessageId(filePath),
+      ]);
+
+      const data: ClaudeCodeSession = {
+        sessionId,
+        summary: lastUserMessage || undefined,
+        firstPrompt: firstPrompt || undefined,
+        modified: new Date(fileStat.mtimeMs).toISOString(),
+        projectPath,
+        waitingForInput: waitingToolName !== null,
+        waitingToolName: waitingToolName || undefined,
+        firstMessageId: firstMessageId || undefined,
+      };
+
+      this.sessionDataCache.set(filePath, {
+        data,
+        fileMtime: fileStat.mtimeMs,
+        timestamp: Date.now(),
+      });
+
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Get Claude Code session info by session ID
    */
   async getSessionById(sessionId: string, workingDir: string): Promise<ClaudeCodeSession | null> {
@@ -456,28 +515,8 @@ export class ClaudeCodeService {
       const projectDir = join(this.claudeDir, projectName);
       const filePath = join(projectDir, `${sessionId}.jsonl`);
 
-      try {
-        const [fileStat, firstPrompt, lastUserMessage, waitingToolName, firstMessageId] = await Promise.all([
-          stat(filePath),
-          this.readFirstPromptFromFile(filePath),
-          this.readLastUserMessage(filePath),
-          this.checkWaitingState(filePath),
-          this.readFirstMessageId(filePath),
-        ]);
-
-        return {
-          sessionId,
-          summary: lastUserMessage || undefined,
-          firstPrompt: firstPrompt || undefined,
-          modified: new Date(fileStat.mtimeMs).toISOString(),
-          projectPath: workingDir,
-          waitingForInput: waitingToolName !== null,
-          waitingToolName: waitingToolName || undefined,
-          firstMessageId: firstMessageId || undefined,
-        };
-      } catch {
-        // File not found, try parent directories
-      }
+      const result = await this.readSessionDataCached(filePath, sessionId, workingDir);
+      if (result) return result;
 
       // Try parent directories
       let currentPath = workingDir;
@@ -490,28 +529,8 @@ export class ClaudeCodeService {
         const parentProjectDir = join(this.claudeDir, parentProjectName);
         const parentFilePath = join(parentProjectDir, `${sessionId}.jsonl`);
 
-        try {
-          const [fileStat, firstPrompt, lastUserMessage, waitingToolName, firstMessageId] = await Promise.all([
-            stat(parentFilePath),
-            this.readFirstPromptFromFile(parentFilePath),
-            this.readLastUserMessage(parentFilePath),
-            this.checkWaitingState(parentFilePath),
-            this.readFirstMessageId(parentFilePath),
-          ]);
-
-          return {
-            sessionId,
-            summary: lastUserMessage || undefined,
-            firstPrompt: firstPrompt || undefined,
-            modified: new Date(fileStat.mtimeMs).toISOString(),
-            projectPath: currentPath,
-            waitingForInput: waitingToolName !== null,
-            waitingToolName: waitingToolName || undefined,
-            firstMessageId: firstMessageId || undefined,
-          };
-        } catch {
-          // Continue to parent
-        }
+        const parentResult = await this.readSessionDataCached(parentFilePath, sessionId, currentPath);
+        if (parentResult) return parentResult;
       }
 
       return null;

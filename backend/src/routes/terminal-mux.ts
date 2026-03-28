@@ -83,6 +83,11 @@ export function pushSessionsNow() {
   }).catch(() => {});
 }
 
+/** Get number of connected mux clients */
+export function getConnectedClientCount(): number {
+  return activeMuxConnections.size;
+}
+
 /** Broadcast a message to all mux clients (used by notify) */
 export function broadcastToMuxClients(msg: Record<string, unknown>) {
   const payload = JSON.stringify(msg);

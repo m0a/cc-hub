@@ -281,6 +281,8 @@ export interface DashboardResponse {
   hourlyActivity?: Record<number, number>; // Phase 3: Hour (0-23) -> session count
   version?: string; // CC Hub version
   systemMetrics?: SystemMetrics; // System CPU/memory metrics
+  diskUsage?: { total: number; used: number; available: number; mountpoint: string };
+  connectedClients?: number;
 }
 
 export interface ExtendedSessionResponse extends SessionResponse {

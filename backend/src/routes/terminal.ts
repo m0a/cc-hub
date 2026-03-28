@@ -1,49 +1,30 @@
 import type { ServerWebSocket } from 'bun';
 import { TmuxService } from '../services/tmux';
-import { isAuthRequired, getJwtSecret } from '../middleware/auth';
-import { AuthService } from '../services/auth';
-import { getDataDir } from '../utils/storage';
 import { getOrCreateControlSession, type TmuxControlSession } from '../services/tmux-control';
 import { validateShareToken } from '../services/share-token';
-import type { ControlClientMessage } from '../../../shared/types';
 
-interface TerminalData {
+interface ViewerData {
   sessionId: string;
   visitorId: string;
-  readOnly?: boolean;
+  readOnly: true;
   controlSession?: TmuxControlSession;
   cleanupFns?: Array<() => void>;
   initialContentSent?: boolean;
-  readyForOutput?: boolean; // true after initial-content has been delivered
-  outputSuppressedCount?: number;
-  sendFailCount?: number;
+  readyForOutput?: boolean;
 }
 
 const tmuxService = new TmuxService();
 
-// Track active control mode connections per session
-const activeControlConnections = new Map<string, Set<ServerWebSocket<TerminalData>>>();
-
-/** Broadcast a message to ALL connected WebSocket clients across all sessions. */
-export function broadcastToAllClients(msg: Record<string, unknown>) {
-  const payload = JSON.stringify(msg);
-  for (const connections of activeControlConnections.values()) {
-    for (const ws of connections) {
-      try {
-        ws.send(payload);
-      } catch {
-        // Client may have disconnected
-      }
-    }
-  }
-}
-
-export const terminalWebSocket = {
-  async open(ws: ServerWebSocket<TerminalData>) {
+/**
+ * WebSocket handler for read-only share view (/ws/view/:token).
+ * This is the only remaining per-session WS — all interactive
+ * terminal I/O now uses the multiplexed /ws/mux endpoint.
+ */
+export const viewerWebSocket = {
+  async open(ws: ServerWebSocket<ViewerData>) {
     const { sessionId } = ws.data;
-    console.log(`Control WebSocket opened for session: ${sessionId}`);
+    console.log(`[viewer] WebSocket opened for session: ${sessionId}`);
 
-    // Check if tmux session exists
     const exists = await tmuxService.sessionExists(sessionId);
     if (!exists) {
       ws.send(JSON.stringify({ type: 'error', message: 'Session not found' }));
@@ -56,102 +37,54 @@ export const terminalWebSocket = {
       ws.data.controlSession = controlSession;
       controlSession.addClient();
 
-      // Track connection
-      if (!activeControlConnections.has(sessionId)) {
-        activeControlConnections.set(sessionId, new Set());
-      }
-      activeControlConnections.get(sessionId)!.add(ws);
-
-      // Register listeners
       const cleanupFns: Array<() => void> = [];
 
-      // Output listener: forward pane output to this client
-      // Suppressed until initial-content has been delivered to prevent duplicate content
-      ws.data.outputSuppressedCount = 0;
-      ws.data.sendFailCount = 0;
+      // Output listener (suppressed until initial-content sent)
       cleanupFns.push(
         controlSession.onOutput((paneId, data) => {
-          if (!ws.data.readyForOutput) {
-            ws.data.outputSuppressedCount = (ws.data.outputSuppressedCount || 0) + 1;
-            if (ws.data.outputSuppressedCount % 50 === 1) {
-              console.warn(`[control] Output suppressed (readyForOutput=false) for ${sessionId}: count=${ws.data.outputSuppressedCount}`);
-            }
-            return;
-          }
+          if (!ws.data.readyForOutput) return;
           try {
-            // Binary frame: [0x01][paneId\0][raw data]
-            // Avoids base64 encoding + JSON.stringify overhead
             const paneIdBuf = Buffer.from(`${paneId}\0`);
             const frame = Buffer.allocUnsafe(1 + paneIdBuf.length + data.length);
-            frame[0] = 0x01; // type: output
+            frame[0] = 0x01;
             paneIdBuf.copy(frame, 1);
             data.copy(frame, 1 + paneIdBuf.length);
-            const result = ws.send(frame);
-            // Bun ws.send returns number of bytes sent, or 0 if backpressure/dropped
-            if (result === 0) {
-              ws.data.sendFailCount = (ws.data.sendFailCount || 0) + 1;
-              if (ws.data.sendFailCount % 20 === 1) {
-                console.warn(`[control] ws.send backpressure for ${sessionId}: dropped=${ws.data.sendFailCount} buffered=${ws.getBufferedAmount()}`);
-              }
-            }
-          } catch (err) {
-            console.warn(`[control] ws.send error for ${sessionId}:`, err);
-          }
+            ws.send(frame);
+          } catch { /* disconnected */ }
         })
       );
 
-      // Layout listener: forward layout changes to this client
+      // Layout listener
       cleanupFns.push(
-        controlSession.onLayoutChange((layout, _frontendLayout) => {
+        controlSession.onLayoutChange((layout) => {
           try {
             ws.send(JSON.stringify({ type: 'layout', layout }));
-          } catch {
-            // Client may have disconnected
-          }
+          } catch { /* disconnected */ }
         })
       );
 
-      // Exit listener: notify client and clean up
+      // Exit listener
       cleanupFns.push(
         controlSession.onExit((reason) => {
           try {
             ws.send(JSON.stringify({ type: 'error', message: `Session exited: ${reason}` }));
             ws.close();
-          } catch {
-            // Already closed
-          }
+          } catch { /* already closed */ }
         })
       );
 
-      // Pane dead listener: notify client when a pane's process exits
+      // Pane dead listener
       cleanupFns.push(
         controlSession.onPaneDead((paneId) => {
           try {
             ws.send(JSON.stringify({ type: 'pane-dead', paneId }));
-          } catch {
-            // Client may have disconnected
-          }
-        })
-      );
-
-      // New session listener: notify client when a pane is separated (mobile)
-      cleanupFns.push(
-        controlSession.onNewSession((newSessionId, sessionName) => {
-          try {
-            ws.send(JSON.stringify({
-              type: 'new-session',
-              sessionId: newSessionId,
-              sessionName,
-            }));
-          } catch {
-            // Client may have disconnected
-          }
+          } catch { /* disconnected */ }
         })
       );
 
       ws.data.cleanupFns = cleanupFns;
 
-      // Send initial layout (tmux doesn't send %layout-change on connect)
+      // Send initial layout
       try {
         const layoutOutput = await controlSession.sendCommand(
           `list-windows -F "#{window_layout}"`
@@ -163,372 +96,114 @@ export const terminalWebSocket = {
           ws.send(JSON.stringify({ type: 'layout', layout }));
         }
       } catch (err) {
-        console.error(`[control] Failed to send initial layout:`, err);
+        console.error(`[viewer] Failed to send initial layout:`, err);
       }
 
-      // Signal that backend is ready for commands.
-      // The client should wait for this before sending resize to avoid
-      // messages being dropped during async open handler.
       ws.send(JSON.stringify({ type: 'ready' }));
     } catch (error) {
-      console.error(`[control] Failed to create control session:`, error);
+      console.error(`[viewer] Failed to create control session:`, error);
       ws.send(JSON.stringify({ type: 'error', message: 'Failed to start control session' }));
       ws.close(4500, 'Control session failed');
     }
   },
 
-  async message(ws: ServerWebSocket<TerminalData>, message: string | Buffer) {
+  async message(ws: ServerWebSocket<ViewerData>, message: string | Buffer) {
     const { controlSession } = ws.data;
     if (!controlSession) return;
-
-    // Control mode only handles JSON messages
     if (typeof message !== 'string') return;
 
-    let msg: ControlClientMessage;
+    let msg: { type: string; timestamp?: number; paneId?: string; cols?: number; rows?: number };
     try {
       msg = JSON.parse(message);
     } catch {
       return;
     }
 
-
-    // Read-only clients: only allow resize (initial content), ping, request-content
-    if (ws.data.readOnly) {
-      if (msg.type === 'ping') {
-        ws.send(JSON.stringify({ type: 'pong', timestamp: msg.timestamp }));
-        return;
-      }
-      if (msg.type === 'request-content') {
-        try {
-          const content = await controlSession.capturePaneWithScrollback(msg.paneId);
-          if (content) {
-            const termContent = content.split('\n').join('\r\n');
-            ws.send(JSON.stringify({
-              type: 'initial-content',
-              paneId: msg.paneId,
-              data: Buffer.from(termContent).toString('base64'),
-            }));
-          }
-        } catch {
-          // Pane may not be available
-        }
-        return;
-      }
-      if (msg.type === 'resize') {
-        // Read-only: capture content at tmux's current size, don't resize tmux
-        if (!ws.data.initialContentSent) {
-          ws.data.initialContentSent = true;
-          try {
-            const panes = await controlSession.listPanes();
-            for (const pane of panes) {
-              try {
-                const content = await controlSession.capturePaneWithScrollback(pane.paneId);
-                if (content) {
-                  const termContent = content.split('\n').join('\r\n');
-                  ws.send(JSON.stringify({
-                    type: 'initial-content',
-                    paneId: pane.paneId,
-                    data: Buffer.from(termContent).toString('base64'),
-                  }));
-                }
-              } catch {
-                // Pane may not be available
-              }
-            }
-          } catch (err) {
-            console.error('[view] Failed to send initial content:', err);
-          }
-          ws.data.readyForOutput = true;
-        }
-        return;
-      }
-      // Ignore all other messages (input, split, close-pane, etc.)
+    // Read-only: only allow resize (for initial content), ping, request-content
+    if (msg.type === 'ping') {
+      ws.send(JSON.stringify({ type: 'pong', timestamp: msg.timestamp }));
       return;
     }
 
-    try {
-      switch (msg.type) {
-        case 'input': {
-          const data = Buffer.from(msg.data, 'base64');
-          await controlSession.sendInput(msg.paneId, data);
-          break;
+    if (msg.type === 'request-content' && msg.paneId) {
+      try {
+        const content = await controlSession.capturePaneWithScrollback(msg.paneId);
+        if (content) {
+          const termContent = content.split('\n').join('\r\n');
+          ws.send(JSON.stringify({
+            type: 'initial-content',
+            paneId: msg.paneId,
+            data: Buffer.from(termContent).toString('base64'),
+          }));
         }
-        case 'resize': {
-          if (!ws.data.initialContentSent) {
-            ws.data.initialContentSent = true;
-            // First resize: apply size, then capture current pane content.
-            // %output is suppressed (readyForOutput=false) until initial-content is sent,
-            // preventing duplicate content from tmux reflow during resize.
-            //
-            // Capture scrollback BEFORE resize (reflow corrupts absolute positioning).
-            // Then resize, wait for redraw, and capture visible area.
-            // Send scrollback + visible as initial-content so xterm has scroll history.
-            try {
-              // Step 1: Capture scrollback before resize (won't be corrupted yet)
-              const panesBefore = await controlSession.listPanes();
-              const scrollbackMap = new Map<string, string>();
-              for (const pane of panesBefore) {
-                try {
-                  const scrollback = await controlSession.sendCommand(
-                    `capture-pane -e -p -t ${pane.paneId} -S - -E -1`
-                  );
-                  if (scrollback && scrollback.trim()) {
-                    scrollbackMap.set(pane.paneId, scrollback);
-                  }
-                } catch {
-                  // Pane may not be available
-                }
-              }
+      } catch { /* pane may not be available */ }
+      return;
+    }
 
-              // Step 2: Resize
-              await controlSession.setClientSizeImmediate(msg.cols, msg.rows);
-
-              // Wait for applications to redraw after SIGWINCH from resize.
-              await new Promise(resolve => setTimeout(resolve, 200));
-
-              // Step 3: Capture visible area after resize
-              const panes = await controlSession.listPanes();
-              for (const pane of panes) {
-                try {
-                  const visible = await controlSession.sendCommand(`capture-pane -e -p -t ${pane.paneId}`);
-                  if (visible) {
-                    // Prepend scrollback if available
-                    const scrollback = scrollbackMap.get(pane.paneId);
-                    const fullContent = scrollback
-                      ? scrollback + '\n' + visible
-                      : visible;
-                    const termContent = fullContent.split('\n').join('\r\n');
-                    ws.send(JSON.stringify({
-                      type: 'initial-content',
-                      paneId: pane.paneId,
-                      data: Buffer.from(termContent).toString('base64'),
-                    }));
-                  }
-                } catch {
-                  // Pane may not be available
-                }
-              }
-            } catch (err) {
-              console.error('[control] Failed to initialize after resize:', err);
-            }
-            // Now enable %output forwarding
-            ws.data.readyForOutput = true;
-          } else {
-            // Last-write-wins: any client's resize is applied immediately
-            controlSession.setClientSize(msg.cols, msg.rows);
-          }
-          break;
-        }
-        case 'split': {
-          await controlSession.splitPane(msg.paneId, msg.direction);
-          break;
-        }
-        case 'close-pane': {
+    if (msg.type === 'resize' && !ws.data.initialContentSent) {
+      ws.data.initialContentSent = true;
+      try {
+        const panes = await controlSession.listPanes();
+        for (const pane of panes) {
           try {
-            await controlSession.closePane(msg.paneId);
-          } catch (e) {
-            ws.send(JSON.stringify({
-              type: 'error',
-              message: e instanceof Error ? e.message : 'Failed to close pane',
-              paneId: msg.paneId,
-            }));
-          }
-          break;
-        }
-        case 'resize-pane': {
-          await controlSession.resizePane(msg.paneId, msg.cols, msg.rows);
-          break;
-        }
-        case 'select-pane': {
-          await controlSession.selectPane(msg.paneId);
-          break;
-        }
-        case 'scroll': {
-          await controlSession.scrollPane(msg.paneId, msg.lines);
-          break;
-        }
-        case 'adjust-pane': {
-          await controlSession.adjustPaneSize(msg.paneId, msg.direction, msg.amount);
-          break;
-        }
-        case 'equalize-panes': {
-          await controlSession.equalizePanes(msg.direction);
-          break;
-        }
-        case 'request-content': {
-          // Re-capture pane content with scrollback and send as initial-content
-          try {
-            const content = await controlSession.capturePaneWithScrollback(msg.paneId);
+            const content = await controlSession.capturePaneWithScrollback(pane.paneId);
             if (content) {
               const termContent = content.split('\n').join('\r\n');
               ws.send(JSON.stringify({
                 type: 'initial-content',
-                paneId: msg.paneId,
+                paneId: pane.paneId,
                 data: Buffer.from(termContent).toString('base64'),
               }));
             }
-          } catch {
-            // Pane may not be available
-          }
-          break;
+          } catch { /* pane may not be available */ }
         }
-        case 'zoom-pane': {
-          // Suppress %output during zoom to prevent double content.
-          // Zoom causes tmux to reflow and send %output for the entire screen,
-          // which duplicates the initial-content we send afterwards.
-          ws.data.readyForOutput = false;
-          try {
-            await controlSession.zoomPane(msg.paneId);
-            // Wait for app to redraw after zoom resize
-            await new Promise(resolve => setTimeout(resolve, 200));
-            // Capture zoomed pane content and send as initial-content
-            try {
-              const content = await controlSession.capturePane(msg.paneId);
-              if (content) {
-                const termContent = content.split('\n').join('\r\n');
-                ws.send(JSON.stringify({
-                  type: 'initial-content',
-                  paneId: msg.paneId,
-                  data: Buffer.from(termContent).toString('base64'),
-                }));
-              }
-            } catch {
-              // Pane may not be available
-            }
-          } finally {
-            ws.data.readyForOutput = true;
-          }
-          break;
-        }
-        case 'respawn-pane': {
-          try {
-            await controlSession.respawnPane(msg.paneId);
-          } catch (e) {
-            ws.send(JSON.stringify({
-              type: 'error',
-              message: e instanceof Error ? e.message : 'Failed to respawn pane',
-              paneId: msg.paneId,
-            }));
-          }
-          break;
-        }
-        case 'ping': {
-          // Log health info for debugging terminal freeze
-          const buffered = ws.getBufferedAmount();
-          const suppressed = ws.data.outputSuppressedCount || 0;
-          const dropped = ws.data.sendFailCount || 0;
-          if (dropped > 0 || suppressed > 0 || buffered > 0) {
-            console.log(`[control] health ${ws.data.sessionId}: ready=${ws.data.readyForOutput} suppressed=${suppressed} dropped=${dropped} buffered=${buffered}`);
-          }
-          ws.send(JSON.stringify({ type: 'pong', timestamp: msg.timestamp }));
-          break;
-        }
-        case 'client-info': {
-          // Store device type for mobile pane separation logic
-          controlSession.setClientDeviceType(ws.data.visitorId, msg.deviceType);
-          break;
-        }
+      } catch (err) {
+        console.error('[viewer] Failed to send initial content:', err);
       }
-    } catch (error) {
-      const errMsg = error instanceof Error ? error.message : 'Unknown error';
-      ws.send(JSON.stringify({ type: 'error', message: errMsg }));
+      ws.data.readyForOutput = true;
     }
+    // Ignore all other messages (input, split, close-pane, etc.)
   },
 
-  close(ws: ServerWebSocket<TerminalData>, code: number, reason: string) {
+  close(ws: ServerWebSocket<ViewerData>, code: number, reason: string) {
     const { sessionId, controlSession, cleanupFns } = ws.data;
-    console.log(`Control WebSocket closed for session: ${sessionId} (code=${code}, reason=${reason})`);
+    console.log(`[viewer] WebSocket closed for session: ${sessionId} (code=${code}, reason=${reason})`);
 
-    // Unregister listeners
     if (cleanupFns) {
-      for (const fn of cleanupFns) {
-        fn();
-      }
+      for (const fn of cleanupFns) fn();
     }
-
-    // Remove from tracking
-    const connections = activeControlConnections.get(sessionId);
-    if (connections) {
-      connections.delete(ws);
-      if (connections.size === 0) {
-        activeControlConnections.delete(sessionId);
-      }
-    }
-
-    // Notify control session that client disconnected
     if (controlSession) {
-      controlSession.removeClientDeviceType(ws.data.visitorId);
       controlSession.removeClient();
     }
   },
 };
 
-// Upgrade HTTP request to WebSocket
-export async function handleTerminalUpgrade(
+// Upgrade HTTP request to WebSocket (only /ws/view/:token)
+export async function handleViewerUpgrade(
   req: Request,
-  server: { upgrade: (req: Request, options: { data: TerminalData }) => boolean }
+  server: { upgrade: (req: Request, options: { data: ViewerData }) => boolean }
 ): Promise<Response | null> {
   const url = new URL(req.url);
 
-  // Match /ws/view/:token (read-only share view)
   const viewMatch = url.pathname.match(/^\/ws\/view\/(.+)$/);
-  if (viewMatch) {
-    const shareToken = decodeURIComponent(viewMatch[1]);
-    const stored = validateShareToken(shareToken);
-    if (!stored) {
-      return new Response('Invalid or expired share token', { status: 403 });
-    }
+  if (!viewMatch) return null;
 
-    const upgraded = server.upgrade(req, {
-      data: {
-        sessionId: stored.sessionId,
-        visitorId: crypto.randomUUID(),
-        readOnly: true,
-      },
-    });
-
-    if (upgraded) {
-      return undefined as unknown as Response;
-    }
-    return new Response('WebSocket upgrade failed', { status: 500 });
+  const shareToken = decodeURIComponent(viewMatch[1]);
+  const stored = validateShareToken(shareToken);
+  if (!stored) {
+    return new Response('Invalid or expired share token', { status: 403 });
   }
-
-  // Match /ws/control/:id (primary) and /ws/terminal/:id (legacy compatibility)
-  const controlMatch = url.pathname.match(/^\/ws\/control\/(.+)$/);
-  const terminalMatch = url.pathname.match(/^\/ws\/terminal\/(.+)$/);
-  const pathMatch = controlMatch || terminalMatch;
-
-  if (!pathMatch) {
-    return null;
-  }
-
-  // Check authentication if required
-  if (isAuthRequired()) {
-    const token = url.searchParams.get('token');
-    if (!token) {
-      return new Response('Authentication required', { status: 401 });
-    }
-
-    try {
-      const authService = new AuthService(getDataDir(), getJwtSecret());
-      await authService.verifyToken(token);
-    } catch {
-      return new Response('Invalid or expired token', { status: 401 });
-    }
-  }
-
-  const sessionId = decodeURIComponent(pathMatch[1]);
 
   const upgraded = server.upgrade(req, {
     data: {
-      sessionId,
+      sessionId: stored.sessionId,
       visitorId: crypto.randomUUID(),
+      readOnly: true as const,
     },
   });
 
   if (upgraded) {
     return undefined as unknown as Response;
   }
-
   return new Response('WebSocket upgrade failed', { status: 500 });
 }

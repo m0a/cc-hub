@@ -7,7 +7,6 @@ import { DailyUsageChart } from './DailyUsageChart';
 import { ModelUsageChart } from './ModelUsageChart';
 import { HourlyHeatmap } from './HourlyHeatmap';
 import { NetworkLatency } from './NetworkLatency';
-import { SystemMetricsChart } from './SystemMetrics';
 import { ServerInfo } from './ServerInfo';
 import { useTheme } from '../../hooks/useTheme';
 
@@ -74,11 +73,8 @@ export function Dashboard({ className = '', compact = false }: DashboardProps) {
         <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
           <NetworkLatency />
         </div>
-        <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
-          <SystemMetricsChart data={data?.systemMetrics} />
-        </div>
-        <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
-          <ServerInfo diskUsage={data?.diskUsage} connectedClients={data?.connectedClients} />
+        <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2">
+          <ServerInfo systemMetrics={data?.systemMetrics} diskUsage={data?.diskUsage} connectedClients={data?.connectedClients} />
         </div>
         <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
           <UsageLimits data={data?.usageLimits || null} history={data?.usageHistory || []} />

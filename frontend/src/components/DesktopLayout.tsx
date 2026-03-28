@@ -36,6 +36,8 @@ interface DesktopLayoutProps {
   onSessionStateChange: (id: string, state: SessionState) => void;
   isTablet?: boolean;
   keyboardControlRef?: React.RefObject<{ open: () => void; close: () => void } | null>;
+  screenShareActive?: boolean;
+  onToggleScreenShare?: () => void;
 }
 
 // Generate unique ID
@@ -202,6 +204,8 @@ export function DesktopLayout({
   onSessionStateChange,
   isTablet = false,
   keyboardControlRef,
+  screenShareActive,
+  onToggleScreenShare,
 }: DesktopLayoutProps) {
   const terminalRefs = useRef<Map<string, TerminalRef | null>>(new Map());
   const floatingKeyboardRef = useRef<FloatingKeyboardRef>(null);
@@ -1247,6 +1251,8 @@ export function DesktopLayout({
           sessionId={controlSessionId}
           sessionName={activeSession?.name || controlSessionId}
           onClose={() => setShowShareDialog(false)}
+          screenShareActive={screenShareActive}
+          onToggleScreenShare={onToggleScreenShare}
         />
       )}
 

@@ -11,10 +11,6 @@ import { dashboard } from './routes/dashboard';
 import { notify } from './routes/notify';
 import { viewerWebSocket, handleViewerUpgrade } from './routes/terminal';
 import { muxOpen, muxMessage, muxClose } from './routes/terminal-mux';
-import {
-  screenShareOpen, screenShareMessage, screenShareClose,
-  screenViewerOpen, screenViewerMessage, screenViewerClose,
-} from './routes/screen-share';
 import { shareManage, sharePublic } from './routes/share';
 import { checkExistingFunnel } from './services/share-token';
 import { parseArgs, runCli, VERSION } from './cli';
@@ -334,34 +330,6 @@ export default {
       return new Response('WebSocket upgrade failed', { status: 500 });
     }
 
-    // Handle WebSocket upgrades for screen share (host sends rrweb events)
-    if (url.pathname === '/ws/screen-share') {
-      if (isAuthRequired()) {
-        const token = url.searchParams.get('token');
-        if (!token) return new Response('Authentication required', { status: 401 });
-        try {
-          const authService = new AuthService(getDataDir(), getJwtSecret());
-          await authService.verifyToken(token);
-        } catch {
-          return new Response('Invalid or expired token', { status: 401 });
-        }
-      }
-      const upgraded = server.upgrade(req, {
-        data: { screenShare: true, visitorId: crypto.randomUUID() } as any,
-      });
-      if (upgraded) return undefined as unknown as Response;
-      return new Response('WebSocket upgrade failed', { status: 500 });
-    }
-
-    // Handle WebSocket upgrades for screen viewer (public, token validated in viewer page)
-    if (url.pathname === '/ws/screen-view') {
-      const upgraded = server.upgrade(req, {
-        data: { screenViewer: true, visitorId: crypto.randomUUID() } as any,
-      });
-      if (upgraded) return undefined as unknown as Response;
-      return new Response('WebSocket upgrade failed', { status: 500 });
-    }
-
     // Handle WebSocket upgrades for read-only terminal viewer
     const wsResponse = await handleViewerUpgrade(req, server);
     if (wsResponse !== null) {
@@ -374,20 +342,14 @@ export default {
   websocket: {
     open(ws: any) {
       if (ws.data?.mux) return muxOpen(ws);
-      if (ws.data?.screenShare) return screenShareOpen(ws);
-      if (ws.data?.screenViewer) return screenViewerOpen(ws);
       return viewerWebSocket.open(ws);
     },
     message(ws: any, message: string | Buffer) {
       if (ws.data?.mux) return muxMessage(ws, message);
-      if (ws.data?.screenShare) return screenShareMessage(ws, message);
-      if (ws.data?.screenViewer) return screenViewerMessage(ws, message);
       return viewerWebSocket.message(ws, message);
     },
     close(ws: any, code: number, reason: string) {
       if (ws.data?.mux) return muxClose(ws, code, reason);
-      if (ws.data?.screenShare) return screenShareClose(ws, code, reason);
-      if (ws.data?.screenViewer) return screenViewerClose(ws, code, reason);
       return viewerWebSocket.close(ws, code, reason);
     },
     idleTimeout: 120,

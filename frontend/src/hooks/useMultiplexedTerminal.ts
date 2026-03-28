@@ -56,22 +56,6 @@ let sharedReconnectTimeout: number | null = null;
 let subscribedSession: string | null = null;
 let wsReady = false; // true after server sends 'ready'
 
-// Screen share: forward raw WS messages to an external callback
-let rawMessageForwarder: ((data: string | ArrayBuffer) => void) | null = null;
-
-/** Register a forwarder for raw WS messages (used by screen share) */
-export function setMuxForwarder(fn: ((data: string | ArrayBuffer) => void) | null) {
-  rawMessageForwarder = fn;
-}
-
-// Viewer mode: don't send resize/input (read-only)
-let muxReadOnly = false;
-
-/** Set read-only mode (viewer won't affect host terminal) */
-export function setMuxReadOnly(readOnly: boolean) {
-  muxReadOnly = readOnly;
-}
-
 // Current hook instance's callbacks (only one active at a time)
 type MuxCallbacks = {
   onPaneOutput?: (paneId: string, data: Uint8Array) => void;
@@ -155,11 +139,6 @@ function ensureConnection(token?: string | null) {
   ws.binaryType = 'arraybuffer';
   ws.onmessage = (event) => {
     wsMsgCount++;
-
-    // Forward raw message to screen share if active
-    if (rawMessageForwarder) {
-      rawMessageForwarder(event.data);
-    }
 
     const cb = activeCallbacks;
     const currentSession = cb?.sessionId;
@@ -394,14 +373,12 @@ export function useMultiplexedTerminal(options: UseMultiplexedTerminalOptions): 
   }, []);
 
   const sendInput = useCallback((paneId: string, data: string) => {
-    if (muxReadOnly) return;
     const bytes = new TextEncoder().encode(data);
     const base64 = uint8ArrayToBase64(bytes);
     sendSessionMessage({ type: 'input', paneId, data: base64 });
   }, []);
 
   const resize = useCallback((cols: number, rows: number) => {
-    if (muxReadOnly) return;
     sendSessionMessage({ type: 'resize', cols, rows });
   }, []);
 

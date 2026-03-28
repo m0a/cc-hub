@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { X, Copy, Check, Trash2, Clock, Link, Monitor } from 'lucide-react';
+import { X, Copy, Check, Trash2, Clock, Link } from 'lucide-react';
 import { authFetch } from '../services/api';
 import type { ShareTokenInfo } from '../../../shared/types';
 
@@ -10,11 +10,9 @@ interface ShareDialogProps {
   sessionId: string;
   sessionName: string;
   onClose: () => void;
-  screenShareActive?: boolean;
-  onToggleScreenShare?: () => void;
 }
 
-export function ShareDialog({ sessionId, sessionName, onClose, screenShareActive, onToggleScreenShare }: ShareDialogProps) {
+export function ShareDialog({ sessionId, sessionName, onClose }: ShareDialogProps) {
   const [tokens, setTokens] = useState<ShareTokenInfo[]>([]);
   const [creating, setCreating] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
@@ -149,39 +147,6 @@ export function ShareDialog({ sessionId, sessionName, onClose, screenShareActive
 
         {tokens.length >= 5 && (
           <p className="text-amber-400 text-xs mb-3">Max 5 links per session</p>
-        )}
-
-        {/* Screen Share section */}
-        {onToggleScreenShare && (
-          <div className="mb-4 p-3 bg-th-surface-active rounded-md">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Monitor className="w-4 h-4 text-zinc-400" />
-                <div>
-                  <span className="text-sm font-medium text-th-text">Screen Share</span>
-                  <p className="text-[11px] text-zinc-500">Share full UI (all screens)</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={onToggleScreenShare}
-                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                  screenShareActive
-                    ? 'bg-red-600 hover:bg-red-700 text-white'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white'
-                }`}
-              >
-                {screenShareActive ? 'Stop' : 'Start'}
-              </button>
-            </div>
-            {screenShareActive && (
-              <div className="mt-2">
-                <code className="text-xs text-th-text-secondary bg-th-bg rounded px-2 py-1 block truncate">
-                  {window.location.origin}/screen
-                </code>
-              </div>
-            )}
-          </div>
         )}
 
         {/* Token list */}

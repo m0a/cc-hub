@@ -413,20 +413,3 @@ export type MuxServerMessage =
 // 0x02 = mux output (vs 0x01 = legacy single-session output)
 export const MUX_BINARY_TYPE = 0x02;
 
-// =============================================================================
-// Share Token Types (Presentation / Read-Only View)
-// =============================================================================
-
-export interface ShareTokenInfo {
-  token: string;
-  sessionId: string;
-  sessionName: string;
-  createdAt: string;
-  expiresAt: string;
-}
-
-export const ShareTokenCreateSchema = z.object({
-  expiresInHours: z.number().min(1).max(72).optional().default(24),
-});
-
-export type ShareTokenCreateInput = z.infer<typeof ShareTokenCreateSchema>;

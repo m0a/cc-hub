@@ -9,10 +9,7 @@ import { upload } from './routes/upload';
 import { files } from './routes/files';
 import { dashboard } from './routes/dashboard';
 import { notify } from './routes/notify';
-import { viewerWebSocket, handleViewerUpgrade } from './routes/terminal';
 import { muxOpen, muxMessage, muxClose } from './routes/terminal-mux';
-import { shareManage, sharePublic } from './routes/share';
-import { checkExistingFunnel } from './services/share-token';
 import { parseArgs, runCli, VERSION } from './cli';
 import { conditionalAuthMiddleware, isAuthRequired, getJwtSecret } from './middleware/auth';
 import { AuthService } from './services/auth';
@@ -102,9 +99,6 @@ addLog('Version: ${VERSION}',true);
 // Auth routes (no auth required for login/required check)
 app.route('/api/auth', auth);
 
-// Public share route (no auth required - token-based access)
-app.route('/api/share', sharePublic);
-
 // Public images route (no auth required - images are user-uploaded screenshots)
 const IMAGES_DIR = '/tmp/cchub-images';
 app.get('/api/images/:filename', async (c) => {
@@ -152,7 +146,6 @@ app.use('/api/dashboard', conditionalAuthMiddleware);
 
 app.route('/api/logs', logs);
 app.route('/api/sessions', sessions);
-app.route('/api/sessions', shareManage);
 app.route('/api/upload', upload);
 app.route('/api/files', files);
 app.route('/api/dashboard', dashboard);
@@ -291,9 +284,6 @@ console.log(`🚀 CC Hub v${VERSION}`);
 console.log(`   URL: https://${tailscaleHostname}:${port}`);
 console.log(`   Static: ${EMBEDDED_MODE ? '(embedded)' : staticRoot}`);
 
-// Clean up stale Funnel from previous run (no share tokens on fresh start)
-checkExistingFunnel();
-
 export default {
   port,
   hostname: host,
@@ -301,7 +291,7 @@ export default {
     cert: Bun.file(certPath),
     key: Bun.file(keyPath),
   },
-  async fetch(req: Request, server: Parameters<typeof handleViewerUpgrade>[1]) {
+  async fetch(req: Request, server: any) {
     const url = new URL(req.url);
 
     // Handle WebSocket upgrades for mux endpoint
@@ -330,27 +320,18 @@ export default {
       return new Response('WebSocket upgrade failed', { status: 500 });
     }
 
-    // Handle WebSocket upgrades for read-only terminal viewer
-    const wsResponse = await handleViewerUpgrade(req, server);
-    if (wsResponse !== null) {
-      return wsResponse;
-    }
-
     // Handle regular HTTP requests
     return app.fetch(req);
   },
   websocket: {
     open(ws: any) {
       if (ws.data?.mux) return muxOpen(ws);
-      return viewerWebSocket.open(ws);
     },
     message(ws: any, message: string | Buffer) {
       if (ws.data?.mux) return muxMessage(ws, message);
-      return viewerWebSocket.message(ws, message);
     },
     close(ws: any, code: number, reason: string) {
       if (ws.data?.mux) return muxClose(ws, code, reason);
-      return viewerWebSocket.close(ws, code, reason);
     },
     idleTimeout: 120,
     sendPings: true,

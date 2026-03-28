@@ -1,8 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RotateCw, MessageSquare, FileText, Share2, BarChart3, ChevronDown, X as XIcon, Settings } from 'lucide-react';
+import { RotateCw, MessageSquare, FileText, BarChart3, ChevronDown, X as XIcon, Settings } from 'lucide-react';
 import { Dashboard } from './components/dashboard/Dashboard';
-import { ViewerPage } from './pages/ViewerPage';
 import { TerminalPage } from './pages/TerminalPage';
 import type { TerminalRef } from './components/Terminal';
 import { SessionList } from './components/SessionList';
@@ -10,7 +9,6 @@ import { DesktopLayout } from './components/DesktopLayout';
 import { FileViewer } from './components/files/FileViewer';
 import { ConversationViewer } from './components/ConversationViewer';
 import { LoginForm } from './components/LoginForm';
-import { ShareDialog } from './components/ShareDialog';
 import { Onboarding, useOnboarding } from './components/Onboarding';
 import { useSessionHistory } from './hooks/useSessionHistory';
 import { useAuth } from './hooks/useAuth';
@@ -155,12 +153,6 @@ function getSavedOpenSessionIds(): string[] {
 }
 
 export function App() {
-  // Route: /view/:token → read-only viewer (no auth)
-  const viewMatch = window.location.pathname.match(/^\/view\/(.+)$/);
-  if (viewMatch) {
-    return <ViewerPage token={decodeURIComponent(viewMatch[1])} />;
-  }
-
   const { t } = useTranslation();
   // Auth state
   const auth = useAuth();
@@ -235,7 +227,6 @@ export function App() {
     setFileViewerOpenDirs(prev => { const next = new Set(prev); next.delete(dir); return next; });
   }, []);
   const fileViewerVisible = activeFileViewerDir ? fileViewerOpenDirs.has(activeFileViewerDir) : false;
-  const [showShareDialog, setShowShareDialog] = useState(false);
   const overlayTimeoutRef = useRef<number | null>(null);
 
   // Conversation viewer state
@@ -857,13 +848,6 @@ export function App() {
         >
           <RotateCw className="w-5 h-5" />
         </button>
-        <button
-          onClick={() => setShowShareDialog(true)}
-          className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
-          title="共有"
-        >
-          <Share2 className="w-5 h-5" />
-        </button>
       </div>
     </div>
   );
@@ -977,15 +961,6 @@ export function App() {
         </div>
       )}
 
-      {/* Share Dialog */}
-      {showShareDialog && activeSessionId && (
-        <ShareDialog
-          sessionId={activeSessionId}
-          sessionName={activeSession?.name || activeSessionId}
-          onClose={() => setShowShareDialog(false)}
-        />
-      )}
-
       {/* File Viewer Modal - per-session instances kept mounted */}
       {fileViewerDirs.map(dir => (
         <FileViewer
@@ -1005,7 +980,6 @@ export function App() {
           onShowConversation={activeSession?.ccSessionId ? handleShowConversation : undefined}
           onShowDashboard={() => setShowMobileDashboard(true)}
           onReload={handleReload}
-          onShare={() => setShowShareDialog(true)}
         />
       ))}
 

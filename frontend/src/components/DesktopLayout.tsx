@@ -209,14 +209,7 @@ export function DesktopLayout({
   const paneContainerRef = useRef<HTMLDivElement>(null);
 
   // Get latest session info (including theme) from API
-  const { sessions: apiSessions, fetchSessions } = useSessions();
-
-  // Fetch sessions on mount and periodically
-  useEffect(() => {
-    fetchSessions();
-    const interval = setInterval(() => fetchSessions(true), 5000);
-    return () => clearInterval(interval);
-  }, [fetchSessions]);
+  const { sessions: apiSessions } = useSessions();
 
   // Merge prop sessions with API sessions to get latest theme info
   // propSessionsにないセッションもapiSessionsから追加する（分割ペイン用）

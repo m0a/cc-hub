@@ -1,86 +1,35 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { SessionResponse, SessionTheme, IndicatorState, PaneInfo } from '../../../shared/types';
 import { authFetch, isTransientNetworkError } from '../services/api';
 import { fireHookNotification } from '../utils/hookNotification';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
-// Module-level request deduplication: all useSessions instances share the same in-flight request
-let pendingFetch: Promise<SessionResponse[]> | null = null;
-let cachedSessions: { data: SessionResponse[]; timestamp: number } | null = null;
-const FETCH_CACHE_TTL = 2000; // 2 seconds - matches backend cache TTL
-const FETCH_TIMEOUT = 5000; // 5 seconds timeout per request
+// Module-level cache (shared across all useSessions instances, updated by WS push)
+let cachedSessions: SessionResponse[] | null = null;
 
-async function fetchSessionsShared(): Promise<SessionResponse[]> {
-  // Return cached data if still fresh
-  if (cachedSessions && Date.now() - cachedSessions.timestamp < FETCH_CACHE_TTL) {
-    return cachedSessions.data;
-  }
-
-  // Deduplicate concurrent requests
-  if (pendingFetch) {
-    return pendingFetch;
-  }
-
-  pendingFetch = (async () => {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
-      try {
-        const response = await authFetch(`${API_BASE}/api/sessions`, { signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (!response.ok) {
-          throw new Error('Failed to fetch sessions');
-        }
-        const data = await response.json();
-        cachedSessions = { data: data.sessions, timestamp: Date.now() };
-        return data.sessions as SessionResponse[];
-      } catch (err) {
-        clearTimeout(timeoutId);
-        throw err;
-      }
-    } finally {
-      pendingFetch = null;
-    }
-  })();
-
-  return pendingFetch;
-}
-
-/** Invalidate the shared sessions cache (call after create/delete) */
-function invalidateSessionsCache() {
-  cachedSessions = null;
-}
-
-/** hookイベントでcachedSessionsのindicatorStateを即座に更新し、キャッシュを無効化する */
+/** hookイベントでcachedSessionsのindicatorStateを即座に更新する */
 export function updateCachedSessionsByHookEvent(event: string, ccSessionId?: string) {
   const newState = hookEventToIndicatorState(event);
   if (!newState || !ccSessionId || !cachedSessions) return;
 
-  cachedSessions = {
-    data: cachedSessions.data.map(session => {
-      const ext = session as SessionResponse & { ccSessionId?: string; panes?: PaneInfo[] };
-      if (ext.ccSessionId !== ccSessionId) return session;
-      if (!ext.panes) return session;
-      return {
-        ...session,
-        panes: ext.panes.map(pane => ({ ...pane, indicatorState: newState })),
-      } as SessionResponse;
-    }),
-    timestamp: 0, // キャッシュを期限切れにして次回fetchで最新データ取得
-  };
+  cachedSessions = cachedSessions.map(session => {
+    const ext = session as SessionResponse & { ccSessionId?: string; panes?: PaneInfo[] };
+    if (ext.ccSessionId !== ccSessionId) return session;
+    if (!ext.panes) return session;
+    return {
+      ...session,
+      panes: ext.panes.map(pane => ({ ...pane, indicatorState: newState })),
+    } as SessionResponse;
+  });
 
-  // 全useSessions インスタンスに即座に反映
   window.dispatchEvent(new CustomEvent('cchub-hook-event'));
 }
 
-/** hookイベント名からindicatorStateを決定する */
 function hookEventToIndicatorState(event: string): IndicatorState | null {
   switch (event) {
     case 'Stop':
-      return 'waiting_input';
-    case 'PostToolUse': // AskUserQuestion等
-      return 'waiting_input';
+    case 'PostToolUse':
     case 'Notification':
       return 'waiting_input';
     case 'UserPromptSubmit':
@@ -94,7 +43,6 @@ interface UseSessionsReturn {
   sessions: SessionResponse[];
   isLoading: boolean;
   error: string | null;
-  fetchSessions: (silent?: boolean) => Promise<void>;
   createSession: (name?: string, workingDir?: string) => Promise<SessionResponse | null>;
   deleteSession: (id: string) => Promise<boolean>;
   updateSessionTheme: (id: string, theme: SessionTheme | null) => Promise<boolean>;
@@ -107,7 +55,6 @@ let prevIndicatorStates = new Map<string, IndicatorState>();
 function detectAndNotifyTransitions(newSessions: SessionResponse[]) {
   for (const session of newSessions) {
     const ext = session as SessionResponse & { panes?: PaneInfo[]; ccSessionId?: string };
-    // Determine session-level indicator from panes or session
     const currentIndicator = ext.panes?.some(p => p.indicatorState === 'waiting_input')
       ? 'waiting_input' as IndicatorState
       : ext.panes?.some(p => p.indicatorState === 'processing')
@@ -124,68 +71,48 @@ function detectAndNotifyTransitions(newSessions: SessionResponse[]) {
   }
 }
 
+function updateSessions(
+  setSessions: React.Dispatch<React.SetStateAction<SessionResponse[]>>,
+  newSessions: SessionResponse[],
+) {
+  cachedSessions = newSessions;
+  setSessions(prev => {
+    const newJson = JSON.stringify(newSessions);
+    const prevJson = JSON.stringify(prev);
+    return newJson === prevJson ? prev : newSessions;
+  });
+}
+
 export function useSessions(): UseSessionsReturn {
-  const [sessions, setSessions] = useState<SessionResponse[]>(() => cachedSessions?.data || []);
+  const [sessions, setSessions] = useState<SessionResponse[]>(() => cachedSessions || []);
   const [isLoading, setIsLoading] = useState(() => !cachedSessions);
   const [error, setError] = useState<string | null>(null);
-  const isFirstFetch = useRef(true);
 
-  // hookイベントでキャッシュが更新されたら即座に反映
+  // Listen for WS push and hook events
   useEffect(() => {
-    const handler = () => {
-      if (cachedSessions) {
-        setSessions(cachedSessions.data);
-      }
-      // キャッシュ無効化済みなので次のポーリングで最新データ取得
-      invalidateSessionsCache();
+    const hookHandler = () => {
+      if (cachedSessions) setSessions(cachedSessions);
     };
-    window.addEventListener('cchub-hook-event', handler);
-    return () => window.removeEventListener('cchub-hook-event', handler);
-  }, []);
 
-  const fetchSessions = useCallback(async (silent = false) => {
-    // Only show loading state on initial fetch, not on polling
-    if (!silent) {
-      setIsLoading(true);
-      setError(null);
-    }
-
-    const maxRetries = silent ? 0 : 2;
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        if (attempt > 0) invalidateSessionsCache(); // Clear cache only before retry
-        const newSessions = await fetchSessionsShared();
-        // Detect processing→waiting_input transitions for notification (skip initial fetch)
-        if (!isFirstFetch.current) {
-          detectAndNotifyTransitions(newSessions);
-        }
-        isFirstFetch.current = false;
-        // Only update state if data has changed to prevent unnecessary re-renders
-        setSessions(prev => {
-          const newJson = JSON.stringify(newSessions);
-          const prevJson = JSON.stringify(prev);
-          return newJson === prevJson ? prev : newSessions;
-        });
-        if (!silent) setIsLoading(false);
-        return;
-      } catch (err) {
-        if (attempt < maxRetries) {
-          // Wait briefly before retry
-          await new Promise(r => setTimeout(r, 500));
-          continue;
-        }
-        if (!silent && !isTransientNetworkError(err)) {
-          setError(err instanceof Error ? err.message : 'Unknown error');
-        }
+    const pushHandler = (e: Event) => {
+      const pushed = (e as CustomEvent).detail as SessionResponse[];
+      if (pushed) {
+        detectAndNotifyTransitions(pushed);
+        updateSessions(setSessions, pushed);
+        setIsLoading(false);
       }
-    }
-    if (!silent) setIsLoading(false);
+    };
+
+    window.addEventListener('cchub-hook-event', hookHandler);
+    window.addEventListener('cchub-sessions-push', pushHandler);
+    return () => {
+      window.removeEventListener('cchub-hook-event', hookHandler);
+      window.removeEventListener('cchub-sessions-push', pushHandler);
+    };
   }, []);
 
   const createSession = useCallback(async (name?: string, workingDir?: string): Promise<SessionResponse | null> => {
     setError(null);
-    invalidateSessionsCache();
-
     try {
       const response = await authFetch(`${API_BASE}/api/sessions`, {
         method: 'POST',
@@ -204,23 +131,18 @@ export function useSessions(): UseSessionsReturn {
       setSessions(prev => [session, ...prev]);
       return session;
     } catch (err) {
-      // Don't setError here — let the caller handle display
       throw err;
     }
   }, []);
 
   const deleteSession = useCallback(async (id: string): Promise<boolean> => {
     setError(null);
-    invalidateSessionsCache();
-
     try {
       const response = await authFetch(`${API_BASE}/api/sessions/${id}`, {
         method: 'DELETE',
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to delete session');
-      }
+      if (!response.ok) throw new Error('Failed to delete session');
 
       setSessions(prev => prev.filter(s => s.id !== id));
       return true;
@@ -234,7 +156,6 @@ export function useSessions(): UseSessionsReturn {
 
   const updateSessionTheme = useCallback(async (id: string, theme: SessionTheme | null): Promise<boolean> => {
     setError(null);
-
     try {
       const response = await authFetch(`${API_BASE}/api/sessions/${id}/theme`, {
         method: 'PUT',
@@ -242,11 +163,8 @@ export function useSessions(): UseSessionsReturn {
         body: JSON.stringify({ theme }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to update session theme');
-      }
+      if (!response.ok) throw new Error('Failed to update session theme');
 
-      // Update local state
       setSessions(prev => prev.map(s => s.id === id ? { ...s, theme: theme ?? undefined } : s));
       return true;
     } catch (err) {
@@ -261,7 +179,6 @@ export function useSessions(): UseSessionsReturn {
     sessions,
     isLoading,
     error,
-    fetchSessions,
     createSession,
     deleteSession,
     updateSessionTheme,

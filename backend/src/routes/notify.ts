@@ -2,7 +2,6 @@ import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { broadcastToAllClients } from './terminal';
 import { broadcastToMuxClients } from './terminal-mux';
 import type { IndicatorState } from '../../../shared/types';
 
@@ -148,7 +147,6 @@ notify.post('/', async (c) => {
         message,
         data: Object.keys(rest).length > 0 ? rest : undefined,
       };
-      broadcastToAllClients(hookMsg);
       broadcastToMuxClients(hookMsg);
     }
 

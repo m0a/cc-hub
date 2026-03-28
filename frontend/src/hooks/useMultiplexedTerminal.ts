@@ -195,6 +195,13 @@ function ensureConnection(token?: string | null) {
       }
       case 'unsubscribed':
         break;
+      case 'sessions-updated': {
+        // Dispatch to useSessions via CustomEvent
+        window.dispatchEvent(new CustomEvent('cchub-sessions-push', {
+          detail: msg.sessions,
+        }));
+        break;
+      }
       case 'output': {
         if (msgSessionId !== currentSession) return;
         wsOutputCount++;

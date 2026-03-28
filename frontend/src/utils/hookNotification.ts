@@ -1,7 +1,7 @@
 /**
  * Claude Code hook イベントを受信した際にOS通知を発火する。
  * PWAではServiceWorkerRegistration.showNotification()を使用。
- * 複数の useControlTerminal インスタンスから同時に呼ばれても
+ * 複数のインスタンスから同時に呼ばれても
  * デバウンスで1回だけ通知する。
  */
 

@@ -3,6 +3,7 @@ import { TmuxService } from '../services/tmux';
 import { getOrCreateControlSession, type TmuxControlSession } from '../services/tmux-control';
 import type { ControlClientMessage, MuxClientMessage } from '../../../shared/types';
 import { MUX_BINARY_TYPE } from '../../../shared/types';
+import { buildSessionsList } from './sessions';
 
 /** Per-session subscription state for a mux client */
 interface MuxSubscription {
@@ -25,6 +26,61 @@ const tmuxService = new TmuxService();
 // Track mux connections for broadcast
 const activeMuxConnections = new Set<ServerWebSocket<MuxData>>();
 
+// =============================================================================
+// Sessions push: periodically push session list to connected mux clients
+// =============================================================================
+
+const SESSIONS_PUSH_INTERVAL = 5000; // 5 seconds
+let sessionsPushTimer: ReturnType<typeof setInterval> | null = null;
+let lastSessionsJson = '';
+
+function startSessionsPush() {
+  if (sessionsPushTimer) return;
+  sessionsPushTimer = setInterval(async () => {
+    if (activeMuxConnections.size === 0) {
+      stopSessionsPush();
+      return;
+    }
+    try {
+      const sessions = await buildSessionsList();
+      const json = JSON.stringify(sessions);
+      // Only push if data changed
+      if (json === lastSessionsJson) return;
+      lastSessionsJson = json;
+      const payload = JSON.stringify({ type: 'sessions-updated', sessions });
+      for (const ws of activeMuxConnections) {
+        try {
+          ws.send(payload);
+        } catch { /* disconnected */ }
+      }
+    } catch (err) {
+      console.warn('[mux] sessions push error:', err);
+    }
+  }, SESSIONS_PUSH_INTERVAL);
+}
+
+function stopSessionsPush() {
+  if (sessionsPushTimer) {
+    clearInterval(sessionsPushTimer);
+    sessionsPushTimer = null;
+  }
+  lastSessionsJson = '';
+}
+
+/** Force an immediate sessions push (e.g. after create/delete) */
+export function pushSessionsNow() {
+  lastSessionsJson = ''; // Force change detection
+  // Fire async, don't await
+  buildSessionsList().then(sessions => {
+    const payload = JSON.stringify({ type: 'sessions-updated', sessions });
+    for (const ws of activeMuxConnections) {
+      try {
+        ws.send(payload);
+      } catch { /* disconnected */ }
+    }
+  }).catch(() => {});
+}
+
 /** Broadcast a message to all mux clients (used by notify) */
 export function broadcastToMuxClients(msg: Record<string, unknown>) {
   const payload = JSON.stringify(msg);
@@ -40,6 +96,7 @@ export function broadcastToMuxClients(msg: Record<string, unknown>) {
 export async function muxOpen(ws: ServerWebSocket<MuxData>) {
   console.log(`[mux] WebSocket opened: ${ws.data.visitorId}`);
   activeMuxConnections.add(ws);
+  startSessionsPush();
   ws.send(JSON.stringify({ type: 'ready' }));
 }
 
@@ -81,6 +138,7 @@ export async function muxMessage(ws: ServerWebSocket<MuxData>, message: string |
 export function muxClose(ws: ServerWebSocket<MuxData>, code: number, reason: string) {
   console.log(`[mux] WebSocket closed: ${ws.data.visitorId} (code=${code}, reason=${reason})`);
   activeMuxConnections.delete(ws);
+  if (activeMuxConnections.size === 0) stopSessionsPush();
 
   // Clean up all subscriptions
   for (const [sessionId, sub] of ws.data.subscriptions) {

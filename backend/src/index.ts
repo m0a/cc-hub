@@ -9,7 +9,7 @@ import { upload } from './routes/upload';
 import { files } from './routes/files';
 import { dashboard } from './routes/dashboard';
 import { notify } from './routes/notify';
-import { terminalWebSocket, handleTerminalUpgrade } from './routes/terminal';
+import { viewerWebSocket, handleViewerUpgrade } from './routes/terminal';
 import { muxOpen, muxMessage, muxClose } from './routes/terminal-mux';
 import { shareManage, sharePublic } from './routes/share';
 import { checkExistingFunnel } from './services/share-token';
@@ -301,11 +301,11 @@ export default {
     cert: Bun.file(certPath),
     key: Bun.file(keyPath),
   },
-  async fetch(req: Request, server: Parameters<typeof handleTerminalUpgrade>[1]) {
-    // Handle WebSocket upgrades for mux endpoint
+  async fetch(req: Request, server: Parameters<typeof handleViewerUpgrade>[1]) {
     const url = new URL(req.url);
+
+    // Handle WebSocket upgrades for mux endpoint
     if (url.pathname === '/ws/mux') {
-      // Check authentication if required
       if (isAuthRequired()) {
         const token = url.searchParams.get('token');
         if (!token) {
@@ -330,8 +330,8 @@ export default {
       return new Response('WebSocket upgrade failed', { status: 500 });
     }
 
-    // Handle WebSocket upgrades for terminal (legacy per-session)
-    const wsResponse = await handleTerminalUpgrade(req, server);
+    // Handle WebSocket upgrades for read-only viewer
+    const wsResponse = await handleViewerUpgrade(req, server);
     if (wsResponse !== null) {
       return wsResponse;
     }
@@ -342,15 +342,15 @@ export default {
   websocket: {
     open(ws: any) {
       if (ws.data?.mux) return muxOpen(ws);
-      return terminalWebSocket.open(ws);
+      return viewerWebSocket.open(ws);
     },
     message(ws: any, message: string | Buffer) {
       if (ws.data?.mux) return muxMessage(ws, message);
-      return terminalWebSocket.message(ws, message);
+      return viewerWebSocket.message(ws, message);
     },
     close(ws: any, code: number, reason: string) {
       if (ws.data?.mux) return muxClose(ws, code, reason);
-      return terminalWebSocket.close(ws, code, reason);
+      return viewerWebSocket.close(ws, code, reason);
     },
     idleTimeout: 120,
     sendPings: true,

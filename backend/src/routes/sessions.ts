@@ -7,62 +7,25 @@ import { SessionHistoryService } from '../services/session-history';
 import { PromptHistoryService } from '../services/prompt-history';
 import { getAllSessionMetadata, setSessionTheme, setSessionTitle } from '../services/session-metadata';
 import { getIndicatorOverride } from './notify';
+import { pushSessionsNow } from './terminal-mux';
 
 const tmuxService = new TmuxService();
 const claudeCodeService = new ClaudeCodeService();
 const sessionHistoryService = new SessionHistoryService();
 const promptHistoryService = new PromptHistoryService();
 
-// Response-level cache for GET /sessions (multiple clients polling within 3s get the same response)
-let sessionsResponseCache: { json: string; timestamp: number } | null = null;
-const SESSIONS_RESPONSE_CACHE_TTL = 3000; // 3 seconds
-
-/** Invalidate the response cache on mutations */
-function invalidateSessionsResponseCache(): void {
-  sessionsResponseCache = null;
+/** Notify mux clients of session changes after mutations */
+function notifySessionChange(): void {
+  pushSessionsNow();
 }
 
 export const sessions = new Hono();
 
-// Helper to determine indicator state
-function getIndicatorState(
-  isClaudeRunning: boolean,
-  waitingForInput: boolean,
-  waitingToolName?: string
-): IndicatorState {
-  if (!isClaudeRunning) {
-    return 'completed'; // Not running Claude = shell prompt
-  }
-
-  if (waitingForInput) {
-    // UserInput = end_turn (Claude finished, idle). Treat as completed (no badge).
-    if (waitingToolName === 'UserInput') {
-      return 'completed';
-    }
-    return 'waiting_input';
-  }
-
-  // If Claude is running but not waiting, it's processing
-  return 'processing';
-}
-
-const ResumeSessionSchema = z.object({
-  ccSessionId: z.string().optional(),
-});
-
-// GET /sessions - List all tmux sessions
-sessions.get('/', async (c) => {
-  // Return cached response if still fresh (multiple clients polling within 3s)
-  if (sessionsResponseCache && Date.now() - sessionsResponseCache.timestamp < SESSIONS_RESPONSE_CACHE_TTL) {
-    c.header('Content-Type', 'application/json');
-    c.header('X-Cache', 'HIT');
-    return c.body(sessionsResponseCache.json);
-  }
-
+/** Build the full sessions list (shared by HTTP handler and WS push) */
+export async function buildSessionsList(): Promise<object[]> {
   const tmuxSessions = await tmuxService.listSessions();
   const sessionMetadata = await getAllSessionMetadata();
 
-  // Collect all pane TTYs once (used for process state, claude detection, and agent info)
   const allPaneTtys: string[] = [];
   for (const s of tmuxSessions) {
     if (s.panes) {
@@ -72,13 +35,11 @@ sessions.get('/', async (c) => {
     }
   }
 
-  // Single batch call for all process info (1 ps call serves all consumers)
   const processInfo = await tmuxService.batchProcessInfo(allPaneTtys);
   const processRunningByTty = processInfo.processRunning;
   const claudeOnPaneTtys = processInfo.claudeTtys;
   const agentInfoByTty = processInfo.agentInfo;
 
-  // Get Claude Code session IDs from args (no subprocess - uses processInfo.ttyArgs)
   const sessionIdByTmuxId = new Map<string, string>();
   for (const s of tmuxSessions) {
     if (s.currentCommand === 'claude' && s.paneTty) {
@@ -89,13 +50,12 @@ sessions.get('/', async (c) => {
     }
   }
 
-  // Get Claude Code session info for sessions running claude
   const claudePaths = tmuxSessions
     .filter((s): s is typeof s & { currentPath: string } => s.currentCommand === 'claude' && !!s.currentPath)
     .map(s => s.currentPath);
   const ccSessionsByPath = await claudeCodeService.getSessionsForPaths(claudePaths);
 
-  const sessions = await Promise.all(tmuxSessions.map(async (s) => {
+  return Promise.all(tmuxSessions.map(async (s) => {
     let ccSession: Awaited<ReturnType<typeof claudeCodeService.getSessionForPath>> | undefined;
 
     if (s.currentCommand === 'claude' && s.currentPath) {
@@ -103,10 +63,6 @@ sessions.get('/', async (c) => {
 
       if (ptySessionId) {
         ccSession = await claudeCodeService.getSessionById(ptySessionId, s.currentPath);
-
-        // After /clear, the PTY still shows the old session ID.
-        // Compare mtime with the newest .jsonl in the same project dir;
-        // if the newest one is sufficiently newer, use it instead.
         if (ccSession) {
           const [newestSession] = await claudeCodeService.getRecentSessionsForPath(s.currentPath, 1);
           if (
@@ -135,27 +91,21 @@ sessions.get('/', async (c) => {
       }
     }
 
-    // Determine if Claude is actively processing or waiting for input
     const isClaudeRunning = s.currentCommand === 'claude';
     let waitingForInput = false;
 
     if (isClaudeRunning) {
-      // Use batch result instead of per-session subprocess
       const ttyName = s.paneTty?.replace('/dev/', '');
       const isProcessActive = ttyName ? (processRunningByTty.get(ttyName) || false) : false;
-
       if (isProcessActive) {
         waitingForInput = false;
       } else if (ccSession?.waitingForInput) {
         waitingForInput = true;
-      } else {
-        waitingForInput = false;
       }
     } else {
       waitingForInput = s.waitingForInput || false;
     }
 
-    // Calculate indicator state (with hook event override)
     const hookOverride = ccSession?.sessionId ? getIndicatorOverride(ccSession.sessionId) : null;
     const indicatorState = hookOverride ?? getIndicatorState(
       isClaudeRunning,
@@ -163,15 +113,12 @@ sessions.get('/', async (c) => {
       ccSession?.waitingToolName
     );
 
-    // Calculate session duration from modified time
     let durationMinutes: number | undefined;
     if (ccSession?.modified) {
       const modified = new Date(ccSession.modified);
-      const now = new Date();
-      durationMinutes = Math.round((now.getTime() - modified.getTime()) / 60000);
+      durationMinutes = Math.round((Date.now() - modified.getTime()) / 60000);
     }
 
-    // Only include Claude Code info when claude is actually running
     const includeClaudeInfo = s.currentCommand === 'claude';
 
     return {
@@ -198,7 +145,6 @@ sessions.get('/', async (c) => {
       panes: s.panes ? s.panes.map((p: { paneId: string; command: string; path: string; title: string; tty: string; isActive: boolean; isDead: boolean }) => {
         const ttyName = p.tty?.replace('/dev/', '');
         const agentInfo = ttyName ? agentInfoByTty.get(ttyName) : undefined;
-        // Per-pane indicator state
         let paneIndicator: IndicatorState | undefined;
         if (p.isDead) {
           paneIndicator = 'completed';
@@ -226,17 +172,43 @@ sessions.get('/', async (c) => {
       }) : undefined,
     };
   }));
+}
 
-  const responseJson = JSON.stringify({ sessions });
-  sessionsResponseCache = { json: responseJson, timestamp: Date.now() };
-  c.header('Content-Type', 'application/json');
-  c.header('X-Cache', 'MISS');
-  return c.body(responseJson);
+// Helper to determine indicator state
+function getIndicatorState(
+  isClaudeRunning: boolean,
+  waitingForInput: boolean,
+  waitingToolName?: string
+): IndicatorState {
+  if (!isClaudeRunning) {
+    return 'completed'; // Not running Claude = shell prompt
+  }
+
+  if (waitingForInput) {
+    // UserInput = end_turn (Claude finished, idle). Treat as completed (no badge).
+    if (waitingToolName === 'UserInput') {
+      return 'completed';
+    }
+    return 'waiting_input';
+  }
+
+  // If Claude is running but not waiting, it's processing
+  return 'processing';
+}
+
+const ResumeSessionSchema = z.object({
+  ccSessionId: z.string().optional(),
+});
+
+// GET /sessions - List all tmux sessions (debug/fallback only, frontend uses WS push)
+sessions.get('/', async (c) => {
+  const sessionsList = await buildSessionsList();
+  return c.json({ sessions: sessionsList });
 });
 
 // POST /sessions - Create a new tmux session
 sessions.post('/', async (c) => {
-  invalidateSessionsResponseCache();
+  notifySessionChange();
   const body = await c.req.json().catch(() => ({}));
   const parsed = CreateSessionSchema.safeParse(body);
 
@@ -517,7 +489,7 @@ sessions.get('/:id/copy-mode', async (c) => {
 
 // DELETE /sessions/:id - Delete (kill) a tmux session
 sessions.delete('/:id', async (c) => {
-  invalidateSessionsResponseCache();
+  notifySessionChange();
   const id = c.req.param('id');
 
   const exists = await tmuxService.sessionExists(id);
@@ -665,7 +637,7 @@ sessions.post('/:id/panes/focus', async (c) => {
       return c.json({ error: `Failed to focus pane: ${error}` }, 500);
     }
     tmuxService.invalidateCache();
-    invalidateSessionsResponseCache();
+    notifySessionChange();
     return c.json({ success: true });
   } catch (_error) {
     return c.json({ error: 'Failed to focus pane' }, 500);
@@ -714,7 +686,7 @@ sessions.post('/:id/panes/close', async (c) => {
       return c.json({ error: `Failed to close pane: ${error}` }, 500);
     }
     tmuxService.invalidateCache();
-    invalidateSessionsResponseCache();
+    notifySessionChange();
     return c.json({ success: true });
   } catch (_error) {
     return c.json({ error: 'Failed to close pane' }, 500);
@@ -747,7 +719,7 @@ sessions.post('/:id/panes/split', async (c) => {
       return c.json({ error: `Failed to split pane: ${error}` }, 500);
     }
     tmuxService.invalidateCache();
-    invalidateSessionsResponseCache();
+    notifySessionChange();
     return c.json({ success: true });
   } catch (_error) {
     return c.json({ error: 'Failed to split pane' }, 500);
@@ -780,7 +752,7 @@ sessions.post('/:id/panes/respawn', async (c) => {
       return c.json({ error: `Failed to respawn pane: ${error}` }, 500);
     }
     tmuxService.invalidateCache();
-    invalidateSessionsResponseCache();
+    notifySessionChange();
     return c.json({ success: true });
   } catch (_error) {
     return c.json({ error: 'Failed to respawn pane' }, 500);

@@ -16,9 +16,6 @@ import { useSessionHistory } from './hooks/useSessionHistory';
 import { useAuth } from './hooks/useAuth';
 import { useSessions } from './hooks/useSessions';
 import { authFetch, isTransientNetworkError } from './services/api';
-import { useScreenShare, type ScreenShareState } from './hooks/useScreenShare';
-import { setMuxForwarder, setMuxReadOnly } from './hooks/useMultiplexedTerminal';
-import { useViewer } from './contexts/ViewerContext';
 import type { SessionResponse, SessionState, ConversationMessage, SessionTheme, PaneInfo } from '../../shared/types';
 
 // Loading screen with phase display and timeout detection
@@ -158,8 +155,6 @@ function getSavedOpenSessionIds(): string[] {
 }
 
 export function App() {
-  const viewer = useViewer();
-
   // Route: /view/:token → read-only viewer (no auth)
   const viewMatch = window.location.pathname.match(/^\/view\/(.+)$/);
   if (viewMatch) {
@@ -241,7 +236,6 @@ export function App() {
   }, []);
   const fileViewerVisible = activeFileViewerDir ? fileViewerOpenDirs.has(activeFileViewerDir) : false;
   const [showShareDialog, setShowShareDialog] = useState(false);
-  const [screenShareActive, setScreenShareActive] = useState(false);
   const overlayTimeoutRef = useRef<number | null>(null);
 
   // Conversation viewer state
@@ -256,23 +250,6 @@ export function App() {
 
   // Session API state (for theme updates in mobile view)
   const { sessions: apiSessions, createSession } = useSessions();
-
-  // Viewer mode: follow host's session and view
-  useEffect(() => {
-    if (!viewer.isViewer || !viewer.hostSessionId) return;
-    setActiveSessionId(viewer.hostSessionId);
-    setOpenSessions(prev => {
-      if (prev.some(s => s.id === viewer.hostSessionId)) return prev;
-      return [...prev, { id: viewer.hostSessionId!, name: viewer.hostSessionId!, state: 'idle' as SessionState }];
-    });
-  }, [viewer.isViewer, viewer.hostSessionId]);
-
-  useEffect(() => {
-    if (!viewer.isViewer) return;
-    setShowSessionList(viewer.hostView === 'sessions');
-    setShowConversation(viewer.hostView === 'conversation');
-    setShowMobileDashboard(viewer.hostView === 'dashboard');
-  }, [viewer.isViewer, viewer.hostView]);
 
   // Device type detection
   // - desktop: PC (非タッチデバイス) → ソフトキーボード不要
@@ -300,17 +277,6 @@ export function App() {
   };
 
   const [deviceType, setDeviceType] = useState<DeviceType>(checkDeviceType);
-
-  // Viewer mode: override device type to match host + read-only mux
-  useEffect(() => {
-    if (viewer.isViewer) {
-      setMuxReadOnly(true);
-      if (viewer.hostDeviceType) {
-        setDeviceType(viewer.hostDeviceType);
-      }
-    }
-    return () => setMuxReadOnly(false);
-  }, [viewer.isViewer, viewer.hostDeviceType]);
 
   // Both tablet and mobile need keyboard control during onboarding
   const onboardingStepAction = deviceType === 'tablet' ? handleTabletStepAction
@@ -644,30 +610,6 @@ export function App() {
     setSessionToDelete(null);
   }, []);
 
-  // Screen share: forward UI state to viewers
-  const screenShareSession = openSessions.find(s => s.id === activeSessionId);
-  const screenShareState: ScreenShareState | undefined = screenShareActive ? {
-    activeSessionId,
-    activeSessionName: screenShareSession?.name || null,
-    currentView: showSessionList ? 'sessions'
-      : fileViewerVisible ? 'files'
-      : showConversation ? 'conversation'
-      : showMobileDashboard ? 'dashboard'
-      : 'terminal',
-    deviceType,
-  } : undefined;
-  const screenShare = useScreenShare(screenShareActive, screenShareState);
-
-  // Connect mux WS forwarder to screen share
-  useEffect(() => {
-    if (screenShareActive) {
-      setMuxForwarder(screenShare.forwardToViewer);
-    } else {
-      setMuxForwarder(null);
-    }
-    return () => setMuxForwarder(null);
-  }, [screenShareActive, screenShare.forwardToViewer]);
-
   const handleShowSessionList = useCallback(() => {
     setShowSessionList(true);
   }, []);
@@ -784,8 +726,8 @@ export function App() {
     console.log(`[App] Render state: device=${deviceType} authLoading=${auth.isLoading} loading=${isLoading} authRequired=${auth.authRequired} authenticated=${auth.isAuthenticated} sessions=${openSessions.length} active=${activeSessionId} showList=${showSessionList}`);
   }, [deviceType, auth.isLoading, isLoading, auth.authRequired, auth.isAuthenticated, openSessions.length, activeSessionId, showSessionList]);
 
-  // Show loading (including auth check) - skip in viewer mode
-  if (!viewer.isViewer && (auth.isLoading || isLoading)) {
+  // Show loading (including auth check)
+  if (auth.isLoading || isLoading) {
     return (
       <LoadingScreen
         phase={auth.isLoading ? 'auth' : 'sessions'}
@@ -795,8 +737,8 @@ export function App() {
     );
   }
 
-  // Show login form if auth required but not authenticated - skip in viewer mode
-  if (!viewer.isViewer && auth.authRequired && !auth.isAuthenticated) {
+  // Show login form if auth required but not authenticated
+  if (auth.authRequired && !auth.isAuthenticated) {
     return (
       <LoginForm
         onLogin={auth.login}
@@ -829,8 +771,6 @@ export function App() {
           sessions={openSessions}
           activeSessionId={activeSessionId}
           onSessionStateChange={updateSessionState}
-          screenShareActive={screenShareActive}
-          onToggleScreenShare={() => setScreenShareActive(prev => !prev)}
         />
         {showOnboarding && <Onboarding onComplete={completeOnboarding} />}
       </>
@@ -847,8 +787,6 @@ export function App() {
           onSessionStateChange={updateSessionState}
           isTablet={true}
           keyboardControlRef={keyboardControlRef}
-          screenShareActive={screenShareActive}
-          onToggleScreenShare={() => setScreenShareActive(prev => !prev)}
         />
         {showOnboarding && <Onboarding onComplete={completeOnboarding} onStepAction={onboardingStepAction} />}
       </>
@@ -1045,8 +983,6 @@ export function App() {
           sessionId={activeSessionId}
           sessionName={activeSession?.name || activeSessionId}
           onClose={() => setShowShareDialog(false)}
-          screenShareActive={screenShareActive}
-          onToggleScreenShare={() => setScreenShareActive(prev => !prev)}
         />
       )}
 

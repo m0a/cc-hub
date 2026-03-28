@@ -413,10 +413,6 @@ export type MuxServerMessage =
 // 0x02 = mux output (vs 0x01 = legacy single-session output)
 export const MUX_BINARY_TYPE = 0x02;
 
-// Screen share: host sends rrweb events via mux, relayed to /ws/view viewers
-// MuxClientMessage includes: { type: 'screen-event'; events: object[] }
-// ViewerServerMessage includes: { type: 'screen-event'; events: object[] }
-
 // =============================================================================
 // Share Token Types (Presentation / Read-Only View)
 // =============================================================================

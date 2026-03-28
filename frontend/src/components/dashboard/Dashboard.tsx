@@ -73,7 +73,7 @@ export function Dashboard({ className = '', compact = false }: DashboardProps) {
         <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
           <NetworkLatency />
         </div>
-        <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2">
+        <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
           <ServerInfo systemMetrics={data?.systemMetrics} diskUsage={data?.diskUsage} connectedClients={data?.connectedClients} />
         </div>
         <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">

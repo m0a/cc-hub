@@ -1,5 +1,4 @@
 import { useMemo, useState, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
 import { Users } from 'lucide-react';
 import type { SystemMetrics, SystemMetricsSnapshot } from '../../../../shared/types';
 
@@ -137,7 +136,6 @@ function buildThroughputPath(data: { timestamp: number; value: number }[], maxVa
 }
 
 export function ServerInfo({ systemMetrics, diskUsage, connectedClients }: ServerInfoProps) {
-  const { t } = useTranslation();
   const isLight = useIsLightMode();
 
   const [throughput, setThroughput] = useState(0);
@@ -165,95 +163,100 @@ export function ServerInfo({ systemMetrics, diskUsage, connectedClients }: Serve
 
   return (
     <div className="space-y-3">
-      <h3 className="text-[13px] font-semibold text-zinc-300">Server</h3>
+      <div className="flex items-center justify-between">
+        <h3 className="text-[13px] font-semibold text-zinc-300">Server</h3>
+        <div className="flex items-center gap-1.5">
+          <Users className="w-3 h-3 text-teal-400" />
+          <span className="text-[12px] text-teal-400 font-mono tabular-nums">{connectedClients ?? 0}</span>
+        </div>
+      </div>
 
-      {/* CPU chart */}
+      {/* Charts: CPU, Memory, Throughput */}
       {cur && (
-        <div>
-          <div className="flex items-baseline justify-between mb-0.5">
-            <span className="text-[11px] uppercase tracking-widest text-zinc-500">CPU</span>
-            <span className="text-sm font-medium text-blue-400 tabular-nums">{cur.cpuPercent.toFixed(1)}%</span>
-          </div>
-          <MiniChart snapshots={history} getValue={getCpu} lineColor="#3b82f6" gradientId="srv-cpu" isLight={isLight} />
-          {systemMetrics?.loadAvg && (
-            <div className="text-[10px] text-th-text-muted">
-              Load: {systemMetrics.loadAvg.map(v => v.toFixed(2)).join(' / ')} ({systemMetrics.cpuCount} {t('dashboard.cores')})
+        <div className="space-y-2.5">
+          {/* CPU */}
+          <div>
+            <div className="flex items-baseline justify-between mb-0.5">
+              <span className="text-[11px] text-zinc-500">CPU</span>
+              <span className="text-[12px] font-medium text-blue-400 tabular-nums">{cur.cpuPercent.toFixed(1)}%</span>
             </div>
-          )}
+            <MiniChart snapshots={history} getValue={getCpu} lineColor="#3b82f6" gradientId="srv-cpu" isLight={isLight} />
+          </div>
+
+          {/* Memory */}
+          <div>
+            <div className="flex items-baseline justify-between mb-0.5">
+              <span className="text-[11px] text-zinc-500">Memory</span>
+              <span className="text-[12px] font-medium text-purple-400 tabular-nums">
+                {(cur.memUsedMB / 1024).toFixed(1)} / {(cur.memTotalMB / 1024).toFixed(1)} GB
+              </span>
+            </div>
+            <MiniChart snapshots={history} getValue={getMem} lineColor="#a855f7" gradientId="srv-mem" isLight={isLight} />
+          </div>
+
+          {/* Throughput */}
+          <div>
+            <div className="flex items-baseline justify-between mb-0.5">
+              <span className="text-[11px] text-zinc-500">Throughput</span>
+              <span className="text-[12px] font-medium text-teal-400 tabular-nums">{formatSpeed(throughput)}</span>
+            </div>
+            {throughputHistory.length >= 2 ? (() => {
+              const maxVal = Math.max(...throughputHistory.map(d => d.value), 1024);
+              const { linePath, areaPath } = buildThroughputPath(throughputHistory, maxVal);
+              return (
+                <svg viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} className="w-full" preserveAspectRatio="xMidYMid meet">
+                  <defs>
+                    <linearGradient id="srv-tp" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#14b8a6" stopOpacity="0.25" />
+                      <stop offset="100%" stopColor="#14b8a6" stopOpacity="0.02" />
+                    </linearGradient>
+                  </defs>
+                  <rect x={PADDING.left} y={PADDING.top} width={INNER_W} height={INNER_H} fill={isLight ? '#ffffff' : '#1f2937'} rx="2" />
+                  {areaPath && <path d={areaPath} fill="url(#srv-tp)" />}
+                  {linePath && <path d={linePath} fill="none" stroke="#14b8a6" strokeWidth="1.5" strokeLinejoin="round" />}
+                </svg>
+              );
+            })() : (
+              <div className="h-[17px] flex items-center">
+                <span className="text-[10px] text-zinc-600">Collecting data...</span>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Memory chart */}
-      {cur && (
-        <div>
-          <div className="flex items-baseline justify-between mb-0.5">
-            <span className="text-[11px] uppercase tracking-widest text-zinc-500">{t('dashboard.memoryUsage')}</span>
-            <span className="text-sm font-medium text-purple-400 tabular-nums">{cur.memUsedPercent.toFixed(1)}%</span>
+      {/* Bars: Swap + Disk */}
+      <div className="space-y-2 pt-1 border-t border-white/[0.04]">
+        {cur && cur.swapTotalMB > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-0.5">
+              <span className="text-[11px] text-zinc-500">Swap</span>
+              <span className="text-[11px] text-amber-400 tabular-nums">
+                {(cur.swapUsedMB / 1024).toFixed(1)} / {(cur.swapTotalMB / 1024).toFixed(1)} GB
+              </span>
+            </div>
+            <ProgressBar percent={swapPercent} color="bg-amber-500" />
           </div>
-          <MiniChart snapshots={history} getValue={getMem} lineColor="#a855f7" gradientId="srv-mem" isLight={isLight} />
-          <div className="text-[10px] text-th-text-muted">
-            {(cur.memUsedMB / 1024).toFixed(1)} / {(cur.memTotalMB / 1024).toFixed(1)} GB
+        )}
+        {diskUsage && (
+          <div>
+            <div className="flex items-center justify-between mb-0.5">
+              <span className="text-[11px] text-zinc-500">Disk</span>
+              <span className={`text-[11px] tabular-nums ${diskPercent > 90 ? 'text-red-400' : diskPercent > 75 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                {formatBytes(diskUsage.used)} / {formatBytes(diskUsage.total)}
+              </span>
+            </div>
+            <ProgressBar percent={diskPercent} color={diskPercent > 90 ? 'bg-red-500' : diskPercent > 75 ? 'bg-amber-500' : 'bg-emerald-500'} />
           </div>
-        </div>
-      )}
-
-      {/* Swap bar */}
-      {cur && cur.swapTotalMB > 0 && (
-        <div>
-          <div className="flex items-baseline justify-between mb-0.5">
-            <span className="text-[11px] uppercase tracking-widest text-zinc-500">Swap</span>
-            <span className="text-sm font-medium text-amber-400 tabular-nums">{swapPercent.toFixed(1)}%</span>
-          </div>
-          <ProgressBar percent={swapPercent} color="bg-amber-500" />
-          <div className="text-[10px] text-th-text-muted mt-0.5">
-            {(cur.swapUsedMB / 1024).toFixed(1)} / {(cur.swapTotalMB / 1024).toFixed(1)} GB
-          </div>
-        </div>
-      )}
-
-      {/* Disk bar */}
-      {diskUsage && (
-        <div>
-          <div className="flex items-baseline justify-between mb-0.5">
-            <span className="text-[11px] uppercase tracking-widest text-zinc-500">Disk</span>
-            <span className={`text-sm font-medium tabular-nums ${diskPercent > 90 ? 'text-red-400' : diskPercent > 75 ? 'text-amber-400' : 'text-emerald-400'}`}>
-              {formatBytes(diskUsage.available)} free
-            </span>
-          </div>
-          <ProgressBar percent={diskPercent} color={diskPercent > 90 ? 'bg-red-500' : diskPercent > 75 ? 'bg-amber-500' : 'bg-emerald-500'} />
-        </div>
-      )}
-
-      {/* Throughput chart */}
-      <div>
-        <div className="flex items-baseline justify-between mb-0.5">
-          <span className="text-[11px] uppercase tracking-widest text-zinc-500">Throughput</span>
-          <span className="text-sm font-medium text-teal-400 tabular-nums">{formatSpeed(throughput)}</span>
-        </div>
-        {throughputHistory.length >= 2 && (() => {
-          const maxVal = Math.max(...throughputHistory.map(d => d.value), 1024);
-          const { linePath, areaPath } = buildThroughputPath(throughputHistory, maxVal);
-          return (
-            <svg viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} className="w-full" preserveAspectRatio="xMidYMid meet">
-              <defs>
-                <linearGradient id="srv-tp" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#14b8a6" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="#14b8a6" stopOpacity="0.02" />
-                </linearGradient>
-              </defs>
-              <rect x={PADDING.left} y={PADDING.top} width={INNER_W} height={INNER_H} fill={isLight ? '#ffffff' : '#1f2937'} rx="2" />
-              {areaPath && <path d={areaPath} fill="url(#srv-tp)" />}
-              {linePath && <path d={linePath} fill="none" stroke="#14b8a6" strokeWidth="1.5" strokeLinejoin="round" />}
-            </svg>
-          );
-        })()}
+        )}
       </div>
 
-      {/* Clients */}
-      <div className="flex items-center gap-1.5">
-        <Users className="w-3.5 h-3.5 text-zinc-500" />
-        <span className="text-[12px] text-zinc-400">{connectedClients ?? 0} clients connected</span>
-      </div>
+      {/* Footer: load average */}
+      {systemMetrics?.loadAvg && (
+        <div className="text-[10px] text-th-text-muted">
+          Load: {systemMetrics.loadAvg.map(v => v.toFixed(2)).join(' / ')} ({systemMetrics.cpuCount} cores)
+        </div>
+      )}
     </div>
   );
 }

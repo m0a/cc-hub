@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { CornerDownLeft, X } from 'lucide-react';
+import { CornerDownLeft } from 'lucide-react';
 
 // Keyboard key definition
 interface KeyDef {
@@ -142,7 +142,6 @@ interface KeyboardProps {
   onFilePicker?: () => void;
   onUrlExtract?: () => void;
   onModeSwitch?: () => void;
-  onClose?: () => void;
   isUploading?: boolean;
   compact?: boolean;
   transparent?: boolean;
@@ -157,7 +156,6 @@ export function Keyboard({
   onFilePicker,
   onUrlExtract,
   onModeSwitch,
-  onClose,
   isUploading = false,
   compact = false,
   transparent = false,
@@ -411,13 +409,13 @@ export function Keyboard({
 
   return (
     <div className={`${transparent ? 'bg-transparent' : 'bg-[#111111]'} pb-1 ${className}`}>
-      {/* Mode toggle header */}
-      {showModeToggle && (
-        <div className="flex items-center justify-between px-2 py-1.5 border-b border-white/[0.04]">
-          <div className="inline-flex bg-white/[0.04] rounded-md p-0.5">
+      {/* Mode toggle + Action bar (single row) */}
+      <div className="flex items-center gap-1 px-0.5 py-1">
+        {showModeToggle && (
+          <div className="inline-flex bg-white/[0.04] rounded-md p-0.5 shrink-0">
             <button
               onClick={() => onInputModeChange?.('keyboard')}
-              className={`px-3 py-1 text-[11px] rounded font-medium transition-colors ${
+              className={`px-2 py-0.5 text-[11px] rounded font-medium transition-colors ${
                 inputMode === 'keyboard' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600'
               }`}
             >
@@ -425,29 +423,19 @@ export function Keyboard({
             </button>
             <button
               onClick={() => onInputModeChange?.('input')}
-              className={`px-3 py-1 text-[11px] rounded font-medium transition-colors ${
+              className={`px-2 py-0.5 text-[11px] rounded font-medium transition-colors ${
                 inputMode === 'input' ? 'bg-white/[0.08] text-zinc-300' : 'text-zinc-600'
               }`}
             >
               入力
             </button>
           </div>
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="p-1.5 text-zinc-600 hover:text-zinc-400 rounded transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
+        )}
+        <div className="flex gap-1 overflow-x-auto">
+          {ACTION_BAR.map((keyDef, index) => (
+            <ActionButton key={index} keyDef={keyDef} />
+          ))}
         </div>
-      )}
-
-      {/* Action bar */}
-      <div className="flex gap-1 px-0.5 py-1 overflow-x-auto">
-        {ACTION_BAR.map((keyDef, index) => (
-          <ActionButton key={index} keyDef={keyDef} />
-        ))}
       </div>
 
       {/* Separator */}

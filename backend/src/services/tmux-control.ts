@@ -29,7 +29,7 @@ const SEND_KEYS_CHUNK_SIZE = 4096;
 const RESIZE_DEBOUNCE_MS = 50;
 
 // Grace period before destroying session after all clients disconnect
-const GRACE_PERIOD_MS = 30_000;
+const GRACE_PERIOD_MS = 5_000; // 5 seconds (was 30s - reduced to minimize idle CPU)
 
 interface PendingCommand {
   resolve: (output: string) => void;
@@ -73,6 +73,11 @@ export class TmuxControlSession {
   private clientCount = 0;
   private graceTimer: Timer | null = null;
   private destroyed = false;
+
+  // Performance counters (logged every 30s)
+  private outputCount = 0;
+  private outputBytes = 0;
+  private perfTimer: Timer | null = null;
 
   // Mobile pane separation
   private clientDeviceTypes = new Map<string, 'mobile' | 'tablet' | 'desktop'>();
@@ -191,6 +196,15 @@ export class TmuxControlSession {
     await this.readyPromise;
     console.log(`[tmux-control] Session ready: ${this.sessionId}`);
 
+    // Performance logging every 30s
+    this.perfTimer = setInterval(() => {
+      if (this.outputCount > 0) {
+        console.log(`[tmux-control] perf ${this.sessionId}: outputs=${this.outputCount} bytes=${this.outputBytes} clients=${this.clientCount} listeners=${this.globalOutputListeners.size}`);
+        this.outputCount = 0;
+        this.outputBytes = 0;
+      }
+    }, 30_000);
+
     // Disable mouse mode for this session to prevent accidental copy-mode
     // entry from mouse escape sequences. Mouse events are handled by the
     // browser UI instead. Also exit copy-mode on any panes that may be stuck.
@@ -295,6 +309,14 @@ export class TmuxControlSession {
    * split across consecutive %output lines.
    */
   private handleOutputRaw(rawLine: Buffer): void {
+    this.outputCount++;
+    this.outputBytes += rawLine.length;
+
+    // Skip processing if no one is listening (grace period, no clients)
+    if (this.outputListeners.size === 0 && this.globalOutputListeners.size === 0) {
+      return;
+    }
+
     // Skip past "%output " (8 bytes)
     let offset = 8;
 
@@ -835,6 +857,7 @@ export class TmuxControlSession {
 
   addClient(): void {
     this.clientCount++;
+    console.log(`[tmux-control] addClient ${this.sessionId}: clients=${this.clientCount}`);
     if (this.graceTimer) {
       clearTimeout(this.graceTimer);
       this.graceTimer = null;
@@ -843,6 +866,7 @@ export class TmuxControlSession {
 
   removeClient(): void {
     this.clientCount--;
+    console.log(`[tmux-control] removeClient ${this.sessionId}: clients=${this.clientCount}`);
     if (this.clientCount <= 0) {
       this.clientCount = 0;
       // Start grace period
@@ -870,6 +894,10 @@ export class TmuxControlSession {
     if (this.graceTimer) {
       clearTimeout(this.graceTimer);
       this.graceTimer = null;
+    }
+    if (this.perfTimer) {
+      clearInterval(this.perfTimer);
+      this.perfTimer = null;
     }
     if (this.resizeTimer) {
       clearTimeout(this.resizeTimer);

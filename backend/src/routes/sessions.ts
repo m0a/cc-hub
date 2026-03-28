@@ -5,7 +5,7 @@ import { TmuxService } from '../services/tmux';
 import { ClaudeCodeService } from '../services/claude-code';
 import { SessionHistoryService } from '../services/session-history';
 import { PromptHistoryService } from '../services/prompt-history';
-import { getAllSessionMetadata, setSessionTheme, setSessionTitle } from '../services/session-metadata';
+import { getAllSessionMetadata, setSessionTheme, setSessionTitle, getSessionOrder, setSessionOrder } from '../services/session-metadata';
 import { getIndicatorOverride } from './notify';
 import { pushSessionsNow } from './terminal-mux';
 
@@ -55,7 +55,9 @@ export async function buildSessionsList(): Promise<object[]> {
     .map(s => s.currentPath);
   const ccSessionsByPath = await claudeCodeService.getSessionsForPaths(claudePaths);
 
-  return Promise.all(tmuxSessions.map(async (s) => {
+  const order = await getSessionOrder();
+
+  const results = await Promise.all(tmuxSessions.map(async (s) => {
     let ccSession: Awaited<ReturnType<typeof claudeCodeService.getSessionForPath>> | undefined;
 
     if (s.currentCommand === 'claude' && s.currentPath) {
@@ -172,6 +174,18 @@ export async function buildSessionsList(): Promise<object[]> {
       }) : undefined,
     };
   }));
+
+  // Apply custom order if set
+  if (order.length > 0) {
+    const orderMap = new Map(order.map((id, i) => [id, i]));
+    results.sort((a: any, b: any) => {
+      const ai = orderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+      const bi = orderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+      return ai - bi;
+    });
+  }
+
+  return results;
 }
 
 // Helper to determine indicator state
@@ -584,6 +598,22 @@ sessions.put('/:id/title', async (c) => {
     return c.json({ success: true, title: parsed.data.title });
   } catch (_error) {
     return c.json({ error: 'Failed to update title' }, 500);
+  }
+});
+
+// PUT /sessions/order - Save session display order
+sessions.put('/order', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const order = body.order;
+  if (!Array.isArray(order) || !order.every((id: unknown) => typeof id === 'string')) {
+    return c.json({ error: 'Invalid order' }, 400);
+  }
+  try {
+    await setSessionOrder(order);
+    notifySessionChange();
+    return c.json({ success: true });
+  } catch {
+    return c.json({ error: 'Failed to save order' }, 500);
   }
 });
 

@@ -295,12 +295,10 @@ export function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, [checkDeviceType]);
 
-  // Periodically fetch sessions for mobile view (to get theme updates)
+  // Initial fetch on mobile (subsequent updates come via WS push)
   useEffect(() => {
     if (deviceType !== 'mobile') return;
     fetchApiSessions();
-    const interval = setInterval(() => fetchApiSessions(true), 5000);
-    return () => clearInterval(interval);
   }, [deviceType, fetchApiSessions]);
 
   // Update openSessions theme from API (for mobile view)

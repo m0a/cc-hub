@@ -404,6 +404,7 @@ export type MuxClientMessage =
 export type MuxServerMessage =
   | { type: 'subscribed'; sessionId: string }
   | { type: 'unsubscribed'; sessionId: string }
+  | { type: 'sessions-updated'; sessions: SessionResponse[] }
   | (ControlServerMessage & { sessionId: string });
 
 // Binary frame format for mux output:

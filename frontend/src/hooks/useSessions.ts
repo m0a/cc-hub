@@ -132,15 +132,33 @@ export function useSessions(): UseSessionsReturn {
 
   // hookイベントでキャッシュが更新されたら即座に反映
   useEffect(() => {
-    const handler = () => {
+    const hookHandler = () => {
       if (cachedSessions) {
         setSessions(cachedSessions.data);
       }
-      // キャッシュ無効化済みなので次のポーリングで最新データ取得
       invalidateSessionsCache();
     };
-    window.addEventListener('cchub-hook-event', handler);
-    return () => window.removeEventListener('cchub-hook-event', handler);
+    window.addEventListener('cchub-hook-event', hookHandler);
+
+    // WS push: sessions-updated from mux WebSocket
+    const pushHandler = (e: Event) => {
+      const sessions = (e as CustomEvent).detail as SessionResponse[];
+      if (sessions) {
+        cachedSessions = { data: sessions, timestamp: Date.now() };
+        detectAndNotifyTransitions(sessions);
+        setSessions(prev => {
+          const newJson = JSON.stringify(sessions);
+          const prevJson = JSON.stringify(prev);
+          return newJson === prevJson ? prev : sessions;
+        });
+      }
+    };
+    window.addEventListener('cchub-sessions-push', pushHandler);
+
+    return () => {
+      window.removeEventListener('cchub-hook-event', hookHandler);
+      window.removeEventListener('cchub-sessions-push', pushHandler);
+    };
   }, []);
 
   const fetchSessions = useCallback(async (silent = false) => {

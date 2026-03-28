@@ -7,6 +7,7 @@ import { SessionHistoryService } from '../services/session-history';
 import { PromptHistoryService } from '../services/prompt-history';
 import { getAllSessionMetadata, setSessionTheme, setSessionTitle } from '../services/session-metadata';
 import { getIndicatorOverride } from './notify';
+import { pushSessionsNow } from './terminal-mux';
 
 const tmuxService = new TmuxService();
 const claudeCodeService = new ClaudeCodeService();
@@ -17,12 +18,166 @@ const promptHistoryService = new PromptHistoryService();
 let sessionsResponseCache: { json: string; timestamp: number } | null = null;
 const SESSIONS_RESPONSE_CACHE_TTL = 3000; // 3 seconds
 
-/** Invalidate the response cache on mutations */
+/** Invalidate the response cache on mutations and push to mux clients */
 function invalidateSessionsResponseCache(): void {
   sessionsResponseCache = null;
+  pushSessionsNow();
 }
 
 export const sessions = new Hono();
+
+/** Build the full sessions list (shared by HTTP handler and WS push) */
+export async function buildSessionsList(): Promise<object[]> {
+  const tmuxSessions = await tmuxService.listSessions();
+  const sessionMetadata = await getAllSessionMetadata();
+
+  const allPaneTtys: string[] = [];
+  for (const s of tmuxSessions) {
+    if (s.panes) {
+      for (const p of s.panes) {
+        if (p.tty) allPaneTtys.push(p.tty.replace('/dev/', ''));
+      }
+    }
+  }
+
+  const processInfo = await tmuxService.batchProcessInfo(allPaneTtys);
+  const processRunningByTty = processInfo.processRunning;
+  const claudeOnPaneTtys = processInfo.claudeTtys;
+  const agentInfoByTty = processInfo.agentInfo;
+
+  const sessionIdByTmuxId = new Map<string, string>();
+  for (const s of tmuxSessions) {
+    if (s.currentCommand === 'claude' && s.paneTty) {
+      const sessionId = claudeCodeService.getSessionIdFromArgs(s.paneTty, processInfo.ttyArgs);
+      if (sessionId) {
+        sessionIdByTmuxId.set(s.id, sessionId);
+      }
+    }
+  }
+
+  const claudePaths = tmuxSessions
+    .filter((s): s is typeof s & { currentPath: string } => s.currentCommand === 'claude' && !!s.currentPath)
+    .map(s => s.currentPath);
+  const ccSessionsByPath = await claudeCodeService.getSessionsForPaths(claudePaths);
+
+  return Promise.all(tmuxSessions.map(async (s) => {
+    let ccSession: Awaited<ReturnType<typeof claudeCodeService.getSessionForPath>> | undefined;
+
+    if (s.currentCommand === 'claude' && s.currentPath) {
+      const ptySessionId = sessionIdByTmuxId.get(s.id);
+
+      if (ptySessionId) {
+        ccSession = await claudeCodeService.getSessionById(ptySessionId, s.currentPath);
+        if (ccSession) {
+          const [newestSession] = await claudeCodeService.getRecentSessionsForPath(s.currentPath, 1);
+          if (
+            newestSession &&
+            newestSession.sessionId !== ccSession.sessionId &&
+            newestSession.modified && ccSession.modified
+          ) {
+            const newestMtime = new Date(newestSession.modified).getTime();
+            const currentMtime = new Date(ccSession.modified).getTime();
+            if (newestMtime - currentMtime > 5000) {
+              ccSession = newestSession;
+            }
+          }
+        }
+      }
+
+      if (!ccSession && s.paneTty) {
+        ccSession = await claudeCodeService.getSessionByTtyStartTime(s.paneTty, s.currentPath);
+      }
+
+      if (!ccSession && ptySessionId) {
+        const pathSession = ccSessionsByPath.get(s.currentPath);
+        if (pathSession) {
+          ccSession = pathSession;
+        }
+      }
+    }
+
+    const isClaudeRunning = s.currentCommand === 'claude';
+    let waitingForInput = false;
+
+    if (isClaudeRunning) {
+      const ttyName = s.paneTty?.replace('/dev/', '');
+      const isProcessActive = ttyName ? (processRunningByTty.get(ttyName) || false) : false;
+      if (isProcessActive) {
+        waitingForInput = false;
+      } else if (ccSession?.waitingForInput) {
+        waitingForInput = true;
+      }
+    } else {
+      waitingForInput = s.waitingForInput || false;
+    }
+
+    const hookOverride = ccSession?.sessionId ? getIndicatorOverride(ccSession.sessionId) : null;
+    const indicatorState = hookOverride ?? getIndicatorState(
+      isClaudeRunning,
+      waitingForInput,
+      ccSession?.waitingToolName
+    );
+
+    let durationMinutes: number | undefined;
+    if (ccSession?.modified) {
+      const modified = new Date(ccSession.modified);
+      durationMinutes = Math.round((Date.now() - modified.getTime()) / 60000);
+    }
+
+    const includeClaudeInfo = s.currentCommand === 'claude';
+
+    return {
+      id: s.id,
+      name: s.name,
+      createdAt: s.createdAt,
+      lastAccessedAt: s.createdAt,
+      state: s.attached ? 'working' as const : 'idle' as const,
+      currentCommand: s.currentCommand,
+      currentPath: s.currentPath,
+      paneTitle: s.paneTitle,
+      waitingForInput: includeClaudeInfo ? waitingForInput : undefined,
+      waitingToolName: includeClaudeInfo ? ccSession?.waitingToolName : undefined,
+      ccSummary: includeClaudeInfo ? ccSession?.summary : undefined,
+      ccFirstPrompt: includeClaudeInfo ? ccSession?.firstPrompt : undefined,
+      indicatorState: includeClaudeInfo ? indicatorState : undefined,
+      ccSessionId: includeClaudeInfo ? ccSession?.sessionId : undefined,
+      messageCount: includeClaudeInfo ? ccSession?.messageCount : undefined,
+      gitBranch: includeClaudeInfo ? ccSession?.gitBranch : undefined,
+      durationMinutes: includeClaudeInfo ? durationMinutes : undefined,
+      firstMessageId: includeClaudeInfo ? ccSession?.firstMessageId : undefined,
+      theme: sessionMetadata[s.id]?.theme,
+      customTitle: sessionMetadata[s.id]?.title,
+      panes: s.panes ? s.panes.map((p: { paneId: string; command: string; path: string; title: string; tty: string; isActive: boolean; isDead: boolean }) => {
+        const ttyName = p.tty?.replace('/dev/', '');
+        const agentInfo = ttyName ? agentInfoByTty.get(ttyName) : undefined;
+        let paneIndicator: IndicatorState | undefined;
+        if (p.isDead) {
+          paneIndicator = 'completed';
+        } else {
+          const isClaudeOnPane = ttyName ? claudeOnPaneTtys.has(ttyName) : false;
+          if (isClaudeOnPane) {
+            const isActive = ttyName ? (processRunningByTty.get(ttyName) || false) : false;
+            paneIndicator = isActive ? 'processing' : 'waiting_input';
+          } else {
+            paneIndicator = 'idle';
+          }
+        }
+        const pane: PaneInfo = {
+          paneId: p.paneId,
+          currentCommand: p.command,
+          currentPath: p.path,
+          title: p.title || undefined,
+          agentName: agentInfo?.agentName,
+          agentColor: agentInfo?.agentColor,
+          isActive: p.isActive,
+          isDead: p.isDead || undefined,
+          indicatorState: hookOverride ?? paneIndicator,
+        };
+        return pane;
+      }) : undefined,
+    };
+  }));
+}
 
 // Helper to determine indicator state
 function getIndicatorState(
@@ -59,175 +214,8 @@ sessions.get('/', async (c) => {
     return c.body(sessionsResponseCache.json);
   }
 
-  const tmuxSessions = await tmuxService.listSessions();
-  const sessionMetadata = await getAllSessionMetadata();
-
-  // Collect all pane TTYs once (used for process state, claude detection, and agent info)
-  const allPaneTtys: string[] = [];
-  for (const s of tmuxSessions) {
-    if (s.panes) {
-      for (const p of s.panes) {
-        if (p.tty) allPaneTtys.push(p.tty.replace('/dev/', ''));
-      }
-    }
-  }
-
-  // Single batch call for all process info (1 ps call serves all consumers)
-  const processInfo = await tmuxService.batchProcessInfo(allPaneTtys);
-  const processRunningByTty = processInfo.processRunning;
-  const claudeOnPaneTtys = processInfo.claudeTtys;
-  const agentInfoByTty = processInfo.agentInfo;
-
-  // Get Claude Code session IDs from args (no subprocess - uses processInfo.ttyArgs)
-  const sessionIdByTmuxId = new Map<string, string>();
-  for (const s of tmuxSessions) {
-    if (s.currentCommand === 'claude' && s.paneTty) {
-      const sessionId = claudeCodeService.getSessionIdFromArgs(s.paneTty, processInfo.ttyArgs);
-      if (sessionId) {
-        sessionIdByTmuxId.set(s.id, sessionId);
-      }
-    }
-  }
-
-  // Get Claude Code session info for sessions running claude
-  const claudePaths = tmuxSessions
-    .filter((s): s is typeof s & { currentPath: string } => s.currentCommand === 'claude' && !!s.currentPath)
-    .map(s => s.currentPath);
-  const ccSessionsByPath = await claudeCodeService.getSessionsForPaths(claudePaths);
-
-  const sessions = await Promise.all(tmuxSessions.map(async (s) => {
-    let ccSession: Awaited<ReturnType<typeof claudeCodeService.getSessionForPath>> | undefined;
-
-    if (s.currentCommand === 'claude' && s.currentPath) {
-      const ptySessionId = sessionIdByTmuxId.get(s.id);
-
-      if (ptySessionId) {
-        ccSession = await claudeCodeService.getSessionById(ptySessionId, s.currentPath);
-
-        // After /clear, the PTY still shows the old session ID.
-        // Compare mtime with the newest .jsonl in the same project dir;
-        // if the newest one is sufficiently newer, use it instead.
-        if (ccSession) {
-          const [newestSession] = await claudeCodeService.getRecentSessionsForPath(s.currentPath, 1);
-          if (
-            newestSession &&
-            newestSession.sessionId !== ccSession.sessionId &&
-            newestSession.modified && ccSession.modified
-          ) {
-            const newestMtime = new Date(newestSession.modified).getTime();
-            const currentMtime = new Date(ccSession.modified).getTime();
-            if (newestMtime - currentMtime > 5000) {
-              ccSession = newestSession;
-            }
-          }
-        }
-      }
-
-      if (!ccSession && s.paneTty) {
-        ccSession = await claudeCodeService.getSessionByTtyStartTime(s.paneTty, s.currentPath);
-      }
-
-      if (!ccSession && ptySessionId) {
-        const pathSession = ccSessionsByPath.get(s.currentPath);
-        if (pathSession) {
-          ccSession = pathSession;
-        }
-      }
-    }
-
-    // Determine if Claude is actively processing or waiting for input
-    const isClaudeRunning = s.currentCommand === 'claude';
-    let waitingForInput = false;
-
-    if (isClaudeRunning) {
-      // Use batch result instead of per-session subprocess
-      const ttyName = s.paneTty?.replace('/dev/', '');
-      const isProcessActive = ttyName ? (processRunningByTty.get(ttyName) || false) : false;
-
-      if (isProcessActive) {
-        waitingForInput = false;
-      } else if (ccSession?.waitingForInput) {
-        waitingForInput = true;
-      } else {
-        waitingForInput = false;
-      }
-    } else {
-      waitingForInput = s.waitingForInput || false;
-    }
-
-    // Calculate indicator state (with hook event override)
-    const hookOverride = ccSession?.sessionId ? getIndicatorOverride(ccSession.sessionId) : null;
-    const indicatorState = hookOverride ?? getIndicatorState(
-      isClaudeRunning,
-      waitingForInput,
-      ccSession?.waitingToolName
-    );
-
-    // Calculate session duration from modified time
-    let durationMinutes: number | undefined;
-    if (ccSession?.modified) {
-      const modified = new Date(ccSession.modified);
-      const now = new Date();
-      durationMinutes = Math.round((now.getTime() - modified.getTime()) / 60000);
-    }
-
-    // Only include Claude Code info when claude is actually running
-    const includeClaudeInfo = s.currentCommand === 'claude';
-
-    return {
-      id: s.id,
-      name: s.name,
-      createdAt: s.createdAt,
-      lastAccessedAt: s.createdAt,
-      state: s.attached ? 'working' as const : 'idle' as const,
-      currentCommand: s.currentCommand,
-      currentPath: s.currentPath,
-      paneTitle: s.paneTitle,
-      waitingForInput: includeClaudeInfo ? waitingForInput : undefined,
-      waitingToolName: includeClaudeInfo ? ccSession?.waitingToolName : undefined,
-      ccSummary: includeClaudeInfo ? ccSession?.summary : undefined,
-      ccFirstPrompt: includeClaudeInfo ? ccSession?.firstPrompt : undefined,
-      indicatorState: includeClaudeInfo ? indicatorState : undefined,
-      ccSessionId: includeClaudeInfo ? ccSession?.sessionId : undefined,
-      messageCount: includeClaudeInfo ? ccSession?.messageCount : undefined,
-      gitBranch: includeClaudeInfo ? ccSession?.gitBranch : undefined,
-      durationMinutes: includeClaudeInfo ? durationMinutes : undefined,
-      firstMessageId: includeClaudeInfo ? ccSession?.firstMessageId : undefined,
-      theme: sessionMetadata[s.id]?.theme,
-      customTitle: sessionMetadata[s.id]?.title,
-      panes: s.panes ? s.panes.map((p: { paneId: string; command: string; path: string; title: string; tty: string; isActive: boolean; isDead: boolean }) => {
-        const ttyName = p.tty?.replace('/dev/', '');
-        const agentInfo = ttyName ? agentInfoByTty.get(ttyName) : undefined;
-        // Per-pane indicator state
-        let paneIndicator: IndicatorState | undefined;
-        if (p.isDead) {
-          paneIndicator = 'completed';
-        } else {
-          const isClaudeOnPane = ttyName ? claudeOnPaneTtys.has(ttyName) : false;
-          if (isClaudeOnPane) {
-            const isActive = ttyName ? (processRunningByTty.get(ttyName) || false) : false;
-            paneIndicator = isActive ? 'processing' : 'waiting_input';
-          } else {
-            paneIndicator = 'idle';
-          }
-        }
-        const pane: PaneInfo = {
-          paneId: p.paneId,
-          currentCommand: p.command,
-          currentPath: p.path,
-          title: p.title || undefined,
-          agentName: agentInfo?.agentName,
-          agentColor: agentInfo?.agentColor,
-          isActive: p.isActive,
-          isDead: p.isDead || undefined,
-          indicatorState: hookOverride ?? paneIndicator,
-        };
-        return pane;
-      }) : undefined,
-    };
-  }));
-
-  const responseJson = JSON.stringify({ sessions });
+  const sessionsList = await buildSessionsList();
+  const responseJson = JSON.stringify({ sessions: sessionsList });
   sessionsResponseCache = { json: responseJson, timestamp: Date.now() };
   c.header('Content-Type', 'application/json');
   c.header('X-Cache', 'MISS');

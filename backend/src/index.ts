@@ -10,10 +10,13 @@ import { files } from './routes/files';
 import { dashboard } from './routes/dashboard';
 import { notify } from './routes/notify';
 import { terminalWebSocket, handleTerminalUpgrade } from './routes/terminal';
+import { muxOpen, muxMessage, muxClose } from './routes/terminal-mux';
 import { shareManage, sharePublic } from './routes/share';
 import { checkExistingFunnel } from './services/share-token';
 import { parseArgs, runCli, VERSION } from './cli';
-import { conditionalAuthMiddleware } from './middleware/auth';
+import { conditionalAuthMiddleware, isAuthRequired, getJwtSecret } from './middleware/auth';
+import { AuthService } from './services/auth';
+import { getDataDir } from './utils/storage';
 import { t } from './i18n';
 
 // Global error handlers to prevent silent crashes
@@ -299,7 +302,35 @@ export default {
     key: Bun.file(keyPath),
   },
   async fetch(req: Request, server: Parameters<typeof handleTerminalUpgrade>[1]) {
-    // Handle WebSocket upgrades for terminal
+    // Handle WebSocket upgrades for mux endpoint
+    const url = new URL(req.url);
+    if (url.pathname === '/ws/mux') {
+      // Check authentication if required
+      if (isAuthRequired()) {
+        const token = url.searchParams.get('token');
+        if (!token) {
+          return new Response('Authentication required', { status: 401 });
+        }
+        try {
+          const authService = new AuthService(getDataDir(), getJwtSecret());
+          await authService.verifyToken(token);
+        } catch {
+          return new Response('Invalid or expired token', { status: 401 });
+        }
+      }
+
+      const upgraded = server.upgrade(req, {
+        data: {
+          mux: true,
+          visitorId: crypto.randomUUID(),
+          subscriptions: new Map(),
+        } as any,
+      });
+      if (upgraded) return undefined as unknown as Response;
+      return new Response('WebSocket upgrade failed', { status: 500 });
+    }
+
+    // Handle WebSocket upgrades for terminal (legacy per-session)
     const wsResponse = await handleTerminalUpgrade(req, server);
     if (wsResponse !== null) {
       return wsResponse;
@@ -309,8 +340,19 @@ export default {
     return app.fetch(req);
   },
   websocket: {
-    ...terminalWebSocket,
-    idleTimeout: 120, // seconds - keep alive with client pings every 10s
-    sendPings: true, // Bun auto-sends WebSocket pings
+    open(ws: any) {
+      if (ws.data?.mux) return muxOpen(ws);
+      return terminalWebSocket.open(ws);
+    },
+    message(ws: any, message: string | Buffer) {
+      if (ws.data?.mux) return muxMessage(ws, message);
+      return terminalWebSocket.message(ws, message);
+    },
+    close(ws: any, code: number, reason: string) {
+      if (ws.data?.mux) return muxClose(ws, code, reason);
+      return terminalWebSocket.close(ws, code, reason);
+    },
+    idleTimeout: 120,
+    sendPings: true,
   } as any,
 };

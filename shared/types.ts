@@ -391,6 +391,27 @@ export type ControlServerMessage =
   | { type: 'hook-event'; event: string; cwd?: string; sessionId?: string; message?: string; data?: Record<string, unknown> };
 
 // =============================================================================
+// Multiplexed WebSocket Types (single WS per client)
+// =============================================================================
+
+// Client → Server messages for /ws/mux
+export type MuxClientMessage =
+  | { type: 'subscribe'; sessionId: string }
+  | { type: 'unsubscribe'; sessionId: string }
+  | (ControlClientMessage & { sessionId: string });
+
+// Server → Client messages for /ws/mux
+export type MuxServerMessage =
+  | { type: 'subscribed'; sessionId: string }
+  | { type: 'unsubscribed'; sessionId: string }
+  | (ControlServerMessage & { sessionId: string });
+
+// Binary frame format for mux output:
+// [0x02][sessionId\0][paneId\0][raw data]
+// 0x02 = mux output (vs 0x01 = legacy single-session output)
+export const MUX_BINARY_TYPE = 0x02;
+
+// =============================================================================
 // Share Token Types (Presentation / Read-Only View)
 // =============================================================================
 

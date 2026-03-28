@@ -496,7 +496,7 @@ function TerminalPane({
 
       {/* Terminal, conversation, or session selector */}
       <div className="flex-1 min-h-0">
-        {showConversation && currentCcSessionId ? (
+        {showConversation && currentCcSessionId && (
           <ConversationViewer
             title="会話履歴"
             subtitle={session?.name}
@@ -508,18 +508,21 @@ function TerminalPane({
             isActive={isClaudeRunning}
             onRefresh={() => fetchConversation(currentCcSessionId || undefined)}
           />
-        ) : sessionId ? (
-          <TerminalComponent
-            key={`${sessionId}-${reloadKey}-${globalReloadKey}`}
-            ref={terminalRef}
-            sessionId={sessionId}
-            hideKeyboard={true}
-            onConnect={handleConnect}
-            onDisconnect={handleDisconnect}
-            theme={session?.theme}
-            controlMode={controlModeContext.getControlConfig(paneId)}
-          />
-        ) : (
+        )}
+        {sessionId ? (
+          <div className={showConversation ? 'hidden' : 'h-full'}>
+            <TerminalComponent
+              key={`${sessionId}-${reloadKey}-${globalReloadKey}`}
+              ref={terminalRef}
+              sessionId={sessionId}
+              hideKeyboard={true}
+              onConnect={handleConnect}
+              onDisconnect={handleDisconnect}
+              theme={session?.theme}
+              controlMode={controlModeContext.getControlConfig(paneId)}
+            />
+          </div>
+        ) : !showConversation && (
           <SessionSelector
             sessions={sessions}
             onSelect={(sess) => {

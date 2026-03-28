@@ -4,6 +4,27 @@ import { homedir } from 'node:os';
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 
+/**
+ * Read last N lines from a file without spawning a subprocess.
+ * Reads from the end of the file in chunks.
+ */
+async function readLastLines(filePath: string, lineCount: number): Promise<string> {
+  try {
+    const file = Bun.file(filePath);
+    const size = file.size;
+    if (size === 0) return '';
+    // Read last chunk (estimate ~200 bytes per line)
+    const chunkSize = Math.min(size, lineCount * 200);
+    const buffer = await file.slice(size - chunkSize, size).text();
+    const lines = buffer.split('\n');
+    // If we didn't capture a full first line, drop it
+    if (chunkSize < size) lines.shift();
+    return lines.slice(-lineCount).join('\n');
+  } catch {
+    return '';
+  }
+}
+
 interface ClaudeCodeSession {
   sessionId: string;
   summary?: string;
@@ -196,14 +217,8 @@ export class ClaudeCodeService {
    */
   private async readLastUserMessage(filePath: string): Promise<string | null> {
     try {
-      // Use tail to get last 100 lines efficiently
-      const proc = Bun.spawn(['tail', '-n', '100', filePath], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      const text = await new Response(proc.stdout).text();
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) return null;
+      const text = await readLastLines(filePath, 100);
+      if (!text) return null;
 
       const lines = text.trim().split('\n').reverse();
       for (const line of lines) {
@@ -247,14 +262,8 @@ export class ClaudeCodeService {
    */
   private async checkWaitingState(filePath: string): Promise<string | null> {
     try {
-      // Use tail to get last 50 lines (increased from 20 for better accuracy)
-      const proc = Bun.spawn(['tail', '-n', '50', filePath], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      const text = await new Response(proc.stdout).text();
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) return null;
+      const text = await readLastLines(filePath, 50);
+      if (!text) return null;
 
       const lines = text.trim().split('\n');
       interface JsonlEntry {

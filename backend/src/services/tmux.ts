@@ -63,6 +63,10 @@ export class TmuxService {
   private processInfoCache: { data: ParsedProcessInfo; timestamp: number } | null = null;
   private static readonly PROCESS_INFO_CACHE_TTL = 3000; // 3 seconds
 
+  // Cache for capturePane per session
+  private capturePaneCache = new Map<string, { data: string | null; timestamp: number }>();
+  private static readonly CAPTURE_PANE_CACHE_TTL = 3000; // 3 seconds
+
   constructor() {
     const configDir = path.join(process.env.HOME || '/tmp', '.config', 'cchub');
     this.configPath = path.join(configDir, 'tmux.conf');
@@ -399,6 +403,13 @@ export class TmuxService {
    * Capture pane output (raw text) - used as a shared primitive for preview + waiting detection
    */
   async capturePane(sessionId: string, lines: number = 15): Promise<string | null> {
+    // Check cache
+    const cacheKey = `${sessionId}:${lines}`;
+    const cached = this.capturePaneCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < TmuxService.CAPTURE_PANE_CACHE_TTL) {
+      return cached.data;
+    }
+
     try {
       const proc = Bun.spawn(['tmux', 'capture-pane', '-t', sessionId, '-p', '-S', `-${lines}`], {
         stdout: 'pipe',
@@ -407,10 +418,13 @@ export class TmuxService {
 
       const exitCode = await proc.exited;
       if (exitCode !== 0) {
+        this.capturePaneCache.set(cacheKey, { data: null, timestamp: Date.now() });
         return null;
       }
 
-      return await new Response(proc.stdout).text();
+      const text = await new Response(proc.stdout).text();
+      this.capturePaneCache.set(cacheKey, { data: text, timestamp: Date.now() });
+      return text;
     } catch {
       return null;
     }
@@ -541,6 +555,7 @@ export class TmuxService {
   invalidateCache(): void {
     this.listSessionsCache = null;
     this.processInfoCache = null;
+    this.capturePaneCache.clear();
   }
 
   async createSession(name: string): Promise<string> {

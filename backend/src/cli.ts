@@ -159,8 +159,8 @@ export async function runCli(options: CliOptions): Promise<'serve' | 'exit'> {
 }
 
 async function runSetup(options: CliOptions): Promise<void> {
-  const { setupSystemd } = await import('./commands/setup');
-  await setupSystemd(options.port, options.password);
+  const { setupService } = await import('./commands/setup');
+  await setupService(options.port, options.password);
 }
 
 async function runUpdate(options: CliOptions): Promise<void> {

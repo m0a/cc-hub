@@ -17,7 +17,7 @@ import { useAuth } from './hooks/useAuth';
 import { useSessions } from './hooks/useSessions';
 import { authFetch, isTransientNetworkError } from './services/api';
 import { useScreenShare, type ScreenShareState } from './hooks/useScreenShare';
-import { setMuxForwarder } from './hooks/useMultiplexedTerminal';
+import { setMuxForwarder, setMuxReadOnly } from './hooks/useMultiplexedTerminal';
 import { useViewer } from './contexts/ViewerContext';
 import type { SessionResponse, SessionState, ConversationMessage, SessionTheme, PaneInfo } from '../../shared/types';
 
@@ -301,11 +301,15 @@ export function App() {
 
   const [deviceType, setDeviceType] = useState<DeviceType>(checkDeviceType);
 
-  // Viewer mode: override device type to match host
+  // Viewer mode: override device type to match host + read-only mux
   useEffect(() => {
-    if (viewer.isViewer && viewer.hostDeviceType) {
-      setDeviceType(viewer.hostDeviceType);
+    if (viewer.isViewer) {
+      setMuxReadOnly(true);
+      if (viewer.hostDeviceType) {
+        setDeviceType(viewer.hostDeviceType);
+      }
     }
+    return () => setMuxReadOnly(false);
   }, [viewer.isViewer, viewer.hostDeviceType]);
 
   // Both tablet and mobile need keyboard control during onboarding

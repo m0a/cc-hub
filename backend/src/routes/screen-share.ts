@@ -30,7 +30,7 @@ export function screenShareMessage(ws: ServerWebSocket<ScreenShareData>, message
       const parsed = JSON.parse(message);
       if (parsed.type === 'screen-state') {
         lastScreenState = message;
-        console.log(`[screen-share] State: view=${parsed.currentView} session=${parsed.activeSessionName}`);
+        console.log(`[screen-share] State: ${message}`);
       }
     } catch { /* not JSON, relay anyway */ }
   }

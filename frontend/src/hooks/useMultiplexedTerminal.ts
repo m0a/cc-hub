@@ -64,6 +64,14 @@ export function setMuxForwarder(fn: ((data: string | ArrayBuffer) => void) | nul
   rawMessageForwarder = fn;
 }
 
+// Viewer mode: don't send resize/input (read-only)
+let muxReadOnly = false;
+
+/** Set read-only mode (viewer won't affect host terminal) */
+export function setMuxReadOnly(readOnly: boolean) {
+  muxReadOnly = readOnly;
+}
+
 // Current hook instance's callbacks (only one active at a time)
 type MuxCallbacks = {
   onPaneOutput?: (paneId: string, data: Uint8Array) => void;
@@ -386,12 +394,14 @@ export function useMultiplexedTerminal(options: UseMultiplexedTerminalOptions): 
   }, []);
 
   const sendInput = useCallback((paneId: string, data: string) => {
+    if (muxReadOnly) return;
     const bytes = new TextEncoder().encode(data);
     const base64 = uint8ArrayToBase64(bytes);
     sendSessionMessage({ type: 'input', paneId, data: base64 });
   }, []);
 
   const resize = useCallback((cols: number, rows: number) => {
+    if (muxReadOnly) return;
     sendSessionMessage({ type: 'resize', cols, rows });
   }, []);
 

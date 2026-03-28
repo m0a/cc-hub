@@ -51,7 +51,9 @@ export function ScreenViewerPage() {
 
   return (
     <ViewerProvider value={{ isViewer: true, hostSessionId, hostView, hostDeviceType }}>
-      <App />
+      <div style={{ pointerEvents: 'none', userSelect: 'none' }}>
+        <App />
+      </div>
     </ViewerProvider>
   );
 }

@@ -1902,10 +1902,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                           }, 350);
                         }
                       }}
-                      onClose={() => {
-                        setInputMode('hidden');
-                        fitTerminal();
-                      }}
                     />
                   </div>
                 </div>
@@ -1992,10 +1988,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                         fitTerminal();
                       }, 350);
                     }
-                  }}
-                  onClose={() => {
-                    setInputMode('hidden');
-                    fitTerminal();
                   }}
                 />
               </div>

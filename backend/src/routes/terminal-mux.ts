@@ -43,10 +43,12 @@ function startSessionsPush() {
     }
     try {
       const sessions = await buildSessionsList();
-      const json = JSON.stringify(sessions);
-      // Only push if data changed
-      if (json === lastSessionsJson) return;
-      lastSessionsJson = json;
+      // Compare without volatile fields (durationMinutes changes every minute)
+      const stableJson = JSON.stringify(sessions, (key, value) =>
+        key === 'durationMinutes' ? undefined : value
+      );
+      if (stableJson === lastSessionsJson) return;
+      lastSessionsJson = stableJson;
       const payload = JSON.stringify({ type: 'sessions-updated', sessions });
       for (const ws of activeMuxConnections) {
         try {

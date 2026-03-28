@@ -254,7 +254,7 @@ export function App() {
   const [mobileActivePaneId, setMobileActivePaneId] = useState<string | null>(null);
 
   // Session API state (for theme updates in mobile view)
-  const { sessions: apiSessions, fetchSessions: fetchApiSessions } = useSessions();
+  const { sessions: apiSessions } = useSessions();
 
   // Device type detection
   // - desktop: PC (非タッチデバイス) → ソフトキーボード不要
@@ -295,11 +295,7 @@ export function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, [checkDeviceType]);
 
-  // Initial fetch on mobile (subsequent updates come via WS push)
-  useEffect(() => {
-    if (deviceType !== 'mobile') return;
-    fetchApiSessions();
-  }, [deviceType, fetchApiSessions]);
+  // Sessions are now delivered via WS push (no HTTP polling needed)
 
   // Update openSessions theme from API (for mobile view)
   useEffect(() => {

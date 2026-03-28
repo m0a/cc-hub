@@ -112,25 +112,8 @@ export function useSessions(): UseSessionsReturn {
     };
   }, []);
 
-  // Initial HTTP fetch (before WS push is available)
-  const fetchSessions = useCallback(async (silent = false) => {
-    if (!silent) {
-      setIsLoading(true);
-      setError(null);
-    }
-    try {
-      const response = await authFetch(`${API_BASE}/api/sessions`);
-      if (!response.ok) throw new Error('Failed to fetch sessions');
-      const data = await response.json();
-      updateSessions(setSessions, data.sessions);
-      setIsLoading(false);
-    } catch (err) {
-      if (!silent && !isTransientNetworkError(err)) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
-      }
-      if (!silent) setIsLoading(false);
-    }
-  }, []);
+  // No-op: sessions are now pushed via WS. Kept for API compatibility with callers.
+  const fetchSessions = useCallback(async (_silent = false) => {}, []);
 
   const createSession = useCallback(async (name?: string, workingDir?: string): Promise<SessionResponse | null> => {
     setError(null);

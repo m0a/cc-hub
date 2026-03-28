@@ -13,6 +13,15 @@ const claudeCodeService = new ClaudeCodeService();
 const sessionHistoryService = new SessionHistoryService();
 const promptHistoryService = new PromptHistoryService();
 
+// Response-level cache for GET /sessions (multiple clients polling within 3s get the same response)
+let sessionsResponseCache: { json: string; timestamp: number } | null = null;
+const SESSIONS_RESPONSE_CACHE_TTL = 3000; // 3 seconds
+
+/** Invalidate the response cache on mutations */
+function invalidateSessionsResponseCache(): void {
+  sessionsResponseCache = null;
+}
+
 export const sessions = new Hono();
 
 // Helper to determine indicator state
@@ -43,28 +52,15 @@ const ResumeSessionSchema = z.object({
 
 // GET /sessions - List all tmux sessions
 sessions.get('/', async (c) => {
+  // Return cached response if still fresh (multiple clients polling within 3s)
+  if (sessionsResponseCache && Date.now() - sessionsResponseCache.timestamp < SESSIONS_RESPONSE_CACHE_TTL) {
+    c.header('Content-Type', 'application/json');
+    c.header('X-Cache', 'HIT');
+    return c.body(sessionsResponseCache.json);
+  }
+
   const tmuxSessions = await tmuxService.listSessions();
   const sessionMetadata = await getAllSessionMetadata();
-
-  // Get Claude Code session IDs from PTY for each tmux session running claude
-  const sessionIdByTmuxId = new Map<string, string>();
-  await Promise.all(
-    tmuxSessions
-      .filter(s => s.currentCommand === 'claude' && s.paneTty)
-      .map(async (s) => {
-        const sessionId = await claudeCodeService.getSessionIdFromTty(s.paneTty ?? '');
-        if (sessionId) {
-          sessionIdByTmuxId.set(s.id, sessionId);
-        }
-      })
-  );
-  // Get Claude Code session info for sessions running claude
-  const claudePaths = tmuxSessions
-    .filter((s): s is typeof s & { currentPath: string } => s.currentCommand === 'claude' && !!s.currentPath)
-    .map(s => s.currentPath);
-
-  // Also get sessions by path for fallback (when session ID not found from PTY)
-  const ccSessionsByPath = await claudeCodeService.getSessionsForPaths(claudePaths);
 
   // Collect all pane TTYs once (used for process state, claude detection, and agent info)
   const allPaneTtys: string[] = [];
@@ -76,12 +72,28 @@ sessions.get('/', async (c) => {
     }
   }
 
-  // Batch check process state, claude presence, and agent info for all pane TTYs
-  const [processRunningByTty, claudeOnPaneTtys, agentInfoByTty] = await Promise.all([
-    tmuxService.batchCheckProcessRunning(allPaneTtys),
-    tmuxService.batchCheckClaudeOnTtys(allPaneTtys),
-    tmuxService.batchGetAgentInfo(allPaneTtys),
-  ]);
+  // Single batch call for all process info (1 ps call serves all consumers)
+  const processInfo = await tmuxService.batchProcessInfo(allPaneTtys);
+  const processRunningByTty = processInfo.processRunning;
+  const claudeOnPaneTtys = processInfo.claudeTtys;
+  const agentInfoByTty = processInfo.agentInfo;
+
+  // Get Claude Code session IDs from args (no subprocess - uses processInfo.ttyArgs)
+  const sessionIdByTmuxId = new Map<string, string>();
+  for (const s of tmuxSessions) {
+    if (s.currentCommand === 'claude' && s.paneTty) {
+      const sessionId = claudeCodeService.getSessionIdFromArgs(s.paneTty, processInfo.ttyArgs);
+      if (sessionId) {
+        sessionIdByTmuxId.set(s.id, sessionId);
+      }
+    }
+  }
+
+  // Get Claude Code session info for sessions running claude
+  const claudePaths = tmuxSessions
+    .filter((s): s is typeof s & { currentPath: string } => s.currentCommand === 'claude' && !!s.currentPath)
+    .map(s => s.currentPath);
+  const ccSessionsByPath = await claudeCodeService.getSessionsForPaths(claudePaths);
 
   const sessions = await Promise.all(tmuxSessions.map(async (s) => {
     let ccSession: Awaited<ReturnType<typeof claudeCodeService.getSessionForPath>> | undefined;
@@ -215,11 +227,16 @@ sessions.get('/', async (c) => {
     };
   }));
 
-  return c.json({ sessions });
+  const responseJson = JSON.stringify({ sessions });
+  sessionsResponseCache = { json: responseJson, timestamp: Date.now() };
+  c.header('Content-Type', 'application/json');
+  c.header('X-Cache', 'MISS');
+  return c.body(responseJson);
 });
 
 // POST /sessions - Create a new tmux session
 sessions.post('/', async (c) => {
+  invalidateSessionsResponseCache();
   const body = await c.req.json().catch(() => ({}));
   const parsed = CreateSessionSchema.safeParse(body);
 
@@ -500,6 +517,7 @@ sessions.get('/:id/copy-mode', async (c) => {
 
 // DELETE /sessions/:id - Delete (kill) a tmux session
 sessions.delete('/:id', async (c) => {
+  invalidateSessionsResponseCache();
   const id = c.req.param('id');
 
   const exists = await tmuxService.sessionExists(id);
@@ -647,6 +665,7 @@ sessions.post('/:id/panes/focus', async (c) => {
       return c.json({ error: `Failed to focus pane: ${error}` }, 500);
     }
     tmuxService.invalidateCache();
+    invalidateSessionsResponseCache();
     return c.json({ success: true });
   } catch (_error) {
     return c.json({ error: 'Failed to focus pane' }, 500);
@@ -695,6 +714,7 @@ sessions.post('/:id/panes/close', async (c) => {
       return c.json({ error: `Failed to close pane: ${error}` }, 500);
     }
     tmuxService.invalidateCache();
+    invalidateSessionsResponseCache();
     return c.json({ success: true });
   } catch (_error) {
     return c.json({ error: 'Failed to close pane' }, 500);
@@ -727,6 +747,7 @@ sessions.post('/:id/panes/split', async (c) => {
       return c.json({ error: `Failed to split pane: ${error}` }, 500);
     }
     tmuxService.invalidateCache();
+    invalidateSessionsResponseCache();
     return c.json({ success: true });
   } catch (_error) {
     return c.json({ error: 'Failed to split pane' }, 500);
@@ -759,6 +780,7 @@ sessions.post('/:id/panes/respawn', async (c) => {
       return c.json({ error: `Failed to respawn pane: ${error}` }, 500);
     }
     tmuxService.invalidateCache();
+    invalidateSessionsResponseCache();
     return c.json({ success: true });
   } catch (_error) {
     return c.json({ error: 'Failed to respawn pane' }, 500);

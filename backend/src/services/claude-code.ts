@@ -4,6 +4,27 @@ import { homedir } from 'node:os';
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 
+/**
+ * Read last N lines from a file without spawning a subprocess.
+ * Reads from the end of the file in chunks.
+ */
+async function readLastLines(filePath: string, lineCount: number): Promise<string> {
+  try {
+    const file = Bun.file(filePath);
+    const size = file.size;
+    if (size === 0) return '';
+    // Read last chunk (estimate ~200 bytes per line)
+    const chunkSize = Math.min(size, lineCount * 200);
+    const buffer = await file.slice(size - chunkSize, size).text();
+    const lines = buffer.split('\n');
+    // If we didn't capture a full first line, drop it
+    if (chunkSize < size) lines.shift();
+    return lines.slice(-lineCount).join('\n');
+  } catch {
+    return '';
+  }
+}
+
 interface ClaudeCodeSession {
   sessionId: string;
   summary?: string;
@@ -35,12 +56,23 @@ interface SessionsIndex {
   originalPath?: string;
 }
 
+/** Cached session data with mtime for staleness check */
+interface CachedSessionData {
+  data: ClaudeCodeSession;
+  fileMtime: number;
+  timestamp: number;
+}
+
 export class ClaudeCodeService {
   private claudeDir: string;
 
   // Cache for TTY → SessionID mappings (avoids ps subprocess per session)
   private ttySessionCache = new Map<string, { sessionId: string | null; timestamp: number }>();
   private static readonly TTY_SESSION_CACHE_TTL = 10_000; // 10 seconds
+
+  // Cache for session data keyed by file path (avoids re-reading JSONL files)
+  private sessionDataCache = new Map<string, CachedSessionData>();
+  private static readonly SESSION_DATA_CACHE_TTL = 5000; // 5 seconds
 
   constructor() {
     this.claudeDir = join(homedir(), '.claude', 'projects');
@@ -55,48 +87,39 @@ export class ClaudeCodeService {
   }
 
   /**
-   * Get Claude Code session ID from PTY by checking the running process
-   * Returns session ID from `-r <session-id>` argument or tries to find by process start time
+   * Get Claude Code session ID from PTY by checking the running process args.
+   * Uses pre-fetched process info to avoid spawning ps.
+   */
+  getSessionIdFromArgs(tty: string, ttyArgs: Map<string, string[]>): string | null {
+    const ttyMatch = tty.match(/(pts\/\d+|ttys\d+)$/);
+    if (!ttyMatch) return null;
+    const ttyName = ttyMatch[0];
+
+    // Check cache first
+    const cached = this.ttySessionCache.get(ttyName);
+    if (cached && Date.now() - cached.timestamp < ClaudeCodeService.TTY_SESSION_CACHE_TTL) {
+      return cached.sessionId;
+    }
+
+    // Look for "claude -r <session-id>" in pre-fetched args
+    const args = ttyArgs.get(ttyName) || [];
+    for (const line of args) {
+      const match = line.match(/claude\s+-r\s+([a-f0-9-]{36})/i);
+      if (match) {
+        this.ttySessionCache.set(ttyName, { sessionId: match[1], timestamp: Date.now() });
+        return match[1];
+      }
+    }
+
+    this.ttySessionCache.set(ttyName, { sessionId: null, timestamp: Date.now() });
+    return null;
+  }
+
+  /**
+   * @deprecated Use getSessionIdFromArgs with pre-fetched process info
    */
   async getSessionIdFromTty(tty: string): Promise<string | null> {
-    try {
-      const ttyMatch = tty.match(/(pts\/\d+|ttys\d+)$/);
-      if (!ttyMatch) return null;
-      const ttyName = ttyMatch[0];
-
-      // Check cache first
-      const cached = this.ttySessionCache.get(ttyName);
-      if (cached && Date.now() - cached.timestamp < ClaudeCodeService.TTY_SESSION_CACHE_TTL) {
-        return cached.sessionId;
-      }
-
-      // Find claude process running on this TTY
-      const proc = Bun.spawn(['ps', '-t', ttyName, '-o', 'args='], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-
-      const text = await new Response(proc.stdout).text();
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) {
-        this.ttySessionCache.set(ttyName, { sessionId: null, timestamp: Date.now() });
-        return null;
-      }
-
-      // Look for "claude -r <session-id>" pattern
-      for (const line of text.split('\n')) {
-        const match = line.match(/claude\s+-r\s+([a-f0-9-]{36})/i);
-        if (match) {
-          this.ttySessionCache.set(ttyName, { sessionId: match[1], timestamp: Date.now() });
-          return match[1];
-        }
-      }
-
-      this.ttySessionCache.set(ttyName, { sessionId: null, timestamp: Date.now() });
-      return null;
-    } catch {
-      return null;
-    }
+    return this.getSessionIdFromArgs(tty, new Map());
   }
 
   /**
@@ -185,14 +208,8 @@ export class ClaudeCodeService {
    */
   private async readLastUserMessage(filePath: string): Promise<string | null> {
     try {
-      // Use tail to get last 100 lines efficiently
-      const proc = Bun.spawn(['tail', '-n', '100', filePath], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      const text = await new Response(proc.stdout).text();
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) return null;
+      const text = await readLastLines(filePath, 100);
+      if (!text) return null;
 
       const lines = text.trim().split('\n').reverse();
       for (const line of lines) {
@@ -236,14 +253,8 @@ export class ClaudeCodeService {
    */
   private async checkWaitingState(filePath: string): Promise<string | null> {
     try {
-      // Use tail to get last 50 lines (increased from 20 for better accuracy)
-      const proc = Bun.spawn(['tail', '-n', '50', filePath], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      const text = await new Response(proc.stdout).text();
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) return null;
+      const text = await readLastLines(filePath, 50);
+      if (!text) return null;
 
       const lines = text.trim().split('\n');
       interface JsonlEntry {
@@ -448,6 +459,54 @@ export class ClaudeCodeService {
   }
 
   /**
+   * Read session data from a JSONL file with mtime-based caching.
+   * Returns cached data if file mtime hasn't changed and cache is within TTL.
+   */
+  private async readSessionDataCached(filePath: string, sessionId: string, projectPath: string): Promise<ClaudeCodeSession | null> {
+    try {
+      const fileStat = await stat(filePath);
+
+      // Check cache: if mtime unchanged and within TTL, return cached
+      const cached = this.sessionDataCache.get(filePath);
+      if (
+        cached &&
+        cached.fileMtime === fileStat.mtimeMs &&
+        Date.now() - cached.timestamp < ClaudeCodeService.SESSION_DATA_CACHE_TTL
+      ) {
+        return cached.data;
+      }
+
+      const [firstPrompt, lastUserMessage, waitingToolName, firstMessageId] = await Promise.all([
+        this.readFirstPromptFromFile(filePath),
+        this.readLastUserMessage(filePath),
+        this.checkWaitingState(filePath),
+        this.readFirstMessageId(filePath),
+      ]);
+
+      const data: ClaudeCodeSession = {
+        sessionId,
+        summary: lastUserMessage || undefined,
+        firstPrompt: firstPrompt || undefined,
+        modified: new Date(fileStat.mtimeMs).toISOString(),
+        projectPath,
+        waitingForInput: waitingToolName !== null,
+        waitingToolName: waitingToolName || undefined,
+        firstMessageId: firstMessageId || undefined,
+      };
+
+      this.sessionDataCache.set(filePath, {
+        data,
+        fileMtime: fileStat.mtimeMs,
+        timestamp: Date.now(),
+      });
+
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Get Claude Code session info by session ID
    */
   async getSessionById(sessionId: string, workingDir: string): Promise<ClaudeCodeSession | null> {
@@ -456,28 +515,8 @@ export class ClaudeCodeService {
       const projectDir = join(this.claudeDir, projectName);
       const filePath = join(projectDir, `${sessionId}.jsonl`);
 
-      try {
-        const [fileStat, firstPrompt, lastUserMessage, waitingToolName, firstMessageId] = await Promise.all([
-          stat(filePath),
-          this.readFirstPromptFromFile(filePath),
-          this.readLastUserMessage(filePath),
-          this.checkWaitingState(filePath),
-          this.readFirstMessageId(filePath),
-        ]);
-
-        return {
-          sessionId,
-          summary: lastUserMessage || undefined,
-          firstPrompt: firstPrompt || undefined,
-          modified: new Date(fileStat.mtimeMs).toISOString(),
-          projectPath: workingDir,
-          waitingForInput: waitingToolName !== null,
-          waitingToolName: waitingToolName || undefined,
-          firstMessageId: firstMessageId || undefined,
-        };
-      } catch {
-        // File not found, try parent directories
-      }
+      const result = await this.readSessionDataCached(filePath, sessionId, workingDir);
+      if (result) return result;
 
       // Try parent directories
       let currentPath = workingDir;
@@ -490,28 +529,8 @@ export class ClaudeCodeService {
         const parentProjectDir = join(this.claudeDir, parentProjectName);
         const parentFilePath = join(parentProjectDir, `${sessionId}.jsonl`);
 
-        try {
-          const [fileStat, firstPrompt, lastUserMessage, waitingToolName, firstMessageId] = await Promise.all([
-            stat(parentFilePath),
-            this.readFirstPromptFromFile(parentFilePath),
-            this.readLastUserMessage(parentFilePath),
-            this.checkWaitingState(parentFilePath),
-            this.readFirstMessageId(parentFilePath),
-          ]);
-
-          return {
-            sessionId,
-            summary: lastUserMessage || undefined,
-            firstPrompt: firstPrompt || undefined,
-            modified: new Date(fileStat.mtimeMs).toISOString(),
-            projectPath: currentPath,
-            waitingForInput: waitingToolName !== null,
-            waitingToolName: waitingToolName || undefined,
-            firstMessageId: firstMessageId || undefined,
-          };
-        } catch {
-          // Continue to parent
-        }
+        const parentResult = await this.readSessionDataCached(parentFilePath, sessionId, currentPath);
+        if (parentResult) return parentResult;
       }
 
       return null;

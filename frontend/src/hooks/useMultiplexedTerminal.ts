@@ -87,11 +87,11 @@ function sendSessionMessage(msg: Record<string, unknown>) {
   }
 }
 
-function subscribeToSession(sessionId: string) {
-  if (subscribedSession === sessionId) return;
+function subscribeToSession(sessionId: string, force = false) {
+  if (subscribedSession === sessionId && !force) return;
 
-  // Unsubscribe from previous
-  if (subscribedSession) {
+  // Unsubscribe from previous (only if switching sessions)
+  if (subscribedSession && subscribedSession !== sessionId) {
     sendRaw({ type: 'unsubscribe', sessionId: subscribedSession });
   }
 
@@ -194,9 +194,9 @@ function ensureConnection(token?: string | null) {
     switch (msg.type) {
       case 'ready': {
         wsReady = true;
-        // Subscribe to current session
+        // Subscribe to current session (force=true to re-request content on reconnect)
         if (currentSession) {
-          subscribeToSession(currentSession);
+          subscribeToSession(currentSession, true);
         }
         break;
       }

@@ -461,11 +461,18 @@ export function DesktopLayout({
     },
     onConnect: () => {
       // Terminal components may not have mounted yet (especially after session switch).
-      // Retry sendControlResize with increasing delays to catch when refs are ready.
-      const delays = [100, 300, 600, 1000];
-      for (const delay of delays) {
-        setTimeout(() => sendControlResize(), delay);
-      }
+      // Retry sendControlResize periodically until size is actually sent.
+      // layoutPending or missing refs can cause skips, so keep trying.
+      let attempts = 0;
+      const tryResize = () => {
+        if (attempts++ >= 20) return; // Give up after ~4s
+        sendControlResize();
+        // Keep retrying until lastSentSizeRef is set (meaning resize was sent)
+        if (!lastSentSizeRef.current) {
+          setTimeout(tryResize, 200);
+        }
+      };
+      setTimeout(tryResize, 100);
     },
     onHookEvent: (event, cwd, sessionId, data, message) => {
       fireHookNotification(event, cwd, sessionId, data, message);

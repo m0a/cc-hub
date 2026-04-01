@@ -150,6 +150,10 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
       contentDeliveredRef.current.clear();
       // Send client-info to enable mobile pane separation
       controlTerminal.sendClientInfo('mobile');
+      // Request fresh content for all panes on reconnect
+      for (const pane of cachedPanesRef.current) {
+        controlTerminal.requestContent(pane.paneId);
+      }
     },
     onHookEvent: fireHookNotification,
     onDisconnect: () => {

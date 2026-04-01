@@ -163,8 +163,12 @@ export function muxClose(ws: ServerWebSocket<MuxData>, code: number, reason: str
 
 async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) {
   console.log(`[mux] subscribe: ${sessionId} (current subs: ${ws.data.subscriptions.size})`);
-  // Already subscribed
+  // Already subscribed — reset content flags so next resize re-captures
   if (ws.data.subscriptions.has(sessionId)) {
+    const existing = ws.data.subscriptions.get(sessionId)!;
+    existing.initialContentSent = false;
+    existing.readyForOutput = false;
+    existing.outputSuppressedCount = 0;
     ws.send(JSON.stringify({ type: 'subscribed', sessionId }));
     return;
   }

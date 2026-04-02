@@ -21,7 +21,7 @@ interface DashboardProps {
 
 export function Dashboard({ className = '', compact = false }: DashboardProps) {
   const { t, i18n } = useTranslation();
-  const { data, isLoading, error } = useDashboard(300000);
+  const { data, isLoading, error } = useDashboard(30000);
   const { theme, toggleTheme } = useTheme();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [cacheClearing, setCacheClearing] = useState(false);

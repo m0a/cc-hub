@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Settings, X } from "lucide-react";
+import { X } from "lucide-react";
 import { Dashboard } from "./dashboard/Dashboard";
 
 interface DashboardPanelProps {
@@ -21,12 +21,6 @@ export function DashboardPanel({ isOpen, onClose }: DashboardPanelProps) {
 						{t("dashboard.title")}
 					</h1>
 					<div className="flex items-center gap-1">
-						<button
-							className="p-2 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
-							title={t("dashboard.title")}
-						>
-							<Settings className="w-[18px] h-[18px]" />
-						</button>
 						<button
 							onClick={onClose}
 							className="p-2 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"

@@ -460,19 +460,25 @@ export function DesktopLayout({
       }
     },
     onConnect: () => {
-      // Terminal components may not have mounted yet (especially after session switch).
-      // Retry sendControlResize periodically until size is actually sent.
-      // layoutPending or missing refs can cause skips, so keep trying.
-      let attempts = 0;
-      const tryResize = () => {
-        if (attempts++ >= 20) return; // Give up after ~4s
-        sendControlResize();
-        // Keep retrying until lastSentSizeRef is set (meaning resize was sent)
-        if (!lastSentSizeRef.current) {
-          setTimeout(tryResize, 200);
+      // Send resize with retries for terminal refresh on session switch.
+      const delays = [100, 300, 600, 1000];
+      for (const delay of delays) {
+        setTimeout(() => sendControlResize(), delay);
+      }
+      // Explicitly request content as fallback — resize may be skipped
+      // (layoutPending, tolerance). This is the same fix as pinch-zoom.
+      const requestAllContent = (attempt = 0) => {
+        const paneIds = [...paneCallbacksRef.current.keys()];
+        if (paneIds.length === 0 && attempt < 5) {
+          // Terminal components not yet mounted, retry
+          setTimeout(() => requestAllContent(attempt + 1), 300);
+          return;
+        }
+        for (const paneId of paneIds) {
+          controlTerminalRef.current.requestContent(paneId);
         }
       };
-      setTimeout(tryResize, 100);
+      setTimeout(() => requestAllContent(), 500);
     },
     onHookEvent: (event, cwd, sessionId, data, message) => {
       fireHookNotification(event, cwd, sessionId, data, message);

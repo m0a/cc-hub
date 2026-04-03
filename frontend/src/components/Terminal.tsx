@@ -681,8 +681,15 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     });
 
     // Track selection changes for copy functionality
+    // On desktop (non-touch), auto-copy selection to clipboard
+    const isCoarseTouch = ('ontouchstart' in window || navigator.maxTouchPoints > 0)
+      && window.matchMedia('(pointer: coarse)').matches;
     const onSelectionDisposable = term.onSelectionChange(() => {
-      selectionRef.current = term.getSelection();
+      const sel = term.getSelection();
+      selectionRef.current = sel;
+      if (!isCoarseTouch && sel && navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(sel).catch(() => {});
+      }
     });
 
     // Connect to WebSocket (noopFn in control mode)

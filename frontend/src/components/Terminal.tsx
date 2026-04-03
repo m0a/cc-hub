@@ -1092,9 +1092,22 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       velocityHistory.length = 0;
     };
 
-    // Prevent context menu on long press
-    const handleContextMenu = (e: Event) => {
+    // Right-click to toggle selection mode (desktop)
+    const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault();
+      if (selectionModeRef.current) {
+        exitSelectionModeRef.current();
+        return;
+      }
+      const start = touchToCell(e.clientX, e.clientY);
+      if (start) {
+        selectionStartRef.current = start;
+        selectionModeRef.current = true;
+        setSelectionMode(true);
+        setCopyButtonPos(null);
+        term.select(start.col, start.row, 1);
+        setSelectionRange({ startCol: start.col, startRow: start.viewportRow, endCol: start.col, endRow: start.viewportRow });
+      }
     };
 
     // Mouse wheel scroll: xterm.js v6 viewport scroll area may not sync with

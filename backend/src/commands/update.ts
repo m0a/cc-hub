@@ -1,6 +1,9 @@
 // cchub update command - check and apply updates from GitHub Releases
 
 import { copyFile, rename, chmod } from 'node:fs/promises';
+import { platform } from 'node:os';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 import { VERSION } from '../cli';
 import { t } from '../i18n';
 
@@ -155,23 +158,55 @@ export async function checkAndUpdate(checkOnly: boolean, autoMode: boolean): Pro
     console.log('⚠️  バックアップをスキップしました');
   }
 
+  const isDarwin = platform() === 'darwin';
+  const uid = process.getuid?.() ?? 501;
+  const plistPath = join(homedir(), 'Library', 'LaunchAgents', 'com.cchub.server.plist');
+
+  // Stop service before replacing binary (macOS launchd holds the binary open)
+  if (isDarwin) {
+    Bun.spawnSync(['launchctl', 'bootout', `gui/${uid}`, plistPath]);
+    console.log('⏸️  サービスを停止しました');
+  }
+
   // Replace binary
   try {
     await rename(tempPath, currentPath);
     console.log('✅ バイナリを更新しました');
   } catch (error) {
     console.error('❌ バイナリの置き換えに失敗しました:', error);
-    console.log('💡 ヒント: サービスを停止してから再試行してください');
-    console.log('   systemctl --user stop cchub');
+    if (isDarwin) {
+      console.log('💡 ヒント: launchctl bootout gui/$(id -u)/com.cchub.server');
+    } else {
+      console.log('💡 ヒント: systemctl --user stop cchub');
+    }
+    // Try to restart service even if replace failed
+    if (isDarwin) {
+      Bun.spawnSync(['launchctl', 'bootstrap', `gui/${uid}`, plistPath]);
+    }
     return;
   }
 
-  // Restart service if running via systemd
-  const restartResult = Bun.spawnSync(['systemctl', '--user', 'restart', 'cchub']);
-  if (restartResult.exitCode === 0) {
-    console.log(`🔄 ${t('update.serviceRestarted')}`);
+  // Restart service
+  if (isDarwin) {
+    const result = Bun.spawnSync(['launchctl', 'bootstrap', `gui/${uid}`, plistPath]);
+    if (result.exitCode === 0) {
+      console.log(`🔄 ${t('update.serviceRestarted')}`);
+    } else {
+      // Fallback to legacy load
+      const legacyResult = Bun.spawnSync(['launchctl', 'load', plistPath]);
+      if (legacyResult.exitCode === 0) {
+        console.log(`🔄 ${t('update.serviceRestarted')}`);
+      } else {
+        console.log(`ℹ️  手動で再起動してください: launchctl bootstrap gui/$(id -u) ${plistPath}`);
+      }
+    }
   } else {
-    console.log(`ℹ️  ${t('update.manualRestartRequired')}`);
+    const restartResult = Bun.spawnSync(['systemctl', '--user', 'restart', 'cchub']);
+    if (restartResult.exitCode === 0) {
+      console.log(`🔄 ${t('update.serviceRestarted')}`);
+    } else {
+      console.log(`ℹ️  ${t('update.manualRestartRequired')}`);
+    }
   }
 
   console.log('');

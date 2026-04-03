@@ -11,6 +11,7 @@ import { useMultiplexedTerminal } from '../hooks/useMultiplexedTerminal';
 import type { TerminalRef, ControlModeConfig } from './Terminal';
 import type { SessionState, SessionTheme, TmuxLayoutNode } from '../../../shared/types';
 import { fireHookNotification } from '../utils/hookNotification';
+import { filterMouseTrackingOutput } from '../utils/terminal-filters';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const DESKTOP_STATE_KEY = 'cchub-desktop-state';
@@ -435,9 +436,15 @@ export function DesktopLayout({
         ? new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x33, 0x4a, 0x1b, 0x5b, 0x48]) // ESC[2J + ESC[3J + ESC[H
         : new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x48]); // ESC[2J + ESC[H (no scrollback clear)
 
-      const combined = new Uint8Array(clearSeq.length + data.length);
+      // Filter mouse tracking sequences from initial content to prevent
+      // xterm.js from entering mouse mode (which blocks text selection)
+      const decoded = new TextDecoder().decode(data);
+      const filtered = filterMouseTrackingOutput(decoded);
+      const filteredBytes = new TextEncoder().encode(filtered);
+
+      const combined = new Uint8Array(clearSeq.length + filteredBytes.length);
       combined.set(clearSeq);
-      combined.set(data, clearSeq.length);
+      combined.set(filteredBytes, clearSeq.length);
 
       const callbacks = paneCallbacksRef.current.get(paneId);
       if (callbacks && callbacks.size > 0) {

@@ -92,6 +92,17 @@ html, body {
   overflow: hidden;
 }
 
+/* On desktop (mouse pointer), allow text selection inside terminal panes.
+   Many components use Tailwind's select-none to prevent accidental selection on
+   touch devices, but this also blocks xterm.js mouse-based selection on desktop. */
+@media (pointer: fine) {
+  .terminal.xterm,
+  .terminal.xterm * {
+    user-select: auto !important;
+    -webkit-user-select: auto !important;
+  }
+}
+
 /* Hide xterm.js native scrollbar - scrolling is handled via touch gestures and wheel events */
 .xterm-viewport {
   scrollbar-width: none; /* Firefox */

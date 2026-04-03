@@ -188,7 +188,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const [urlPage, setUrlPage] = useState(0);
   const URL_PAGE_SIZE = 5;
   // Detect touch device (for overlay behavior)
-  const [_isTouchDevice] = useState(() => {
+  const [isTouchDevice] = useState(() => {
     const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     const hasCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
     return hasTouch && hasCoarsePointer;
@@ -1571,12 +1571,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
   return (
     <div
-      className="h-full w-full flex flex-col overflow-hidden select-none"
+      className={`h-full w-full flex flex-col overflow-hidden${isTouchDevice ? ' select-none' : ''}`}
       style={containerStyle}
     >
       {/* Terminal area - shrinks when input bar is shown */}
       <div
-        className="flex-1 relative min-h-0 select-none"
+        className={`flex-1 relative min-h-0${isTouchDevice ? ' select-none' : ''}`}
         onMouseUp={(e) => e.stopPropagation()}
       >
         {/* Terminal container */}
@@ -1584,8 +1584,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           ref={containerRef}
           className="absolute inset-0 p-1"
           style={{
-            WebkitTouchCallout: 'none',
-            WebkitUserSelect: 'none',
+            ...(isTouchDevice ? { WebkitTouchCallout: 'none', WebkitUserSelect: 'none' } : {}),
             touchAction: 'none',
           }}
         />

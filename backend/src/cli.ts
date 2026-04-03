@@ -9,7 +9,7 @@ const isDev = process.argv.some(arg => arg.includes('--watch'));
 const DEFAULT_PORT = isDev ? 3456 : 5923;
 
 interface CliOptions {
-  command: 'serve' | 'setup' | 'update' | 'status' | 'notify' | 'help' | 'version';
+  command: 'serve' | 'setup' | 'uninstall' | 'update' | 'status' | 'notify' | 'help' | 'version';
   port: number;
   host: string;
   password?: string;
@@ -24,6 +24,7 @@ CC Hub v${VERSION} - Claude Code Session Manager
 ${t('cli.usage')}
   ${t('cli.serverStart')}
   cchub setup [options]     systemd service setup
+  cchub uninstall           Remove service registration
   cchub update [options]    Check and apply updates
   cchub status              Show service status
   cchub notify              Send hook event (reads JSON from stdin)
@@ -63,6 +64,9 @@ export function parseArgs(args: string[]): CliOptions {
     switch (arg) {
       case 'setup':
         options.command = 'setup';
+        break;
+      case 'uninstall':
+        options.command = 'uninstall';
         break;
       case 'update':
         options.command = 'update';
@@ -141,6 +145,10 @@ export async function runCli(options: CliOptions): Promise<'serve' | 'exit'> {
       await runSetup(options);
       return 'exit';
 
+    case 'uninstall':
+      await runUninstall();
+      return 'exit';
+
     case 'update':
       await runUpdate(options);
       return 'exit';
@@ -161,6 +169,11 @@ export async function runCli(options: CliOptions): Promise<'serve' | 'exit'> {
 async function runSetup(options: CliOptions): Promise<void> {
   const { setupService } = await import('./commands/setup');
   await setupService(options.port, options.password);
+}
+
+async function runUninstall(): Promise<void> {
+  const { uninstallService } = await import('./commands/uninstall');
+  await uninstallService();
 }
 
 async function runUpdate(options: CliOptions): Promise<void> {

@@ -54,6 +54,16 @@ const translations: Record<string, Translations> = {
       autostartCommand: "loginctl enable-linger $USER",
       passwordNotSetEnv: "Password not set: Edit ~/.config/cchub/env"
     },
+    uninstall: {
+      title: "CC Hub Uninstall",
+      removedService: "Removed service",
+      removedUpdate: "Removed update service",
+      removedTimer: "Removed update timer",
+      notFound: "Not found (skipped)",
+      done: "Service uninstalled successfully",
+      logsHint: "To remove logs and data",
+      configHint: "To remove config"
+    },
     status: {
       startCommand: "To start: systemctl --user start cchub",
       tailscaleConnected: "Tailscale: Connected",
@@ -115,6 +125,16 @@ const translations: Record<string, Translations> = {
       autostartFailed: "自動起動の有効化に失敗しました。手動で実行してください:",
       autostartCommand: "loginctl enable-linger $USER",
       passwordNotSetEnv: "パスワード未設定: ~/.config/cchub/env を編集してください"
+    },
+    uninstall: {
+      title: "CC Hub アンインストール",
+      removedService: "サービスを削除しました",
+      removedUpdate: "更新サービスを削除しました",
+      removedTimer: "更新タイマーを削除しました",
+      notFound: "見つかりません（スキップ）",
+      done: "サービスのアンインストールが完了しました",
+      logsHint: "ログとデータを削除するには",
+      configHint: "設定を削除するには"
     },
     status: {
       startCommand: "起動するには: systemctl --user start cchub",

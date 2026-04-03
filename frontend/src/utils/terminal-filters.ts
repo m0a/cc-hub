@@ -46,7 +46,7 @@ export function filterMouseTrackingOutput(data: string): string {
  * Returns a string describing the action to take, or null if xterm should
  * handle the event normally.
  */
-export type InterceptAction = 'shift-enter' | 'paste' | null;
+export type InterceptAction = 'shift-enter' | 'paste' | 'copy' | null;
 
 export function shouldInterceptKeyEvent(e: {
   type: string;
@@ -54,7 +54,7 @@ export function shouldInterceptKeyEvent(e: {
   ctrlKey: boolean;
   metaKey: boolean;
   shiftKey: boolean;
-}): InterceptAction {
+}, hasSelection?: boolean): InterceptAction {
   if (e.type !== 'keydown') return null;
 
   // Shift+Enter → send literal backslash + carriage return
@@ -62,9 +62,14 @@ export function shouldInterceptKeyEvent(e: {
     return 'shift-enter';
   }
 
-  // Ctrl/Cmd + V → delegate to DesktopLayout's handlePaste (supports images)
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
     const key = e.key.toLowerCase();
+    // Ctrl/Cmd + C with selection → copy (prevent xterm from sending \x03 SIGINT)
+    // Without selection → let xterm handle normally (sends SIGINT)
+    if (key === 'c' && hasSelection) {
+      return 'copy';
+    }
+    // Ctrl/Cmd + V → delegate to DesktopLayout's handlePaste (supports images)
     if (key === 'v') {
       return 'paste';
     }

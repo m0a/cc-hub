@@ -8,21 +8,25 @@ A web-based terminal manager for remotely managing Claude Code sessions. Control
 
 - **Multi-session Management** - Run and switch between multiple Claude Code sessions
 - **Multi-pane Terminals** - Split panes horizontally/vertically with real-time layout sync across all clients via tmux control mode
-- **Pane Operations** - Zoom, resize, focus, close panes via keyboard shortcuts or session modal UI
+- **Pane Operations** - Zoom, resize, focus, close, respawn panes via keyboard shortcuts or session modal UI
 - **Team Agent Display** - Shows agent names and colors in pane list and mobile tab bar
 - **Session Color Themes** - Assign colors to sessions for visual distinction
+- **Desktop Support** - Text selection with auto-copy, font size adjustment (Ctrl+=/-)
 - **Tablet-optimized UI** - Split layout, floating keyboard, pinch-to-zoom
 - **Mobile Support** - Tap/long-press for custom keyboard, pane tab bar for multi-pane switching, momentum scrolling
-- **File Viewer** - Syntax-highlighted code, image and HTML preview
+- **File Viewer** - Syntax-highlighted code, image, Markdown and HTML preview
 - **Change Tracking** - View file diffs from Claude Code edits and git changes (toggle between Claude/Git mode)
 - **Browser Back Navigation** - Navigate back through FileViewer states with browser back gesture
 - **Tailscale Integration** - Secure HTTPS via Tailscale certificates
 - **Password Authentication** - Access control with `-P` option
 - **Auto-update** - Automatic updates from GitHub Releases
-- **systemd Integration** - Service registration with auto-restart
-- **Dashboard** - Usage limits, daily statistics, cost estimates
-- **Session History** - Browse and resume past Claude Code sessions
+- **Service Integration** - systemd (Linux) and launchd (macOS) with auto-restart
+- **Dashboard** - Usage limits, daily statistics, cost estimates, system metrics, network latency
+- **Session History** - Browse and resume past Claude Code sessions with full-text search
 - **Conversation Viewer** - Markdown rendering, image display, system summary distinction
+- **Prompt Search** - Search across prompt history from all sessions
+- **Hook Notifications** - Browser push notifications for Claude Code events (response complete, user input needed)
+- **i18n** - English and Japanese UI with automatic language detection
 - **Onboarding Walkthrough** - Spotlight-style guide for first-time users
 
 ## Installation
@@ -76,38 +80,16 @@ cchub -P mypassword
 #    https://<your-hostname>:5923
 ```
 
-### Register as systemd Service
+### Register as Service
 
 ```bash
 cchub setup -P mypassword
 ```
 
 This enables:
-- Auto-start on system boot
+- Auto-start on system boot (systemd on Linux, launchd on macOS)
 - Auto-restart on crash
 - Auto-update via `cchub update`
-
-## Development Setup
-
-For development or building from source, [Bun](https://bun.sh/) 1.0+ is required.
-
-```bash
-# Install dependencies
-bun install
-
-# Start development server
-bun run dev
-```
-
-Open http://localhost:5173 in browser (development mode).
-
-### Build from Source
-
-```bash
-# Build as single binary
-bun run build:binary
-./dist/cchub
-```
 
 ## Commands
 
@@ -117,12 +99,15 @@ cchub                        # Start on port 5923
 cchub -p 8080                # Specify port
 cchub -P mypassword          # Start with password
 
-# Register systemd service (auto-restart, auto-update)
+# Register service (auto-restart, auto-update)
 cchub setup -P mypassword
 
 # Update
 cchub update                 # Update to latest
 cchub update --check         # Check for updates only
+
+# Hook notification (used by Claude Code hooks)
+cchub notify                 # Send hook event (reads JSON from stdin)
 
 # Status
 cchub status
@@ -165,6 +150,34 @@ set -g history-limit 10000   # Increase scrollback history
 3. Operate Claude Code in the terminal
 4. Open file viewer with the file icon
 
+### Keyboard Shortcuts
+
+CC Hub uses tmux control mode (`tmux -CC`) for real-time pane synchronization. All connected clients see the same pane layout.
+
+**Pane & Session Operations**:
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+B` | Toggle session modal |
+| `Ctrl+Shift+B` | Toggle dashboard panel |
+| `Ctrl+D` | Split pane vertically (right) |
+| `Ctrl+Shift+D` | Split pane horizontally (bottom) |
+| `Ctrl+W` | Close pane |
+| `Ctrl+Shift+Arrow` | Resize active pane |
+| `Ctrl+Shift+=` | Equalize pane sizes |
+| `Ctrl+Arrow` | Navigate between panes |
+| `Ctrl+1-9` | Switch to session by number |
+
+**Font Size & Clipboard (Desktop)**:
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+=` or `Ctrl++` | Increase font size |
+| `Ctrl+-` | Decrease font size |
+| `Ctrl+0` | Reset font size to default |
+| `Ctrl+C` (with selection) | Copy selected text |
+| `Ctrl+V` | Paste from clipboard |
+
+**Session Modal** (`Ctrl+B`): Shows session list with pane count badges. Expand to see individual panes with focus/close/split actions.
+
 ### Session Color Themes
 
 Assign colors to sessions for visual distinction:
@@ -174,30 +187,9 @@ Assign colors to sessions for visual distinction:
 3. Choose from 9 colors (red, orange, amber, green, teal, blue, indigo, purple, pink) + none
 4. Terminal background changes to selected color
 
-Settings are saved to `~/.cchub/session-themes.json` and persist across restarts.
-
-### Pane Operations
-
-CC Hub uses tmux control mode (`tmux -CC`) for real-time pane synchronization. All connected clients see the same pane layout.
-
-**Keyboard Shortcuts**:
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+D` | Split pane vertically (right) |
-| `Ctrl+Shift+D` | Split pane horizontally (bottom) |
-| `Ctrl+W` | Close pane |
-| `Ctrl+B` | Toggle session modal |
-| `Ctrl+Shift+B` | Toggle dashboard panel |
-| `Ctrl+Shift+Arrow` | Resize active pane |
-| `Ctrl+Shift+=` | Equalize pane sizes |
-| `Ctrl+Arrow` | Navigate between panes |
-| `Ctrl+1-9` | Switch to session by number |
-
-**Session Modal** (`Ctrl+B`): Shows session list with pane count badges. Expand to see individual panes with focus/close/split actions.
-
 ### Tablet Mode
 
-Automatically switches to tablet layout when screen width ≥ 640px and height ≥ 500px:
+Automatically switches to tablet layout when screen width >= 640px and height >= 500px:
 - Left: Terminal with split pane support (pinch-to-zoom supported)
 - Session modal (`Ctrl+B`) for session switching
 - Floating keyboard (draggable, minimizable)
@@ -217,11 +209,9 @@ Automatically switches to tablet layout when screen width ≥ 640px and height �
 - Position saved separately for Japanese and keyboard modes
 
 **Key Operations**:
-- **Long-press** - Symbol input on number keys (1→!, 2→@, etc.)
-- **あ** - Switch to Japanese input mode (uses OS standard IME)
+- **Long-press** - Symbol input on number keys (1->!, 2->@, etc.)
+- **JA** - Switch to Japanese input mode (uses OS standard IME)
 - **ABC** - Return to keyboard mode
-- **📁** - Image upload (inserts path into terminal)
-- **🔗** - Show URL list from terminal
 
 ### Dashboard
 
@@ -232,6 +222,8 @@ View the following in the "Dashboard" tab:
 - **Daily Statistics** - Message and session count graphs
 - **Model Usage** - Opus/Sonnet token usage comparison
 - **Cost Estimate** - Estimated API costs
+- **System Metrics** - CPU, memory, swap usage with history graphs
+- **Network Latency** - WebSocket round-trip latency
 
 ### Session History
 
@@ -242,26 +234,60 @@ Browse past Claude Code sessions in the "History" tab:
 - Resume sessions (continues with `claude -r`)
 - Full-text search across all user messages
 
-## Development
+### Hook Notifications
+
+Receive browser push notifications when Claude Code completes a response or needs input. Add `cchub notify` to your Claude Code hooks:
+
+```json
+{
+  "hooks": {
+    "Stop": [{ "hooks": [{ "type": "command", "command": "cchub notify" }] }],
+    "PostToolUse": [{
+      "matcher": "AskUserQuestion",
+      "hooks": [{ "type": "command", "command": "cchub notify" }]
+    }]
+  }
+}
+```
+
+Add this to `~/.claude/settings.json`. The CC Hub server must be running. Allow browser notification permissions on first access.
+
+## Development Setup
+
+For development or building from source, [Bun](https://bun.sh/) 1.0+ is required.
 
 ```bash
-# Frontend only
-bun run dev:frontend
+# Install dependencies
+bun install
 
-# Backend only
-bun run dev:backend
+# Start development server
+bun run dev
+```
 
-# Test
-bun run test
+Open http://localhost:5173 in browser (development mode).
 
-# Lint
-bun run lint
+### Build from Source
+
+```bash
+# Build as single binary
+bun run build:binary
+./dist/cchub
+```
+
+### Development Commands
+
+```bash
+bun run dev:frontend    # Frontend only
+bun run dev:backend     # Backend only
+bun run test            # Run all tests
+bun run test:e2e        # E2E tests
+bun run lint            # Lint all packages
 ```
 
 ## Tech Stack
 
 - **Backend**: Bun, Hono, WebSocket
-- **Frontend**: React 19, Vite, Tailwind CSS v4, xterm.js
+- **Frontend**: React 19, Vite, Tailwind CSS v4, xterm.js, react-i18next
 - **Terminal**: tmux control mode (`tmux -CC`)
 
 ## License

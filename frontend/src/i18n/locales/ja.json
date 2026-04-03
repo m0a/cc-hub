@@ -256,6 +256,8 @@
     "dashboardTabDescription": "使用量リミット、アクティビティ統計、コスト推定をリアルタイムで確認できます。",
     "welcomePrompt": "こんにちは！CC Hubへようこそ。あなたはClaude Codeです。CC Hubを通じてリモートからアクセスしています。簡単に自己紹介してください。",
     "hookNotConfigured": "Hook通知が未設定です。~/.claude/settings.json に cchub notify を追加すると、応答完了時にOS通知を受け取れます。",
-    "hookNotConfiguredDismiss": "閉じる"
+    "hookNotConfiguredDismiss": "閉じる",
+    "hookSetupAction": "設定する",
+    "hookSetupPrompt": "~/.claude/settings.json のClaude Codeフック設定に `cchub notify` を追加してください。Stop と PostToolUse（matcher: AskUserQuestion）イベントに追加します。hookコマンドは: cchub notify\n設定例:\n{\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"cchub notify\"}]}],\"PostToolUse\":[{\"matcher\":\"AskUserQuestion\",\"hooks\":[{\"type\":\"command\",\"command\":\"cchub notify\"}]}]}}\n既存のsettings.jsonにマージしてください。既存のhooksや他の設定は上書きしないでください。"
   }
 }

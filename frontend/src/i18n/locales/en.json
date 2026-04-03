@@ -256,6 +256,8 @@
     "dashboardTabDescription": "Monitor usage limits, activity statistics, and cost estimates in real-time.",
     "welcomePrompt": "Hello! Welcome to CC Hub. You are Claude Code, being accessed remotely through CC Hub. Please briefly introduce yourself.",
     "hookNotConfigured": "Hook notifications not configured. Add cchub notify to ~/.claude/settings.json to receive OS notifications when responses complete.",
-    "hookNotConfiguredDismiss": "Dismiss"
+    "hookNotConfiguredDismiss": "Dismiss",
+    "hookSetupAction": "Setup",
+    "hookSetupPrompt": "Please add `cchub notify` to the Claude Code hook settings in ~/.claude/settings.json. Add it to the Stop and PostToolUse (matcher: AskUserQuestion) events. The hook command is: cchub notify\nExample:\n{\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"cchub notify\"}]}],\"PostToolUse\":[{\"matcher\":\"AskUserQuestion\",\"hooks\":[{\"type\":\"command\",\"command\":\"cchub notify\"}]}]}}\nMerge this into the existing settings.json, preserving any existing hooks. Do not overwrite other settings."
   }
 }

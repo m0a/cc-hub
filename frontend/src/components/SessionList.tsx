@@ -1211,6 +1211,28 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
                   <div className="mb-3 p-2.5 bg-amber-900/20 border border-amber-700/30 rounded-lg text-[12px] text-amber-400 flex items-start gap-2">
                     <span className="flex-1">{t('onboarding.hookNotConfigured')}</span>
                     <button
+                      onClick={async () => {
+                        // Find the first available session to send the setup prompt
+                        const target = sessions[0];
+                        if (!target) return;
+                        try {
+                          const res = await authFetch(`${API_BASE}/api/sessions/${encodeURIComponent(target.id)}/prompt`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ text: t('onboarding.hookSetupPrompt') }),
+                          });
+                          if (res.ok) {
+                            setHookBannerDismissed(true);
+                            localStorage.setItem('cchub-hook-banner-dismissed', '1');
+                            onSelectSession(target);
+                          }
+                        } catch {}
+                      }}
+                      className="shrink-0 text-blue-400 hover:text-blue-300"
+                    >
+                      {t('onboarding.hookSetupAction')}
+                    </button>
+                    <button
                       onClick={() => {
                         setHookBannerDismissed(true);
                         localStorage.setItem('cchub-hook-banner-dismissed', '1');

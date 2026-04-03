@@ -862,6 +862,33 @@ export function DesktopLayout({
         return;
       }
 
+      // Ctrl/Cmd + = or +: Zoom in (increase font size)
+      if (!e.shiftKey && (e.key === '=' || e.key === '+')) {
+        e.preventDefault();
+        const ref = terminalRefs.current?.get(activePaneRef.current);
+        ref?.changeFontSize(2);
+        return;
+      }
+
+      // Ctrl/Cmd + -: Zoom out (decrease font size)
+      if (!e.shiftKey && e.key === '-') {
+        e.preventDefault();
+        const ref = terminalRefs.current?.get(activePaneRef.current);
+        ref?.changeFontSize(-2);
+        return;
+      }
+
+      // Ctrl/Cmd + 0: Reset font size to default
+      if (!e.shiftKey && e.key === '0') {
+        e.preventDefault();
+        const ref = terminalRefs.current?.get(activePaneRef.current);
+        if (ref) {
+          const current = ref.getFontSize();
+          ref.changeFontSize(14 - current);
+        }
+        return;
+      }
+
       // Ctrl/Cmd + B: Toggle session modal
       if (!e.shiftKey && e.key.toLowerCase() === 'b') {
         e.preventDefault();

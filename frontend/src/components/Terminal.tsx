@@ -136,6 +136,10 @@ export interface TerminalRef {
   scrollToBottom: () => void;
   /** Set text into the Japanese input textarea and switch to input mode (without sending). */
   setInputText: (text: string) => void;
+  /** Change font size by delta (e.g., +2 or -2). Returns the new font size. */
+  changeFontSize: (delta: number) => number;
+  /** Get current font size. */
+  getFontSize: () => number;
 }
 
 export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(function TerminalComponent({
@@ -362,7 +366,27 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       setInputMode('input');
       setTimeout(() => inputRef.current?.focus(), 100);
     },
-  }), []);
+    changeFontSize: (delta: number) => {
+      const term = terminalRef.current;
+      if (!term) return DEFAULT_FONT_SIZE;
+      const current = term.options.fontSize || DEFAULT_FONT_SIZE;
+      const newSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, current + delta));
+      if (newSize === current) return current;
+      term.options.fontSize = newSize;
+      setFontSize(newSize);
+      saveFontSize(sessionId, newSize);
+      // Recompute grid dimensions and send to tmux
+      const dims = fitAddonRef.current?.proposeDimensions();
+      if (dims && dims.cols > 0 && dims.rows > 0) {
+        term.resize(dims.cols, dims.rows);
+        resizeRef.current(dims.cols, dims.rows);
+      }
+      return newSize;
+    },
+    getFontSize: () => {
+      return terminalRef.current?.options.fontSize || DEFAULT_FONT_SIZE;
+    },
+  }), [sessionId]);
 
   // Fit and resize terminal (memoized to avoid re-creating on every render)
   const fitTerminal = useCallback(() => {
@@ -662,13 +686,15 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
     // Handle special key combinations
     term.attachCustomKeyEventHandler((e) => {
-      const action = shouldInterceptKeyEvent(e);
+      const action = shouldInterceptKeyEvent(e, !!selectionRef.current);
       if (action === 'shift-enter') {
         e.preventDefault();
         sendRef.current('\\\r');
         return false;
       }
-      if (action === 'paste') {
+      if (action === 'copy' || action === 'paste') {
+        // Prevent xterm from handling: copy avoids sending \x03 (SIGINT),
+        // paste delegates to DesktopLayout's handlePaste (supports images)
         e.preventDefault();
         return false;
       }
@@ -1092,8 +1118,13 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       velocityHistory.length = 0;
     };
 
-    // Right-click to toggle selection mode (desktop)
+    // Context menu: desktop allows native menu, mobile/tablet uses selection mode
     const handleContextMenu = (e: MouseEvent) => {
+      if (hideKeyboardRef.current) {
+        // Desktop: allow native right-click menu for copy/paste
+        return;
+      }
+      // Mobile/tablet: right-click toggles selection mode
       e.preventDefault();
       if (selectionModeRef.current) {
         exitSelectionModeRef.current();
@@ -1201,6 +1232,13 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     // Persistent decoder with stream: true to handle UTF-8 sequences split
     // across WebSocket chunks (e.g. multi-byte Japanese characters).
     const decoder = new TextDecoder('utf-8', { fatal: false });
+    // Disable any mouse tracking mode that may have leaked through the filter.
+    // This ensures clean state for mouse selection on desktop.
+    const term = terminalRef.current;
+    if (term) {
+      term.write('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l');
+    }
+
     const cleanup = cm.registerOnData((data) => {
       // stream: true keeps partial multi-byte sequences in decoder buffer
       const str = decoder.decode(data, { stream: true });
@@ -1311,7 +1349,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         clearTimeout(fontSizeTimeoutRef.current);
       }
     };
-  }, [isInitialized]);
+  }, [isInitialized, fontSize]);
 
   // Update terminal theme when session theme changes OR app theme (light/dark) changes
   useEffect(() => {

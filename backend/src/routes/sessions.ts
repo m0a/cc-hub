@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { CreateSessionSchema, PaneIdSchema, type IndicatorState, type PaneInfo } from '../../../shared/types';
 import { TmuxService } from '../services/tmux';
+import { controlSessions, getOrCreateControlSession } from '../services/tmux-control';
 import { ClaudeCodeService } from '../services/claude-code';
 import { SessionHistoryService } from '../services/session-history';
 import { PromptHistoryService } from '../services/prompt-history';
@@ -815,6 +816,40 @@ sessions.post('/:id/panes/respawn', async (c) => {
     return c.json({ success: true });
   } catch (_error) {
     return c.json({ error: 'Failed to respawn pane' }, 500);
+  }
+});
+
+// POST /sessions/:id/prompt - Send a prompt text to the session's active pane
+sessions.post('/:id/prompt', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const text = body.text as string | undefined;
+
+  if (!text) {
+    return c.json({ error: 'text is required' }, 400);
+  }
+
+  const exists = await tmuxService.sessionExists(id);
+  if (!exists) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+
+  try {
+    const controlSession = controlSessions.get(id) || await getOrCreateControlSession(id);
+    const panes = await controlSession.listPanes();
+    // Find the active pane, or fall back to the first pane
+    const targetPane = panes.find(p => p.isActive) || panes[0];
+    if (!targetPane) {
+      return c.json({ error: 'No pane found' }, 404);
+    }
+
+    // Send using bracketed paste mode + Enter
+    const payload = `\x1b[200~${text}\x1b[201~\r`;
+    await controlSession.sendInput(targetPane.paneId, Buffer.from(payload, 'utf-8'));
+
+    return c.json({ success: true, paneId: targetPane.paneId });
+  } catch (_error) {
+    return c.json({ error: 'Failed to send prompt' }, 500);
   }
 });
 

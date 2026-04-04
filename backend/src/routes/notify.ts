@@ -136,8 +136,8 @@ notify.post('/', async (c) => {
       message = await generateSmartMessage(transcriptPath, event);
     }
 
-    // Skip notification for UserPromptSubmit (user's own action, not useful as notification)
-    if (event !== 'UserPromptSubmit') {
+    // Skip notification for status-only events (no browser notification needed)
+    if (event !== 'UserPromptSubmit' && event !== 'PreToolUse') {
       const hookMsg = {
         type: 'hook-event',
         event,

@@ -28,9 +28,12 @@ export function updateCachedSessionsByHookEvent(event: string, ccSessionId?: str
 function hookEventToIndicatorState(event: string): IndicatorState | null {
   switch (event) {
     case 'Stop':
-    case 'PostToolUse':
     case 'Notification':
+    case 'SubagentStop':
+      return 'completed';
+    case 'PostToolUse':
       return 'waiting_input';
+    case 'PreToolUse':
     case 'UserPromptSubmit':
       return 'processing';
     default:

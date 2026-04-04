@@ -242,6 +242,8 @@ Claude Codeが応答完了・入力待ち状態になった時にブラウザプ
 {
   "hooks": {
     "Stop": [{ "hooks": [{ "type": "command", "command": "cchub notify" }] }],
+    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "cchub notify" }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "cchub notify" }] }],
     "PostToolUse": [{
       "matcher": "AskUserQuestion",
       "hooks": [{ "type": "command", "command": "cchub notify" }]

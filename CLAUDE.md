@@ -263,21 +263,13 @@ Claude Code hook → cchub notify (stdin JSON) → POST /api/notify → WebSocke
 ```json
 {
   "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          { "type": "command", "command": "cchub notify" }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "AskUserQuestion",
-        "hooks": [
-          { "type": "command", "command": "cchub notify" }
-        ]
-      }
-    ]
+    "Stop": [{ "hooks": [{ "type": "command", "command": "cchub notify" }] }],
+    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "cchub notify" }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "cchub notify" }] }],
+    "PostToolUse": [{
+      "matcher": "AskUserQuestion",
+      "hooks": [{ "type": "command", "command": "cchub notify" }]
+    }]
   }
 }
 ```

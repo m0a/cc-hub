@@ -21,7 +21,6 @@ interface TmuxSessionInfo {
   paneTitle?: string;
   paneTty?: string;
   preview?: string;
-  waitingForInput?: boolean;
   panes?: TmuxPaneInfo[];
 }
 
@@ -294,7 +293,6 @@ export class TmuxService {
 
       // Get preview + waiting status (single capture-pane call per session)
       const previews = new Map<string, string>();
-      const waitingStatus = new Map<string, boolean>();
       const claudeOnTty = new Map<string, boolean>();
       await Promise.all(
         sessions.map(async (session) => {
@@ -311,7 +309,6 @@ export class TmuxService {
             if (previewLines) {
               previews.set(session.id, previewLines);
             }
-            waitingStatus.set(session.id, this.parseWaitingStatus(capturedText));
           }
 
           // Use batch result for claude detection
@@ -336,7 +333,6 @@ export class TmuxService {
           paneTitle: info?.title,
           paneTty: info?.tty,
           preview: previews.get(session.id),
-          waitingForInput: waitingStatus.get(session.id),
           panes: sessionPanes,
         };
       });
@@ -439,63 +435,6 @@ export class TmuxService {
       .slice(0, 100);
 
     return cleanedLines || null;
-  }
-
-  /**
-   * Parse waiting status from captured pane text (no subprocess spawn)
-   */
-  parseWaitingStatus(text: string): boolean {
-    const lastLines = text.toLowerCase();
-    const lines = text.trim().split('\n');
-    const lastLine = lines[lines.length - 1] || '';
-
-    // Check for active processing patterns FIRST
-    const processingPatterns = [
-      '✽ crunching', '✽ embellishing', '✽ thinking', '✽ working',
-      '✻ thinking', '✻ crunching', '⏳ working', '✽',
-    ];
-    if (processingPatterns.some(pattern => lastLines.includes(pattern))) {
-      return false;
-    }
-
-    // Check for completion patterns
-    const completionPatterns = ['✻ worked', '✻ cooked', '✻ crunched', '✻ done'];
-    if (completionPatterns.some(pattern => lastLines.includes(pattern))) {
-      return true;
-    }
-
-    // Check for common waiting patterns
-    const waitingPatterns = [
-      'esc to cancel', 'tab to amend', 'accept edits', 'shift+tab to cycle',
-      'waiting for', 'y/n', 'yes/no', 'press enter', '(y)',
-    ];
-    if (waitingPatterns.some(pattern => lastLines.includes(pattern))) {
-      return true;
-    }
-
-    // Check prompt indicators
-    const trimmedLast = lastLine.trim();
-    if (trimmedLast.endsWith('> ') || trimmedLast.endsWith('>')) {
-      return true;
-    }
-    if (trimmedLast.endsWith('?') && lastLines.includes('❯')) {
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
-   * Check if a session is waiting for user input
-   */
-  async isWaitingForInput(sessionId: string): Promise<boolean> {
-    try {
-      const text = await this.capturePane(sessionId, 15);
-      if (!text) return false;
-      return this.parseWaitingStatus(text);
-    } catch {
-      return false;
-    }
   }
 
   /**

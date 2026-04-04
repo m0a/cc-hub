@@ -43,7 +43,6 @@ function SessionMiniItem({
     paneTitle?: string;
     ccSummary?: string;
     ccFirstPrompt?: string;
-    waitingForInput?: boolean;
     waitingToolName?: string;
     indicatorState?: IndicatorState;
     ccSessionId?: string;

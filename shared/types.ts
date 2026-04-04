@@ -293,7 +293,6 @@ export interface ExtendedSessionResponse extends SessionResponse {
   paneTitle?: string;
   ccSummary?: string;
   ccFirstPrompt?: string;
-  waitingForInput?: boolean;
   waitingToolName?: string;
   panes?: PaneInfo[];
 }

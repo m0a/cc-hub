@@ -116,7 +116,6 @@ export async function buildSessionsList(): Promise<object[]> {
       currentCommand: s.currentCommand,
       currentPath: s.currentPath,
       paneTitle: s.paneTitle,
-      waitingForInput: includeClaudeInfo ? ccSession?.waitingForInput : undefined,
       waitingToolName: includeClaudeInfo ? ccSession?.waitingToolName : undefined,
       ccSummary: includeClaudeInfo ? ccSession?.summary : undefined,
       ccFirstPrompt: includeClaudeInfo ? ccSession?.firstPrompt : undefined,

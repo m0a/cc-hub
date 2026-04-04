@@ -33,7 +33,6 @@ interface ClaudeCodeSession {
   modified?: string;
   gitBranch?: string;
   projectPath?: string;
-  waitingForInput?: boolean;
   waitingToolName?: string;
   firstMessageId?: string;  // For session matching with history
 }
@@ -489,7 +488,7 @@ export class ClaudeCodeService {
         firstPrompt: firstPrompt || undefined,
         modified: new Date(fileStat.mtimeMs).toISOString(),
         projectPath,
-        waitingForInput: waitingToolName !== null,
+
         waitingToolName: waitingToolName || undefined,
         firstMessageId: firstMessageId || undefined,
       };
@@ -608,7 +607,7 @@ export class ClaudeCodeService {
                 modified: indexEntry.modified,
                 gitBranch: indexEntry.gitBranch,
                 projectPath: indexEntry.projectPath,
-                waitingForInput: waitingToolName !== null,
+        
                 waitingToolName: waitingToolName || undefined,
                 firstMessageId: firstMessageId || undefined,
               };
@@ -631,7 +630,7 @@ export class ClaudeCodeService {
               modified: new Date(latestFile.mtime).toISOString(),
               gitBranch: indexEntry?.gitBranch,
               projectPath: indexEntry?.projectPath,
-              waitingForInput: waitingToolName !== null,
+      
               waitingToolName: waitingToolName || undefined,
               firstMessageId: firstMessageId || undefined,
             };
@@ -745,7 +744,7 @@ export class ClaudeCodeService {
                 firstPrompt: firstPrompt || undefined,
                 modified: new Date(fileStat.mtime).toISOString(),
                 projectPath: currentPath,
-                waitingForInput: waitingToolName !== null,
+        
                 waitingToolName: waitingToolName || undefined,
                 firstMessageId: firstMessageId || undefined,
               };

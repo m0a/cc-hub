@@ -37,7 +37,6 @@ export async function buildSessionsList(): Promise<object[]> {
   }
 
   const processInfo = await tmuxService.batchProcessInfo(allPaneTtys);
-  const processRunningByTty = processInfo.processRunning;
   const claudeOnPaneTtys = processInfo.claudeTtys;
   const agentInfoByTty = processInfo.agentInfo;
 
@@ -95,19 +94,10 @@ export async function buildSessionsList(): Promise<object[]> {
     }
 
     const isClaudeRunning = s.currentCommand === 'claude';
-    let waitingForInput = false;
-
-    if (isClaudeRunning) {
-      const ttyName = s.paneTty?.replace('/dev/', '');
-      const isProcessActive = ttyName ? (processRunningByTty.get(ttyName) || false) : false;
-      if (isProcessActive) {
-        waitingForInput = false;
-      } else if (ccSession?.waitingForInput) {
-        waitingForInput = true;
-      }
-    } else {
-      waitingForInput = s.waitingForInput || false;
-    }
+    // Use jsonl state directly — ps wchan is unreliable for Node.js processes
+    const waitingForInput = isClaudeRunning
+      ? (ccSession?.waitingForInput || false)
+      : (s.waitingForInput || false);
 
     const hookOverride = ccSession?.sessionId ? getIndicatorOverride(ccSession.sessionId) : null;
     const indicatorState = hookOverride ?? getIndicatorState(
@@ -154,8 +144,8 @@ export async function buildSessionsList(): Promise<object[]> {
         } else {
           const isClaudeOnPane = ttyName ? claudeOnPaneTtys.has(ttyName) : false;
           if (isClaudeOnPane) {
-            const isActive = ttyName ? (processRunningByTty.get(ttyName) || false) : false;
-            paneIndicator = isActive ? 'processing' : 'waiting_input';
+            // Use session-level indicator for Claude panes (hook/jsonl based)
+            paneIndicator = indicatorState === 'completed' ? 'waiting_input' : indicatorState;
           } else {
             paneIndicator = 'idle';
           }

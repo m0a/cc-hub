@@ -47,8 +47,6 @@ export interface ParsedProcessInfo {
   claudeTtys: Set<string>;
   /** TTY → agent info (name/color) for team agent processes */
   agentInfo: Map<string, { agentName: string; agentColor?: string }>;
-  /** TTY → whether the Claude process is actively running (not idle) */
-  processRunning: Map<string, boolean>;
   /** TTY → all process args lines (for session ID extraction etc.) */
   ttyArgs: Map<string, string[]>;
 }
@@ -109,8 +107,8 @@ export class TmuxService {
     // Ignore errors (e.g., if no tmux server is running)
   }
   /**
-   * Consolidated process info: runs `ps -eo tty,stat,wchan:20,args` ONCE
-   * and parses the result for all 3 consumers (claudeTtys, agentInfo, processRunning).
+   * Consolidated process info: runs `ps -eo tty,args` ONCE
+   * and parses the result for Claude detection, agent info, and args extraction.
    * Results are cached with a 3-second TTL.
    */
   async batchProcessInfo(ttyNames: string[]): Promise<ParsedProcessInfo> {
@@ -122,7 +120,6 @@ export class TmuxService {
     const result: ParsedProcessInfo = {
       claudeTtys: new Set(),
       agentInfo: new Map(),
-      processRunning: new Map(),
       ttyArgs: new Map(),
     };
 
@@ -132,8 +129,8 @@ export class TmuxService {
     }
 
     try {
-      // Single ps call with all fields needed by all consumers
-      const proc = Bun.spawn(['ps', '-eo', 'tty,stat,wchan:20,args', '--no-headers'], {
+      // Single ps call: TTY and args (stat/wchan no longer needed — indicator uses hook/jsonl)
+      const proc = Bun.spawn(['ps', '-eo', 'tty,args', '--no-headers'], {
         stdout: 'pipe',
         stderr: 'pipe',
       });
@@ -149,12 +146,12 @@ export class TmuxService {
 
       for (const line of output.split('\n')) {
         const parts = line.trim().split(/\s+/);
-        if (parts.length < 4) continue;
+        if (parts.length < 2) continue;
 
-        const [tty, stat, wchan] = parts;
+        const [tty] = parts;
         if (!ttySet.has(tty)) continue;
 
-        const args = parts.slice(3).join(' ');
+        const args = parts.slice(1).join(' ');
 
         // Collect all args per TTY for external consumers
         if (!result.ttyArgs.has(tty)) result.ttyArgs.set(tty, []);
@@ -163,17 +160,6 @@ export class TmuxService {
         // Consumer 1: Claude detection (batchCheckClaudeOnTtys)
         if (this.isClaudeProcess(args)) {
           result.claudeTtys.add(tty);
-
-          // Consumer 3: Process running state (batchCheckProcessRunning)
-          if (stat.startsWith('R')) {
-            result.processRunning.set(tty, true);
-          } else if (stat.startsWith('S')) {
-            const isIdle = wchan.startsWith('do_epoll') || wchan.startsWith('ep_poll') || wchan.startsWith('poll_schedule');
-            // Only set to true if not already true (R state takes priority)
-            if (!result.processRunning.get(tty)) {
-              result.processRunning.set(tty, !isIdle);
-            }
-          }
         }
 
         // Consumer 2: Agent info (batchGetAgentInfo)
@@ -453,49 +439,6 @@ export class TmuxService {
       .slice(0, 100);
 
     return cleanedLines || null;
-  }
-
-  /**
-   * Batch check if Claude processes are actively running on given TTYs.
-   * Delegates to consolidated batchProcessInfo() (single ps call).
-   * Returns a Map of tty name → isActivelyRunning
-   */
-  async batchCheckProcessRunning(ttyNames: string[]): Promise<Map<string, boolean>> {
-    const result = new Map<string, boolean>();
-    if (ttyNames.length === 0) return result;
-
-    // Initialize all as false
-    for (const tty of ttyNames) result.set(tty, false);
-
-    const info = await this.batchProcessInfo(ttyNames);
-    for (const tty of ttyNames) {
-      if (info.processRunning.has(tty)) {
-        result.set(tty, info.processRunning.get(tty) || false);
-      }
-    }
-    return result;
-  }
-
-  /**
-   * Check if Claude process is running (not sleeping/waiting)
-   * Returns true if actively processing, false if waiting for input
-   */
-  async isProcessRunning(sessionId: string): Promise<boolean> {
-    try {
-      // Get pane TTY
-      const ttyProc = Bun.spawn(['tmux', 'list-panes', '-t', sessionId, '-F', '#{pane_tty}'], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      const tty = (await new Response(ttyProc.stdout).text()).trim();
-      if (!tty) return false;
-
-      const pts = tty.replace('/dev/', '');
-      const result = await this.batchCheckProcessRunning([pts]);
-      return result.get(pts) || false;
-    } catch {
-      return false;
-    }
   }
 
   /**

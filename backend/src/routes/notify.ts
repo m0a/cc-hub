@@ -75,12 +75,11 @@ function hookEventToState(event: string, toolName?: string): IndicatorState | nu
     case 'Stop':
     case 'Notification':
     case 'SubagentStop':
-      return 'waiting_input';
+      return 'completed';
     case 'PostToolUse':
       if (toolName === 'AskUserQuestion') return 'waiting_input';
       return null;
     case 'PreToolUse':
-      return 'processing';
     case 'UserPromptSubmit':
       return 'processing';
     default:

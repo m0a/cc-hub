@@ -94,17 +94,10 @@ export async function buildSessionsList(): Promise<object[]> {
     }
 
     const isClaudeRunning = s.currentCommand === 'claude';
-    // Use jsonl state directly — ps wchan is unreliable for Node.js processes
-    const waitingForInput = isClaudeRunning
-      ? (ccSession?.waitingForInput || false)
-      : (s.waitingForInput || false);
-
+    // Indicator state: hook events are the source of truth
+    // Default for running Claude = completed (idle/waiting for user input)
     const hookOverride = ccSession?.sessionId ? getIndicatorOverride(ccSession.sessionId) : null;
-    const indicatorState = hookOverride ?? getIndicatorState(
-      isClaudeRunning,
-      waitingForInput,
-      ccSession?.waitingToolName
-    );
+    const indicatorState = hookOverride ?? (isClaudeRunning ? 'completed' : 'completed') as IndicatorState;
 
     let durationMinutes: number | undefined;
     if (ccSession?.modified) {
@@ -123,8 +116,8 @@ export async function buildSessionsList(): Promise<object[]> {
       currentCommand: s.currentCommand,
       currentPath: s.currentPath,
       paneTitle: s.paneTitle,
-      waitingForInput: includeClaudeInfo ? waitingForInput : undefined,
-      waitingToolName: includeClaudeInfo ? ccSession?.waitingToolName : undefined,
+      waitingForInput: undefined,
+      waitingToolName: undefined,
       ccSummary: includeClaudeInfo ? ccSession?.summary : undefined,
       ccFirstPrompt: includeClaudeInfo ? ccSession?.firstPrompt : undefined,
       indicatorState: includeClaudeInfo ? indicatorState : undefined,
@@ -216,27 +209,6 @@ export async function buildSessionsList(): Promise<object[]> {
   return results;
 }
 
-// Helper to determine indicator state
-function getIndicatorState(
-  isClaudeRunning: boolean,
-  waitingForInput: boolean,
-  waitingToolName?: string
-): IndicatorState {
-  if (!isClaudeRunning) {
-    return 'completed'; // Not running Claude = shell prompt
-  }
-
-  if (waitingForInput) {
-    // UserInput = end_turn (Claude finished, idle). Treat as completed (no badge).
-    if (waitingToolName === 'UserInput') {
-      return 'completed';
-    }
-    return 'waiting_input';
-  }
-
-  // If Claude is running but not waiting, it's processing
-  return 'processing';
-}
 
 const ResumeSessionSchema = z.object({
   ccSessionId: z.string().optional(),

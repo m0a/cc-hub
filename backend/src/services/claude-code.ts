@@ -72,7 +72,7 @@ export class ClaudeCodeService {
 
   // Cache for session data keyed by file path (avoids re-reading JSONL files)
   private sessionDataCache = new Map<string, CachedSessionData>();
-  private static readonly SESSION_DATA_CACHE_TTL = 2000; // 2 seconds
+  private static readonly SESSION_DATA_CACHE_TTL = 5000; // 5 seconds
 
   constructor() {
     this.claudeDir = join(homedir(), '.claude', 'projects');

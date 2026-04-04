@@ -5,7 +5,8 @@
   "workspaces": [
     "backend",
     "frontend",
-    "shared"
+    "shared",
+    "glasses"
   ],
   "scripts": {
     "dev": "bun run stop; bun run dev:backend & bun run dev:frontend",

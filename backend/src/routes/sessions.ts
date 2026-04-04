@@ -358,11 +358,13 @@ sessions.get('/history', async (c) => {
 });
 
 // GET /sessions/history/:sessionId/conversation - Get conversation history for a session
+// ?last=N returns only the last N messages (for lightweight clients like G2 glasses)
 sessions.get('/history/:sessionId/conversation', async (c) => {
   const sessionId = c.req.param('sessionId');
   const projectDirName = c.req.query('projectDirName');
+  const last = c.req.query('last') ? parseInt(c.req.query('last')!, 10) : undefined;
   const messages = await sessionHistoryService.getConversation(sessionId, projectDirName);
-  return c.json({ messages });
+  return c.json({ messages: last ? messages.slice(-last) : messages });
 });
 
 // POST /sessions/history/metadata - Lazy load metadata for specific sessions

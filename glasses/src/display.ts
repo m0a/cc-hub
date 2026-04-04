@@ -22,6 +22,7 @@ export interface AppState {
   choiceIndex: number
   choiceOptions: string[]
   apiUsagePercent: string
+  debugEvent?: string
 }
 
 function sName(s: Session): string {
@@ -66,17 +67,26 @@ function buildSessionList(state: AppState): RebuildPageContainer {
     content: listText || '(no sessions)',
   })
 
+  const spacer = new TextContainerProperty({
+    xPosition: 0, yPosition: 244,
+    width: W, height: 4,
+    containerID: 3, containerName: 'spacer',
+    isEventCapture: 0,
+    content: '',
+  })
+
+  const footerText = state.debugEvent || `tap:open  swipe:nav  ${sessionIndex + 1}/${sessions.length}`
   const footer = new TextContainerProperty({
     xPosition: 0, yPosition: 252,
     width: W, height: 36,
-    containerID: 3, containerName: 'footer',
+    containerID: 4, containerName: 'footer',
     isEventCapture: 0,
-    content: `tap:open  swipe:nav  ${sessionIndex + 1}/${sessions.length}`,
+    content: footerText,
   })
 
   return new RebuildPageContainer({
-    containerTotalNum: 3,
-    textObject: [header, list, footer],
+    containerTotalNum: 4,
+    textObject: [header, list, spacer, footer],
   })
 }
 
@@ -112,18 +122,26 @@ function buildConversation(state: AppState): RebuildPageContainer {
     content: msgText,
   })
 
+  const spacer = new TextContainerProperty({
+    xPosition: 0, yPosition: 244,
+    width: W, height: 4,
+    containerID: 3, containerName: 'spacer',
+    isEventCapture: 0,
+    content: '',
+  })
+
   const hint = ind === 'waiting_input' ? 'tap:respond  dbl:back' : 'swipe:scroll  dbl:back'
   const footer = new TextContainerProperty({
     xPosition: 0, yPosition: 252,
     width: W, height: 36,
-    containerID: 3, containerName: 'footer',
+    containerID: 4, containerName: 'footer',
     isEventCapture: 0,
     content: hint,
   })
 
   return new RebuildPageContainer({
-    containerTotalNum: 3,
-    textObject: [header, body, footer],
+    containerTotalNum: 4,
+    textObject: [header, body, spacer, footer],
   })
 }
 
@@ -151,17 +169,25 @@ function buildChoice(state: AppState): RebuildPageContainer {
     content: `Select response:\n\n${choiceText}`,
   })
 
+  const spacer = new TextContainerProperty({
+    xPosition: 0, yPosition: 240,
+    width: W, height: 4,
+    containerID: 3, containerName: 'spacer',
+    isEventCapture: 0,
+    content: '',
+  })
+
   const footer = new TextContainerProperty({
     xPosition: 0, yPosition: 252,
     width: W, height: 36,
-    containerID: 3, containerName: 'footer',
+    containerID: 4, containerName: 'footer',
     isEventCapture: 0,
     content: 'swipe:select  tap:send  dbl:cancel',
   })
 
   return new RebuildPageContainer({
-    containerTotalNum: 3,
-    textObject: [header, body, footer],
+    containerTotalNum: 4,
+    textObject: [header, body, spacer, footer],
   })
 }
 
@@ -177,7 +203,7 @@ export async function initDisplay(): Promise<Bridge | null> {
     ])
 
     const initial = new CreateStartUpPageContainer({
-      containerTotalNum: 1,
+      containerTotalNum: 2,
       textObject: [
         new TextContainerProperty({
           xPosition: 0, yPosition: 100,
@@ -185,6 +211,13 @@ export async function initDisplay(): Promise<Bridge | null> {
           containerID: 1, containerName: 'loading',
           isEventCapture: 1,
           content: 'CC Hub Glasses\nConnecting...',
+        }),
+        new TextContainerProperty({
+          xPosition: 0, yPosition: 252,
+          width: W, height: 36,
+          containerID: 2, containerName: 'footer',
+          isEventCapture: 0,
+          content: '',
         }),
       ],
     })
@@ -296,14 +329,22 @@ export function setupEvents(
     onSwipeUp: () => void
     onTap: () => void
     onDoubleTap: () => void
+    onRawEvent?: (raw: string) => void
   },
 ): void {
   if (!bridge) return
   bridge.onEvenHubEvent((event) => {
-    const textEvent = event.textEvent
-    if (!textEvent) return
+    const raw = JSON.stringify(event).slice(0, 80)
+    callbacks.onRawEvent?.(raw)
 
-    switch (textEvent.eventType) {
+    // Check all event sources: textEvent, sysEvent, listEvent
+    const eventType = event.textEvent?.eventType
+      ?? event.sysEvent?.eventType
+      ?? event.listEvent?.eventType
+
+    if (eventType == null) return
+
+    switch (eventType) {
       case OsEventTypeList.SCROLL_BOTTOM_EVENT: callbacks.onSwipeDown(); break
       case OsEventTypeList.SCROLL_TOP_EVENT: callbacks.onSwipeUp(); break
       case OsEventTypeList.CLICK_EVENT: callbacks.onTap(); break

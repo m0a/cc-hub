@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>G2 Event Test</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import {
+        waitForEvenAppBridge,
+        TextContainerProperty,
+        CreateStartUpPageContainer,
+        OsEventTypeList,
+      } from '@evenrealities/even_hub_sdk'
+
+      const W = 576
+      let eventLog = []
+      let bridge = null
+
+      async function main() {
+        try {
+          bridge = await waitForEvenAppBridge()
+          addLog('Bridge OK')
+
+          const initial = new CreateStartUpPageContainer({
+            containerTotalNum: 4,
+            textObject: [
+              new TextContainerProperty({
+                xPosition: 0, yPosition: 0, width: W, height: 40,
+                containerID: 1, containerName: 'title',
+                isEventCapture: 0,
+                content: 'G2 Event Test',
+              }),
+              new TextContainerProperty({
+                xPosition: 0, yPosition: 48, width: W, height: 100,
+                containerID: 2, containerName: 'log1',
+                isEventCapture: 1,
+                content: 'Tap here to test',
+              }),
+              new TextContainerProperty({
+                xPosition: 0, yPosition: 156, width: W, height: 100,
+                containerID: 3, containerName: 'log2',
+                isEventCapture: 0,
+                content: 'Waiting for events...',
+              }),
+              new TextContainerProperty({
+                xPosition: 0, yPosition: 260, width: W, height: 28,
+                containerID: 4, containerName: 'counter',
+                isEventCapture: 0,
+                content: 'Events: 0',
+              }),
+            ],
+          })
+
+          await bridge.createStartUpPageContainer(initial)
+          addLog('Page created')
+
+          bridge.onEvenHubEvent((event) => {
+            const name = getEventName(event)
+            addLog(name + ' | ' + JSON.stringify(event).slice(0, 60))
+          })
+
+          addLog('Listener registered')
+        } catch (e) {
+          addLog('ERROR: ' + e.message)
+        }
+      }
+
+      function getEventName(event) {
+        const types = {
+          0: 'CLICK', 1: 'SCROLL_TOP', 2: 'SCROLL_BOTTOM',
+          3: 'DBL_CLICK', 4: 'FG_ENTER', 5: 'FG_EXIT',
+        }
+        if (event.textEvent) return 'text:' + (types[event.textEvent.eventType] || event.textEvent.eventType)
+        if (event.sysEvent) return 'sys:' + (types[event.sysEvent.eventType] || event.sysEvent.eventType)
+        if (event.listEvent) return 'list:' + (types[event.listEvent.eventType] || event.listEvent.eventType)
+        if (event.audioEvent) return 'audio'
+        return 'unknown:' + JSON.stringify(event).slice(0, 40)
+      }
+
+      function addLog(msg) {
+        eventLog.unshift(msg)
+        if (eventLog.length > 10) eventLog.pop()
+        renderDebug()
+      }
+
+      function renderDebug() {
+        const el = document.getElementById('debug')
+        if (el) el.textContent = eventLog.join('\n')
+      }
+
+      main()
+
+      // Debug UI for browser
+      document.getElementById('app').innerHTML = `
+        <div style="font-family:monospace; padding:20px; max-width:800px; margin:auto;">
+          <h2>G2 Event Test</h2>
+          <pre id="debug" style="background:#000; color:#0f0; padding:16px; border-radius:8px; min-height:200px; white-space:pre-wrap;">Starting...</pre>
+        </div>
+      `
+    </script>
+  </body>
+</html>

@@ -152,6 +152,10 @@ async function main(): Promise<void> {
     onSwipeUp: handlers.swipeUp,
     onTap: handlers.tap,
     onDoubleTap: handlers.doubleTap,
+    onRawEvent(raw) {
+      state.debugEvent = raw
+      updateDisplay(bridge, state)
+    },
   })
 
   // Initial poll for dashboard data

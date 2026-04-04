@@ -680,7 +680,7 @@ function SessionItem({
             className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] font-medium bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition-colors"
           >
             <Play className="w-3 h-3" />
-            {t('session.recreate', 'Recreate')}
+            {t('session.resume', 'Resume')}
           </button>
         </div>
       </div>

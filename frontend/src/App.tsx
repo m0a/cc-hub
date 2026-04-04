@@ -484,28 +484,46 @@ export function App() {
   }, [activeSessionId, isLoading]);
 
   const handleSelectSession = useCallback(async (session: SessionResponse) => {
-    // Lost session: recreate with same name and working directory
+    // Lost session: resume with claude -r if ccSessionId available, otherwise recreate
     if (session.state === 'lost') {
-      const extSession = session as SessionResponse & { currentPath?: string };
+      const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string };
       try {
-        const newSession = await createSession(session.name, extSession.currentPath);
-        if (newSession) {
+        let newSessionId: string;
+        let newSessionName: string;
+        if (extSession.ccSessionId && extSession.currentPath) {
+          // Resume with conversation history via claude -r
+          const response = await authFetch(`${API_BASE}/api/sessions/history/resume`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: extSession.ccSessionId, projectPath: extSession.currentPath }),
+          });
+          if (!response.ok) {
+            throw new Error('Failed to resume session');
+          }
+          const data = await response.json();
+          newSessionId = data.tmuxSessionId;
+          newSessionName = data.tmuxSessionId;
+        } else {
+          // No ccSessionId: fallback to new session
+          const newSession = await createSession(session.name, extSession.currentPath);
+          if (!newSession) return;
           const ext = newSession as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string; theme?: SessionTheme };
-          setOpenSessions(prev => [...prev, {
-            id: ext.id,
-            name: ext.name,
-            state: ext.state,
-            currentPath: ext.currentPath,
-            ccSessionId: ext.ccSessionId,
-            currentCommand: ext.currentCommand,
-            theme: ext.theme,
-          }]);
-          setActiveSessionId(ext.id);
-          if (ext.currentPath) setActiveFileViewerDir(ext.currentPath);
-          setShowSessionList(false);
+          newSessionId = ext.id;
+          newSessionName = ext.name;
         }
+        setOpenSessions(prev => [...prev, {
+          id: newSessionId,
+          name: newSessionName,
+          state: 'working' as const,
+          currentPath: extSession.currentPath,
+          ccSessionId: extSession.ccSessionId,
+          theme: extSession.theme,
+        }]);
+        setActiveSessionId(newSessionId);
+        if (extSession.currentPath) setActiveFileViewerDir(extSession.currentPath);
+        setShowSessionList(false);
       } catch (err) {
-        console.error('Failed to recreate session:', err);
+        console.error('Failed to resume lost session:', err);
       }
       return;
     }

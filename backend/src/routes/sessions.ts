@@ -183,6 +183,7 @@ export async function buildSessionsList(): Promise<object[]> {
     currentPath: s.currentPath,
     theme: s.theme,
     customTitle: s.customTitle,
+    ccSessionId: s.ccSessionId,
   }));
   // Fire async, don't block response
   saveLastKnownSessions(snapshot).catch(() => {});
@@ -201,6 +202,7 @@ export async function buildSessionsList(): Promise<object[]> {
         currentPath: lost.currentPath,
         theme: lost.theme,
         customTitle: lost.customTitle,
+        ccSessionId: lost.ccSessionId,
       } as any);
     }
   }

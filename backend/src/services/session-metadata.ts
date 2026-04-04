@@ -16,6 +16,7 @@ export interface LastKnownSession {
   currentPath?: string;
   theme?: SessionTheme;
   customTitle?: string;
+  ccSessionId?: string;
 }
 
 interface MetadataStore {

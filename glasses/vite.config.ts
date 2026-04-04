@@ -9,12 +9,12 @@ export default defineConfig({
     port: 8391,
     proxy: {
       '/api': {
-        target: 'https://localhost:5923',
+        target: process.env.CCHUB_URL || 'https://localhost:3456',
         secure: false,
         changeOrigin: true,
       },
       '/ws/mux': {
-        target: 'https://localhost:5923',
+        target: process.env.CCHUB_URL || 'https://localhost:3456',
         secure: false,
         ws: true,
         changeOrigin: true,

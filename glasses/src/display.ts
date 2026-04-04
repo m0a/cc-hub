@@ -169,27 +169,37 @@ function buildChoice(state: AppState): RebuildPageContainer {
 
 let currentMode: Mode | null = null
 
-export async function initDisplay(): Promise<Bridge> {
-  const bridge = await waitForEvenAppBridge()
+export async function initDisplay(): Promise<Bridge | null> {
+  try {
+    const bridge = await Promise.race([
+      waitForEvenAppBridge(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+    ])
 
-  const initial = new CreateStartUpPageContainer({
-    containerTotalNum: 1,
-    textObject: [
-      new TextContainerProperty({
-        xPosition: 0, yPosition: 100,
-        width: W, height: 80,
-        containerID: 1, containerName: 'loading',
-        isEventCapture: 1,
-        content: 'CC Hub Glasses\nConnecting...',
-      }),
-    ],
-  })
+    const initial = new CreateStartUpPageContainer({
+      containerTotalNum: 1,
+      textObject: [
+        new TextContainerProperty({
+          xPosition: 0, yPosition: 100,
+          width: W, height: 80,
+          containerID: 1, containerName: 'loading',
+          isEventCapture: 1,
+          content: 'CC Hub Glasses\nConnecting...',
+        }),
+      ],
+    })
 
-  await bridge.createStartUpPageContainer(initial)
-  return bridge
+    await bridge.createStartUpPageContainer(initial)
+    return bridge
+  } catch {
+    console.log('[display] Even Hub SDK not available — debug mode')
+    return null
+  }
 }
 
-export async function updateDisplay(bridge: Bridge, state: AppState): Promise<void> {
+export async function updateDisplay(bridge: Bridge | null, state: AppState): Promise<void> {
+  if (!bridge) return // Debug mode — simulator renders via setInterval
+
   const needsRebuild = state.mode !== currentMode
   currentMode = state.mode
 
@@ -280,7 +290,7 @@ export async function updateDisplay(bridge: Bridge, state: AppState): Promise<vo
 // ─── Events ───
 
 export function setupEvents(
-  bridge: Bridge,
+  bridge: Bridge | null,
   callbacks: {
     onSwipeDown: () => void
     onSwipeUp: () => void
@@ -288,6 +298,7 @@ export function setupEvents(
     onDoubleTap: () => void
   },
 ): void {
+  if (!bridge) return
   bridge.onEvenHubEvent((event) => {
     const textEvent = event.textEvent
     if (!textEvent) return

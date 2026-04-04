@@ -4,6 +4,7 @@ import { ensureDataDir } from '../utils/storage';
 import type { SessionTheme } from '../../../shared/types';
 
 const METADATA_FILE = 'session-metadata.json';
+const LAST_KNOWN_FILE = 'last-known-sessions.json';
 
 interface SessionMeta {
   theme?: SessionTheme;
@@ -21,13 +22,17 @@ export interface LastKnownSession {
 
 interface MetadataStore {
   sessions: Record<string, SessionMeta>;
-  sessionOrder?: string[]; // ordered session IDs
-  lastKnownSessions?: LastKnownSession[];
+  sessionOrder?: string[];
 }
 
 async function getFilePath(): Promise<string> {
   const dataDir = await ensureDataDir();
   return join(dataDir, METADATA_FILE);
+}
+
+async function getLastKnownFilePath(): Promise<string> {
+  const dataDir = await ensureDataDir();
+  return join(dataDir, LAST_KNOWN_FILE);
 }
 
 let migrated = false;
@@ -36,7 +41,15 @@ async function load(): Promise<MetadataStore> {
   const filePath = await getFilePath();
   try {
     const data = await readFile(filePath, 'utf-8');
-    return JSON.parse(data) as MetadataStore;
+    const parsed = JSON.parse(data) as MetadataStore & { lastKnownSessions?: LastKnownSession[] };
+    // Migrate: if lastKnownSessions exists in metadata file, move to separate file
+    if (parsed.lastKnownSessions) {
+      const lkPath = await getLastKnownFilePath();
+      await writeFile(lkPath, JSON.stringify(parsed.lastKnownSessions, null, 2)).catch(() => {});
+      delete parsed.lastKnownSessions;
+      await writeFile(filePath, JSON.stringify(parsed, null, 2)).catch(() => {});
+    }
+    return { sessions: parsed.sessions || {}, sessionOrder: parsed.sessionOrder };
   } catch {
     if (!migrated) {
       migrated = true;
@@ -116,15 +129,20 @@ export async function setSessionOrder(order: string[]): Promise<void> {
   await save(data);
 }
 
+// Last known sessions: separate file to avoid race conditions with metadata writes
 export async function getLastKnownSessions(): Promise<LastKnownSession[]> {
-  const data = await load();
-  return data.lastKnownSessions || [];
+  const filePath = await getLastKnownFilePath();
+  try {
+    const data = await readFile(filePath, 'utf-8');
+    return JSON.parse(data) as LastKnownSession[];
+  } catch {
+    return [];
+  }
 }
 
 export async function saveLastKnownSessions(sessions: LastKnownSession[]): Promise<void> {
-  const data = await load();
-  data.lastKnownSessions = sessions;
-  await save(data);
+  const filePath = await getLastKnownFilePath();
+  await writeFile(filePath, JSON.stringify(sessions, null, 2));
 }
 
 export async function setSessionTitle(sessionId: string, title: string | null): Promise<void> {

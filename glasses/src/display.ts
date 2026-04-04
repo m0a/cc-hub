@@ -63,7 +63,7 @@ function buildSessionList(state: AppState): RebuildPageContainer {
     xPosition: 0, yPosition: 48,
     width: W, height: 192,
     containerID: 2, containerName: 'list',
-    isEventCapture: 1,
+    isEventCapture: 0,
     content: listText || '(no sessions)',
   })
 
@@ -80,7 +80,7 @@ function buildSessionList(state: AppState): RebuildPageContainer {
     xPosition: 0, yPosition: 252,
     width: W, height: 36,
     containerID: 4, containerName: 'footer',
-    isEventCapture: 0,
+    isEventCapture: 1,
     content: footerText,
   })
 
@@ -118,7 +118,7 @@ function buildConversation(state: AppState): RebuildPageContainer {
     xPosition: 0, yPosition: 48,
     width: W, height: 192,
     containerID: 2, containerName: 'body',
-    isEventCapture: 1,
+    isEventCapture: 0,
     content: msgText,
   })
 
@@ -135,7 +135,7 @@ function buildConversation(state: AppState): RebuildPageContainer {
     xPosition: 0, yPosition: 252,
     width: W, height: 36,
     containerID: 4, containerName: 'footer',
-    isEventCapture: 0,
+    isEventCapture: 1,
     content: hint,
   })
 
@@ -165,7 +165,7 @@ function buildChoice(state: AppState): RebuildPageContainer {
     xPosition: 0, yPosition: 56,
     width: W, height: 180,
     containerID: 2, containerName: 'body',
-    isEventCapture: 1,
+    isEventCapture: 0,
     content: `Select response:\n\n${choiceText}`,
   })
 
@@ -181,7 +181,7 @@ function buildChoice(state: AppState): RebuildPageContainer {
     xPosition: 0, yPosition: 252,
     width: W, height: 36,
     containerID: 4, containerName: 'footer',
-    isEventCapture: 0,
+    isEventCapture: 1,
     content: 'swipe:select  tap:send  dbl:cancel',
   })
 
@@ -209,14 +209,14 @@ export async function initDisplay(): Promise<Bridge | null> {
           xPosition: 0, yPosition: 100,
           width: W, height: 80,
           containerID: 1, containerName: 'loading',
-          isEventCapture: 1,
+          isEventCapture: 0,
           content: 'CC Hub Glasses\nConnecting...',
         }),
         new TextContainerProperty({
           xPosition: 0, yPosition: 252,
           width: W, height: 36,
           containerID: 2, containerName: 'footer',
-          isEventCapture: 0,
+          isEventCapture: 1,
           content: '',
         }),
       ],
@@ -338,9 +338,16 @@ export function setupEvents(
     callbacks.onRawEvent?.(raw)
 
     // Check all event sources: textEvent, sysEvent, listEvent
-    const eventType = event.textEvent?.eventType
-      ?? event.sysEvent?.eventType
-      ?? event.listEvent?.eventType
+    const textType = event.textEvent?.eventType
+    const sysType = event.sysEvent?.eventType
+    const listType = event.listEvent?.eventType
+    const eventType = textType ?? sysType ?? listType
+
+    // Ring tap comes as sysEvent with undefined eventType
+    if (event.sysEvent && sysType == null) {
+      callbacks.onTap()
+      return
+    }
 
     if (eventType == null) return
 

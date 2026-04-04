@@ -65,6 +65,10 @@ const TEXT_EXTENSIONS = new Set([
   '.bash', '.zsh', '.py', '.rb', '.go', '.rs', '.c', '.cpp', '.h', '.hpp',
   '.java', '.kt', '.swift', '.sql', '.graphql', '.dockerfile', '.gitignore',
   '.env', '.lock', '.vue', '.svelte', '.astro',
+  '.zig', '.zon', '.nim', '.dart', '.lua', '.r', '.R', '.pl', '.pm',
+  '.ex', '.exs', '.erl', '.hrl', '.hs', '.ml', '.mli', '.clj', '.cljs',
+  '.scala', '.groovy', '.tf', '.hcl', '.proto', '.ini', '.cfg', '.conf',
+  '.csv', '.tsv', '.log', '.diff', '.patch', '.makefile', '.cmake',
 ]);
 
 // Image extensions
@@ -290,8 +294,29 @@ export class FileService {
       '.dockerfile': 'dockerfile',
       '.vue': 'vue',
       '.svelte': 'svelte',
+      '.zig': 'zig',
+      '.nim': 'nim',
+      '.dart': 'dart',
+      '.lua': 'lua',
+      '.r': 'r',
+      '.pl': 'perl',
+      '.ex': 'elixir',
+      '.exs': 'elixir',
+      '.erl': 'erlang',
+      '.hs': 'haskell',
+      '.ml': 'ocaml',
+      '.clj': 'clojure',
+      '.scala': 'scala',
+      '.groovy': 'groovy',
+      '.tf': 'hcl',
+      '.hcl': 'hcl',
+      '.proto': 'protobuf',
+      '.ini': 'ini',
+      '.diff': 'diff',
+      '.makefile': 'makefile',
+      '.cmake': 'cmake',
     };
-    return languageMap[ext] || 'plaintext';
+    return languageMap[ext] || languageMap[basename(path).toLowerCase()] || 'plaintext';
   }
 
   /**

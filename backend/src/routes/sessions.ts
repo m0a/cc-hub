@@ -176,36 +176,42 @@ export async function buildSessionsList(): Promise<object[]> {
     };
   }));
 
-  // Save snapshot of current sessions (for recovery after reboot)
-  const snapshot: LastKnownSession[] = results.map((s: any) => ({
-    id: s.id,
-    name: s.name,
-    currentPath: s.currentPath,
-    theme: s.theme,
-    customTitle: s.customTitle,
-    ccSessionId: s.ccSessionId,
-  }));
-  // Fire async, don't block response
-  saveLastKnownSessions(snapshot).catch(() => {});
-
   // Add lost sessions (existed before reboot but not in tmux now)
   const activeIds = new Set(results.map((s: any) => s.id));
+  const activePaths = new Set(results.map((s: any) => s.currentPath).filter(Boolean));
   const lastKnown = await getLastKnownSessions();
+  const lostSessions: LastKnownSession[] = [];
   for (const lost of lastKnown) {
-    if (!activeIds.has(lost.id)) {
-      results.push({
-        id: lost.id,
-        name: lost.name,
-        createdAt: '',
-        lastAccessedAt: '',
-        state: 'lost' as any,
-        currentPath: lost.currentPath,
-        theme: lost.theme,
-        customTitle: lost.customTitle,
-        ccSessionId: lost.ccSessionId,
-      } as any);
-    }
+    // Skip if session ID still exists or if a new session is already running in the same directory
+    if (activeIds.has(lost.id) || (lost.currentPath && activePaths.has(lost.currentPath))) continue;
+    lostSessions.push(lost);
+    results.push({
+      id: lost.id,
+      name: lost.name,
+      createdAt: '',
+      lastAccessedAt: '',
+      state: 'lost' as any,
+      currentPath: lost.currentPath,
+      theme: lost.theme,
+      customTitle: lost.customTitle,
+      ccSessionId: lost.ccSessionId,
+    } as any);
   }
+
+  // Save snapshot: active sessions + still-lost sessions (so lost ones persist across refreshes)
+  const snapshot: LastKnownSession[] = [
+    ...results.filter((s: any) => s.state !== 'lost').map((s: any) => ({
+      id: s.id,
+      name: s.name,
+      currentPath: s.currentPath,
+      theme: s.theme,
+      customTitle: s.customTitle,
+      ccSessionId: s.ccSessionId,
+    })),
+    ...lostSessions,
+  ];
+  // Fire async, don't block response
+  saveLastKnownSessions(snapshot).catch(() => {});
 
   // Apply custom order if set
   if (order.length > 0) {

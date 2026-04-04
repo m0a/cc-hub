@@ -1,11 +1,33 @@
 // cchub update command - check and apply updates from GitHub Releases
 
-import { copyFile, rename, chmod } from 'node:fs/promises';
+import { copyFile, rename, chmod, readFile } from 'node:fs/promises';
 import { platform } from 'node:os';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { VERSION } from '../cli';
 import { t } from '../i18n';
+
+/** Read the binary path registered in the systemd/launchd service file */
+async function getServiceBinaryPath(): Promise<string | null> {
+  const isDarwin = platform() === 'darwin';
+  try {
+    if (isDarwin) {
+      const plistPath = join(homedir(), 'Library', 'LaunchAgents', 'com.cchub.server.plist');
+      const content = await readFile(plistPath, 'utf-8');
+      // Extract first <string> after <key>ProgramArguments</key> array
+      const match = content.match(/<key>ProgramArguments<\/key>\s*<array>\s*<string>([^<]+)<\/string>/);
+      return match?.[1] ?? null;
+    } else {
+      const servicePath = join(homedir(), '.config', 'systemd', 'user', 'cchub.service');
+      const content = await readFile(servicePath, 'utf-8');
+      // Extract exec path from: ExecStart=/bin/zsh -lc 'exec /path/to/cchub ...'
+      const match = content.match(/exec\s+(\S+cchub)\b/) || content.match(/ExecStart=(\S+cchub)\b/);
+      return match?.[1] ?? null;
+    }
+  } catch {
+    return null;
+  }
+}
 
 const GITHUB_REPO = 'm0a/cc-hub';
 
@@ -140,8 +162,14 @@ export async function checkAndUpdate(checkOnly: boolean, autoMode: boolean): Pro
     return;
   }
 
+  // Determine the target binary path: prefer the service-registered path over process.execPath
+  const servicePath = await getServiceBinaryPath();
+  const currentPath = servicePath || process.execPath;
+  if (servicePath && servicePath !== process.execPath) {
+    console.log(`📋 サービス登録パス: ${servicePath}`);
+  }
+
   // Download to temp location
-  const currentPath = process.execPath;
   const tempPath = `${currentPath}.new`;
   const backupPath = `${currentPath}.bak`;
 
@@ -158,6 +186,10 @@ export async function checkAndUpdate(checkOnly: boolean, autoMode: boolean): Pro
     console.log('⚠️  バックアップをスキップしました');
   }
 
+  // Also update the CLI binary if it's at a different path
+  const cliPath = process.execPath;
+  const updateCliBinary = servicePath && servicePath !== cliPath;
+
   const isDarwin = platform() === 'darwin';
   const uid = process.getuid?.() ?? 501;
   const plistPath = join(homedir(), 'Library', 'LaunchAgents', 'com.cchub.server.plist');
@@ -171,7 +203,16 @@ export async function checkAndUpdate(checkOnly: boolean, autoMode: boolean): Pro
   // Replace binary
   try {
     await rename(tempPath, currentPath);
-    console.log('✅ バイナリを更新しました');
+    console.log(`✅ バイナリを更新しました: ${currentPath}`);
+    // Also copy to CLI binary path if different from service path
+    if (updateCliBinary) {
+      try {
+        await copyFile(currentPath, cliPath);
+        console.log(`✅ CLIバイナリも更新しました: ${cliPath}`);
+      } catch {
+        console.log(`⚠️  CLIバイナリの更新をスキップ: ${cliPath}`);
+      }
+    }
   } catch (error) {
     console.error('❌ バイナリの置き換えに失敗しました:', error);
     if (isDarwin) {

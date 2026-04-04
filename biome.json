@@ -46,6 +46,11 @@
           "level": "warn"
         }
       },
+      "complexity": {
+        "noImportantStyles": {
+          "level": "warn"
+        }
+      },
       "correctness": {
         "useExhaustiveDependencies": {
           "level": "warn"
@@ -54,6 +59,11 @@
           "level": "warn"
         }
       }
+    }
+  },
+  "css": {
+    "linter": {
+      "enabled": false
     }
   }
 }

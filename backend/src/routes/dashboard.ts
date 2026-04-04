@@ -20,9 +20,9 @@ async function getDiskUsage(): Promise<{ total: number; used: number; available:
     const parts = lines[1].trim().split(/\s+/);
     if (parts.length < 4) return null;
     return {
-      total: parseInt(parts[0]),
-      used: parseInt(parts[1]),
-      available: parseInt(parts[2]),
+      total: parseInt(parts[0], 10),
+      used: parseInt(parts[1], 10),
+      available: parseInt(parts[2], 10),
       mountpoint: parts[3],
     };
   } catch {

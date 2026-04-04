@@ -88,26 +88,22 @@ export function useSessions(): UseSessionsReturn {
 
   const createSession = useCallback(async (name?: string, workingDir?: string): Promise<SessionResponse | null> => {
     setError(null);
-    try {
-      const response = await authFetch(`${API_BASE}/api/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, workingDir }),
-      });
+    const response = await authFetch(`${API_BASE}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, workingDir }),
+    });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const err = new Error(errorData.error || 'Failed to create session');
-        (err as Error & { data?: unknown }).data = errorData;
-        throw err;
-      }
-
-      const session = await response.json();
-      setSessions(prev => [session, ...prev]);
-      return session;
-    } catch (err) {
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const err = new Error(errorData.error || 'Failed to create session');
+      (err as Error & { data?: unknown }).data = errorData;
       throw err;
     }
+
+    const session = await response.json();
+    setSessions(prev => [session, ...prev]);
+    return session;
   }, []);
 
   const deleteSession = useCallback(async (id: string): Promise<boolean> => {

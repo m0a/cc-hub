@@ -20,12 +20,12 @@ describe('parseTmuxLayout', () => {
     expect(result.width).toBe(80);
     expect(result.height).toBe(24);
     expect(result.children).toHaveLength(2);
-    expect(result.children![0].type).toBe('leaf');
-    expect(result.children![0].width).toBe(40);
-    expect(result.children![0].paneId).toBe(0);
-    expect(result.children![1].type).toBe('leaf');
-    expect(result.children![1].width).toBe(39);
-    expect(result.children![1].paneId).toBe(1);
+    expect(result.children?.[0].type).toBe('leaf');
+    expect(result.children?.[0].width).toBe(40);
+    expect(result.children?.[0].paneId).toBe(0);
+    expect(result.children?.[1].type).toBe('leaf');
+    expect(result.children?.[1].width).toBe(39);
+    expect(result.children?.[1].paneId).toBe(1);
   });
 
   test('vertical split (two panes stacked)', () => {
@@ -33,12 +33,12 @@ describe('parseTmuxLayout', () => {
     const result = parseTmuxLayout('a1b2,80x24,0,0[80x12,0,0,0,80x11,0,13,1]');
     expect(result.type).toBe('vertical');
     expect(result.children).toHaveLength(2);
-    expect(result.children![0].type).toBe('leaf');
-    expect(result.children![0].height).toBe(12);
-    expect(result.children![0].paneId).toBe(0);
-    expect(result.children![1].type).toBe('leaf');
-    expect(result.children![1].height).toBe(11);
-    expect(result.children![1].paneId).toBe(1);
+    expect(result.children?.[0].type).toBe('leaf');
+    expect(result.children?.[0].height).toBe(12);
+    expect(result.children?.[0].paneId).toBe(0);
+    expect(result.children?.[1].type).toBe('leaf');
+    expect(result.children?.[1].height).toBe(11);
+    expect(result.children?.[1].paneId).toBe(1);
   });
 
   test('nested split', () => {
@@ -49,14 +49,14 @@ describe('parseTmuxLayout', () => {
     expect(result.children).toHaveLength(2);
 
     // Left child: vertical split
-    const left = result.children![0];
+    const left = result.children?.[0];
     expect(left.type).toBe('vertical');
     expect(left.children).toHaveLength(2);
-    expect(left.children![0].paneId).toBe(0);
-    expect(left.children![1].paneId).toBe(2);
+    expect(left.children?.[0].paneId).toBe(0);
+    expect(left.children?.[1].paneId).toBe(2);
 
     // Right child: leaf
-    const right = result.children![1];
+    const right = result.children?.[1];
     expect(right.type).toBe('leaf');
     expect(right.paneId).toBe(1);
   });
@@ -65,8 +65,8 @@ describe('parseTmuxLayout', () => {
     const result = parseTmuxLayout('a1b2,120x24,0,0{40x24,0,0,0,39x24,41,0,1,39x24,81,0,2}');
     expect(result.type).toBe('horizontal');
     expect(result.children).toHaveLength(3);
-    expect(result.children![0].paneId).toBe(0);
-    expect(result.children![1].paneId).toBe(1);
+    expect(result.children?.[0].paneId).toBe(0);
+    expect(result.children?.[1].paneId).toBe(1);
     expect(result.children?.[2].paneId).toBe(2);
   });
 });

@@ -731,16 +731,16 @@ export class TmuxControlSession {
   /**
    * List current panes with their IDs.
    */
-  async listPanes(): Promise<Array<{ paneId: string; width: number; height: number }>> {
+  async listPanes(): Promise<Array<{ paneId: string; width: number; height: number; isActive: boolean }>> {
     const output = await this.sendCommand(
-      `list-panes -F "#{pane_id} #{pane_width} #{pane_height}"`
+      `list-panes -F "#{pane_id} #{pane_width} #{pane_height} #{pane_active}"`
     );
     return output
       .split('\n')
       .filter(line => line.trim())
       .map(line => {
-        const [paneId, w, h] = line.trim().split(' ');
-        return { paneId, width: parseInt(w, 10), height: parseInt(h, 10) };
+        const [paneId, w, h, active] = line.trim().split(' ');
+        return { paneId, width: parseInt(w, 10), height: parseInt(h, 10), isActive: active === '1' };
       });
   }
 

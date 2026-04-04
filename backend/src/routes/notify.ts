@@ -6,7 +6,7 @@ import { broadcastToMuxClients } from './terminal-mux';
 import type { IndicatorState } from '../../../shared/types';
 
 /** transcriptファイルからコンテキストに応じた通知メッセージを生成する */
-async function generateSmartMessage(transcriptPath: string, event: string): Promise<string | undefined> {
+async function generateSmartMessage(transcriptPath: string, _event: string): Promise<string | undefined> {
   try {
     const content = await readFile(transcriptPath, 'utf-8');
     const lines = content.trim().split('\n');
@@ -169,7 +169,7 @@ notify.get('/hook-status', async (c) => {
     for (const eventHooks of Object.values(hooks) as Array<Array<{ hooks?: Array<{ command?: string }> }>>) {
       for (const entry of eventHooks) {
         for (const hook of entry.hooks || []) {
-          if (hook.command && hook.command.includes('cchub notify')) {
+          if (hook.command?.includes('cchub notify')) {
             configured = true;
             break;
           }

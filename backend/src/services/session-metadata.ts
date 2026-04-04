@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, unlink } from 'node:fs/promises';
 import { ensureDataDir } from '../utils/storage';
 import type { SessionTheme } from '../../../shared/types';
 
@@ -72,8 +72,10 @@ async function migrateFromOldFiles(): Promise<MetadataStore> {
   const store: MetadataStore = { sessions };
   if (Object.keys(sessions).length > 0) {
     await save(store);
-    // Old files (session-themes.json, session-titles.json) can be manually deleted after confirming migration
   }
+  // Auto-delete old files after migration
+  try { await unlink(join(dataDir, 'session-themes.json')); } catch { /* already deleted */ }
+  try { await unlink(join(dataDir, 'session-titles.json')); } catch { /* already deleted */ }
   return store;
 }
 

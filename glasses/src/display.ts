@@ -14,14 +14,32 @@ const W = 576
 export type Bridge = Awaited<ReturnType<typeof waitForEvenAppBridge>>
 export type Mode = 'session_list' | 'conversation' | 'choice'
 
-const CHARS_PER_PAGE = 200
+const CHARS_PER_LINE = 35  // approximate chars per line on G2 (Japanese)
+const LINES_PER_PAGE = 6   // visible lines in body container (height 192px)
+
+/** Split text into display lines considering wrapping */
+function toDisplayLines(text: string): string[] {
+  const result: string[] = []
+  for (const line of text.split('\n')) {
+    if (line.length === 0) {
+      result.push('')
+    } else {
+      for (let i = 0; i < line.length; i += CHARS_PER_LINE) {
+        result.push(line.slice(i, i + CHARS_PER_LINE))
+      }
+    }
+  }
+  return result
+}
 
 function paginateMessage(msgs: ConversationMessage[], msgIndex: number, page: number): { text: string; pageInfo: string } {
   if (msgIndex < 0) return { text: '(no messages)', pageInfo: '' }
   const fullText = formatMessage(msgs[msgIndex])
-  const totalPages = Math.ceil(fullText.length / CHARS_PER_PAGE)
+  const lines = toDisplayLines(fullText)
+  const totalPages = Math.ceil(lines.length / LINES_PER_PAGE)
   const p = Math.min(page, totalPages - 1)
-  const text = fullText.slice(p * CHARS_PER_PAGE, (p + 1) * CHARS_PER_PAGE)
+  const pageLines = lines.slice(p * LINES_PER_PAGE, (p + 1) * LINES_PER_PAGE)
+  const text = pageLines.join('\n')
   const pageInfo = totalPages > 1 ? ` p${p + 1}/${totalPages}` : ''
   return { text, pageInfo }
 }

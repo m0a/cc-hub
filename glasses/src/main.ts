@@ -3,6 +3,7 @@ import { initDisplay, updateDisplay, setupEvents } from './display.ts'
 import type { AppState } from './display.ts'
 import { startPhoneUI } from './phone-ui.ts'
 import { CcHubWsClient } from './ws-client.ts'
+import { formatMessage } from './types.ts'
 import type { Session } from './types.ts'
 
 const LS_KEY = 'cchub-url'
@@ -329,16 +330,15 @@ function startDebugUI() {
       lines.push(`${session ? sName(session) : '---'}${status}`, '-'.repeat(40))
       const msgs = state.conversation
       const msgIndex = msgs.length > 0 ? Math.max(0, msgs.length - 1 - state.conversationOffset) : -1
-      let pageInfo = ''
       if (msgIndex >= 0) {
-        const m = msgs[msgIndex]
-        const fullText = `${m.role === 'user' ? 'U>' : 'A>'} ${m.content}`
+        const fullText = formatMessage(msgs[msgIndex])
         const totalPages = Math.ceil(fullText.length / CHARS_PER_PAGE)
         const page = Math.min(state.conversationPage, totalPages - 1)
         lines.push(fullText.slice(page * CHARS_PER_PAGE, (page + 1) * CHARS_PER_PAGE))
-        if (totalPages > 1) pageInfo = ` p${page + 1}/${totalPages}`
+        var pageInfo = totalPages > 1 ? ` p${page + 1}/${totalPages}` : ''
       } else {
         lines.push('(no messages)')
+        var pageInfo = ''
       }
       const pos = msgs.length > 0 ? `${msgIndex + 1}/${msgs.length}${pageInfo}` : ''
       lines.push('', `${ind === 'waiting_input' ? 'tap:respond  ' : ''}dbl:back  ${pos}`)

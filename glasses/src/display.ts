@@ -6,6 +6,7 @@ import {
   TextContainerUpgrade,
   OsEventTypeList,
 } from '@evenrealities/even_hub_sdk'
+import { formatMessage } from './types.ts'
 import type { Session, ConversationMessage } from './types.ts'
 
 const W = 576
@@ -14,6 +15,16 @@ export type Bridge = Awaited<ReturnType<typeof waitForEvenAppBridge>>
 export type Mode = 'session_list' | 'conversation' | 'choice'
 
 const CHARS_PER_PAGE = 120
+
+function paginateMessage(msgs: ConversationMessage[], msgIndex: number, page: number): { text: string; pageInfo: string } {
+  if (msgIndex < 0) return { text: '(no messages)', pageInfo: '' }
+  const fullText = formatMessage(msgs[msgIndex])
+  const totalPages = Math.ceil(fullText.length / CHARS_PER_PAGE)
+  const p = Math.min(page, totalPages - 1)
+  const text = fullText.slice(p * CHARS_PER_PAGE, (p + 1) * CHARS_PER_PAGE)
+  const pageInfo = totalPages > 1 ? ` p${p + 1}/${totalPages}` : ''
+  return { text, pageInfo }
+}
 
 export interface AppState {
   mode: Mode
@@ -111,19 +122,7 @@ function buildConversation(state: AppState): RebuildPageContainer {
   const msgIndex = msgs.length > 0
     ? Math.max(0, msgs.length - 1 - state.conversationOffset)
     : -1
-  let msgText: string
-  let pageInfo = ''
-  if (msgIndex >= 0) {
-    const m = msgs[msgIndex]
-    const prefix = m.role === 'user' ? 'U>' : 'A>'
-    const fullText = `${prefix} ${m.content}`
-    const totalPages = Math.ceil(fullText.length / CHARS_PER_PAGE)
-    const page = Math.min(state.conversationPage, totalPages - 1)
-    msgText = fullText.slice(page * CHARS_PER_PAGE, (page + 1) * CHARS_PER_PAGE)
-    if (totalPages > 1) pageInfo = ` p${page + 1}/${totalPages}`
-  } else {
-    msgText = '(no messages)'
-  }
+  const { text: msgText, pageInfo } = paginateMessage(msgs, msgIndex, state.conversationPage)
 
   const body = new TextContainerProperty({
     xPosition: 0, yPosition: 48,
@@ -296,18 +295,7 @@ export async function updateDisplay(bridge: Bridge | null, state: AppState): Pro
       const msgIndex = msgs.length > 0
         ? Math.max(0, msgs.length - 1 - state.conversationOffset)
         : -1
-      let msgText: string
-      let pageInfo = ''
-      if (msgIndex >= 0) {
-        const m = msgs[msgIndex]
-        const fullText = `${m.role === 'user' ? 'U>' : 'A>'} ${m.content}`
-        const totalPages = Math.ceil(fullText.length / CHARS_PER_PAGE)
-        const page = Math.min(state.conversationPage, totalPages - 1)
-        msgText = fullText.slice(page * CHARS_PER_PAGE, (page + 1) * CHARS_PER_PAGE)
-        if (totalPages > 1) pageInfo = ` p${page + 1}/${totalPages}`
-      } else {
-        msgText = '(no messages)'
-      }
+      const { text: msgText, pageInfo } = paginateMessage(msgs, msgIndex, state.conversationPage)
       const pos = msgs.length > 0 ? `${msgIndex + 1}/${msgs.length}${pageInfo}` : ''
       const action = ind === 'waiting_input' ? 'tap:respond' : ''
 

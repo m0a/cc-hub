@@ -123,16 +123,32 @@
 
     // 1. Launch Source
     if (bridge) {
+      // Always init glasses UI immediately (onLaunchSource may not fire)
+      setupGlassesUI()
+      log('Glasses UI initialized')
+
+      // Auto-read LocalStorage on glasses and show in initial UI
+      try {
+        const savedUrl = await bridge.getLocalStorage('cchub-url')
+        const lsText = savedUrl ? `LS OK: ${savedUrl}` : 'LS: (empty)'
+        log('cchub-url: ' + (savedUrl || '(empty)'))
+        // Update both containers with LS result
+        const { TextContainerUpgrade } = await import('@evenrealities/even_hub_sdk')
+        await bridge.textContainerUpgrade(new TextContainerUpgrade({
+          containerID: 2, containerName: 'log',
+          content: lsText,
+        }))
+        await bridge.textContainerUpgrade(new TextContainerUpgrade({
+          containerID: 3, containerName: 'count',
+          content: 'Tap/Swipe to test',
+        }))
+      } catch (e) {
+        log('LS error: ' + e.message)
+      }
+
       bridge.onLaunchSource((source) => {
         setResult('launch-source', `<span class="status ok"></span>${source}`)
         log('LaunchSource: ' + source)
-
-        if (source === 'glassesMenu') {
-          // Switch to glasses UI
-          document.getElementById('phone-ui').style.display = 'none'
-          document.getElementById('glasses-ui').style.display = 'block'
-          setupGlassesUI()
-        }
       })
       setResult('launch-source', '<span class="status pending"></span>Bridge OK, LaunchSource待ち...')
     } else {

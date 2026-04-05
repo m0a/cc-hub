@@ -343,6 +343,9 @@ export function setupEvents(
   },
 ): void {
   if (!bridge) return
+  let lastSwipeTime = 0
+  const SWIPE_DEBOUNCE = 500 // Ignore sysEvent taps within 500ms of swipe
+
   bridge.onEvenHubEvent((event) => {
     const raw = JSON.stringify(event).slice(0, 80)
     callbacks.onRawEvent?.(raw)
@@ -353,17 +356,29 @@ export function setupEvents(
     const listType = event.listEvent?.eventType
     const eventType = textType ?? sysType ?? listType
 
-    // Ring tap comes as sysEvent with undefined eventType
-    if (event.sysEvent && sysType == null) {
-      callbacks.onTap()
+    // Swipe events (textEvent)
+    if (eventType === OsEventTypeList.SCROLL_TOP_EVENT) {
+      lastSwipeTime = Date.now()
+      callbacks.onSwipeUp()
+      return
+    }
+    if (eventType === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
+      lastSwipeTime = Date.now()
+      callbacks.onSwipeDown()
       return
     }
 
-    if (eventType == null) return
+    // Ring tap: sysEvent with undefined eventType, debounced after swipe
+    if (event.sysEvent && sysType == null && !event.sysEvent.imuData) {
+      if (Date.now() - lastSwipeTime > SWIPE_DEBOUNCE) {
+        callbacks.onTap()
+      }
+      return
+    }
 
+    // Explicit event types
+    if (eventType == null) return
     switch (eventType) {
-      case OsEventTypeList.SCROLL_BOTTOM_EVENT: callbacks.onSwipeDown(); break
-      case OsEventTypeList.SCROLL_TOP_EVENT: callbacks.onSwipeUp(); break
       case OsEventTypeList.CLICK_EVENT: callbacks.onTap(); break
       case OsEventTypeList.DOUBLE_CLICK_EVENT: callbacks.onDoubleTap(); break
     }

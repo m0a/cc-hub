@@ -13,12 +13,15 @@ const W = 576
 export type Bridge = Awaited<ReturnType<typeof waitForEvenAppBridge>>
 export type Mode = 'session_list' | 'conversation' | 'choice'
 
+const CHARS_PER_PAGE = 200
+
 export interface AppState {
   mode: Mode
   sessions: Session[]
   sessionIndex: number
   conversation: ConversationMessage[]
-  conversationOffset: number
+  conversationOffset: number   // which message (0 = latest)
+  conversationPage: number     // page within current message
   choiceIndex: number
   choiceOptions: string[]
   apiUsagePercent: string
@@ -103,16 +106,21 @@ function buildConversation(state: AppState): RebuildPageContainer {
     content: `${session ? sName(session) : '---'}${status}`,
   })
 
-  // Show one message at a time (G2 display fits ~140 chars across 4 lines)
+  // Show one page of one message at a time
   const msgs = state.conversation
   const msgIndex = msgs.length > 0
     ? Math.max(0, msgs.length - 1 - state.conversationOffset)
     : -1
   let msgText: string
+  let pageInfo = ''
   if (msgIndex >= 0) {
     const m = msgs[msgIndex]
     const prefix = m.role === 'user' ? 'U>' : 'A>'
-    msgText = `${prefix} ${m.content.slice(0, 140)}`
+    const fullText = `${prefix} ${m.content}`
+    const totalPages = Math.ceil(fullText.length / CHARS_PER_PAGE)
+    const page = Math.min(state.conversationPage, totalPages - 1)
+    msgText = fullText.slice(page * CHARS_PER_PAGE, (page + 1) * CHARS_PER_PAGE)
+    if (totalPages > 1) pageInfo = ` p${page + 1}/${totalPages}`
   } else {
     msgText = '(no messages)'
   }
@@ -133,7 +141,7 @@ function buildConversation(state: AppState): RebuildPageContainer {
     content: '',
   })
 
-  const pos = msgs.length > 0 ? `${msgIndex + 1}/${msgs.length}` : ''
+  const pos = msgs.length > 0 ? `${msgIndex + 1}/${msgs.length}${pageInfo}` : ''
   const action = ind === 'waiting_input' ? 'tap:respond' : ''
   const hint = `${action}  dbl:back  ${pos}`
   const footer = new TextContainerProperty({
@@ -289,13 +297,18 @@ export async function updateDisplay(bridge: Bridge | null, state: AppState): Pro
         ? Math.max(0, msgs.length - 1 - state.conversationOffset)
         : -1
       let msgText: string
+      let pageInfo = ''
       if (msgIndex >= 0) {
         const m = msgs[msgIndex]
-        msgText = `${m.role === 'user' ? 'U>' : 'A>'} ${m.content.slice(0, 140)}`
+        const fullText = `${m.role === 'user' ? 'U>' : 'A>'} ${m.content}`
+        const totalPages = Math.ceil(fullText.length / CHARS_PER_PAGE)
+        const page = Math.min(state.conversationPage, totalPages - 1)
+        msgText = fullText.slice(page * CHARS_PER_PAGE, (page + 1) * CHARS_PER_PAGE)
+        if (totalPages > 1) pageInfo = ` p${page + 1}/${totalPages}`
       } else {
         msgText = '(no messages)'
       }
-      const pos = msgs.length > 0 ? `${msgIndex + 1}/${msgs.length}` : ''
+      const pos = msgs.length > 0 ? `${msgIndex + 1}/${msgs.length}${pageInfo}` : ''
       const action = ind === 'waiting_input' ? 'tap:respond' : ''
 
       await Promise.all([

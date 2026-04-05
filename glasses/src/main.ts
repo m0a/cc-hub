@@ -9,15 +9,27 @@ const LS_KEY = 'cchub-url'
 const POLL_INTERVAL = 5000
 const CHOICE_OPTIONS = ['y', 'n', 'skip']
 
+const CHARS_PER_PAGE = 200
+
 const state: AppState = {
   mode: 'session_list',
   sessions: [],
   sessionIndex: 0,
   conversation: [],
   conversationOffset: 0,
+  conversationPage: 0,
   choiceIndex: 0,
   choiceOptions: CHOICE_OPTIONS,
   apiUsagePercent: '',
+}
+
+function currentMsgTotalPages(): number {
+  const msgs = state.conversation
+  const idx = msgs.length > 0 ? Math.max(0, msgs.length - 1 - state.conversationOffset) : -1
+  if (idx < 0) return 0
+  const m = msgs[idx]
+  const fullText = `${m.role === 'user' ? 'U>' : 'A>'} ${m.content}`
+  return Math.ceil(fullText.length / CHARS_PER_PAGE)
 }
 
 function sName(s: Session): string {
@@ -43,6 +55,7 @@ async function loadConversation(): Promise<void> {
   }
   state.conversation = await getConversation(session.ccSessionId, 20)
   state.conversationOffset = 0
+  state.conversationPage = 0
 }
 
 // ── Glasses mode: G2 display + ring controls ──
@@ -78,9 +91,17 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
         case 'session_list':
           if (state.sessionIndex > 0) state.sessionIndex--
           break
-        case 'conversation':
-          if (state.conversationOffset < state.conversation.length - 1) state.conversationOffset++
+        case 'conversation': {
+          // Page up within message, then previous message
+          if (state.conversationPage > 0) {
+            state.conversationPage--
+          } else if (state.conversationOffset < state.conversation.length - 1) {
+            state.conversationOffset++
+            // Jump to last page of previous message
+            state.conversationPage = Math.max(0, currentMsgTotalPages() - 1)
+          }
           break
+        }
         case 'choice':
           if (state.choiceIndex > 0) state.choiceIndex--
           break
@@ -92,11 +113,19 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
         case 'session_list':
           if (state.sessionIndex < state.sessions.length - 1) state.sessionIndex++
           break
-        case 'conversation':
-          if (state.conversationOffset > 0) state.conversationOffset--
+        case 'conversation': {
+          // Page down within message, then next message
+          const totalPages = currentMsgTotalPages()
+          if (state.conversationPage < totalPages - 1) {
+            state.conversationPage++
+          } else if (state.conversationOffset > 0) {
+            state.conversationOffset--
+            state.conversationPage = 0
+          }
           break
+        }
         case 'choice':
-          if (state.choiceIndex < state.choiceOptions.length - 1) state.choiceIndex++
+          if (state.choiceOptions && state.choiceIndex < state.choiceOptions.length - 1) state.choiceIndex++
           break
       }
       updateDisplay(bridge, state)
@@ -229,14 +258,25 @@ function startDebugUI() {
     async swipeUp() {
       switch (state.mode) {
         case 'session_list': if (state.sessionIndex > 0) state.sessionIndex--; break
-        case 'conversation': if (state.conversationOffset < state.conversation.length - 1) state.conversationOffset++; break
+        case 'conversation':
+          if (state.conversationPage > 0) { state.conversationPage-- }
+          else if (state.conversationOffset < state.conversation.length - 1) {
+            state.conversationOffset++
+            state.conversationPage = Math.max(0, currentMsgTotalPages() - 1)
+          }
+          break
         case 'choice': if (state.choiceIndex > 0) state.choiceIndex--; break
       }
     },
     async swipeDown() {
       switch (state.mode) {
         case 'session_list': if (state.sessionIndex < state.sessions.length - 1) state.sessionIndex++; break
-        case 'conversation': if (state.conversationOffset > 0) state.conversationOffset--; break
+        case 'conversation': {
+          const tp = currentMsgTotalPages()
+          if (state.conversationPage < tp - 1) { state.conversationPage++ }
+          else if (state.conversationOffset > 0) { state.conversationOffset--; state.conversationPage = 0 }
+          break
+        }
         case 'choice': if (state.choiceIndex < state.choiceOptions.length - 1) state.choiceIndex++; break
       }
     },
@@ -284,13 +324,18 @@ function startDebugUI() {
       lines.push(`${session ? sName(session) : '---'}${status}`, '-'.repeat(40))
       const msgs = state.conversation
       const msgIndex = msgs.length > 0 ? Math.max(0, msgs.length - 1 - state.conversationOffset) : -1
+      let pageInfo = ''
       if (msgIndex >= 0) {
         const m = msgs[msgIndex]
-        lines.push(`${m.role === 'user' ? 'U>' : 'A>'} ${m.content.slice(0, 140)}`)
+        const fullText = `${m.role === 'user' ? 'U>' : 'A>'} ${m.content}`
+        const totalPages = Math.ceil(fullText.length / CHARS_PER_PAGE)
+        const page = Math.min(state.conversationPage, totalPages - 1)
+        lines.push(fullText.slice(page * CHARS_PER_PAGE, (page + 1) * CHARS_PER_PAGE))
+        if (totalPages > 1) pageInfo = ` p${page + 1}/${totalPages}`
       } else {
         lines.push('(no messages)')
       }
-      const pos = msgs.length > 0 ? `${msgIndex + 1}/${msgs.length}` : ''
+      const pos = msgs.length > 0 ? `${msgIndex + 1}/${msgs.length}${pageInfo}` : ''
       lines.push('', `${ind === 'waiting_input' ? 'tap:respond  ' : ''}dbl:back  ${pos}`)
     } else if (state.mode === 'choice') {
       const session = currentSession()

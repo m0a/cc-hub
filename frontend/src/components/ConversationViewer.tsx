@@ -358,8 +358,7 @@ export function ConversationViewer({
       <div
         ref={parentRef}
         className="flex-1 overflow-y-auto p-3 select-text overscroll-contain"
-        style={{ WebkitUserSelect: 'text', userSelect: 'text', WebkitTouchCallout: 'none' }}
-        onContextMenu={(e) => e.preventDefault()}
+        style={{ WebkitUserSelect: 'text', userSelect: 'text', WebkitTouchCallout: 'default' }}
       >
         {isLoading ? (
           <div className="text-center text-th-text-muted py-8">

@@ -13,7 +13,7 @@ const W = 576
 export type Bridge = Awaited<ReturnType<typeof waitForEvenAppBridge>>
 export type Mode = 'session_list' | 'conversation' | 'choice'
 
-const CHARS_PER_PAGE = 200
+const CHARS_PER_PAGE = 120
 
 export interface AppState {
   mode: Mode

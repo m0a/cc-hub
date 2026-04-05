@@ -9,7 +9,7 @@ const LS_KEY = 'cchub-url'
 const POLL_INTERVAL = 5000
 const CHOICE_OPTIONS = ['y', 'n', 'skip']
 
-const CHARS_PER_PAGE = 200
+const CHARS_PER_PAGE = 120
 
 const state: AppState = {
   mode: 'session_list',
@@ -133,9 +133,14 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
     async tap() {
       switch (state.mode) {
         case 'session_list':
-          await loadConversation()
+          // Switch immediately, load conversation in background
           state.mode = 'conversation'
-          break
+          state.conversation = []
+          state.conversationOffset = 0
+          state.conversationPage = 0
+          updateDisplay(bridge, state)
+          loadConversation().then(() => updateDisplay(bridge, state))
+          return // already called updateDisplay
         case 'conversation':
           if (currentSession()?.indicatorState === 'waiting_input') {
             state.mode = 'choice'

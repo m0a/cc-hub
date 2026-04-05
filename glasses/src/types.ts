@@ -51,38 +51,6 @@ function extractPath(output: string): string {
   return match ? shortenPath(match[0]) : ''
 }
 
-function stripMarkdown(text: string): string {
-  return text
-    // Code blocks → keep content only
-    .replace(/```[\s\S]*?```/g, (match) => {
-      const lines = match.split('\n')
-      return lines.slice(1, -1).join('\n').trim() || '(code)'
-    })
-    // Inline code
-    .replace(/`([^`]+)`/g, '$1')
-    // Bold/italic
-    .replace(/\*\*\*([^*]+)\*\*\*/g, '$1')
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/\*([^*]+)\*/g, '$1')
-    .replace(/___([^_]+)___/g, '$1')
-    .replace(/__([^_]+)__/g, '$1')
-    .replace(/_([^_]+)_/g, '$1')
-    // Headers → plain text
-    .replace(/^#{1,6}\s+/gm, '')
-    // Links [text](url) → text
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    // Lists → simple dash
-    .replace(/^[\s]*[-*+]\s+/gm, '- ')
-    .replace(/^[\s]*\d+\.\s+/gm, '- ')
-    // Blockquote
-    .replace(/^>\s+/gm, '')
-    // Horizontal rule
-    .replace(/^[-*_]{3,}$/gm, '---')
-    // Multiple blank lines → single
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-}
-
 /** Format a conversation message for G2 display */
 export function formatMessage(m: ConversationMessage): string {
   const prefix = m.role === 'user' ? 'U>' : 'A>'
@@ -128,9 +96,9 @@ export function formatMessage(m: ConversationMessage): string {
     }
   }
 
-  // Text content with Markdown simplification
+  // Text content as-is (Markdown symbols serve as visual structure on G2)
   if (m.content) {
-    parts.push(stripMarkdown(m.content))
+    parts.push(m.content)
   }
 
   return parts.length > 0 ? `${prefix} ${parts.join('\n')}` : `${prefix} (empty)`

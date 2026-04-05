@@ -79,7 +79,7 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
           if (state.sessionIndex > 0) state.sessionIndex--
           break
         case 'conversation':
-          if (state.conversationOffset < state.conversation.length - 3) state.conversationOffset++
+          if (state.conversationOffset < state.conversation.length - 1) state.conversationOffset++
           break
         case 'choice':
           if (state.choiceIndex > 0) state.choiceIndex--
@@ -229,7 +229,7 @@ function startDebugUI() {
     async swipeUp() {
       switch (state.mode) {
         case 'session_list': if (state.sessionIndex > 0) state.sessionIndex--; break
-        case 'conversation': if (state.conversationOffset < state.conversation.length - 3) state.conversationOffset++; break
+        case 'conversation': if (state.conversationOffset < state.conversation.length - 1) state.conversationOffset++; break
         case 'choice': if (state.choiceIndex > 0) state.choiceIndex--; break
       }
     },
@@ -283,14 +283,15 @@ function startDebugUI() {
       const status = ind === 'waiting_input' ? ' !' : ind === 'processing' ? ' *' : ''
       lines.push(`${session ? sName(session) : '---'}${status}`, '-'.repeat(40))
       const msgs = state.conversation
-      const end = msgs.length - state.conversationOffset
-      const start = Math.max(0, end - 4)
-      for (let i = start; i < end; i++) {
-        const m = msgs[i]
-        lines.push(`${m.role === 'user' ? 'U>' : 'A>'} ${m.content.slice(0, 60)}`)
+      const msgIndex = msgs.length > 0 ? Math.max(0, msgs.length - 1 - state.conversationOffset) : -1
+      if (msgIndex >= 0) {
+        const m = msgs[msgIndex]
+        lines.push(`${m.role === 'user' ? 'U>' : 'A>'} ${m.content.slice(0, 140)}`)
+      } else {
+        lines.push('(no messages)')
       }
-      if (!msgs.length) lines.push('(no messages)')
-      lines.push('', ind === 'waiting_input' ? 'tap:respond  dbl:back' : 'swipe:scroll  dbl:back')
+      const pos = msgs.length > 0 ? `${msgIndex + 1}/${msgs.length}` : ''
+      lines.push('', `${ind === 'waiting_input' ? 'tap:respond  ' : ''}dbl:back  ${pos}`)
     } else if (state.mode === 'choice') {
       const session = currentSession()
       lines.push(`${session ? sName(session) : '---'}`, 'Select response:', '')

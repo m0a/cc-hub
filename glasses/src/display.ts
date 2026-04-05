@@ -103,16 +103,19 @@ function buildConversation(state: AppState): RebuildPageContainer {
     content: `${session ? sName(session) : '---'}${status}`,
   })
 
-  // Show conversation messages (latest at bottom, scroll offset goes up)
+  // Show one message at a time (G2 display fits ~140 chars across 4 lines)
   const msgs = state.conversation
-  const end = msgs.length - state.conversationOffset
-  const start = Math.max(0, end - 4)
-  const msgText = msgs.length > 0
-    ? msgs.slice(start, end).map(m => {
-        const prefix = m.role === 'user' ? 'U>' : 'A>'
-        return `${prefix} ${m.content.slice(0, 80)}`
-      }).join('\n')
-    : '(no messages)'
+  const msgIndex = msgs.length > 0
+    ? Math.max(0, msgs.length - 1 - state.conversationOffset)
+    : -1
+  let msgText: string
+  if (msgIndex >= 0) {
+    const m = msgs[msgIndex]
+    const prefix = m.role === 'user' ? 'U>' : 'A>'
+    msgText = `${prefix} ${m.content.slice(0, 140)}`
+  } else {
+    msgText = '(no messages)'
+  }
 
   const body = new TextContainerProperty({
     xPosition: 0, yPosition: 48,
@@ -130,7 +133,9 @@ function buildConversation(state: AppState): RebuildPageContainer {
     content: '',
   })
 
-  const hint = ind === 'waiting_input' ? 'tap:respond  dbl:back' : 'swipe:scroll  dbl:back'
+  const pos = msgs.length > 0 ? `${msgIndex + 1}/${msgs.length}` : ''
+  const action = ind === 'waiting_input' ? 'tap:respond' : ''
+  const hint = `${action}  dbl:back  ${pos}`
   const footer = new TextContainerProperty({
     xPosition: 0, yPosition: 252,
     width: W, height: 36,
@@ -280,14 +285,18 @@ export async function updateDisplay(bridge: Bridge | null, state: AppState): Pro
       const ind = session?.indicatorState
       const status = ind === 'waiting_input' ? ' !' : ind === 'processing' ? ' *' : ''
       const msgs = state.conversation
-      const end = msgs.length - state.conversationOffset
-      const start = Math.max(0, end - 4)
-      const msgText = msgs.length > 0
-        ? msgs.slice(start, end).map(m => {
-            const prefix = m.role === 'user' ? 'U>' : 'A>'
-            return `${prefix} ${m.content.slice(0, 80)}`
-          }).join('\n')
-        : '(no messages)'
+      const msgIndex = msgs.length > 0
+        ? Math.max(0, msgs.length - 1 - state.conversationOffset)
+        : -1
+      let msgText: string
+      if (msgIndex >= 0) {
+        const m = msgs[msgIndex]
+        msgText = `${m.role === 'user' ? 'U>' : 'A>'} ${m.content.slice(0, 140)}`
+      } else {
+        msgText = '(no messages)'
+      }
+      const pos = msgs.length > 0 ? `${msgIndex + 1}/${msgs.length}` : ''
+      const action = ind === 'waiting_input' ? 'tap:respond' : ''
 
       await Promise.all([
         bridge.textContainerUpgrade(new TextContainerUpgrade({
@@ -300,7 +309,7 @@ export async function updateDisplay(bridge: Bridge | null, state: AppState): Pro
         })),
         bridge.textContainerUpgrade(new TextContainerUpgrade({
           containerID: 3, containerName: 'footer',
-          content: ind === 'waiting_input' ? 'tap:respond  dbl:back' : 'swipe:scroll  dbl:back',
+          content: `${action}  dbl:back  ${pos}`,
         })),
       ])
       break

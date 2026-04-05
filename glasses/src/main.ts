@@ -10,7 +10,7 @@ const LS_KEY = 'cchub-url'
 const POLL_INTERVAL = 5000
 const CHOICE_OPTIONS = ['y', 'n', 'skip']
 
-const CHARS_PER_PAGE = 120
+const CHARS_PER_PAGE = 200
 
 const state: AppState = {
   mode: 'session_list',

@@ -96,6 +96,14 @@
     const eventLog = []
     let tapCount = 0, dblCount = 0, swipeCount = 0
     let bridge = null
+    let charTestCount = 120
+    const CHAR_STEP = 10
+    const TEST_STR = 'あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん漢字交じり表示テスト用の文字列abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOP 0123456789 '
+    function makeTestStr(n) {
+      let s = ''
+      while (s.length < n) s += TEST_STR
+      return s.slice(0, n)
+    }
 
     function log(msg) {
       const ts = new Date().toLocaleTimeString()
@@ -300,44 +308,44 @@
     }
 
     // Glasses UI — character limit test
-    let charTestCount = 120
-    const CHAR_STEP = 10
-    const TEST_JA = 'あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん漢字交読書表示確認用文字列'
-    const TEST_EN = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 The quick brown fox jumps over the lazy dog. '
 
-    function makeTestStr(n) {
-      // Mix ja and en
-      let s = ''
-      while (s.length < n) s += TEST_JA + TEST_EN
-      return s.slice(0, n)
-    }
-
-    function setupGlassesUI() {
+    async function setupGlassesUI() {
       if (!bridge) return
       const W = 576
-      bridge.createStartUpPageContainer(new CreateStartUpPageContainer({
-        containerTotalNum: 3,
-        textObject: [
-          new TextContainerProperty({
-            xPosition: 0, yPosition: 0, width: W, height: 40,
-            containerID: 1, containerName: 'title',
-            isEventCapture: 0,
-            content: `Char test: ${charTestCount}`,
-          }),
-          new TextContainerProperty({
-            xPosition: 0, yPosition: 48, width: W, height: 212,
-            containerID: 2, containerName: 'body',
-            isEventCapture: 0,
-            content: makeTestStr(charTestCount),
-          }),
-          new TextContainerProperty({
-            xPosition: 0, yPosition: 264, width: W, height: 24,
-            containerID: 3, containerName: 'footer',
-            isEventCapture: 1,
-            content: `swipe: +/-${CHAR_STEP}`,
-          }),
-        ],
-      }))
+      try {
+        const result = await bridge.createStartUpPageContainer(new CreateStartUpPageContainer({
+          containerTotalNum: 4,
+          textObject: [
+            new TextContainerProperty({
+              xPosition: 0, yPosition: 0, width: W, height: 40,
+              containerID: 1, containerName: 'title',
+              isEventCapture: 0,
+              content: `Char test: ${charTestCount}`,
+            }),
+            new TextContainerProperty({
+              xPosition: 0, yPosition: 48, width: W, height: 192,
+              containerID: 2, containerName: 'body',
+              isEventCapture: 0,
+              content: makeTestStr(charTestCount),
+            }),
+            new TextContainerProperty({
+              xPosition: 0, yPosition: 244, width: W, height: 4,
+              containerID: 3, containerName: 'spacer',
+              isEventCapture: 0,
+              content: '',
+            }),
+            new TextContainerProperty({
+              xPosition: 0, yPosition: 252, width: W, height: 36,
+              containerID: 4, containerName: 'footer',
+              isEventCapture: 1,
+              content: `swipe: +/-${CHAR_STEP}`,
+            }),
+          ],
+        }))
+        log('createStartUp result: ' + JSON.stringify(result))
+      } catch (e) {
+        log('createStartUp ERROR: ' + e.message)
+      }
     }
 
     function updateCharTest() {

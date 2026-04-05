@@ -14,7 +14,7 @@ const W = 576
 export type Bridge = Awaited<ReturnType<typeof waitForEvenAppBridge>>
 export type Mode = 'session_list' | 'conversation' | 'choice'
 
-const CHARS_PER_PAGE = 120
+const CHARS_PER_PAGE = 200
 
 function paginateMessage(msgs: ConversationMessage[], msgIndex: number, page: number): { text: string; pageInfo: string } {
   if (msgIndex < 0) return { text: '(no messages)', pageInfo: '' }

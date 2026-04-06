@@ -61,12 +61,14 @@ function sName(s: Session): string {
   return s.customTitle || s.name || s.id.slice(0, 8)
 }
 
+function isWaiting(s: Session): boolean {
+  return s.indicatorState === 'waiting_input' || !!s.waitingToolName
+}
+
 function statusIcon(s: Session): string {
-  switch (s.indicatorState) {
-    case 'waiting_input': return '!'
-    case 'processing': return '*'
-    default: return ' '
-  }
+  if (isWaiting(s)) return '!'
+  if (s.indicatorState === 'processing') return '*'
+  return ' '
 }
 
 // ─── Page builders ───
@@ -125,7 +127,8 @@ function buildSessionList(state: AppState): RebuildPageContainer {
 function buildConversation(state: AppState): RebuildPageContainer {
   const session = state.sessions[state.sessionIndex]
   const ind = session?.indicatorState
-  const status = ind === 'waiting_input' ? ' !' : ind === 'processing' ? ' *' : ''
+  const waiting = isWaiting(session!)
+  const status = waiting ? ' !' : ind === 'processing' ? ' *' : ''
 
   const header = new TextContainerProperty({
     xPosition: 0, yPosition: 0,
@@ -159,7 +162,7 @@ function buildConversation(state: AppState): RebuildPageContainer {
   })
 
   const pos = msgs.length > 0 ? `${msgIndex + 1}/${msgs.length}${pageInfo}` : ''
-  const action = ind === 'waiting_input' ? 'tap:respond' : ''
+  const action = waiting ? 'tap:respond' : ''
   const hint = `${action}  dbl:back  ${pos}`
   const footer = new TextContainerProperty({
     xPosition: 0, yPosition: 252,
@@ -308,14 +311,15 @@ export async function updateDisplay(bridge: Bridge | null, state: AppState): Pro
     case 'conversation': {
       const session = state.sessions[state.sessionIndex]
       const ind = session?.indicatorState
-      const status = ind === 'waiting_input' ? ' !' : ind === 'processing' ? ' *' : ''
+      const waiting = isWaiting(session!)
+  const status = waiting ? ' !' : ind === 'processing' ? ' *' : ''
       const msgs = state.conversation
       const msgIndex = msgs.length > 0
         ? Math.max(0, msgs.length - 1 - state.conversationOffset)
         : -1
       const { text: msgText, pageInfo } = paginateMessage(msgs, msgIndex, state.conversationPage)
       const pos = msgs.length > 0 ? `${msgIndex + 1}/${msgs.length}${pageInfo}` : ''
-      const action = ind === 'waiting_input' ? 'tap:respond' : ''
+      const action = waiting ? 'tap:respond' : ''
 
       await Promise.all([
         bridge.textContainerUpgrade(new TextContainerUpgrade({

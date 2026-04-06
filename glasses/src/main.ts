@@ -162,7 +162,27 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
       updateDisplay(bridge, state)
     },
     async doubleTap() {
-      if (state.mode !== 'session_list') {
+      if (state.mode === 'conversation' || state.mode === 'choice') {
+        // If viewing a waiting session, jump to next waiting session
+        const waitingSessions = state.sessions
+          .map((s, i) => ({ s, i }))
+          .filter(({ s }) => s.indicatorState === 'waiting_input')
+
+        if (waitingSessions.length > 0) {
+          const currentIdx = state.sessionIndex
+          const next = waitingSessions.find(({ i }) => i > currentIdx) || waitingSessions[0]
+          if (next && next.i !== currentIdx) {
+            state.sessionIndex = next.i
+            state.mode = 'conversation'
+            state.conversation = []
+            state.conversationOffset = 0
+            state.conversationPage = 0
+            updateDisplay(bridge, state)
+            loadConversation().then(() => updateDisplay(bridge, state))
+            return
+          }
+        }
+        // No more waiting sessions → back to list
         state.mode = 'session_list'
         updateDisplay(bridge, state)
       }

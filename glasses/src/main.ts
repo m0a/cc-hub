@@ -147,7 +147,7 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
           return // already called updateDisplay
         case 'conversation': {
           const s = currentSession()
-          if (s?.indicatorState === 'waiting_input' || s?.waitingToolName) {
+          if (s?.indicatorState === 'waiting_input' || (s?.waitingToolName && s.waitingToolName !== 'UserInput')) {
             state.mode = 'choice'
             state.choiceIndex = 0
           }
@@ -168,7 +168,7 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
         // If viewing a waiting session, jump to next waiting session
         const waitingSessions = state.sessions
           .map((s, i) => ({ s, i }))
-          .filter(({ s }) => s.indicatorState === 'waiting_input' || !!s.waitingToolName)
+          .filter(({ s }) => s.indicatorState === 'waiting_input' || (s.waitingToolName && s.waitingToolName !== 'UserInput'))
 
         if (waitingSessions.length > 0) {
           const currentIdx = state.sessionIndex

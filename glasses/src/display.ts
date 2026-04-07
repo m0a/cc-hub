@@ -62,7 +62,7 @@ function sName(s: Session): string {
 }
 
 function isWaiting(s: Session): boolean {
-  return s.indicatorState === 'waiting_input' || !!s.waitingToolName
+  return s.indicatorState === 'waiting_input' || (!!s.waitingToolName && s.waitingToolName !== 'UserInput')
 }
 
 function statusIcon(s: Session): string {

@@ -1,0 +1,22 @@
+{
+  "name": "glasses",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "pack": "evenhub pack",
+    "test": "echo 'no tests'",
+    "lint": "echo 'no lint'"
+  },
+  "dependencies": {
+    "@evenrealities/even_hub_sdk": "^0.0.9"
+  },
+  "devDependencies": {
+    "@evenrealities/evenhub-cli": "^0.1.11",
+    "typescript": "~5.9.3",
+    "vite": "^8.0.1"
+  }
+}

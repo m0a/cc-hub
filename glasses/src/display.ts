@@ -73,7 +73,7 @@ function buildSessionList(state: AppState): RebuildPageContainer {
   })
 
   // Session list - maximize space
-  const maxVisible = 9
+  const maxVisible = 8
   const start = Math.max(0, sessionIndex - 3)
   const visible = sessions.slice(start, start + maxVisible)
   const listText = visible.map((s, i) => {
@@ -85,7 +85,7 @@ function buildSessionList(state: AppState): RebuildPageContainer {
 
   const list = new TextContainerProperty({
     xPosition: 4, yPosition: 30,
-    width: W - 8, height: 238,
+    width: W - 8, height: 228,
     borderWidth: 1,
     borderColor: 4,
     borderRadius: 3,
@@ -283,7 +283,7 @@ export async function updateDisplay(bridge: Bridge | null, state: AppState): Pro
     case 'session_list': {
       const { sessions, sessionIndex, apiUsagePercent } = state
       const start = Math.max(0, sessionIndex - 3)
-      const visible = sessions.slice(start, start + 9)
+      const visible = sessions.slice(start, start + 8)
       const listText = visible.map((s, i) => {
         const idx = start + i
         const cursor = idx === sessionIndex ? '>' : ' '

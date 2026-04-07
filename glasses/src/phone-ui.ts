@@ -94,7 +94,10 @@ export async function startPhoneUI(bridge: Bridge | null): Promise<void> {
                 <div style="background: #0f0; color: #000; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0;">1</div>
                 <div>
                   <div style="font-weight: 600; margin-bottom: 2px;">CC Hub をインストール</div>
-                  <code style="background: #1a1a1a; padding: 4px 8px; border-radius: 4px; font-size: 11px; color: #0f0; display: block; overflow-x: auto; white-space: nowrap;">curl -fsSL https://raw.githubusercontent.com/m0a/cc-hub/main/install.sh | bash</code>
+                  <div style="position: relative;">
+                    <code id="install-cmd" style="background: #1a1a1a; padding: 8px; border-radius: 4px; font-size: 11px; color: #0f0; display: block; word-break: break-all; line-height: 1.5;">curl -fsSL https://raw.githubusercontent.com/m0a/cc-hub/main/install.sh | bash</code>
+                    <button id="btn-copy-install" style="position: absolute; top: 4px; right: 4px; background: #333; border: none; color: #aaa; font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer;">copy</button>
+                  </div>
                 </div>
               </div>
               <div style="display: flex; gap: 10px; margin-bottom: 12px;">
@@ -178,6 +181,15 @@ export async function startPhoneUI(bridge: Bridge | null): Promise<void> {
   const connectedInfo = document.getElementById('connected-info')!
   const aboutSection = document.getElementById('about-section')!
   const serverInfo = document.getElementById('server-info')!
+
+  // Copy button
+  document.getElementById('btn-copy-install')?.addEventListener('click', () => {
+    const cmd = document.getElementById('install-cmd')?.textContent || ''
+    navigator.clipboard.writeText(cmd).then(() => {
+      const btn = document.getElementById('btn-copy-install')
+      if (btn) { btn.textContent = 'copied!'; setTimeout(() => { btn.textContent = 'copy' }, 1500) }
+    }).catch(() => {})
+  })
 
   // If already saved, auto-connect
   if (savedUrl) {

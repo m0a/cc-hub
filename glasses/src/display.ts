@@ -1,8 +1,6 @@
 import {
   waitForEvenAppBridge,
   TextContainerProperty,
-  ListContainerProperty,
-  ListItemContainerProperty,
   CreateStartUpPageContainer,
   RebuildPageContainer,
   TextContainerUpgrade,
@@ -89,31 +87,27 @@ function buildSessionList(state: AppState): RebuildPageContainer {
     content: `CC Hub ${apiUsagePercent ? `  API:${apiUsagePercent}` : ''}`,
   })
 
-  // Session list using ListContainer with selection border
+  // Session list as text with cursor
   const maxVisible = 6
   const start = Math.max(0, sessionIndex - 2)
   const visible = sessions.slice(start, start + maxVisible)
-  const itemNames = visible.map((s) => {
+  const listText = visible.map((s, i) => {
+    const idx = start + i
+    const cursor = idx === sessionIndex ? '>' : ' '
     const label = statusLabel(s)
-    const name = sName(s)
-    return label ? `${label} ${name}` : `    ${name}`
-  })
+    return `${cursor} ${label} ${sName(s)}`
+  }).join('\n')
 
-  const list = new ListContainerProperty({
+  const list = new TextContainerProperty({
     xPosition: 4, yPosition: 40,
     width: W - 8, height: 210,
     borderWidth: 1,
     borderColor: 4,
     borderRadius: 3,
-    paddingLength: 4,
+    paddingLength: 6,
     containerID: 2, containerName: 'list',
-    itemContainer: new ListItemContainerProperty({
-      itemCount: itemNames.length,
-      itemWidth: 0, // auto fill
-      isItemSelectBorderEn: 1,
-      itemName: itemNames,
-    }),
     isEventCapture: 0,
+    content: listText || '(no sessions)',
   })
 
   // Footer
@@ -128,8 +122,7 @@ function buildSessionList(state: AppState): RebuildPageContainer {
 
   return new RebuildPageContainer({
     containerTotalNum: 3,
-    textObject: [header, footer],
-    listObject: [list],
+    textObject: [header, list, footer],
   })
 }
 
@@ -304,17 +297,28 @@ export async function updateDisplay(bridge: Bridge | null, state: AppState): Pro
   switch (state.mode) {
     case 'session_list': {
       const { sessions, sessionIndex, apiUsagePercent } = state
+      const start = Math.max(0, sessionIndex - 2)
+      const visible = sessions.slice(start, start + 6)
+      const listText = visible.map((s, i) => {
+        const idx = start + i
+        const cursor = idx === sessionIndex ? '>' : ' '
+        return `${cursor} ${statusLabel(s)} ${sName(s)}`
+      }).join('\n')
+
       await Promise.all([
         bridge.textContainerUpgrade(new TextContainerUpgrade({
           containerID: 1, containerName: 'header',
           content: `CC Hub ${apiUsagePercent ? `  API:${apiUsagePercent}` : ''}`,
         })),
         bridge.textContainerUpgrade(new TextContainerUpgrade({
+          containerID: 2, containerName: 'list',
+          content: listText || '(no sessions)',
+        })),
+        bridge.textContainerUpgrade(new TextContainerUpgrade({
           containerID: 3, containerName: 'footer',
           content: `tap:open  swipe:nav  ${sessionIndex + 1}/${sessions.length}`,
         })),
       ])
-      // Note: ListContainer items can't be updated in-place, needs rebuild
       break
     }
     case 'conversation': {

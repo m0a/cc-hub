@@ -62,48 +62,47 @@ function statusLabel(s: Session): string {
 function buildSessionList(state: AppState): RebuildPageContainer {
   const { sessions, sessionIndex, apiUsagePercent } = state
 
-  // Header with border bottom
+  // Header - compact
   const header = new TextContainerProperty({
     xPosition: 0, yPosition: 0,
-    width: W, height: 36,
-    borderWidth: 0, borderColor: 0,
+    width: W, height: 28,
     paddingLength: 4,
     containerID: 1, containerName: 'header',
     isEventCapture: 0,
-    content: `CC Hub ${apiUsagePercent ? `  API:${apiUsagePercent}` : ''}`,
+    content: `CC Hub ${apiUsagePercent ? `API:${apiUsagePercent}` : ''} ${sessionIndex + 1}/${sessions.length}`,
   })
 
-  // Session list as text with cursor
-  const maxVisible = 6
-  const start = Math.max(0, sessionIndex - 2)
+  // Session list - maximize space
+  const maxVisible = 9
+  const start = Math.max(0, sessionIndex - 3)
   const visible = sessions.slice(start, start + maxVisible)
   const listText = visible.map((s, i) => {
     const idx = start + i
     const cursor = idx === sessionIndex ? '>' : ' '
     const label = statusLabel(s)
-    return `${cursor} ${label} ${sName(s)}`
+    return `${cursor}${label} ${sName(s)}`
   }).join('\n')
 
   const list = new TextContainerProperty({
-    xPosition: 4, yPosition: 40,
-    width: W - 8, height: 210,
+    xPosition: 4, yPosition: 30,
+    width: W - 8, height: 238,
     borderWidth: 1,
     borderColor: 4,
     borderRadius: 3,
-    paddingLength: 6,
+    paddingLength: 4,
     containerID: 2, containerName: 'list',
     isEventCapture: 0,
     content: listText || '(no sessions)',
   })
 
-  // Footer
+  // Footer - minimal
   const footer = new TextContainerProperty({
-    xPosition: 0, yPosition: H - 32,
-    width: W, height: 28,
-    paddingLength: 4,
+    xPosition: 0, yPosition: H - 20,
+    width: W, height: 20,
+    paddingLength: 2,
     containerID: 3, containerName: 'footer',
     isEventCapture: 1,
-    content: `tap:open  swipe:nav  ${sessionIndex + 1}/${sessions.length}`,
+    content: `tap:open  swipe:nav`,
   })
 
   return new RebuildPageContainer({
@@ -283,26 +282,22 @@ export async function updateDisplay(bridge: Bridge | null, state: AppState): Pro
   switch (state.mode) {
     case 'session_list': {
       const { sessions, sessionIndex, apiUsagePercent } = state
-      const start = Math.max(0, sessionIndex - 2)
-      const visible = sessions.slice(start, start + 6)
+      const start = Math.max(0, sessionIndex - 3)
+      const visible = sessions.slice(start, start + 9)
       const listText = visible.map((s, i) => {
         const idx = start + i
         const cursor = idx === sessionIndex ? '>' : ' '
-        return `${cursor} ${statusLabel(s)} ${sName(s)}`
+        return `${cursor}${statusLabel(s)} ${sName(s)}`
       }).join('\n')
 
       await Promise.all([
         bridge.textContainerUpgrade(new TextContainerUpgrade({
           containerID: 1, containerName: 'header',
-          content: `CC Hub ${apiUsagePercent ? `  API:${apiUsagePercent}` : ''}`,
+          content: `CC Hub ${apiUsagePercent ? `API:${apiUsagePercent}` : ''} ${sessionIndex + 1}/${sessions.length}`,
         })),
         bridge.textContainerUpgrade(new TextContainerUpgrade({
           containerID: 2, containerName: 'list',
           content: listText || '(no sessions)',
-        })),
-        bridge.textContainerUpgrade(new TextContainerUpgrade({
-          containerID: 3, containerName: 'footer',
-          content: `tap:open  swipe:nav  ${sessionIndex + 1}/${sessions.length}`,
         })),
       ])
       break

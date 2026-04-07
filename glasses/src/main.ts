@@ -172,7 +172,6 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
           const session = currentSession()
           if (session) {
             wsClient.sendInput(session.id, '\r')
-            state.debugEvent = 'Sent: Enter'
           }
           state.mode = 'conversation'
           break

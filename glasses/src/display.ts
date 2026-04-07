@@ -109,7 +109,7 @@ function buildSessionList(state: AppState): RebuildPageContainer {
     content: '',
   })
 
-  const footerText = state.debugEvent || `tap:open  swipe:nav  ${sessionIndex + 1}/${sessions.length}`
+  const footerText = `tap:open  swipe:nav  ${sessionIndex + 1}/${sessions.length}`
   const footer = new TextContainerProperty({
     xPosition: 0, yPosition: 252,
     width: W, height: 36,
@@ -163,7 +163,7 @@ function buildConversation(state: AppState): RebuildPageContainer {
 
   const pos = msgs.length > 0 ? `${msgIndex + 1}/${msgs.length}${pageInfo}` : ''
   const action = waiting ? 'tap:respond' : ''
-  const hint = state.debugEvent || `${action}  dbl:back  ${pos}`
+  const hint = `${action}  dbl:back  ${pos}`
   const footer = new TextContainerProperty({
     xPosition: 0, yPosition: 252,
     width: W, height: 36,

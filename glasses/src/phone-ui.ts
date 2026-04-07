@@ -196,12 +196,33 @@ export async function startPhoneUI(bridge: Bridge | null): Promise<void> {
     await tryConnect(savedUrl)
   }
 
+  function normalizeUrl(input: string): string {
+    let url = input.trim().replace(/\/+$/, '')
+    if (!url) return ''
+    // Add https:// if no protocol
+    if (!url.match(/^https?:\/\//)) {
+      url = `https://${url}`
+    }
+    // Add :5923 if no port
+    if (!url.match(/:\d+$/)) {
+      url = `${url}:5923`
+    }
+    return url
+  }
+
+  // Auto-normalize on blur
+  urlInput.addEventListener('blur', () => {
+    const normalized = normalizeUrl(urlInput.value)
+    if (normalized) urlInput.value = normalized
+  })
+
   btnConnect.addEventListener('click', async () => {
-    const url = urlInput.value.trim().replace(/\/+$/, '')
+    const url = normalizeUrl(urlInput.value)
     if (!url) {
       connectStatus.innerHTML = '<span style="color: #f44;">URLを入力してください</span>'
       return
     }
+    urlInput.value = url
     await tryConnect(url)
   })
 

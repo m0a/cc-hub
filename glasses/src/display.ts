@@ -1,6 +1,8 @@
 import {
   waitForEvenAppBridge,
   TextContainerProperty,
+  ListContainerProperty,
+  ListItemContainerProperty,
   CreateStartUpPageContainer,
   RebuildPageContainer,
   TextContainerUpgrade,
@@ -10,14 +12,14 @@ import { formatMessage } from './types.ts'
 import type { Session, ConversationMessage } from './types.ts'
 
 const W = 576
+const H = 288
 
 export type Bridge = Awaited<ReturnType<typeof waitForEvenAppBridge>>
 export type Mode = 'session_list' | 'conversation' | 'choice'
 
-const CHARS_PER_LINE = 35  // approximate chars per line on G2 (Japanese)
-const LINES_PER_PAGE = 6   // visible lines in body container (height 192px)
+const CHARS_PER_LINE = 35
+const LINES_PER_PAGE = 6
 
-/** Split text into display lines considering wrapping */
 function toDisplayLines(text: string): string[] {
   const result: string[] = []
   for (const line of text.split('\n')) {
@@ -49,8 +51,8 @@ export interface AppState {
   sessions: Session[]
   sessionIndex: number
   conversation: ConversationMessage[]
-  conversationOffset: number   // which message (0 = latest)
-  conversationPage: number     // page within current message
+  conversationOffset: number
+  conversationPage: number
   choiceIndex: number
   choiceOptions: string[]
   apiUsagePercent: string
@@ -65,10 +67,10 @@ function isWaiting(s: Session): boolean {
   return s.indicatorState === 'waiting_input' || (!!s.waitingToolName && s.waitingToolName !== 'UserInput')
 }
 
-function statusIcon(s: Session): string {
-  if (isWaiting(s)) return '!'
-  if (s.indicatorState === 'processing') return '*'
-  return ' '
+function statusLabel(s: Session): string {
+  if (isWaiting(s)) return '[!]'
+  if (s.indicatorState === 'processing') return '[*]'
+  return ''
 }
 
 // ─── Page builders ───
@@ -76,151 +78,165 @@ function statusIcon(s: Session): string {
 function buildSessionList(state: AppState): RebuildPageContainer {
   const { sessions, sessionIndex, apiUsagePercent } = state
 
+  // Header with border bottom
   const header = new TextContainerProperty({
     xPosition: 0, yPosition: 0,
-    width: W, height: 40,
+    width: W, height: 36,
+    borderWidth: 0, borderColor: 0,
+    paddingLength: 4,
     containerID: 1, containerName: 'header',
     isEventCapture: 0,
-    content: `Sessions ${apiUsagePercent ? `API:${apiUsagePercent}` : ''}`,
+    content: `CC Hub ${apiUsagePercent ? `  API:${apiUsagePercent}` : ''}`,
   })
 
-  // Show sessions around current index
+  // Session list using ListContainer with selection border
+  const maxVisible = 6
   const start = Math.max(0, sessionIndex - 2)
-  const visible = sessions.slice(start, start + 6)
-  const listText = visible.map((s, i) => {
-    const idx = start + i
-    const cursor = idx === sessionIndex ? '>' : ' '
-    return `${cursor}${statusIcon(s)} ${sName(s)}`
-  }).join('\n')
+  const visible = sessions.slice(start, start + maxVisible)
+  const itemNames = visible.map((s) => {
+    const label = statusLabel(s)
+    const name = sName(s)
+    return label ? `${label} ${name}` : `    ${name}`
+  })
 
-  const list = new TextContainerProperty({
-    xPosition: 0, yPosition: 48,
-    width: W, height: 192,
+  const list = new ListContainerProperty({
+    xPosition: 4, yPosition: 40,
+    width: W - 8, height: 210,
+    borderWidth: 1,
+    borderColor: 4,
+    borderRadius: 3,
+    paddingLength: 4,
     containerID: 2, containerName: 'list',
+    itemContainer: new ListItemContainerProperty({
+      itemCount: itemNames.length,
+      itemWidth: 0, // auto fill
+      isItemSelectBorderEn: 1,
+      itemName: itemNames,
+    }),
     isEventCapture: 0,
-    content: listText || '(no sessions)',
   })
 
-  const spacer = new TextContainerProperty({
-    xPosition: 0, yPosition: 244,
-    width: W, height: 4,
-    containerID: 3, containerName: 'spacer',
-    isEventCapture: 0,
-    content: '',
-  })
-
-  const footerText = `tap:open  swipe:nav  ${sessionIndex + 1}/${sessions.length}`
+  // Footer
   const footer = new TextContainerProperty({
-    xPosition: 0, yPosition: 252,
-    width: W, height: 36,
-    containerID: 4, containerName: 'footer',
+    xPosition: 0, yPosition: H - 32,
+    width: W, height: 28,
+    paddingLength: 4,
+    containerID: 3, containerName: 'footer',
     isEventCapture: 1,
-    content: footerText,
+    content: `tap:open  swipe:nav  ${sessionIndex + 1}/${sessions.length}`,
   })
 
   return new RebuildPageContainer({
-    containerTotalNum: 4,
-    textObject: [header, list, spacer, footer],
+    containerTotalNum: 3,
+    textObject: [header, footer],
+    listObject: [list],
   })
 }
 
 function buildConversation(state: AppState): RebuildPageContainer {
   const session = state.sessions[state.sessionIndex]
+  const waiting = session ? isWaiting(session) : false
   const ind = session?.indicatorState
-  const waiting = isWaiting(session!)
-  const status = waiting ? ' !' : ind === 'processing' ? ' *' : ''
 
+  // Header with session name + status badge
+  const statusBadge = waiting ? '  [!] WAITING' : ind === 'processing' ? '  [*]' : ''
   const header = new TextContainerProperty({
     xPosition: 0, yPosition: 0,
-    width: W, height: 40,
+    width: W, height: 36,
+    borderWidth: 1,
+    borderColor: waiting ? 10 : 4,
+    borderRadius: 0,
+    paddingLength: 4,
     containerID: 1, containerName: 'header',
     isEventCapture: 0,
-    content: `${session ? sName(session) : '---'}${status}`,
+    content: `${session ? sName(session) : '---'}${statusBadge}`,
   })
 
-  // Show one page of one message at a time
+  // Message body with border
   const msgs = state.conversation
   const msgIndex = msgs.length > 0
     ? Math.max(0, msgs.length - 1 - state.conversationOffset)
     : -1
   const { text: msgText, pageInfo } = paginateMessage(msgs, msgIndex, state.conversationPage)
 
+  // Role indicator
+  const role = msgIndex >= 0 ? (msgs[msgIndex].role === 'user' ? 'YOU' : 'AI') : ''
+
   const body = new TextContainerProperty({
-    xPosition: 0, yPosition: 48,
-    width: W, height: 192,
+    xPosition: 4, yPosition: 40,
+    width: W - 8, height: 210,
+    borderWidth: 1,
+    borderColor: msgIndex >= 0 && msgs[msgIndex].role === 'user' ? 6 : 3,
+    borderRadius: 3,
+    paddingLength: 6,
     containerID: 2, containerName: 'body',
     isEventCapture: 0,
     content: msgText,
   })
 
-  const spacer = new TextContainerProperty({
-    xPosition: 0, yPosition: 244,
-    width: W, height: 4,
-    containerID: 3, containerName: 'spacer',
-    isEventCapture: 0,
-    content: '',
-  })
-
-  const pos = msgs.length > 0 ? `${msgIndex + 1}/${msgs.length}${pageInfo}` : ''
-  const action = waiting ? 'tap:respond' : ''
-  const hint = `${action}  dbl:back  ${pos}`
+  // Footer with navigation info
+  const pos = msgs.length > 0 ? `${role} ${msgIndex + 1}/${msgs.length}${pageInfo}` : ''
+  const action = waiting ? 'tap:respond  ' : ''
   const footer = new TextContainerProperty({
-    xPosition: 0, yPosition: 252,
-    width: W, height: 36,
-    containerID: 4, containerName: 'footer',
+    xPosition: 0, yPosition: H - 32,
+    width: W, height: 28,
+    paddingLength: 4,
+    containerID: 3, containerName: 'footer',
     isEventCapture: 1,
-    content: hint,
+    content: `${action}dbl:back  ${pos}`,
   })
 
   return new RebuildPageContainer({
-    containerTotalNum: 4,
-    textObject: [header, body, spacer, footer],
+    containerTotalNum: 3,
+    textObject: [header, body, footer],
   })
 }
 
 function buildChoice(state: AppState): RebuildPageContainer {
   const session = state.sessions[state.sessionIndex]
 
+  // Header - action required
   const header = new TextContainerProperty({
     xPosition: 0, yPosition: 0,
-    width: W, height: 40,
+    width: W, height: 36,
+    borderWidth: 1,
+    borderColor: 10,
+    paddingLength: 4,
     containerID: 1, containerName: 'header',
     isEventCapture: 0,
-    content: session ? sName(session) : '---',
+    content: `${session ? sName(session) : '---'}  [SELECT]`,
   })
 
+  // Choice list
   const choiceText = state.choiceOptions.map((opt, i) => {
-    const cursor = i === state.choiceIndex ? '>' : ' '
+    const cursor = i === state.choiceIndex ? '>>>' : '   '
     return `${cursor} ${opt}`
   }).join('\n')
 
   const body = new TextContainerProperty({
-    xPosition: 0, yPosition: 56,
-    width: W, height: 180,
+    xPosition: 4, yPosition: 40,
+    width: W - 8, height: 210,
+    borderWidth: 2,
+    borderColor: 8,
+    borderRadius: 3,
+    paddingLength: 8,
     containerID: 2, containerName: 'body',
     isEventCapture: 0,
-    content: `Select response:\n\n${choiceText}`,
-  })
-
-  const spacer = new TextContainerProperty({
-    xPosition: 0, yPosition: 240,
-    width: W, height: 4,
-    containerID: 3, containerName: 'spacer',
-    isEventCapture: 0,
-    content: '',
+    content: choiceText,
   })
 
   const footer = new TextContainerProperty({
-    xPosition: 0, yPosition: 252,
-    width: W, height: 36,
-    containerID: 4, containerName: 'footer',
+    xPosition: 0, yPosition: H - 32,
+    width: W, height: 28,
+    paddingLength: 4,
+    containerID: 3, containerName: 'footer',
     isEventCapture: 1,
-    content: 'swipe:select  tap:send  dbl:cancel',
+    content: 'swipe:select  tap:confirm  dbl:skip',
   })
 
   return new RebuildPageContainer({
-    containerTotalNum: 4,
-    textObject: [header, body, spacer, footer],
+    containerTotalNum: 3,
+    textObject: [header, body, footer],
   })
 }
 
@@ -239,15 +255,19 @@ export async function initDisplay(): Promise<Bridge | null> {
       containerTotalNum: 2,
       textObject: [
         new TextContainerProperty({
-          xPosition: 0, yPosition: 100,
-          width: W, height: 80,
+          xPosition: W / 2 - 140, yPosition: H / 2 - 40,
+          width: 280, height: 80,
+          borderWidth: 2,
+          borderColor: 8,
+          borderRadius: 5,
+          paddingLength: 12,
           containerID: 1, containerName: 'loading',
           isEventCapture: 0,
           content: 'CC Hub Glasses\nConnecting...',
         }),
         new TextContainerProperty({
-          xPosition: 0, yPosition: 252,
-          width: W, height: 36,
+          xPosition: 0, yPosition: H - 28,
+          width: W, height: 28,
           containerID: 2, containerName: 'footer',
           isEventCapture: 1,
           content: '',
@@ -264,7 +284,7 @@ export async function initDisplay(): Promise<Bridge | null> {
 }
 
 export async function updateDisplay(bridge: Bridge | null, state: AppState): Promise<void> {
-  if (!bridge) return // Debug mode — simulator renders via setInterval
+  if (!bridge) return
 
   const needsRebuild = state.mode !== currentMode
   currentMode = state.mode
@@ -284,47 +304,37 @@ export async function updateDisplay(bridge: Bridge | null, state: AppState): Pro
   switch (state.mode) {
     case 'session_list': {
       const { sessions, sessionIndex, apiUsagePercent } = state
-      const start = Math.max(0, sessionIndex - 2)
-      const visible = sessions.slice(start, start + 6)
-      const listText = visible.map((s, i) => {
-        const idx = start + i
-        const cursor = idx === sessionIndex ? '>' : ' '
-        return `${cursor}${statusIcon(s)} ${sName(s)}`
-      }).join('\n')
-
       await Promise.all([
         bridge.textContainerUpgrade(new TextContainerUpgrade({
           containerID: 1, containerName: 'header',
-          content: `Sessions ${apiUsagePercent ? `API:${apiUsagePercent}` : ''}`,
-        })),
-        bridge.textContainerUpgrade(new TextContainerUpgrade({
-          containerID: 2, containerName: 'list',
-          content: listText || '(no sessions)',
+          content: `CC Hub ${apiUsagePercent ? `  API:${apiUsagePercent}` : ''}`,
         })),
         bridge.textContainerUpgrade(new TextContainerUpgrade({
           containerID: 3, containerName: 'footer',
           content: `tap:open  swipe:nav  ${sessionIndex + 1}/${sessions.length}`,
         })),
       ])
+      // Note: ListContainer items can't be updated in-place, needs rebuild
       break
     }
     case 'conversation': {
       const session = state.sessions[state.sessionIndex]
+      const waiting = session ? isWaiting(session) : false
       const ind = session?.indicatorState
-      const waiting = isWaiting(session!)
-  const status = waiting ? ' !' : ind === 'processing' ? ' *' : ''
+      const statusBadge = waiting ? '  [!] WAITING' : ind === 'processing' ? '  [*]' : ''
       const msgs = state.conversation
       const msgIndex = msgs.length > 0
         ? Math.max(0, msgs.length - 1 - state.conversationOffset)
         : -1
       const { text: msgText, pageInfo } = paginateMessage(msgs, msgIndex, state.conversationPage)
-      const pos = msgs.length > 0 ? `${msgIndex + 1}/${msgs.length}${pageInfo}` : ''
-      const action = waiting ? 'tap:respond' : ''
+      const role = msgIndex >= 0 ? (msgs[msgIndex].role === 'user' ? 'YOU' : 'AI') : ''
+      const pos = msgs.length > 0 ? `${role} ${msgIndex + 1}/${msgs.length}${pageInfo}` : ''
+      const action = waiting ? 'tap:respond  ' : ''
 
       await Promise.all([
         bridge.textContainerUpgrade(new TextContainerUpgrade({
           containerID: 1, containerName: 'header',
-          content: `${session ? sName(session) : '---'}${status}`,
+          content: `${session ? sName(session) : '---'}${statusBadge}`,
         })),
         bridge.textContainerUpgrade(new TextContainerUpgrade({
           containerID: 2, containerName: 'body',
@@ -332,20 +342,20 @@ export async function updateDisplay(bridge: Bridge | null, state: AppState): Pro
         })),
         bridge.textContainerUpgrade(new TextContainerUpgrade({
           containerID: 3, containerName: 'footer',
-          content: `${action}  dbl:back  ${pos}`,
+          content: `${action}dbl:back  ${pos}`,
         })),
       ])
       break
     }
     case 'choice': {
       const choiceText = state.choiceOptions.map((opt, i) => {
-        const cursor = i === state.choiceIndex ? '>' : ' '
+        const cursor = i === state.choiceIndex ? '>>>' : '   '
         return `${cursor} ${opt}`
       }).join('\n')
 
       await bridge.textContainerUpgrade(new TextContainerUpgrade({
         containerID: 2, containerName: 'body',
-        content: `Select response:\n\n${choiceText}`,
+        content: choiceText,
       }))
       break
     }
@@ -366,13 +376,12 @@ export function setupEvents(
 ): void {
   if (!bridge) return
   let lastEventTime = 0
-  const EVENT_DEBOUNCE = 300 // Ignore duplicate events within 300ms
+  const EVENT_DEBOUNCE = 300
 
   bridge.onEvenHubEvent((event) => {
     const raw = JSON.stringify(event).slice(0, 80)
     callbacks.onRawEvent?.(raw)
 
-    // Check all event sources: textEvent, sysEvent, listEvent
     const textType = event.textEvent?.eventType
     const sysType = event.sysEvent?.eventType
     const listType = event.listEvent?.eventType
@@ -380,7 +389,6 @@ export function setupEvents(
 
     const now = Date.now()
 
-    // Swipe events (textEvent)
     if (eventType === OsEventTypeList.SCROLL_TOP_EVENT) {
       if (now - lastEventTime < EVENT_DEBOUNCE) return
       lastEventTime = now
@@ -394,7 +402,7 @@ export function setupEvents(
       return
     }
 
-    // Ring tap: sysEvent with undefined eventType, debounced
+    // Ring tap: sysEvent with undefined eventType
     if (event.sysEvent && sysType == null && !event.sysEvent.imuData) {
       if (now - lastEventTime > EVENT_DEBOUNCE) {
         lastEventTime = now
@@ -403,7 +411,6 @@ export function setupEvents(
       return
     }
 
-    // Explicit event types
     if (eventType == null) return
     if (now - lastEventTime < EVENT_DEBOUNCE) return
     lastEventTime = now

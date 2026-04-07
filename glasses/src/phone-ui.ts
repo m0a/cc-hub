@@ -14,54 +14,161 @@ export async function startPhoneUI(bridge: Bridge | null): Promise<void> {
     savedUrl = await bridge.getLocalStorage(LS_KEY) || ''
   }
 
+  const isConnected = !!savedUrl
+
   app.innerHTML = `
-    <div style="font-family: -apple-system, sans-serif; background: #111; color: #eee; min-height: 100vh; padding: 20px;">
-      <h1 style="font-size: 22px; margin-bottom: 4px;">CC Hub Glasses</h1>
-      <p style="color: #888; font-size: 13px; margin-bottom: 24px;">Claude Codeセッションをスマートグラスから管理</p>
+    <div style="font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #0a0a0a; color: #eee; min-height: 100vh;">
 
-      <div id="setup-section" style="display: none;">
-        <div style="background: #1a1a2e; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
-          <h2 style="font-size: 16px; color: #0f0; margin-bottom: 12px;">セットアップ</h2>
-          <p style="font-size: 13px; color: #aaa; line-height: 1.6; margin-bottom: 12px;">
-            CC Hubは、Claude Codeセッションをリモート管理するツールです。
-            PCにCC Hubをインストールし、Tailscaleで接続してください。
-          </p>
-          <ol style="font-size: 13px; color: #ccc; line-height: 1.8; padding-left: 20px; margin-bottom: 12px;">
-            <li>PCにCC Hubをインストール<br>
-              <code style="background: #222; padding: 2px 6px; border-radius: 4px; font-size: 12px; color: #0f0;">curl -fsSL https://raw.githubusercontent.com/m0a/cc-hub/main/install.sh | bash</code>
-            </li>
-            <li>CC Hubを起動: <code style="background: #222; padding: 2px 6px; border-radius: 4px; font-size: 12px; color: #0f0;">cchub</code></li>
-            <li>スマホにTailscaleをインストールして同じネットワークに接続</li>
-            <li>下のURLを入力して接続</li>
-          </ol>
+      <!-- Hero -->
+      <div style="background: linear-gradient(135deg, #0a1a0a 0%, #0a0a1a 100%); padding: 32px 20px 24px; border-bottom: 1px solid #1a3a1a;">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+          <div style="width: 44px; height: 44px; background: #0f0; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px;">⌘</div>
+          <div>
+            <h1 style="font-size: 22px; margin: 0; font-weight: 700;">CC Hub Glasses</h1>
+            <p style="color: #888; font-size: 12px; margin: 2px 0 0;">for EVEN G2</p>
+          </div>
         </div>
-      </div>
-
-      <div style="background: #1a1a2e; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
-        <h2 style="font-size: 16px; color: #0f0; margin-bottom: 12px;">CC Hub接続</h2>
-        <input id="url-input" type="url" value="${savedUrl}"
-          placeholder="https://hostname.tail*****.ts.net:5923"
-          style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #333; background: #222; color: #eee; font-size: 14px; margin-bottom: 8px; box-sizing: border-box;"
-        />
-        <div style="display: flex; gap: 8px;">
-          <button id="btn-connect" style="flex: 1; padding: 10px; border-radius: 8px; border: none; background: #0a0; color: #fff; font-size: 14px; cursor: pointer;">
-            接続
-          </button>
-          <button id="btn-disconnect" style="padding: 10px 16px; border-radius: 8px; border: 1px solid #444; background: transparent; color: #888; font-size: 14px; cursor: pointer; display: none;">
-            切断
-          </button>
-        </div>
-        <div id="connect-status" style="margin-top: 8px; font-size: 13px;"></div>
-      </div>
-
-      <div id="connected-info" style="display: none; background: #1a1a2e; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
-        <h2 style="font-size: 16px; color: #0f0; margin-bottom: 12px;">接続中</h2>
-        <div id="server-info" style="font-size: 13px; color: #ccc; line-height: 1.8;"></div>
-        <p style="margin-top: 12px; font-size: 14px; color: #0f0;">
-          ✓ メガネから操作できます
+        <p style="color: #aaa; font-size: 14px; line-height: 1.5; margin: 0;">
+          AIコーディングアシスタント Claude Code のセッションをスマートグラスからリアルタイムで確認・操作
         </p>
       </div>
+
+      <div style="padding: 16px 20px;">
+
+        <!-- What is CC Hub (shown when not connected) -->
+        <div id="about-section" style="display: ${isConnected ? 'none' : 'block'};">
+          <div style="background: #111; border: 1px solid #222; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
+            <h2 style="font-size: 15px; color: #0f0; margin: 0 0 12px; font-weight: 600;">CC Hub とは？</h2>
+            <p style="font-size: 13px; color: #bbb; line-height: 1.7; margin: 0 0 12px;">
+              <a href="https://github.com/m0a/cc-hub" style="color: #4a9; text-decoration: none;">CC Hub</a> は、
+              Claude Code セッションをWebブラウザからリモート管理するターミナルマネージャーです。
+              複数のClaude Codeセッションの同時実行・監視・操作ができます。
+            </p>
+            <div style="font-size: 13px; color: #999; line-height: 1.6;">
+              <div style="display: flex; gap: 8px; align-items: start; margin-bottom: 8px;">
+                <span style="color: #0f0; font-size: 16px;">◆</span>
+                <span>複数セッションの一括管理と切り替え</span>
+              </div>
+              <div style="display: flex; gap: 8px; align-items: start; margin-bottom: 8px;">
+                <span style="color: #0f0; font-size: 16px;">◆</span>
+                <span>処理状況のリアルタイム監視</span>
+              </div>
+              <div style="display: flex; gap: 8px; align-items: start; margin-bottom: 8px;">
+                <span style="color: #0f0; font-size: 16px;">◆</span>
+                <span>承認・拒否操作をリモートで実行</span>
+              </div>
+              <div style="display: flex; gap: 8px; align-items: start;">
+                <span style="color: #0f0; font-size: 16px;">◆</span>
+                <span>会話履歴の閲覧</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Glasses features -->
+          <div style="background: #111; border: 1px solid #222; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
+            <h2 style="font-size: 15px; color: #0f0; margin: 0 0 12px; font-weight: 600;">メガネでできること</h2>
+            <div style="font-size: 13px; color: #bbb; line-height: 1.7;">
+              <p style="margin: 0 0 8px;">リングの操作だけでClaude Codeを監視・操作:</p>
+              <table style="width: 100%; font-size: 12px; border-collapse: collapse;">
+                <tr style="border-bottom: 1px solid #222;">
+                  <td style="padding: 6px 0; color: #0f0; width: 100px;">スワイプ上下</td>
+                  <td style="padding: 6px 0; color: #ccc;">セッション切替 / スクロール</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #222;">
+                  <td style="padding: 6px 0; color: #0f0;">タップ</td>
+                  <td style="padding: 6px 0; color: #ccc;">選択 / 承認確定</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; color: #0f0;">ダブルタップ</td>
+                  <td style="padding: 6px 0; color: #ccc;">戻る / 次のwaiting</td>
+                </tr>
+              </table>
+            </div>
+          </div>
+
+          <!-- Setup steps -->
+          <div style="background: #111; border: 1px solid #222; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
+            <h2 style="font-size: 15px; color: #0f0; margin: 0 0 12px; font-weight: 600;">セットアップ手順</h2>
+            <div style="font-size: 13px; color: #ccc; line-height: 1.8;">
+              <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+                <div style="background: #0f0; color: #000; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0;">1</div>
+                <div>
+                  <div style="font-weight: 600; margin-bottom: 2px;">CC Hub をインストール</div>
+                  <code style="background: #1a1a1a; padding: 4px 8px; border-radius: 4px; font-size: 11px; color: #0f0; display: block; overflow-x: auto; white-space: nowrap;">curl -fsSL https://raw.githubusercontent.com/m0a/cc-hub/main/install.sh | bash</code>
+                </div>
+              </div>
+              <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+                <div style="background: #0f0; color: #000; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0;">2</div>
+                <div>
+                  <div style="font-weight: 600; margin-bottom: 2px;">CC Hub を起動</div>
+                  <code style="background: #1a1a1a; padding: 4px 8px; border-radius: 4px; font-size: 11px; color: #0f0;">cchub</code>
+                  <span style="color: #888; font-size: 12px; margin-left: 8px;">（デフォルトポート: 5923）</span>
+                </div>
+              </div>
+              <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+                <div style="background: #0f0; color: #000; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0;">3</div>
+                <div>
+                  <div style="font-weight: 600; margin-bottom: 2px;">Tailscale で接続</div>
+                  <div style="color: #999; font-size: 12px;">PCとスマホに<a href="https://tailscale.com" style="color: #4a9; text-decoration: none;">Tailscale</a>をインストールし、同じネットワークに参加</div>
+                </div>
+              </div>
+              <div style="display: flex; gap: 10px;">
+                <div style="background: #0f0; color: #000; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0;">4</div>
+                <div>
+                  <div style="font-weight: 600;">下のURLを入力して接続</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Connection -->
+        <div style="background: #111; border: 1px solid ${isConnected ? '#1a3a1a' : '#222'}; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
+          <h2 style="font-size: 15px; color: #0f0; margin: 0 0 12px; font-weight: 600;">CC Hub 接続設定</h2>
+          <div style="font-size: 12px; color: #888; margin-bottom: 8px;">CC Hub サーバーの Tailscale URL を入力してください</div>
+          <input id="url-input" type="url" value="${savedUrl}"
+            placeholder="https://hostname.tail*****.ts.net:5923"
+            style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #333; background: #1a1a1a; color: #eee; font-size: 14px; margin-bottom: 10px; box-sizing: border-box; font-family: monospace;"
+          />
+          <div style="display: flex; gap: 8px;">
+            <button id="btn-connect" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: #0a0; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;">
+              接続
+            </button>
+            <button id="btn-disconnect" style="padding: 12px 16px; border-radius: 8px; border: 1px solid #444; background: transparent; color: #888; font-size: 14px; cursor: pointer; display: ${isConnected ? 'block' : 'none'};">
+              切断
+            </button>
+          </div>
+          <div id="connect-status" style="margin-top: 8px; font-size: 13px;"></div>
+        </div>
+
+        <!-- Connected info -->
+        <div id="connected-info" style="display: none; background: #0a1a0a; border: 1px solid #1a3a1a; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+            <div style="width: 10px; height: 10px; background: #0f0; border-radius: 50; animation: pulse 2s infinite;"></div>
+            <h2 style="font-size: 15px; color: #0f0; margin: 0; font-weight: 600;">接続中</h2>
+          </div>
+          <div id="server-info" style="font-size: 13px; color: #ccc; line-height: 1.8;"></div>
+          <div style="margin-top: 16px; padding: 12px; background: #0a2a0a; border-radius: 8px; border: 1px solid #1a3a1a;">
+            <p style="font-size: 14px; color: #0f0; margin: 0 0 4px; font-weight: 600;">✓ メガネから操作できます</p>
+            <p style="font-size: 12px; color: #888; margin: 0;">G2のメガネメニューからこのアプリを起動してください</p>
+          </div>
+        </div>
+
+        <!-- Help -->
+        <div style="background: #111; border: 1px solid #222; border-radius: 12px; padding: 16px; margin-bottom: 32px;">
+          <h2 style="font-size: 15px; color: #888; margin: 0 0 8px; font-weight: 600;">リンク</h2>
+          <div style="font-size: 13px; line-height: 2;">
+            <a href="https://github.com/m0a/cc-hub" style="color: #4a9; text-decoration: none;">CC Hub GitHub →</a><br>
+            <a href="https://github.com/m0a/cc-hub#installation" style="color: #4a9; text-decoration: none;">インストール手順 →</a><br>
+            <a href="https://tailscale.com/download" style="color: #4a9; text-decoration: none;">Tailscale ダウンロード →</a>
+          </div>
+        </div>
+
+      </div>
     </div>
+    <style>
+      @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+    </style>
   `
 
   const urlInput = document.getElementById('url-input') as HTMLInputElement
@@ -69,13 +176,8 @@ export async function startPhoneUI(bridge: Bridge | null): Promise<void> {
   const btnDisconnect = document.getElementById('btn-disconnect')!
   const connectStatus = document.getElementById('connect-status')!
   const connectedInfo = document.getElementById('connected-info')!
-  const setupSection = document.getElementById('setup-section')!
+  const aboutSection = document.getElementById('about-section')!
   const serverInfo = document.getElementById('server-info')!
-
-  // Show setup instructions if no saved URL
-  if (!savedUrl) {
-    setupSection.style.display = 'block'
-  }
 
   // If already saved, auto-connect
   if (savedUrl) {
@@ -97,12 +199,13 @@ export async function startPhoneUI(bridge: Bridge | null): Promise<void> {
     }
     connectedInfo.style.display = 'none'
     btnDisconnect.style.display = 'none'
-    setupSection.style.display = 'block'
+    aboutSection.style.display = 'block'
     connectStatus.innerHTML = '<span style="color: #888;">切断しました</span>'
   })
 
   async function tryConnect(url: string) {
     connectStatus.innerHTML = '<span style="color: #ff0;">接続中...</span>'
+    btnConnect.setAttribute('disabled', '')
     try {
       setBaseUrl(url)
       const [dashRes, sessionsRes] = await Promise.all([
@@ -121,22 +224,26 @@ export async function startPhoneUI(bridge: Bridge | null): Promise<void> {
       const sessionCount = sessionsRes.sessions?.length || 0
       const usage = dashRes.usageLimits
         ? `${dashRes.usageLimits.fiveHour.utilization}%`
-        : 'N/A'
+        : '-'
 
       serverInfo.innerHTML = `
-        サーバー: ${url}<br>
-        バージョン: v${version}<br>
-        セッション数: ${sessionCount}<br>
-        API使用率: ${usage}
+        <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 12px;">
+          <span style="color: #888;">サーバー</span><span style="font-family: monospace; font-size: 12px;">${url}</span>
+          <span style="color: #888;">バージョン</span><span>v${version}</span>
+          <span style="color: #888;">セッション</span><span>${sessionCount} 個</span>
+          <span style="color: #888;">API使用率</span><span>${usage}</span>
+        </div>
       `
 
-      connectStatus.innerHTML = `<span style="color: #0f0;">✓ 接続成功</span>`
+      connectStatus.innerHTML = '<span style="color: #0f0;">✓ 接続成功</span>'
       connectedInfo.style.display = 'block'
       btnDisconnect.style.display = 'block'
-      setupSection.style.display = 'none'
+      aboutSection.style.display = 'none'
     } catch (e) {
       connectStatus.innerHTML = `<span style="color: #f44;">接続失敗: ${(e as Error).message}</span>`
       connectedInfo.style.display = 'none'
+    } finally {
+      btnConnect.removeAttribute('disabled')
     }
   }
 }

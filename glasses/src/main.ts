@@ -162,14 +162,15 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
         case 'choice': {
           const session = currentSession()
           if (session) {
-            // Send the 1-based number for numbered choices, or the text for defaults
             const termChoices = wsClient.getChoices(session.id)
             const input = termChoices.length > 0 ? `${state.choiceIndex + 1}` : state.choiceOptions[state.choiceIndex]
+            const wsState = wsClient.getState()
             wsClient.sendInput(session.id, `${input}\n`)
+            state.debugEvent = `Sent:${input} ws:${wsState} sub:${wsClient.getSubscribed() || 'none'}`
           }
-        }
           state.mode = 'conversation'
           break
+        }
       }
       updateDisplay(bridge, state)
     },

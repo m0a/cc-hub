@@ -48,6 +48,7 @@ export class CcHubWsClient {
   // Buffer of last N lines per session
   private terminalBuffers = new Map<string, string[]>()
   private maxLines = 30
+  private lastSessions: Session[] | null = null
 
   constructor(callbacks: WsCallbacks) {
     this.callbacks = callbacks
@@ -98,6 +99,7 @@ export class CcHubWsClient {
     try {
       const msg = JSON.parse(data)
       if (msg.type === 'sessions-updated') {
+        this.lastSessions = msg.sessions
         this.callbacks.onSessionsUpdated(msg.sessions)
       } else if (msg.type === 'subscribed' && msg.sessionId) {
         console.log('[ws] subscribed to', msg.sessionId, '— sending resize')
@@ -194,9 +196,28 @@ export class CcHubWsClient {
     return choices
   }
 
-  sendInput(sessionId: string, text: string): void {
+  getState(): string {
+    if (!this.ws) return 'null'
+    return ['CONNECTING','OPEN','CLOSING','CLOSED'][this.ws.readyState] || String(this.ws.readyState)
+  }
+
+  getSubscribed(): string | null {
+    return this.subscribedSession
+  }
+
+  sendInput(sessionId: string, text: string, paneId?: string): void {
     const data = btoa(text)
-    this.send({ type: 'input', sessionId, paneId: '%0', data })
+    // Use specified paneId, or find the first active pane from sessions data
+    const targetPane = paneId || this.getActivePaneId(sessionId) || '%0'
+    this.send({ type: 'input', sessionId, paneId: targetPane, data })
+  }
+
+  private getActivePaneId(sessionId: string): string | null {
+    // Find active pane from the last sessions-updated data
+    const session = this.lastSessions?.find(s => s.id === sessionId)
+    if (!session?.panes) return null
+    const active = session.panes.find((p: { isActive?: boolean }) => p.isActive)
+    return active?.paneId || session.panes[0]?.paneId || null
   }
 
   private send(msg: Record<string, unknown>): void {

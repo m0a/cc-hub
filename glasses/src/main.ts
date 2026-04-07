@@ -22,13 +22,16 @@ const state: AppState = {
   apiUsagePercent: '',
 }
 
-const CHARS_PER_PAGE = 200
+const PAGE_SIZE = 180
+const PAGE_ADVANCE = 160
 
 function currentMsgTotalPages(): number {
   const msgs = state.conversation
   const idx = msgs.length > 0 ? Math.max(0, msgs.length - 1 - state.conversationOffset) : -1
   if (idx < 0) return 0
-  return Math.ceil(formatMessage(msgs[idx]).length / CHARS_PER_PAGE)
+  const len = formatMessage(msgs[idx]).length
+  if (len <= PAGE_SIZE) return 1
+  return Math.ceil((len - PAGE_SIZE) / PAGE_ADVANCE) + 1
 }
 
 function sName(s: Session): string {
@@ -384,9 +387,9 @@ function startDebugUI() {
       const msgIndex = msgs.length > 0 ? Math.max(0, msgs.length - 1 - state.conversationOffset) : -1
       if (msgIndex >= 0) {
         const fullText = formatMessage(msgs[msgIndex])
-        const totalPages = Math.ceil(fullText.length / CHARS_PER_PAGE)
+        const totalPages = fullText.length <= PAGE_SIZE ? 1 : Math.ceil((fullText.length - PAGE_SIZE) / PAGE_ADVANCE) + 1
         const page = Math.min(state.conversationPage, totalPages - 1)
-        lines.push(fullText.slice(page * CHARS_PER_PAGE, (page + 1) * CHARS_PER_PAGE))
+        lines.push(fullText.slice(page * PAGE_ADVANCE, page * PAGE_ADVANCE + PAGE_SIZE))
         var pageInfo = totalPages > 1 ? ` p${page + 1}/${totalPages}` : ''
       } else {
         lines.push('(no messages)')

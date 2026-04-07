@@ -15,16 +15,19 @@ const H = 288
 export type Bridge = Awaited<ReturnType<typeof waitForEvenAppBridge>>
 export type Mode = 'session_list' | 'conversation' | 'choice'
 
-const CHARS_PER_PAGE = 200 // G2 fits ~240 chars, keep margin
+const PAGE_SIZE = 180      // chars to display per page
+const PAGE_ADVANCE = 160   // chars to advance (overlap = PAGE_SIZE - PAGE_ADVANCE = 20)
 
-function paginateMessage(msgs: ConversationMessage[], msgIndex: number, page: number): { text: string; pageInfo: string } {
-  if (msgIndex < 0) return { text: '(no messages)', pageInfo: '' }
+function paginateMessage(msgs: ConversationMessage[], msgIndex: number, page: number): { text: string; pageInfo: string; totalPages: number } {
+  if (msgIndex < 0) return { text: '(no messages)', pageInfo: '', totalPages: 0 }
   const fullText = formatMessage(msgs[msgIndex])
-  const totalPages = Math.ceil(fullText.length / CHARS_PER_PAGE)
+  if (fullText.length <= PAGE_SIZE) return { text: fullText, pageInfo: '', totalPages: 1 }
+  const totalPages = Math.ceil((fullText.length - PAGE_SIZE) / PAGE_ADVANCE) + 1
   const p = Math.min(page, totalPages - 1)
-  const text = fullText.slice(p * CHARS_PER_PAGE, (p + 1) * CHARS_PER_PAGE)
-  const pageInfo = totalPages > 1 ? ` p${p + 1}/${totalPages}` : ''
-  return { text, pageInfo }
+  const start = p * PAGE_ADVANCE
+  const text = fullText.slice(start, start + PAGE_SIZE)
+  const pageInfo = ` p${p + 1}/${totalPages}`
+  return { text, pageInfo, totalPages }
 }
 
 export interface AppState {

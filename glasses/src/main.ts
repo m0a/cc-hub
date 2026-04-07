@@ -106,9 +106,13 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
           }
           break
         }
-        case 'choice':
+        case 'choice': {
+          // Send cursor up to Claude Code
+          const s1 = currentSession()
+          if (s1) wsClient.sendInput(s1.id, '\x1b[A')
           if (state.choiceIndex > 0) state.choiceIndex--
           break
+        }
       }
       updateDisplay(bridge, state)
     },
@@ -128,9 +132,13 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
           }
           break
         }
-        case 'choice':
+        case 'choice': {
+          // Send cursor down to Claude Code
+          const s2 = currentSession()
+          if (s2) wsClient.sendInput(s2.id, '\x1b[B')
           if (state.choiceOptions && state.choiceIndex < state.choiceOptions.length - 1) state.choiceIndex++
           break
+        }
       }
       updateDisplay(bridge, state)
     },
@@ -160,13 +168,11 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
         }
           break
         case 'choice': {
+          // Send Enter to confirm current selection
           const session = currentSession()
           if (session) {
-            const termChoices = wsClient.getChoices(session.id)
-            const input = termChoices.length > 0 ? `${state.choiceIndex + 1}` : state.choiceOptions[state.choiceIndex]
-            const wsState = wsClient.getState()
-            wsClient.sendInput(session.id, `${input}\n`)
-            state.debugEvent = `Sent:${input} ws:${wsState} sub:${wsClient.getSubscribed() || 'none'}`
+            wsClient.sendInput(session.id, '\r')
+            state.debugEvent = 'Sent: Enter'
           }
           state.mode = 'conversation'
           break

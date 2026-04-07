@@ -145,6 +145,14 @@ export async function saveLastKnownSessions(sessions: LastKnownSession[]): Promi
   await writeFile(filePath, JSON.stringify(sessions, null, 2));
 }
 
+export async function removeLastKnownSession(sessionId: string): Promise<void> {
+  const sessions = await getLastKnownSessions();
+  const filtered = sessions.filter(s => s.id !== sessionId);
+  if (filtered.length !== sessions.length) {
+    await saveLastKnownSessions(filtered);
+  }
+}
+
 export async function setSessionTitle(sessionId: string, title: string | null): Promise<void> {
   const data = await load();
   if (!data.sessions[sessionId]) data.sessions[sessionId] = {};

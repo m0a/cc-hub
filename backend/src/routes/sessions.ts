@@ -6,7 +6,7 @@ import { controlSessions, getOrCreateControlSession } from '../services/tmux-con
 import { ClaudeCodeService } from '../services/claude-code';
 import { SessionHistoryService } from '../services/session-history';
 import { PromptHistoryService } from '../services/prompt-history';
-import { getAllSessionMetadata, setSessionTheme, setSessionTitle, getSessionOrder, setSessionOrder, getLastKnownSessions, saveLastKnownSessions, type LastKnownSession } from '../services/session-metadata';
+import { getAllSessionMetadata, setSessionTheme, setSessionTitle, getSessionOrder, setSessionOrder, getLastKnownSessions, saveLastKnownSessions, removeLastKnownSession, type LastKnownSession } from '../services/session-metadata';
 import { getIndicatorOverride } from './notify';
 import { pushSessionsNow } from './terminal-mux';
 
@@ -507,11 +507,14 @@ sessions.delete('/:id', async (c) => {
 
   const exists = await tmuxService.sessionExists(id);
   if (!exists) {
-    return c.json({ error: 'Session not found' }, 404);
+    // May be a lost session — remove from last-known and return success
+    await removeLastKnownSession(id).catch(() => {});
+    return c.json({ success: true });
   }
 
   try {
     await tmuxService.killSession(id);
+    removeLastKnownSession(id).catch(() => {});
     return c.json({ success: true });
   } catch (_error) {
     return c.json({ error: 'Failed to delete session' }, 500);

@@ -506,6 +506,7 @@ function SessionItem({
   onSelectPane,
   onShowMenu,
   onResume,
+  onDelete,
   onClosePane,
 }: {
   session: ExtendedSessionResponse;
@@ -513,6 +514,7 @@ function SessionItem({
   onSelectPane?: (session: ExtendedSessionResponse, paneId: string) => void;
   onShowMenu: (session: ExtendedSessionResponse) => void;
   onResume?: (sessionId: string, ccSessionId?: string) => void;
+  onDelete?: (sessionId: string) => void;
   onShowConversation?: (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => void;
   onPaneAction?: (sessionId: string, action: 'focus' | 'close' | 'split', paneId: string, direction?: 'h' | 'v') => void;
   onClosePane?: (sessionId: string, paneId: string, name: string) => void;
@@ -660,13 +662,22 @@ function SessionItem({
           {shortPath && (
             <p className="text-[12px] text-zinc-600 truncate mb-2">{shortPath}</p>
           )}
-          <button
-            onClick={() => onResume?.(session.id, extSession.ccSessionId)}
-            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] font-medium bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition-colors"
-          >
-            <Play className="w-3 h-3" />
-            {t('session.resume', 'Resume')}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onResume?.(session.id, extSession.ccSessionId)}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] font-medium bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition-colors"
+            >
+              <Play className="w-3 h-3" />
+              {t('session.resume', 'Resume')}
+            </button>
+            <button
+              onClick={() => onDelete?.(session.id)}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] font-medium bg-zinc-600/20 text-zinc-400 hover:bg-red-600/20 hover:text-red-400 transition-colors"
+            >
+              <X className="w-3 h-3" />
+              {t('common.delete', 'Delete')}
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -1284,6 +1295,7 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
                               onSelectPane={onSelectPane}
                               onShowMenu={handleShowMenu}
                               onResume={handleResume}
+                              onDelete={(id) => deleteSession(id)}
                               onShowConversation={handleShowConversation}
                               onPaneAction={handlePaneAction}
                               onClosePane={(sid, pid, name) => setPaneToClose({ sessionId: sid, paneId: pid, name })}

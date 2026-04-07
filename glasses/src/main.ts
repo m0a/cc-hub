@@ -64,11 +64,20 @@ async function loadConversation(): Promise<void> {
 
 async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof initDisplay>>>) {
   // Load CC Hub URL from LocalStorage
-  const savedUrl = await bridge.getLocalStorage(LS_KEY)
+  let savedUrl = await bridge.getLocalStorage(LS_KEY)
   if (!savedUrl) {
-    // Show setup guide on glasses
+    // Show setup guide and poll for URL
     await bridge.rebuildPageContainer(buildSetupGuide())
-    return
+    await new Promise<void>((resolve) => {
+      const poll = setInterval(async () => {
+        const url = await bridge.getLocalStorage(LS_KEY)
+        if (url) {
+          clearInterval(poll)
+          savedUrl = url
+          resolve()
+        }
+      }, 2000)
+    })
   }
 
   setBaseUrl(savedUrl)

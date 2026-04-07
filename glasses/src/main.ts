@@ -136,8 +136,10 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
     },
     async tap() {
       switch (state.mode) {
-        case 'session_list':
+        case 'session_list': {
           // Switch immediately, load conversation in background
+          const s = currentSession()
+          if (s) wsClient.subscribe(s.id)
           state.mode = 'conversation'
           state.conversation = []
           state.conversationOffset = 0
@@ -145,6 +147,7 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
           updateDisplay(bridge, state)
           loadConversation().then(() => updateDisplay(bridge, state))
           return // already called updateDisplay
+        }
         case 'conversation': {
           const s = currentSession()
           if (s?.indicatorState === 'waiting_input' || (s?.waitingToolName && s.waitingToolName !== 'UserInput')) {
@@ -175,6 +178,7 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
           const next = waitingSessions.find(({ i }) => i > currentIdx) || waitingSessions[0]
           if (next && next.i !== currentIdx) {
             state.sessionIndex = next.i
+            wsClient.subscribe(state.sessions[next.i].id)
             state.mode = 'conversation'
             state.conversation = []
             state.conversationOffset = 0

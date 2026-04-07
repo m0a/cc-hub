@@ -22,18 +22,13 @@ const state: AppState = {
   apiUsagePercent: '',
 }
 
+const CHARS_PER_PAGE = 200
+
 function currentMsgTotalPages(): number {
   const msgs = state.conversation
   const idx = msgs.length > 0 ? Math.max(0, msgs.length - 1 - state.conversationOffset) : -1
   if (idx < 0) return 0
-  const fullText = formatMessage(msgs[idx])
-  const CHARS_PER_LINE = 35
-  const LINES_PER_PAGE = 6
-  let lineCount = 0
-  for (const line of fullText.split('\n')) {
-    lineCount += line.length === 0 ? 1 : Math.ceil(line.length / CHARS_PER_LINE)
-  }
-  return Math.ceil(lineCount / LINES_PER_PAGE)
+  return Math.ceil(formatMessage(msgs[idx]).length / CHARS_PER_PAGE)
 }
 
 function sName(s: Session): string {
@@ -389,14 +384,9 @@ function startDebugUI() {
       const msgIndex = msgs.length > 0 ? Math.max(0, msgs.length - 1 - state.conversationOffset) : -1
       if (msgIndex >= 0) {
         const fullText = formatMessage(msgs[msgIndex])
-        const dLines: string[] = []
-        for (const ln of fullText.split('\n')) {
-          if (ln.length === 0) dLines.push('')
-          else for (let i = 0; i < ln.length; i += 35) dLines.push(ln.slice(i, i + 35))
-        }
-        const totalPages = Math.ceil(dLines.length / 6)
+        const totalPages = Math.ceil(fullText.length / CHARS_PER_PAGE)
         const page = Math.min(state.conversationPage, totalPages - 1)
-        lines.push(...dLines.slice(page * 6, (page + 1) * 6))
+        lines.push(fullText.slice(page * CHARS_PER_PAGE, (page + 1) * CHARS_PER_PAGE))
         var pageInfo = totalPages > 1 ? ` p${page + 1}/${totalPages}` : ''
       } else {
         lines.push('(no messages)')

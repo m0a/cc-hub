@@ -97,10 +97,16 @@ export function formatMessage(m: ConversationMessage): string {
     }
   }
 
-  // Text content as-is (Markdown symbols serve as visual structure on G2)
+  // Text content
   if (m.content) {
-    parts.push(m.content)
+    parts.push(m.content.trim())
   }
 
-  return parts.length > 0 ? `${prefix} ${parts.join('\n')}` : `${prefix} (empty)`
+  // Join, compress whitespace, trim
+  const body = parts.join(' ')
+    .replace(/\n{2,}/g, '\n')   // collapse multiple newlines
+    .replace(/\n\s+/g, '\n')    // trim leading spaces after newlines
+    .trim()
+
+  return body ? `${prefix} ${body}` : `${prefix} (empty)`
 }

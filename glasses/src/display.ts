@@ -218,6 +218,43 @@ function buildChoice(state: AppState): RebuildPageContainer {
   })
 }
 
+export function buildSetupGuide(): RebuildPageContainer {
+  const header = new TextContainerProperty({
+    xPosition: 0, yPosition: 0,
+    width: W, height: 28,
+    paddingLength: 4,
+    containerID: 1, containerName: 'header',
+    isEventCapture: 0,
+    content: 'CC Hub Glasses',
+  })
+
+  const body = new TextContainerProperty({
+    xPosition: 4, yPosition: 32,
+    width: W - 8, height: 228,
+    borderWidth: 1,
+    borderColor: 6,
+    borderRadius: 3,
+    paddingLength: 6,
+    containerID: 2, containerName: 'body',
+    isEventCapture: 0,
+    content: 'CC Hub未接続\n\nスマホのEven Hubアプリからこのアプリを開いてCC HubのURLを設定してください\n\n1. PCでCC Hubを起動\n2. スマホのアプリ画面でURL入力\n3. メガネから再度起動',
+  })
+
+  const footer = new TextContainerProperty({
+    xPosition: 0, yPosition: H - 24,
+    width: W, height: 24,
+    paddingLength: 4,
+    containerID: 3, containerName: 'footer',
+    isEventCapture: 1,
+    content: 'Setup from phone app',
+  })
+
+  return new RebuildPageContainer({
+    containerTotalNum: 3,
+    textObject: [header, body, footer],
+  })
+}
+
 // ─── Display controller ───
 
 let currentMode: Mode | null = null

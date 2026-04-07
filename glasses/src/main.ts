@@ -1,5 +1,5 @@
 import { getDashboard, getConversation, setBaseUrl } from './api.ts'
-import { initDisplay, updateDisplay, setupEvents } from './display.ts'
+import { initDisplay, updateDisplay, setupEvents, buildSetupGuide } from './display.ts'
 import type { AppState } from './display.ts'
 import { startPhoneUI } from './phone-ui.ts'
 import { CcHubWsClient } from './ws-client.ts'
@@ -66,8 +66,8 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
   // Load CC Hub URL from LocalStorage
   const savedUrl = await bridge.getLocalStorage(LS_KEY)
   if (!savedUrl) {
-    // Show setup prompt on glasses
-    updateDisplay(bridge, { ...state, mode: 'session_list', sessions: [] })
+    // Show setup guide on glasses
+    await bridge.rebuildPageContainer(buildSetupGuide())
     return
   }
 

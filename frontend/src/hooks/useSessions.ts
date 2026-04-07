@@ -1,11 +1,11 @@
 import { useState, useCallback, useEffect } from 'react';
-import type { SessionResponse, SessionTheme, IndicatorState, PaneInfo } from '../../../shared/types';
+import type { SessionResponse, ExtendedSessionResponse, SessionTheme, IndicatorState, PaneInfo } from '../../../shared/types';
 import { authFetch, isTransientNetworkError } from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
 // Module-level cache (shared across all useSessions instances, updated by WS push)
-let cachedSessions: SessionResponse[] | null = null;
+let cachedSessions: ExtendedSessionResponse[] | null = null;
 
 /** hookイベントでcachedSessionsのindicatorStateを即座に更新する */
 export function updateCachedSessionsByHookEvent(event: string, ccSessionId?: string) {
@@ -42,17 +42,17 @@ function hookEventToIndicatorState(event: string): IndicatorState | null {
 }
 
 interface UseSessionsReturn {
-  sessions: SessionResponse[];
+  sessions: ExtendedSessionResponse[];
   isLoading: boolean;
   error: string | null;
-  createSession: (name?: string, workingDir?: string) => Promise<SessionResponse | null>;
+  createSession: (name?: string, workingDir?: string) => Promise<ExtendedSessionResponse | null>;
   deleteSession: (id: string) => Promise<boolean>;
   updateSessionTheme: (id: string, theme: SessionTheme | null) => Promise<boolean>;
 }
 
 function updateSessions(
-  setSessions: React.Dispatch<React.SetStateAction<SessionResponse[]>>,
-  newSessions: SessionResponse[],
+  setSessions: React.Dispatch<React.SetStateAction<ExtendedSessionResponse[]>>,
+  newSessions: ExtendedSessionResponse[],
 ) {
   cachedSessions = newSessions;
   setSessions(prev => {
@@ -63,7 +63,7 @@ function updateSessions(
 }
 
 export function useSessions(): UseSessionsReturn {
-  const [sessions, setSessions] = useState<SessionResponse[]>(() => cachedSessions || []);
+  const [sessions, setSessions] = useState<ExtendedSessionResponse[]>(() => cachedSessions || []);
   const [isLoading, setIsLoading] = useState(() => !cachedSessions);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,7 +74,7 @@ export function useSessions(): UseSessionsReturn {
     };
 
     const pushHandler = (e: Event) => {
-      const pushed = (e as CustomEvent).detail as SessionResponse[];
+      const pushed = (e as CustomEvent).detail as ExtendedSessionResponse[];
       if (pushed) {
         updateSessions(setSessions, pushed);
         setIsLoading(false);

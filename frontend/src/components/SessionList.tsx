@@ -675,7 +675,7 @@ function SessionItem({
             <p className="text-[12px] text-zinc-600 truncate mb-2">{shortPath}</p>
           )}
           <button
-            onClick={() => onSelect(session)}
+            onClick={() => onResume?.(session.id, extSession.ccSessionId)}
             className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] font-medium bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition-colors"
           >
             <Play className="w-3 h-3" />
@@ -913,15 +913,38 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
   // Resume a Claude session
   const handleResume = useCallback(async (sessionId: string, ccSessionId?: string) => {
     try {
-      const response = await authFetch(`${API_BASE}/api/sessions/${sessionId}/resume`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ccSessionId }),
-      });
-      if (response.ok) {
-        // Find and select the session
-        const session = sessions.find(s => s.id === sessionId);
-        if (session) {
+      // Check if this is a lost session (no tmux session exists)
+      const session = sessions.find(s => s.id === sessionId) as (SessionResponse & { currentPath?: string }) | undefined;
+      const isLost = session?.state === 'lost';
+
+      if (isLost && ccSessionId && session?.currentPath) {
+        // Lost session: create new tmux session via history resume
+        const response = await authFetch(`${API_BASE}/api/sessions/history/resume`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: ccSessionId, projectPath: session.currentPath }),
+        });
+        if (response.ok) {
+          const data = await response.json();
+          // Wait for sessions push to include the new session, then select it
+          const checkNewSession = () => {
+            const newSession = sessions.find(s => s.id === data.tmuxSessionId);
+            if (newSession) {
+              onSelectSession(newSession);
+            }
+          };
+          // Try immediately, and retry after sessions push
+          checkNewSession();
+          setTimeout(checkNewSession, 2000);
+        }
+      } else {
+        // Active session: resume claude in existing tmux session
+        const response = await authFetch(`${API_BASE}/api/sessions/${sessionId}/resume`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ccSessionId }),
+        });
+        if (response.ok && session) {
           onSelectSession(session);
         }
       }

@@ -2,6 +2,105 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.52] - 2026-04-08
+
+### Added
+- lostセッションに削除ボタンを追加（Resumeの横に表示）
+
+## [0.1.51] - 2026-04-07
+
+### Added
+- **G2スマートグラス コンパニオンアプリ** (`glasses/` ワークスペース)
+  - セッション一覧（ステータスアイコン付き、リングスワイプで選択）
+  - 会話表示（ページ送り、リアルタイム更新3秒ポーリング）
+  - 選択肢モード（カーソルキー送信でClaude Codeの選択画面を操作）
+  - スマホ設定画面（CC Hub紹介、セットアップ手順、URL入力＆自動補完）
+  - LocalStorage共有（スマホで設定→メガネが自動検出して接続）
+  - ツール実行のコンパクト表示（[Edit] path, [Bash] command 等）
+- conversation APIに`?last=N`パラメータ追加
+
+## [0.1.49] - 2026-04-07
+
+### Fixed
+- lostセッションのccSessionId無しでのresume対応
+
+## [0.1.47] - 2026-04-06
+
+### Changed
+- waitingForInputフィールドを削除（hookベースのindicatorに統一）
+
+## [0.1.44] - 2026-04-05
+
+### Fixed
+- AskUserQuestionのPreToolUseでwaiting_inputステータスを表示
+
+## [0.1.42] - 2026-04-04
+
+### Fixed
+- PreToolUseイベントのブラウザ通知を抑制（ステータス更新のみ）
+
+## [0.1.41] - 2026-04-04
+
+### Changed
+- セッションインジケーターをhookイベント専用に変更（jsonl/ps判定を廃止）
+  - PreToolUse/UserPromptSubmit → processing
+  - Stop/SubagentStop → completed
+  - PostToolUse(AskUserQuestion) → waiting_input
+- ~/.claude/settings.jsonにPreToolUse/UserPromptSubmit hookを追加
+
+## [0.1.40] - 2026-04-04
+
+### Changed
+- psのwchan解析を廃止（Node.jsでは常にdo_epoll_waitで無意味）
+- セッションインジケーターをhook/jsonlベースに変更
+- jsonlキャッシュTTLを5s→2sに短縮
+- processRunningマップと関連ロジックを完全削除（-81行）
+
+## [0.1.39] - 2026-04-04
+
+### Fixed
+- cchub updateがサービス登録パスのバイナリを更新するように修正
+- CLIバイナリとサービスバイナリが異なるパスにある場合、両方を更新
+
+## [0.1.38] - 2026-04-04
+
+### Fixed
+- メタデータ（テーマ・タイトル）消失のrace condition修正
+  - lastKnownSessionsを別ファイル（last-known-sessions.json）に分離
+  - 5秒ごとのスナップショット書き込みがmetadata本体を上書きしなくなった
+
+### Changed
+- コード健全化
+  - フロントエンドlintエラー3件修正（CSS parse, noImportantStyles, noUselessCatch）
+  - バックエンドlint修正（parseInt radix, unused param, optional chain）
+  - zod統一（shared v3→v4）、ローカルスキーマ重複削除
+  - listPanesにisActiveフィールド追加
+  - 旧メタデータファイル（session-themes.json, session-titles.json）の自動削除
+- 完了済みGitHub issueをクローズ（#1, #2, #12, #47）
+
+## [0.1.37] - 2026-04-04
+
+### Fixed
+- リブート後のlostセッションがリフレッシュで消えなくなった
+- lostセッションのResume時にclaude -rで会話引き継ぎ
+
+## [0.1.36] - 2026-04-04
+
+### Added
+- リブート後のlostセッションにccSessionIdを保存
+- lostセッションのResumeでclaude -rによる会話引き継ぎ
+
+## [0.1.35] - 2026-04-04
+
+### Fixed
+- デスクトップ版コピペ（テキスト選択、Ctrl+C/V、右クリックメニュー）
+- デスクトップ版フォントサイズ変更（Ctrl+=/-/0）
+- iPad safe-area-inset-top対応
+- マウストラッキングリセット
+
+### Changed
+- CLAUDE.md/README全面更新（WebSocket /ws/mux, 全サービス・API・コンポーネント文書化）
+
 ## [0.1.5] - 2026-03-20
 
 ### Changed

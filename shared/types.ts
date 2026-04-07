@@ -54,6 +54,7 @@ export interface SessionResponse {
   createdAt: string;
   lastAccessedAt: string;
   state: SessionState;
+  currentPath?: string;
   theme?: SessionTheme;
   customTitle?: string;
 }
@@ -289,7 +290,6 @@ export interface ExtendedSessionResponse extends SessionResponse {
   indicatorState?: IndicatorState;
   ccSessionId?: string;
   currentCommand?: string;
-  currentPath?: string;
   paneTitle?: string;
   ccSummary?: string;
   ccFirstPrompt?: string;

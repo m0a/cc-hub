@@ -4,7 +4,7 @@ import { Plus, Folder, ChevronRight, ChevronLeft, Search, X, Play, GripVertical 
 import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { SessionResponse, IndicatorState, ConversationMessage, FileInfo, SessionTheme, PaneInfo } from '../../../shared/types';
+import type { SessionResponse, ExtendedSessionResponse, IndicatorState, ConversationMessage, FileInfo, SessionTheme } from '../../../shared/types';
 import { useSessions } from '../hooks/useSessions';
 
 // Theme color mapping
@@ -121,7 +121,6 @@ export function SessionMenuDialog({
     );
   }
 
-  const extSession = session as SessionResponse & { theme?: SessionTheme };
   const getThemeLabel = (theme: SessionTheme | null) => {
     if (theme === null) return t('common.none');
     return t(`theme.${theme}`);
@@ -145,7 +144,7 @@ export function SessionMenuDialog({
                     ? 'bg-th-surface-active border-gray-500'
                     : `${THEME_COLORS[theme].bg} border-transparent`
                 } ${
-                  extSession.theme === theme || (extSession.theme === undefined && theme === null)
+                  session.theme === theme || (session.theme === undefined && theme === null)
                     ? 'ring-2 ring-white ring-offset-2 ring-offset-gray-800'
                     : 'hover:scale-110'
                 }`}
@@ -509,10 +508,10 @@ function SessionItem({
   onResume,
   onClosePane,
 }: {
-  session: SessionResponse;
-  onSelect: (session: SessionResponse) => void;
-  onSelectPane?: (session: SessionResponse, paneId: string) => void;
-  onShowMenu: (session: SessionResponse) => void;
+  session: ExtendedSessionResponse;
+  onSelect: (session: ExtendedSessionResponse) => void;
+  onSelectPane?: (session: ExtendedSessionResponse, paneId: string) => void;
+  onShowMenu: (session: ExtendedSessionResponse) => void;
   onResume?: (sessionId: string, ccSessionId?: string) => void;
   onShowConversation?: (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => void;
   onPaneAction?: (sessionId: string, action: 'focus' | 'close' | 'split', paneId: string, direction?: 'h' | 'v') => void;
@@ -585,8 +584,7 @@ function SessionItem({
     longPressFiredRef.current = false;
 
     // Multi-pane session: toggle pane list to show per-pane status
-    const extSess = session as SessionResponse & { panes?: PaneInfo[] };
-    if (extSess.panes && extSess.panes.length > 1) {
+    if (session.panes && session.panes.length > 1) {
       setPanesExpanded(prev => !prev);
       return;
     }
@@ -594,19 +592,7 @@ function SessionItem({
     onSelect(session);
   };
 
-  // Get extra session info
-  const extSession = session as SessionResponse & {
-    currentCommand?: string;
-    currentPath?: string;
-    paneTitle?: string;
-    ccSummary?: string;
-    ccFirstPrompt?: string;
-    waitingToolName?: string;
-    indicatorState?: IndicatorState;
-    ccSessionId?: string;
-    theme?: SessionTheme;
-    panes?: PaneInfo[];
-  };
+  const extSession = session;
   const isClaudeRunning = extSession.currentCommand === 'claude';
   // Derive card-level indicatorState from panes (priority: waiting_input > processing > idle)
   const cardIndicator: IndicatorState | undefined = (() => {
@@ -653,7 +639,7 @@ function SessionItem({
 
   const isLost = session.state === 'lost';
   const isLive = !isLost && (cardIndicator === 'processing' || cardIndicator === 'waiting_input');
-  const accentColor = extSession.theme ? ACCENT_HEX[extSession.theme] : undefined;
+  const accentColor = session.theme ? ACCENT_HEX[session.theme] : undefined;
 
   // Lost session: show recreate UI
   if (isLost) {
@@ -914,7 +900,7 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
   const handleResume = useCallback(async (sessionId: string, ccSessionId?: string) => {
     try {
       // Check if this is a lost session (no tmux session exists)
-      const session = sessions.find(s => s.id === sessionId) as (SessionResponse & { currentPath?: string }) | undefined;
+      const session = sessions.find(s => s.id === sessionId);
       const isLost = session?.state === 'lost';
 
       if (isLost && ccSessionId && session?.currentPath) {
@@ -1095,13 +1081,12 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
   // Filter sessions by search query
   const filteredSessions = searchQuery
     ? sessions.filter(s => {
-        const ext = s as SessionResponse & { ccFirstPrompt?: string; ccSummary?: string; currentPath?: string };
         const q = searchQuery.toLowerCase();
         return s.name.toLowerCase().includes(q)
           || (s.customTitle || '').toLowerCase().includes(q)
-          || (ext.currentPath || '').toLowerCase().includes(q)
-          || (ext.ccFirstPrompt || '').toLowerCase().includes(q)
-          || (ext.ccSummary || '').toLowerCase().includes(q);
+          || (s.currentPath || '').toLowerCase().includes(q)
+          || (s.ccFirstPrompt || '').toLowerCase().includes(q)
+          || (s.ccSummary || '').toLowerCase().includes(q);
       })
     : sessions;
 

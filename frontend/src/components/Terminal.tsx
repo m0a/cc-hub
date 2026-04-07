@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, memo, useCallback, forwardRef, useImperati
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
-import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import '@xterm/xterm/css/xterm.css';
 import { X, Clock, ChevronUp, ChevronDown, CornerDownLeft, FileText } from 'lucide-react';
@@ -640,20 +639,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     }
 
     // Load web links addon for URL detection
-    const webLinksAddon = new WebLinksAddon((event, uri) => {
-      event.preventDefault();
-      // Show action menu for URL
-      const action = confirm(`URL: ${uri}\n\nコピーしますか？\n(キャンセルでブラウザで開く)`);
-      if (action) {
-        navigator.clipboard.writeText(uri).then(() => {
-          console.log('URL copied:', uri);
-        }).catch(console.error);
-      } else {
-        window.open(uri, '_blank');
-      }
-    });
-    term.loadAddon(webLinksAddon);
-
     // Handle OSC 52 (clipboard) - allows tmux to copy to system clipboard
     term.parser.registerOscHandler(52, (data) => {
       // Format: [target];[base64-data]

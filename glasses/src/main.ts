@@ -75,6 +75,18 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
 
   setBaseUrl(savedUrl)
 
+  // Auto-refresh conversation when in conversation mode (throttled)
+  let lastConvRefresh = 0
+  const CONV_REFRESH_INTERVAL = 3000
+
+  function maybeRefreshConversation() {
+    if (state.mode !== 'conversation') return
+    const now = Date.now()
+    if (now - lastConvRefresh < CONV_REFRESH_INTERVAL) return
+    lastConvRefresh = now
+    loadConversation().then(() => updateDisplay(bridge, state))
+  }
+
   const wsClient = new CcHubWsClient({
     onSessionsUpdated(sessions) {
       state.sessions = sortSessions(sessions)
@@ -82,8 +94,11 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
         state.sessionIndex = Math.max(0, state.sessions.length - 1)
       }
       updateDisplay(bridge, state)
+      maybeRefreshConversation()
     },
-    onTerminalOutput() {},
+    onTerminalOutput() {
+      maybeRefreshConversation()
+    },
     onReady() {},
     onError() {},
   })

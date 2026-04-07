@@ -47,7 +47,7 @@ export class CcHubWsClient {
 
   // Buffer of last N lines per session
   private terminalBuffers = new Map<string, string[]>()
-  private maxLines = 6
+  private maxLines = 30
 
   constructor(callbacks: WsCallbacks) {
     this.callbacks = callbacks
@@ -176,6 +176,22 @@ export class CcHubWsClient {
       }
     }
     return ''
+  }
+
+  /** Extract numbered choices from terminal output (e.g. "1. Yes", "2. No") */
+  getChoices(sessionId: string): string[] {
+    const text = this.getTerminalText(sessionId)
+    if (!text) return []
+    const lines = text.split('\n')
+    const choices: string[] = []
+    // Look for numbered options like "  1. Yes" or "> 1. Yes"
+    for (const line of lines) {
+      const match = line.match(/^\s*>?\s*(\d+)\.\s+(.+)/)
+      if (match) {
+        choices.push(match[2].trim())
+      }
+    }
+    return choices
   }
 
   sendInput(sessionId: string, text: string): void {

@@ -151,16 +151,23 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
         case 'conversation': {
           const s = currentSession()
           if (s?.indicatorState === 'waiting_input' || (s?.waitingToolName && s.waitingToolName !== 'UserInput')) {
+            // Get actual choices from terminal, fallback to defaults
+            const termChoices = wsClient.getChoices(s!.id)
+            state.choiceOptions = termChoices.length > 0 ? termChoices : CHOICE_OPTIONS
             state.mode = 'choice'
             state.choiceIndex = 0
           }
         }
           break
-        case 'choice':
+        case 'choice': {
           const session = currentSession()
           if (session) {
-            wsClient.sendInput(session.id, `${state.choiceOptions[state.choiceIndex]}\n`)
+            // Send the 1-based number for numbered choices, or the text for defaults
+            const termChoices = wsClient.getChoices(session.id)
+            const input = termChoices.length > 0 ? `${state.choiceIndex + 1}` : state.choiceOptions[state.choiceIndex]
+            wsClient.sendInput(session.id, `${input}\n`)
           }
+        }
           state.mode = 'conversation'
           break
       }

@@ -80,6 +80,8 @@ function hookEventToState(event: string, toolName?: string): IndicatorState | nu
       if (toolName === 'AskUserQuestion') return 'waiting_input';
       return null;
     case 'PreToolUse':
+      if (toolName === 'AskUserQuestion') return 'waiting_input';
+      return 'processing';
     case 'UserPromptSubmit':
       return 'processing';
     default:

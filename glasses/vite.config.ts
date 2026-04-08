@@ -7,6 +7,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 8391,
+    allowedHosts: true,
     proxy: {
       '/api': {
         target: process.env.CCHUB_URL || 'https://localhost:3456',

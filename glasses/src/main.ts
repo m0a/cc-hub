@@ -8,8 +8,6 @@ import type { Session } from './types.ts'
 
 const LS_KEY = 'cchub-url'
 const POLL_INTERVAL = 5000
-const CHOICE_OPTIONS = ['y', 'n', 'skip']
-
 const state: AppState = {
   mode: 'session_list',
   sessions: [],
@@ -18,7 +16,7 @@ const state: AppState = {
   conversationOffset: 0,
   conversationPage: 0,
   choiceIndex: 0,
-  choiceOptions: CHOICE_OPTIONS,
+  choiceOptions: [],
   apiUsagePercent: '',
 }
 
@@ -96,8 +94,28 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
 
   const wsClient = new CcHubWsClient({
     onSessionsUpdated(sessions) {
-      state.sessions = sortSessions(sessions)
-      if (state.sessionIndex >= state.sessions.length) {
+      const prevId = state.sessions[state.sessionIndex]?.id
+      // Update session data in-place (preserve sort order during conversation/choice)
+      if (state.mode !== 'session_list' && prevId) {
+        // Keep current order, just update session data
+        const newMap = new Map(sessions.filter(s => s.state !== 'lost').map(s => [s.id, s]))
+        state.sessions = state.sessions
+          .map(s => newMap.get(s.id) || s)
+          .filter(s => newMap.has(s.id))
+        // Add any new sessions at the end
+        for (const s of sessions) {
+          if (s.state !== 'lost' && !state.sessions.some(e => e.id === s.id)) {
+            state.sessions.push(s)
+          }
+        }
+      } else {
+        state.sessions = sortSessions(sessions)
+      }
+      // Re-find the previously selected session
+      if (prevId) {
+        const newIdx = state.sessions.findIndex(s => s.id === prevId)
+        state.sessionIndex = newIdx >= 0 ? newIdx : Math.min(state.sessionIndex, Math.max(0, state.sessions.length - 1))
+      } else if (state.sessionIndex >= state.sessions.length) {
         state.sessionIndex = Math.max(0, state.sessions.length - 1)
       }
       updateDisplay(bridge, state)
@@ -181,11 +199,15 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
         case 'conversation': {
           const s = currentSession()
           if (s?.indicatorState === 'waiting_input' || (s?.waitingToolName && s.waitingToolName !== 'UserInput')) {
-            // Get actual choices from terminal, fallback to defaults
+            // Request fresh terminal content, then check for choices
+            wsClient.requestContent(s!.id)
+            await new Promise(r => setTimeout(r, 500))
             const termChoices = wsClient.getChoices(s!.id)
-            state.choiceOptions = termChoices.length > 0 ? termChoices : CHOICE_OPTIONS
-            state.mode = 'choice'
-            state.choiceIndex = 0
+            if (termChoices.length > 0) {
+              state.choiceOptions = termChoices
+              state.mode = 'choice'
+              state.choiceIndex = 0
+            }
           }
         }
           break
@@ -313,8 +335,12 @@ function startDebugUI() {
   // Connect via proxy (dev mode)
   const wsClient = new CcHubWsClient({
     onSessionsUpdated(sessions) {
+      const prevId = state.sessions[state.sessionIndex]?.id
       state.sessions = sortSessions(sessions)
-      if (state.sessionIndex >= state.sessions.length) {
+      if (prevId) {
+        const newIdx = state.sessions.findIndex(s => s.id === prevId)
+        state.sessionIndex = newIdx >= 0 ? newIdx : Math.min(state.sessionIndex, Math.max(0, state.sessions.length - 1))
+      } else if (state.sessionIndex >= state.sessions.length) {
         state.sessionIndex = Math.max(0, state.sessions.length - 1)
       }
     },
@@ -323,6 +349,7 @@ function startDebugUI() {
     onError() {},
   })
   wsClient.connect()
+  ;(window as unknown as Record<string, unknown>)._ws = wsClient
 
   const handlers = {
     async swipeUp() {
@@ -352,8 +379,27 @@ function startDebugUI() {
     },
     async tap() {
       switch (state.mode) {
-        case 'session_list': await loadConversation(); state.mode = 'conversation'; break
-        case 'conversation': if (currentSession()?.indicatorState === 'waiting_input') { state.mode = 'choice'; state.choiceIndex = 0; } break
+        case 'session_list': {
+          const s = currentSession()
+          if (s) wsClient.subscribe(s.id)
+          await loadConversation()
+          state.mode = 'conversation'
+          break
+        }
+        case 'conversation': {
+          const s = currentSession()
+          if (s && (s.indicatorState === 'waiting_input' || (s.waitingToolName && s.waitingToolName !== 'UserInput'))) {
+            wsClient.requestContent(s.id)
+            await new Promise(r => setTimeout(r, 500))
+            const termChoices = wsClient.getChoices(s.id)
+            if (termChoices.length > 0) {
+              state.choiceOptions = termChoices
+              state.mode = 'choice'
+              state.choiceIndex = 0
+            }
+          }
+          break
+        }
         case 'choice': {
           const s = currentSession()
           if (s) wsClient.sendInput(s.id, `${state.choiceOptions[state.choiceIndex]}\n`)
@@ -415,6 +461,13 @@ function startDebugUI() {
       lines.push('', 'swipe:select  tap:send  dbl:cancel')
     }
     sim.textContent = lines.join('\n')
-    if (modeLabel) modeLabel.textContent = `Mode: ${state.mode}`
+    if (modeLabel) {
+      const wsState = wsClient.getState()
+      const sub = wsClient.getSubscribed()
+      const session = currentSession()
+      const bufText = session ? wsClient.getTerminalText(session.id) : ''
+      const choices = session ? wsClient.getChoices(session.id) : []
+      modeLabel.textContent = `Mode: ${state.mode} | WS: ${wsState} | Sub: ${sub || 'none'} | Buf: ${bufText.length}ch | Choices: [${choices.join(', ')}]`
+    }
   }, 500)
 }

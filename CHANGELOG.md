@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.57] - 2026-04-08
+
+### Fixed
+- G2 Glasses: 選択肢モードでrequest-contentにより最新ターミナル画面を取得するよう修正
+- G2 Glasses: セッション再ソートによる意図しないセッション切替を防止
+- G2 Glasses: フォールバック選択肢 (y/n/skip) を廃止
+
+### Added
+- G2 Glasses: phone UIにWS診断情報を追加
+- G2 Glasses: ブラウザデバッグUIにWS状態・バッファ表示を追加
+- G2 Glasses: ws-clientにrequestContentメソッドを追加
+
 ## [0.1.56] - 2026-04-08
 
 ### Changed

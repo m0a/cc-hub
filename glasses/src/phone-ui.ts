@@ -2,6 +2,7 @@
 
 import type { Bridge } from './display.ts'
 import { setBaseUrl, getDashboard, getSessions } from './api.ts'
+import { CcHubWsClient } from './ws-client.ts'
 
 const LS_KEY = 'cchub-url'
 
@@ -151,6 +152,7 @@ export async function startPhoneUI(bridge: Bridge | null): Promise<void> {
             <h2 style="font-size: 15px; color: #0f0; margin: 0; font-weight: 600;">接続中</h2>
           </div>
           <div id="server-info" style="font-size: 13px; color: #ccc; line-height: 1.8;"></div>
+          <div id="ws-diag" style="margin-top: 12px; padding: 10px; background: #111; border-radius: 8px; border: 1px solid #333; font-family: monospace; font-size: 11px; color: #888; line-height: 1.6;"></div>
           <div style="margin-top: 16px; padding: 12px; background: #0a2a0a; border-radius: 8px; border: 1px solid #1a3a1a;">
             <p style="font-size: 14px; color: #0f0; margin: 0 0 4px; font-weight: 600;">✓ メガネから操作できます</p>
             <p style="font-size: 12px; color: #888; margin: 0;">G2のメガネメニューからこのアプリを起動してください</p>
@@ -236,6 +238,45 @@ export async function startPhoneUI(bridge: Bridge | null): Promise<void> {
     connectStatus.innerHTML = '<span style="color: #888;">切断しました</span>'
   })
 
+  let diagClient: CcHubWsClient | null = null
+
+  function startWsDiag(sessions: Array<{ id: string; indicatorState?: string; panes?: Array<{ paneId: string }> }>) {
+    const diagEl = document.getElementById('ws-diag')
+    if (!diagEl) return
+
+    diagClient?.close()
+    const firstSession = sessions[0]
+
+    diagClient = new CcHubWsClient({
+      onSessionsUpdated() {},
+      onTerminalOutput() {},
+      onReady() {
+        if (firstSession) diagClient!.subscribe(firstSession.id)
+      },
+      onError(msg) {
+        diagEl.innerHTML = `<span style="color:#f44;">WS Error: ${msg}</span>`
+      },
+    })
+    diagClient.connect()
+
+    setInterval(() => {
+      if (!diagClient || !diagEl) return
+      const wsState = diagClient.getState()
+      const sub = diagClient.getSubscribed()
+      const bufText = sub ? diagClient.getTerminalText(sub) : ''
+      const choices = sub ? diagClient.getChoices(sub) : []
+      const bufPreview = bufText.slice(-80).replace(/\n/g, '↵')
+      diagEl.innerHTML = [
+        `<b>WS診断</b>`,
+        `WS: <span style="color:${wsState === 'OPEN' ? '#0f0' : '#f44'}">${wsState}</span>`,
+        `Sub: ${sub || 'none'}`,
+        `Buf: ${bufText.length}ch`,
+        `Choices: [${choices.join(', ')}]`,
+        bufText ? `末尾: <span style="color:#aaa;">${bufPreview}</span>` : '',
+      ].filter(Boolean).join('<br>')
+    }, 1000)
+  }
+
   async function tryConnect(url: string) {
     connectStatus.innerHTML = '<span style="color: #ff0;">接続中...</span>'
     btnConnect.setAttribute('disabled', '')
@@ -272,6 +313,9 @@ export async function startPhoneUI(bridge: Bridge | null): Promise<void> {
       connectedInfo.style.display = 'block'
       btnDisconnect.style.display = 'block'
       aboutSection.style.display = 'none'
+
+      // Start WS diagnostic
+      startWsDiag(sessionsRes.sessions || [])
     } catch (e) {
       connectStatus.innerHTML = `<span style="color: #f44;">接続失敗: ${(e as Error).message}</span>`
       connectedInfo.style.display = 'none'

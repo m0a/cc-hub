@@ -205,6 +205,11 @@ export class CcHubWsClient {
     return this.subscribedSession
   }
 
+  requestContent(sessionId: string, paneId?: string): void {
+    const targetPane = paneId || this.getActivePaneId(sessionId) || '%0'
+    this.send({ type: 'request-content', sessionId, paneId: targetPane })
+  }
+
   sendInput(sessionId: string, text: string, paneId?: string): void {
     const data = btoa(text)
     // Use specified paneId, or find the first active pane from sessions data

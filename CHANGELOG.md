@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.56] - 2026-04-08
+
+### Changed
+- Terminal.txを2397行→1151行に分割（InputBar, SelectionOverlay, UrlMenu, useSelectionMode, terminal-themesを抽出）
+
 ## [0.1.55] - 2026-04-08
 
 ### Changed

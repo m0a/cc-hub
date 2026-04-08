@@ -48,7 +48,7 @@ export const FloatingKeyboard = forwardRef<FloatingKeyboardRef, FloatingKeyboard
   isUploading = false,
   elevated = false,
 }, ref) {
-  const [inputMode, setInputMode] = useState<'keyboard' | 'input'>('keyboard');
+  const [inputMode, setInputMode] = useState<'keyboard' | 'input'>('input');
   const [inputValue, setInputValue] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);

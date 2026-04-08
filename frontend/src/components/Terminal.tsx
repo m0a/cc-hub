@@ -1688,7 +1688,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
   // Show keyboard function for touch handlers
   const handleShowKeyboard = useCallback(() => {
-    setInputMode('shortcuts');
+    setInputMode('input');
     // Scroll to bottom when keyboard appears (user wants to interact with latest output)
     terminalRef.current?.scrollToBottom();
     // "Last-write-wins": re-send this client's size on first interaction
@@ -2380,7 +2380,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         <div
           className="fixed bottom-0 left-0 right-0 h-8 z-40 bg-[var(--color-overlay)] flex items-center justify-center"
           onClick={() => {
-            setInputMode('shortcuts');
+            setInputMode('input');
             setShowHint(true);
             if (hintTimeoutRef.current) clearTimeout(hintTimeoutRef.current);
             hintTimeoutRef.current = window.setTimeout(() => setShowHint(false), 5000);

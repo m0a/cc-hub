@@ -160,7 +160,7 @@ export function Keyboard({
   compact = false,
   transparent = false,
   className = '',
-  inputMode = 'keyboard',
+  inputMode = 'input',
   onInputModeChange,
   showModeToggle = false,
 }: KeyboardProps) {

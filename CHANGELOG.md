@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.53] - 2026-04-08
+
+### Changed
+- any/as型キャストを除去し、ExtendedSessionResponse型を全体で統一
+- buildSessionsListの戻り値をobject[]からExtendedSessionResponse[]に変更
+- Bun WebSocketハンドラにServerWebSocket<MuxData>型を適用
+- CLAUDE.mdのコンポーネント一覧を実ファイルと同期
+
 ## [0.1.52] - 2026-04-08
 
 ### Added

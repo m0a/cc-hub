@@ -222,9 +222,9 @@ export function DesktopLayout({
               id: apiSession.id,
               name: apiSession.name,
               state: apiSession.state,
-              currentPath: (apiSession as any).currentPath,
-              ccSessionId: (apiSession as any).ccSessionId,
-              currentCommand: (apiSession as any).currentCommand,
+              currentPath: apiSession.currentPath,
+              ccSessionId: apiSession.ccSessionId,
+              currentCommand: apiSession.currentCommand,
               theme: apiSession.theme,
             };
       })

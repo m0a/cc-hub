@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { CreateSessionSchema, PaneIdSchema, type IndicatorState, type PaneInfo } from '../../../shared/types';
+import { CreateSessionSchema, PaneIdSchema, type IndicatorState, type PaneInfo, type ExtendedSessionResponse } from '../../../shared/types';
 import { TmuxService } from '../services/tmux';
 import { controlSessions, getOrCreateControlSession } from '../services/tmux-control';
 import { ClaudeCodeService } from '../services/claude-code';
@@ -23,7 +23,7 @@ function notifySessionChange(): void {
 export const sessions = new Hono();
 
 /** Build the full sessions list (shared by HTTP handler and WS push) */
-export async function buildSessionsList(): Promise<object[]> {
+export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
   const tmuxSessions = await tmuxService.listSessions();
   const sessionMetadata = await getAllSessionMetadata();
 
@@ -97,7 +97,7 @@ export async function buildSessionsList(): Promise<object[]> {
     // Indicator state: hook events are the source of truth
     // Default for running Claude = completed (idle/waiting for user input)
     const hookOverride = ccSession?.sessionId ? getIndicatorOverride(ccSession.sessionId) : null;
-    const indicatorState = hookOverride ?? (isClaudeRunning ? 'completed' : 'completed') as IndicatorState;
+    const indicatorState: IndicatorState = hookOverride ?? 'completed';
 
     let durationMinutes: number | undefined;
     if (ccSession?.modified) {
@@ -159,8 +159,8 @@ export async function buildSessionsList(): Promise<object[]> {
   }));
 
   // Add lost sessions (existed before reboot but not in tmux now)
-  const activeIds = new Set(results.map((s: any) => s.id));
-  const activePaths = new Set(results.map((s: any) => s.currentPath).filter(Boolean));
+  const activeIds = new Set(results.map(s => s.id));
+  const activePaths = new Set(results.map(s => s.currentPath).filter(Boolean));
   const lastKnown = await getLastKnownSessions();
   const lostSessions: LastKnownSession[] = [];
   for (const lost of lastKnown) {
@@ -172,17 +172,17 @@ export async function buildSessionsList(): Promise<object[]> {
       name: lost.name,
       createdAt: '',
       lastAccessedAt: '',
-      state: 'lost' as any,
+      state: 'lost',
       currentPath: lost.currentPath,
       theme: lost.theme,
       customTitle: lost.customTitle,
       ccSessionId: lost.ccSessionId,
-    } as any);
+    });
   }
 
   // Save snapshot: active sessions + still-lost sessions (so lost ones persist across refreshes)
   const snapshot: LastKnownSession[] = [
-    ...results.filter((s: any) => s.state !== 'lost').map((s: any) => ({
+    ...results.filter(s => s.state !== 'lost').map(s => ({
       id: s.id,
       name: s.name,
       currentPath: s.currentPath,
@@ -198,7 +198,7 @@ export async function buildSessionsList(): Promise<object[]> {
   // Apply custom order if set
   if (order.length > 0) {
     const orderMap = new Map(order.map((id, i) => [id, i]));
-    results.sort((a: any, b: any) => {
+    results.sort((a, b) => {
       const ai = orderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
       const bi = orderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
       return ai - bi;

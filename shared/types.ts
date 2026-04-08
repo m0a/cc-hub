@@ -295,6 +295,10 @@ export interface ExtendedSessionResponse extends SessionResponse {
   ccFirstPrompt?: string;
   waitingToolName?: string;
   panes?: PaneInfo[];
+  messageCount?: number;
+  gitBranch?: string;
+  durationMinutes?: number;
+  firstMessageId?: string;
 }
 
 // =============================================================================

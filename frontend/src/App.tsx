@@ -14,7 +14,7 @@ import { useSessionHistory } from './hooks/useSessionHistory';
 import { useAuth } from './hooks/useAuth';
 import { useSessions } from './hooks/useSessions';
 import { authFetch, isTransientNetworkError } from './services/api';
-import type { SessionResponse, SessionState, ConversationMessage, SessionTheme, PaneInfo } from '../../shared/types';
+import type { SessionResponse, ExtendedSessionResponse, SessionState, ConversationMessage, SessionTheme, PaneInfo } from '../../shared/types';
 
 // Loading screen with phase display and timeout detection
 function LoadingScreen({
@@ -338,16 +338,15 @@ export function App() {
         }),
       });
       if (response.ok) {
-        const session = await response.json();
-        const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string; theme?: SessionTheme };
+        const session: ExtendedSessionResponse = await response.json();
         return {
           id: session.id,
           name: session.name,
           state: session.state,
-          currentPath: extSession.currentPath,
-          ccSessionId: extSession.ccSessionId,
-          currentCommand: extSession.currentCommand,
-          theme: extSession.theme,
+          currentPath: session.currentPath,
+          ccSessionId: session.ccSessionId,
+          currentCommand: session.currentCommand,
+          theme: session.theme,
         };
       }
     } catch (err) {
@@ -371,7 +370,7 @@ export function App() {
       try {
         // Fetch all sessions (including external)
         const sessionsRes = await authFetch(`${API_BASE}/api/sessions`);
-        const allSessions: SessionResponse[] = sessionsRes.ok
+        const allSessions: ExtendedSessionResponse[] = sessionsRes.ok
           ? (await sessionsRes.json()).sessions
           : [];
 
@@ -386,15 +385,14 @@ export function App() {
           for (const id of savedSessionIds) {
             const session = allSessions.find(s => s.id === id);
             if (session) {
-              const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string; theme?: SessionTheme };
               sessionsToOpen.push({
                 id: session.id,
                 name: session.name,
                 state: session.state,
-                currentPath: extSession.currentPath,
-                ccSessionId: extSession.ccSessionId,
-                currentCommand: extSession.currentCommand,
-                theme: extSession.theme,
+                currentPath: session.currentPath,
+                ccSessionId: session.ccSessionId,
+                currentCommand: session.currentCommand,
+                theme: session.theme,
               });
             }
           }
@@ -410,7 +408,7 @@ export function App() {
             setActiveSessionId(activeId);
           } else if (allSessions.length > 0) {
             // No valid saved sessions, open most recent
-            const mostRecent = allSessions[0] as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string; theme?: SessionTheme };
+            const mostRecent = allSessions[0];
             setOpenSessions([{
               id: mostRecent.id,
               name: mostRecent.name,
@@ -483,19 +481,18 @@ export function App() {
     }
   }, [activeSessionId, isLoading]);
 
-  const handleSelectSession = useCallback(async (session: SessionResponse) => {
+  const handleSelectSession = useCallback(async (session: ExtendedSessionResponse) => {
     // Lost session: resume with claude -r if ccSessionId available, otherwise recreate
     if (session.state === 'lost') {
-      const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string };
       try {
         let newSessionId: string;
         let newSessionName: string;
-        if (extSession.ccSessionId && extSession.currentPath) {
+        if (session.ccSessionId && session.currentPath) {
           // Resume with conversation history via claude -r
           const response = await authFetch(`${API_BASE}/api/sessions/history/resume`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: extSession.ccSessionId, projectPath: extSession.currentPath }),
+            body: JSON.stringify({ sessionId: session.ccSessionId, projectPath: session.currentPath }),
           });
           if (!response.ok) {
             throw new Error('Failed to resume session');
@@ -505,22 +502,21 @@ export function App() {
           newSessionName = data.tmuxSessionId;
         } else {
           // No ccSessionId: fallback to new session
-          const newSession = await createSession(session.name, extSession.currentPath);
+          const newSession = await createSession(session.name, session.currentPath);
           if (!newSession) return;
-          const ext = newSession as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string; theme?: SessionTheme };
-          newSessionId = ext.id;
-          newSessionName = ext.name;
+          newSessionId = newSession.id;
+          newSessionName = newSession.name;
         }
         setOpenSessions(prev => [...prev, {
           id: newSessionId,
           name: newSessionName,
           state: 'working' as const,
-          currentPath: extSession.currentPath,
-          ccSessionId: extSession.ccSessionId,
-          theme: extSession.theme,
+          currentPath: session.currentPath,
+          ccSessionId: session.ccSessionId,
+          theme: session.theme,
         }]);
         setActiveSessionId(newSessionId);
-        if (extSession.currentPath) setActiveFileViewerDir(extSession.currentPath);
+        if (session.currentPath) setActiveFileViewerDir(session.currentPath);
         setShowSessionList(false);
       } catch (err) {
         console.error('Failed to resume lost session:', err);
@@ -534,41 +530,38 @@ export function App() {
       setActiveSessionId(session.id);
     } else {
       // Add to open sessions
-      const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string; theme?: SessionTheme };
       setOpenSessions(prev => [...prev, {
-        id: extSession.id,
-        name: extSession.name,
-        state: extSession.state,
-        currentPath: extSession.currentPath,
-        ccSessionId: extSession.ccSessionId,
-        currentCommand: extSession.currentCommand,
-        theme: extSession.theme,
+        id: session.id,
+        name: session.name,
+        state: session.state,
+        currentPath: session.currentPath,
+        ccSessionId: session.ccSessionId,
+        currentCommand: session.currentCommand,
+        theme: session.theme,
       }]);
       setActiveSessionId(session.id);
     }
     // Update FileViewer active dir to follow session
-    const extSession = session as SessionResponse & { currentPath?: string };
-    if (extSession.currentPath) {
-      setActiveFileViewerDir(extSession.currentPath);
+    if (session.currentPath) {
+      setActiveFileViewerDir(session.currentPath);
     }
     setShowSessionList(false);
     setMobileActivePaneId(null);
   }, [openSessions]);
 
   // Select a specific pane within a session (mobile)
-  const handleSelectPane = useCallback((session: SessionResponse, paneId: string) => {
+  const handleSelectPane = useCallback((session: ExtendedSessionResponse, paneId: string) => {
     // Open session without resetting paneId (handleSelectSession sets it to null)
     const existing = openSessions.find(s => s.id === session.id);
     if (!existing) {
-      const extSession = session as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string; theme?: SessionTheme };
       setOpenSessions(prev => [...prev, {
-        id: extSession.id,
-        name: extSession.name,
-        state: extSession.state,
-        currentPath: extSession.currentPath,
-        ccSessionId: extSession.ccSessionId,
-        currentCommand: extSession.currentCommand,
-        theme: extSession.theme,
+        id: session.id,
+        name: session.name,
+        state: session.state,
+        currentPath: session.currentPath,
+        ccSessionId: session.ccSessionId,
+        currentCommand: session.currentCommand,
+        theme: session.theme,
       }]);
     }
     setActiveSessionId(session.id);
@@ -898,7 +891,7 @@ export function App() {
           {mobilePanes.length > 1 && (() => {
             // Get pane command info from API sessions data
             const apiSession = apiSessions.find(s => s.id === activeSessionId);
-            const apiPanes = (apiSession as SessionResponse & { panes?: PaneInfo[] })?.panes;
+            const apiPanes = apiSession?.panes;
             // Agent color to Tailwind text class
             const agentColorClass: Record<string, string> = {
               red: 'text-red-400', orange: 'text-orange-400', amber: 'text-amber-400',

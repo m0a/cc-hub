@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import type { SessionResponse, ExtendedSessionResponse, SessionTheme, IndicatorState, PaneInfo } from '../../../shared/types';
+import type { ExtendedSessionResponse, SessionTheme, IndicatorState } from '../../../shared/types';
 import { authFetch, isTransientNetworkError } from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -13,13 +13,12 @@ export function updateCachedSessionsByHookEvent(event: string, ccSessionId?: str
   if (!newState || !ccSessionId || !cachedSessions) return;
 
   cachedSessions = cachedSessions.map(session => {
-    const ext = session as SessionResponse & { ccSessionId?: string; panes?: PaneInfo[] };
-    if (ext.ccSessionId !== ccSessionId) return session;
-    if (!ext.panes) return session;
+    if (session.ccSessionId !== ccSessionId) return session;
+    if (!session.panes) return session;
     return {
       ...session,
-      panes: ext.panes.map(pane => ({ ...pane, indicatorState: newState })),
-    } as SessionResponse;
+      panes: session.panes.map(pane => ({ ...pane, indicatorState: newState })),
+    };
   });
 
   window.dispatchEvent(new CustomEvent('cchub-hook-event'));

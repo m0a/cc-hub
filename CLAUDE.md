@@ -155,6 +155,7 @@ shared/      # Shared types and Zod schemas (types.ts)
 - **CostEstimate.tsx** - API cost calculation
 - **HourlyHeatmap.tsx** - Activity heatmap by hour
 - **LimitWarning.tsx** - Usage limit warnings
+- **UsageChart.tsx** - Usage history line chart with real-time snapshots
 - **NetworkLatency.tsx** - WebSocket latency display
 - **ServerInfo.tsx** - Server information and system details
 
@@ -163,7 +164,6 @@ shared/      # Shared types and Zod schemas (types.ts)
 - **LanguageSwitcher.tsx** - EN/JA language toggle
 - **Onboarding.tsx** - Spotlight-style walkthrough for new users
 - **PromptSearch.tsx** - Prompt history search interface
-- **ShareDialog.tsx** - Session sharing with QR code
 
 ### Frontend Hooks
 

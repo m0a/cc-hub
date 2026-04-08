@@ -9,7 +9,7 @@ import { upload } from './routes/upload';
 import { files } from './routes/files';
 import { dashboard } from './routes/dashboard';
 import { notify } from './routes/notify';
-import { muxOpen, muxMessage, muxClose } from './routes/terminal-mux';
+import { muxOpen, muxMessage, muxClose, type MuxData } from './routes/terminal-mux';
 import { parseArgs, runCli, VERSION } from './cli';
 import { conditionalAuthMiddleware, isAuthRequired, getJwtSecret } from './middleware/auth';
 import { AuthService } from './services/auth';
@@ -299,7 +299,7 @@ export default {
     cert: Bun.file(certPath),
     key: Bun.file(keyPath),
   },
-  async fetch(req: Request, server: any) {
+  async fetch(req: Request, server: { upgrade: (req: Request, opts?: { data: MuxData }) => boolean }) {
     const url = new URL(req.url);
 
     // Handle WebSocket upgrades for mux endpoint
@@ -322,7 +322,7 @@ export default {
           mux: true,
           visitorId: crypto.randomUUID(),
           subscriptions: new Map(),
-        } as any,
+        },
       });
       if (upgraded) return undefined as unknown as Response;
       return new Response('WebSocket upgrade failed', { status: 500 });
@@ -332,16 +332,16 @@ export default {
     return app.fetch(req);
   },
   websocket: {
-    open(ws: any) {
+    open(ws: import('bun').ServerWebSocket<MuxData>) {
       if (ws.data?.mux) return muxOpen(ws);
     },
-    message(ws: any, message: string | Buffer) {
+    message(ws: import('bun').ServerWebSocket<MuxData>, message: string | Buffer) {
       if (ws.data?.mux) return muxMessage(ws, message);
     },
-    close(ws: any, code: number, reason: string) {
+    close(ws: import('bun').ServerWebSocket<MuxData>, code: number, reason: string) {
       if (ws.data?.mux) return muxClose(ws, code, reason);
     },
     idleTimeout: 120,
     sendPings: true,
-  } as any,
+  },
 };

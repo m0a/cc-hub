@@ -1031,7 +1031,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   closeInputBarRef.current = handleCloseInputBar;
 
   const handleShowKeyboard = useCallback(() => {
-    setInputMode('shortcuts');
+    setInputMode('input');
     terminalRef.current?.scrollToBottom();
     fitTerminal();
   }, [fitTerminal]);

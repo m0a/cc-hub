@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.55] - 2026-04-08
+
+### Changed
+- ソフトキーボードのデフォルトを日本語入力モードに変更
+- glasses app.jsonのpackage_id/permissions形式をEVEN Hub仕様に修正
+
 ## [0.1.54] - 2026-04-08
 
 ### Added

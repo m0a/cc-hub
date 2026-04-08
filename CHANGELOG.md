@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.54] - 2026-04-08
+
+### Added
+- デスクトップブラウザで長押しによるテキスト選択モードを追加（タブレット/スマホと同じUX）
+- 長押し後のドラッグで選択範囲をリアルタイム拡張
+- S/Eハンドルのマウスドラッグによる選択範囲の微調整
+- Selection Modeバッジ/Copy・Cancelパネルの位置を選択範囲と被らないよう自動調整
+
+### Fixed
+- マウスリリース後にxterm.jsが選択範囲を変更する問題を修正（pointer-events制御）
+- S/Eハンドルドラッグ後にmouseupが検知されない問題を修正（captureフェーズ使用）
+
 ## [0.1.53] - 2026-04-08
 
 ### Changed

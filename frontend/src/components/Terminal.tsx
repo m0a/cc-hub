@@ -406,7 +406,14 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   }, []);
 
   // Selection mode helpers
-  useEffect(() => { selectionModeRef.current = selectionMode; }, [selectionMode]);
+  useEffect(() => {
+    selectionModeRef.current = selectionMode;
+    // Block xterm.js internal mouse handling during selection mode
+    const screen = containerRef.current?.querySelector('.xterm-screen') as HTMLElement | null;
+    if (screen) {
+      screen.style.pointerEvents = selectionMode ? 'none' : '';
+    }
+  }, [selectionMode]);
 
   const exitSelectionMode = useCallback(() => {
     setSelectionMode(false);
@@ -479,6 +486,61 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
     document.addEventListener('touchmove', handleMove, { passive: false });
     document.addEventListener('touchend', handleEnd);
+  }, []);
+
+  const handleHandleMouseDragStart = useCallback((e: React.MouseEvent, edge: 'start' | 'end') => {
+    e.preventDefault();
+    e.stopPropagation();
+    draggingHandleRef.current = edge;
+
+    const handleMove = (ev: MouseEvent) => {
+      ev.preventDefault();
+      const term = terminalRef.current;
+      const container = containerRef.current;
+      if (!term || !container) return;
+
+      const core = (term as any)._core;
+      const cellW = core?._renderService?.dimensions?.css?.cell?.width;
+      const cellH = core?._renderService?.dimensions?.css?.cell?.height;
+      if (!cellW || !cellH) return;
+
+      const screenEl = container.querySelector('.xterm-screen');
+      if (!screenEl) return;
+      const rect = screenEl.getBoundingClientRect();
+      const col = Math.max(0, Math.min(term.cols - 1, Math.floor((ev.clientX - rect.left) / cellW)));
+      const vRow = Math.max(0, Math.min(term.rows - 1, Math.floor((ev.clientY - rect.top) / cellH)));
+      const viewportY = term.buffer.active.viewportY;
+
+      setSelectionRange(prev => {
+        if (!prev) return null;
+        let newRange: typeof prev;
+        if (draggingHandleRef.current === 'start') {
+          const endOffset = prev.endRow * term.cols + prev.endCol;
+          const newOffset = vRow * term.cols + col;
+          if (newOffset > endOffset) return prev;
+          newRange = { ...prev, startCol: col, startRow: vRow };
+          selectionStartRef.current = { col, row: viewportY + vRow, viewportRow: vRow };
+        } else {
+          const startOffset = prev.startRow * term.cols + prev.startCol;
+          const newOffset = vRow * term.cols + col;
+          if (newOffset < startOffset) return prev;
+          newRange = { ...prev, endCol: col, endRow: vRow };
+        }
+        const sOffset = newRange.startRow * term.cols + newRange.startCol;
+        const eOffset = newRange.endRow * term.cols + newRange.endCol;
+        term.select(newRange.startCol, viewportY + newRange.startRow, eOffset - sOffset + 1);
+        return newRange;
+      });
+    };
+
+    const handleEnd = () => {
+      draggingHandleRef.current = null;
+      document.removeEventListener('mousemove', handleMove, true);
+      document.removeEventListener('mouseup', handleEnd, true);
+    };
+
+    document.addEventListener('mousemove', handleMove, true);
+    document.addEventListener('mouseup', handleEnd, true);
   }, []);
 
   const handleCopySelection = useCallback(() => {
@@ -1020,8 +1082,8 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         longPressTimer = null;
       }
 
-      // Selection mode: show copy button
-      if (selectionModeRef.current && selectionStartRef.current) {
+      // Selection mode: show copy button (skip if mouse-initiated to avoid trackpad interference)
+      if (selectionModeRef.current && selectionStartRef.current && !mouseInitiatedSelection) {
         const sel = term.getSelection();
         if (sel && sel.length > 0) {
           // Position copy button near last touch
@@ -1103,27 +1165,104 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       velocityHistory.length = 0;
     };
 
-    // Context menu: desktop allows native menu, mobile/tablet uses selection mode
-    const handleContextMenu = (e: MouseEvent) => {
+    // Mouse long-press selection (desktop)
+    let mouseLongPressTimer: number | null = null;
+    let mouseStartX = 0;
+    let mouseStartY = 0;
+    // Flag: selection mode was initiated by mouse (not touch).
+    // Prevents Mac trackpad touchend from exiting mouse-initiated selection.
+    let mouseInitiatedSelection = false;
+    let mouseIsDown = false;
+
+    const handleMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      if (selectionModeRef.current) {
+        const target = e.target as HTMLElement;
+        if (target.closest('[data-selection-control]')) return;
+        exitSelectionModeRef.current();
+        mouseInitiatedSelection = false;
+        return;
+      }
+      mouseStartX = e.clientX;
+      mouseStartY = e.clientY;
+      mouseIsDown = true;
+      mouseLongPressTimer = window.setTimeout(() => {
+        mouseLongPressTimer = null;
+        mouseInitiatedSelection = true;
+        const start = touchToCell(mouseStartX, mouseStartY);
+        if (start) {
+          selectionStartRef.current = start;
+          selectionModeRef.current = true;
+          setSelectionMode(true);
+          setCopyButtonPos(null);
+          term.select(start.col, start.row, 1);
+          setSelectionRange({ startCol: start.col, startRow: start.viewportRow, endCol: start.col, endRow: start.viewportRow });
+        }
+      }, LONG_PRESS_DURATION);
+    };
+
+    const handleMouseMoveForLongPress = (e: MouseEvent) => {
+      if (mouseLongPressTimer) {
+        const dx = e.clientX - mouseStartX;
+        const dy = e.clientY - mouseStartY;
+        if (dx * dx + dy * dy > 25) {
+          clearTimeout(mouseLongPressTimer);
+          mouseLongPressTimer = null;
+        }
+      }
+      // Extend selection while dragging after long-press (only while mouse is held down)
+      if (mouseIsDown && mouseInitiatedSelection && selectionModeRef.current && selectionStartRef.current) {
+        const current = touchToCell(e.clientX, e.clientY);
+        if (current) {
+          const start = selectionStartRef.current;
+          const startOffset = start.row * (term.cols || 80) + start.col;
+          const endOffset = current.row * (term.cols || 80) + current.col;
+          const length = endOffset - startOffset;
+          if (length >= 0) {
+            term.select(start.col, start.row, length + 1);
+          } else {
+            term.select(current.col, current.row, -length + 1);
+          }
+          setSelectionRange({ startCol: start.col, startRow: start.viewportRow, endCol: current.col, endRow: current.viewportRow });
+        }
+      }
+    };
+
+    const handleMouseUp = () => {
+      mouseIsDown = false;
+      if (mouseLongPressTimer) {
+        clearTimeout(mouseLongPressTimer);
+        mouseLongPressTimer = null;
+      }
+      // Re-apply selection after xterm.js clears it on mouseup
+      if (mouseInitiatedSelection && selectionModeRef.current && selectionStartRef.current) {
+        const sel = term.getSelection();
+        const start = selectionStartRef.current;
+        if (sel && sel.length > 0) {
+          // Preserve the dragged selection range
+          const selRange = term.getSelectionPosition();
+          if (selRange) {
+            requestAnimationFrame(() => {
+              const startOff = selRange.start.y * (term.cols || 80) + selRange.start.x;
+              const endOff = selRange.end.y * (term.cols || 80) + selRange.end.x;
+              term.select(selRange.start.x, selRange.start.y, endOff - startOff + 1);
+            });
+          }
+        } else {
+          requestAnimationFrame(() => {
+            term.select(start.col, start.row, 1);
+          });
+        }
+      }
+    };
+
+    const handleContextMenu = (e: Event) => {
       if (hideKeyboardRef.current) {
         // Desktop: allow native right-click menu for copy/paste
         return;
       }
-      // Mobile/tablet: right-click toggles selection mode
+      // Mobile/tablet: prevent default
       e.preventDefault();
-      if (selectionModeRef.current) {
-        exitSelectionModeRef.current();
-        return;
-      }
-      const start = touchToCell(e.clientX, e.clientY);
-      if (start) {
-        selectionStartRef.current = start;
-        selectionModeRef.current = true;
-        setSelectionMode(true);
-        setCopyButtonPos(null);
-        term.select(start.col, start.row, 1);
-        setSelectionRange({ startCol: start.col, startRow: start.viewportRow, endCol: start.col, endRow: start.viewportRow });
-      }
     };
 
     // Mouse wheel scroll: xterm.js v6 viewport scroll area may not sync with
@@ -1156,6 +1295,9 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       container.addEventListener('touchstart', handleTouchStart, { passive: true });
       container.addEventListener('touchmove', handleTouchMove, { passive: false });
       container.addEventListener('touchend', handleTouchEnd);
+      container.addEventListener('mousedown', handleMouseDown);
+      container.addEventListener('mousemove', handleMouseMoveForLongPress);
+      container.addEventListener('mouseup', handleMouseUp);
       container.addEventListener('contextmenu', handleContextMenu);
     }
 
@@ -1163,10 +1305,16 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       if (longPressTimer) {
         clearTimeout(longPressTimer);
       }
+      if (mouseLongPressTimer) {
+        clearTimeout(mouseLongPressTimer);
+      }
       if (container) {
         container.removeEventListener('touchstart', handleTouchStart);
         container.removeEventListener('touchmove', handleTouchMove);
         container.removeEventListener('touchend', handleTouchEnd);
+        container.removeEventListener('mousedown', handleMouseDown);
+        container.removeEventListener('mousemove', handleMouseMoveForLongPress);
+        container.removeEventListener('mouseup', handleMouseUp);
         container.removeEventListener('contextmenu', handleContextMenu);
         container.removeEventListener('wheel', handleWheel);
       }
@@ -1723,6 +1871,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                     className="absolute z-50 touch-none flex items-center justify-center select-none"
                     style={{ left: startX - 16, top: startY - 32, width: 32, height: 32, borderRadius: '50%', backgroundColor: 'rgba(59,130,246,0.9)', border: '2px solid white', boxShadow: '0 2px 8px rgba(0,0,0,0.5)', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
                     onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); handleHandleDragStart(e, 'start'); }}
+                    onMouseDown={(e) => { e.stopPropagation(); handleHandleMouseDragStart(e, 'start'); }}
                     onContextMenu={(e) => e.preventDefault()}
                   >
                     <span className="text-white text-xs font-bold">S</span>
@@ -1733,6 +1882,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                     className="absolute z-50 touch-none flex items-center justify-center select-none"
                     style={{ left: endX - 16, top: endY + 4, width: 32, height: 32, borderRadius: '50%', backgroundColor: 'rgba(59,130,246,0.9)', border: '2px solid white', boxShadow: '0 2px 8px rgba(0,0,0,0.5)', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
                     onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); handleHandleDragStart(e, 'end'); }}
+                    onMouseDown={(e) => { e.stopPropagation(); handleHandleMouseDragStart(e, 'end'); }}
                     onContextMenu={(e) => e.preventDefault()}
                   >
                     <span className="text-white text-xs font-bold">E</span>
@@ -1740,15 +1890,34 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                 </>
               );
             })()}
-            <div className="absolute top-2 left-2 z-40 bg-blue-600/80 px-2 py-1 rounded text-xs text-white pointer-events-none">
-              Selection Mode
-            </div>
-            {/* Selected text preview + actions */}
+            {/* Selection Mode badge + preview: position below selection when it overlaps top area */}
             {(() => {
+              const term = terminalRef.current;
+              const core = term ? (term as any)._core : null;
+              const cellH = core?._renderService?.dimensions?.css?.cell?.height || 18;
+              const screenEl = containerRef.current?.querySelector('.xterm-screen');
+              const containerEl = containerRef.current;
+              let selOffsetY = 0;
+              if (screenEl && containerEl) {
+                const sr = screenEl.getBoundingClientRect();
+                const cr = containerEl.getBoundingClientRect();
+                selOffsetY = sr.top - cr.top;
+              }
+              const selTopPx = selectionRange ? selectionRange.startRow * cellH + selOffsetY : 0;
+              const selBottomPx = selectionRange ? (selectionRange.endRow + 1) * cellH + selOffsetY : 0;
+              const uiHeight = 120;
+              const overlapsTop = selTopPx < uiHeight;
+              const panelTop = overlapsTop ? Math.max(selBottomPx + 40, uiHeight) : 36;
+              const badgeTop = overlapsTop ? panelTop - 28 : 8;
+
               const sel = terminalRef.current?.getSelection();
-              if (!sel) return null;
               return (
-                <div data-selection-control className="absolute top-8 left-2 right-2 z-40 bg-black/90 border border-blue-500/50 rounded-lg px-3 py-2 shadow-xl max-h-[40vh] overflow-auto select-none" onContextMenu={(e) => e.preventDefault()} style={{ WebkitTouchCallout: 'none' }}>
+                <>
+                  <div className="absolute left-2 z-40 bg-blue-600/80 px-2 py-1 rounded text-xs text-white pointer-events-none" style={{ top: badgeTop }}>
+                    Selection Mode
+                  </div>
+                  {sel && (
+                    <div data-selection-control className="absolute left-2 right-2 z-40 bg-black/90 border border-blue-500/50 rounded-lg px-3 py-2 shadow-xl max-h-[40vh] overflow-auto select-none" style={{ top: panelTop, WebkitTouchCallout: 'none' }} onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
                   <pre className="text-blue-200 font-mono text-xs whitespace-pre-wrap break-all mb-2">{sel}</pre>
                   <div className="flex gap-2">
                     <button
@@ -1770,7 +1939,9 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
                       Cancel
                     </button>
                   </div>
-                </div>
+                    </div>
+                  )}
+                </>
               );
             })()}
           </>

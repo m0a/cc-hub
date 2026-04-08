@@ -4,92 +4,20 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import '@xterm/xterm/css/xterm.css';
-import { X, Clock, ChevronUp, ChevronDown, CornerDownLeft, FileText } from 'lucide-react';
-import { Keyboard } from './Keyboard';
 import { authFetch } from '../services/api';
 import type { SessionTheme } from '../../../shared/types';
 import { filterMouseTrackingInput, filterMouseTrackingOutput, shouldInterceptKeyEvent } from '../utils/terminal-filters';
-
-// Terminal theme colors based on session theme (dark mode)
-const TERMINAL_THEMES_DARK: Record<SessionTheme | 'default', { background: string; foreground: string; accent: string }> = {
-  default: { background: '#1a1a1a', foreground: '#efefef', accent: '#1a1a1a' },
-  red: { background: '#3d1a1f', foreground: '#efefef', accent: '#7f1d1d' },
-  orange: { background: '#3d2415', foreground: '#efefef', accent: '#7c2d12' },
-  amber: { background: '#3d3012', foreground: '#efefef', accent: '#78350f' },
-  green: { background: '#153d20', foreground: '#efefef', accent: '#14532d' },
-  teal: { background: '#153d35', foreground: '#efefef', accent: '#134e4a' },
-  blue: { background: '#15253d', foreground: '#efefef', accent: '#1e3a5f' },
-  indigo: { background: '#221c3d', foreground: '#efefef', accent: '#312e81' },
-  purple: { background: '#2d1a3d', foreground: '#efefef', accent: '#4c1d95' },
-  pink: { background: '#3d1a2d', foreground: '#efefef', accent: '#831843' },
-};
-
-// Terminal theme colors (light mode) - soft bg, strong text
-const TERMINAL_THEMES_LIGHT: Record<SessionTheme | 'default', { background: string; foreground: string; accent: string }> = {
-  default: { background: '#eff1f5', foreground: '#4c4f69', accent: '#eff1f5' },
-  red: { background: '#f3eced', foreground: '#4c4f69', accent: '#d20f39' },
-  orange: { background: '#f3eeeb', foreground: '#4c4f69', accent: '#fe640b' },
-  amber: { background: '#f3f0e8', foreground: '#4c4f69', accent: '#df8e1d' },
-  green: { background: '#ebf3ec', foreground: '#4c4f69', accent: '#40a02b' },
-  teal: { background: '#ebf3f1', foreground: '#4c4f69', accent: '#179299' },
-  blue: { background: '#ebeff3', foreground: '#4c4f69', accent: '#1e66f5' },
-  indigo: { background: '#eeedf3', foreground: '#4c4f69', accent: '#7287fd' },
-  purple: { background: '#f0edf3', foreground: '#4c4f69', accent: '#8839ef' },
-  pink: { background: '#f3edef', foreground: '#4c4f69', accent: '#ea76cb' },
-};
-
-// Official Catppuccin Latte ANSI colors
-// Source: https://github.com/catppuccin/alacritty
-const LIGHT_ANSI_COLORS = {
-  black: '#bcc0cc',        // Surface 1
-  red: '#d20f39',          // Red
-  green: '#40a02b',        // Green
-  yellow: '#df8e1d',       // Yellow
-  blue: '#1e66f5',         // Blue
-  magenta: '#ea76cb',      // Pink
-  cyan: '#179299',         // Teal
-  white: '#5c5f77',        // Subtext 1
-  brightBlack: '#acb0be',  // Surface 2
-  brightRed: '#d20f39',    // Red
-  brightGreen: '#40a02b',  // Green
-  brightYellow: '#df8e1d', // Yellow
-  brightBlue: '#1e66f5',   // Blue
-  brightMagenta: '#ea76cb', // Pink
-  brightCyan: '#179299',   // Teal
-  brightWhite: '#6c6f85',  // Subtext 0
-};
-
-function getTerminalThemes() {
-  const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
-  return isDark ? TERMINAL_THEMES_DARK : TERMINAL_THEMES_LIGHT;
-}
-
-function isLightMode() {
-  return document.documentElement.getAttribute('data-theme') === 'light';
-}
-
-
-const FONT_SIZE_KEY_PREFIX = 'cchub-terminal-font-size-';
-const DEFAULT_FONT_SIZE = 14;
-const MIN_FONT_SIZE = 8;
-const MAX_FONT_SIZE = 32;
+import {
+  getTerminalThemes, isLightMode, LIGHT_ANSI_COLORS,
+  DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE,
+  loadFontSize, saveFontSize,
+} from './terminal-themes';
+import { useSelectionMode } from '../hooks/useSelectionMode';
+import { SelectionOverlay } from './SelectionOverlay';
+import { UrlMenu } from './UrlMenu';
+import { InputBar, type InputMode } from './InputBar';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
-
-function loadFontSize(sessionId: string): number {
-  const saved = localStorage.getItem(FONT_SIZE_KEY_PREFIX + sessionId);
-  if (saved) {
-    const size = parseInt(saved, 10);
-    if (!Number.isNaN(size) && size >= MIN_FONT_SIZE && size <= MAX_FONT_SIZE) {
-      return size;
-    }
-  }
-  return DEFAULT_FONT_SIZE;
-}
-
-function saveFontSize(sessionId: string, size: number): void {
-  localStorage.setItem(FONT_SIZE_KEY_PREFIX + sessionId, String(size));
-}
 
 // Control mode: terminal data comes from control WebSocket instead of useTerminal
 export interface ControlModeConfig {
@@ -98,7 +26,7 @@ export interface ControlModeConfig {
   registerOnData: (callback: (data: Uint8Array) => void) => () => void;
   isConnected: boolean;
   onResize?: (cols: number, rows: number) => void;
-  onScroll?: (lines: number) => void; // positive = up, negative = down
+  onScroll?: (lines: number) => void;
   requestContent?: () => void;
 }
 
@@ -108,12 +36,12 @@ interface TerminalProps {
   onDisconnect?: () => void;
   onError?: (error: string) => void;
   onReady?: (send: (data: string) => void) => void;
-  hideKeyboard?: boolean;  // Hide built-in keyboard (for tablet split layout)
-  overlayContent?: React.ReactNode;  // Custom overlay content (rendered above keyboard)
-  onOverlayTap?: () => void;  // Called when tap area is touched
-  showOverlay?: boolean;  // Control overlay visibility
-  theme?: SessionTheme;  // Session theme color
-  controlMode?: ControlModeConfig;  // If set, use control mode instead of useTerminal
+  hideKeyboard?: boolean;
+  overlayContent?: React.ReactNode;
+  onOverlayTap?: () => void;
+  showOverlay?: boolean;
+  theme?: SessionTheme;
+  controlMode?: ControlModeConfig;
 }
 
 // Ref interface for external keyboard input
@@ -128,16 +56,11 @@ export interface TerminalRef {
   hideKeyboard: () => void;
   getCellDimensions: () => { width: number; height: number } | null;
   getSize: () => { cols: number; rows: number } | null;
-  /** Get the cols/rows that would fit the current container (without resizing xterm). */
   getProposedSize: () => { cols: number; rows: number } | null;
-  /** Resize xterm to exact cols/rows without triggering resize-back-to-tmux. */
   setExactSize: (cols: number, rows: number) => void;
   scrollToBottom: () => void;
-  /** Set text into the Japanese input textarea and switch to input mode (without sending). */
   setInputText: (text: string) => void;
-  /** Change font size by delta (e.g., +2 or -2). Returns the new font size. */
   changeFontSize: (delta: number) => number;
-  /** Get current font size. */
   getFontSize: () => number;
 }
 
@@ -156,8 +79,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const sendRef = useRef<(data: string) => void>(() => {});
@@ -167,44 +88,23 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const showKeyboardRef = useRef<() => void>(() => {});
   const selectionRef = useRef<string>('');
   const [isInitialized, setIsInitialized] = useState(false);
-  const [inputMode, setInputMode] = useState<'hidden' | 'shortcuts' | 'input'>('hidden');
-  const [inputValue, setInputValue] = useState('');
-  const [showInputHistory, setShowInputHistory] = useState(false);
-  const inputHistoryRef = useRef<string[]>(
-    (() => { try { return JSON.parse(localStorage.getItem('cchub-input-history') || '[]'); } catch { return []; } })()
-  );
+  const [inputMode, setInputMode] = useState<InputMode>('hidden');
   const [fontSize, setFontSize] = useState(() => loadFontSize(sessionId));
-  const [showHint, setShowHint] = useState(true);
-  const [isAnimating, setIsAnimating] = useState(false);
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [showFontSizeIndicator, setShowFontSizeIndicator] = useState(false);
   const [scrollIndicator, setScrollIndicator] = useState<string | null>(null);
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [copyButtonPos, setCopyButtonPos] = useState<{ x: number; y: number } | null>(null);
-  const [selectionRange, setSelectionRange] = useState<{ startCol: number; startRow: number; endCol: number; endRow: number } | null>(null);
-  const selectionStartRef = useRef<{ col: number; row: number; viewportRow: number } | null>(null);
-  const selectionModeRef = useRef(false);
   const scrollIndicatorTimerRef = useRef<number | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
   const [detectedUrls, setDetectedUrls] = useState<string[]>([]);
   const [showUrlMenu, setShowUrlMenu] = useState(false);
   const [urlPage, setUrlPage] = useState(0);
   const URL_PAGE_SIZE = 5;
-  // Detect touch device (for overlay behavior)
+
   const [isTouchDevice] = useState(() => {
     const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     const hasCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
     return hasTouch && hasCoarsePointer;
   });
-  // Detect tablet (larger touch screen)
   const [isTablet, setIsTablet] = useState(() => window.innerWidth >= 640);
-  // Keyboard position for tablet
-  const [keyboardPosition, setKeyboardPosition] = useState<'left' | 'right'>('right');
-  // Show position toggle button (auto-hide after 3 seconds)
-  const [showPositionToggle, setShowPositionToggle] = useState(true);
-  const positionToggleTimeoutRef = useRef<number | null>(null);
-  const inputBarRef = useRef<HTMLDivElement>(null);
-  const hintTimeoutRef = useRef<number | null>(null);
   const fontSizeTimeoutRef = useRef<number | null>(null);
 
   // Use refs to avoid recreating callbacks
@@ -222,55 +122,26 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
   // Update tablet detection on resize
   useEffect(() => {
-    const handleResize = () => {
-      setIsTablet(window.innerWidth >= 640);
-    };
+    const handleResize = () => setIsTablet(window.innerWidth >= 640);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Auto-hide position toggle after 3 seconds
-  useEffect(() => {
-    if (showPositionToggle && isTablet) {
-      if (positionToggleTimeoutRef.current) {
-        clearTimeout(positionToggleTimeoutRef.current);
-      }
-      positionToggleTimeoutRef.current = window.setTimeout(() => {
-        setShowPositionToggle(false);
-      }, 3000);
-    }
-    return () => {
-      if (positionToggleTimeoutRef.current) {
-        clearTimeout(positionToggleTimeoutRef.current);
-      }
-    };
-  }, [showPositionToggle, isTablet]);
-
-  // Show position toggle when keyboard position changes
-  const handlePositionToggle = () => {
-    setKeyboardPosition(p => p === 'right' ? 'left' : 'right');
-    setShowPositionToggle(true);
-  };
-
   const controlCleanupRef = useRef<(() => void) | null>(null);
-
-  // Store controlMode in ref for stable access (avoids re-running effects on every render)
   const controlModeRef = useRef(controlMode);
   controlModeRef.current = controlMode;
-
-  // Track hideKeyboard prop in ref for use in effect closures
   const hideKeyboardRef = useRef(hideKeyboard);
   hideKeyboardRef.current = hideKeyboard;
 
-  // Send function: filters out mouse tracking escape sequences that xterm.js generates
-  // on touch/scroll, since send-keys -H would deliver them as literal text to the shell.
+  // Selection mode hook
+  const selection = useSelectionMode({ terminalRef, containerRef });
+
+  // Send function: filters out mouse tracking escape sequences
   const send = useCallback((data: string) => {
     const filtered = filterMouseTrackingInput(data);
     if (filtered.length > 0) {
-      // Clear stale selection when user sends input
       terminalRef.current?.clearSelection();
       controlModeRef.current?.sendInput(filtered);
-      // Auto-scroll to bottom when user sends input (e.g. after scrolling up)
       terminalRef.current?.scrollToBottom();
     }
   }, []);
@@ -282,47 +153,38 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const noopFn = useCallback(() => {}, []);
 
   const isConnected = controlMode?.isConnected ?? false;
-  const connect = noopFn; // Connection managed by useMultiplexedTerminal in DesktopLayout
+  const connect = noopFn;
   const refresh = useCallback(() => {
-    // Re-request terminal content from tmux (capture-pane)
     controlModeRef.current?.requestContent?.();
   }, []);
 
-  // Keep refs updated
   useEffect(() => {
     sendRef.current = send;
     resizeRef.current = resize;
     refreshRef.current = refresh;
   }, [send, resize, refresh]);
 
-  // Expose sendInput, focus, extractUrls, getSelection, and refreshTerminal for external use
+  // Expose ref API
   useImperativeHandle(ref, () => ({
     sendInput: (char: string) => sendRef.current(char),
     focus: () => terminalRef.current?.focus(),
     getSelection: () => selectionRef.current,
     clearSelection: () => terminalRef.current?.clearSelection(),
-    refreshTerminal: () => {
-      refreshRef.current();
-    },
+    refreshTerminal: () => refreshRef.current(),
     extractUrls: () => {
       const term = terminalRef.current;
       if (!term) return [];
-
       const urls: string[] = [];
       const urlRegex = /https?:\/\/[^\s<>"{}|\\^`[\]]+/g;
-
       const buffer = term.buffer.active;
       for (let i = 0; i < buffer.length; i++) {
         const line = buffer.getLine(i);
         if (line) {
           const text = line.translateToString();
           const matches = text.match(urlRegex);
-          if (matches) {
-            urls.push(...matches);
-          }
+          if (matches) urls.push(...matches);
         }
       }
-
       return [...new Set(urls)].reverse();
     },
     showKeyboard: () => showKeyboardRef.current(),
@@ -330,7 +192,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     getCellDimensions: () => {
       const term = terminalRef.current;
       if (!term) return null;
-      // Access xterm.js internal render dimensions (same API used by FitAddon)
       const core = (term as any)._core;
       const w = core?._renderService?.dimensions?.css?.cell?.width;
       const h = core?._renderService?.dimensions?.css?.cell?.height;
@@ -354,16 +215,10 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       if (term.cols !== cols || term.rows !== rows) {
         term.resize(cols, rows);
       }
-      // Note: does NOT trigger resizeRef / sendControlResize.
-      // This is intentional: tmux already knows the correct pane sizes.
     },
-    scrollToBottom: () => {
-      terminalRef.current?.scrollToBottom();
-    },
+    scrollToBottom: () => terminalRef.current?.scrollToBottom(),
     setInputText: (text: string) => {
-      setInputValue(text);
       setInputMode('input');
-      setTimeout(() => inputRef.current?.focus(), 100);
     },
     changeFontSize: (delta: number) => {
       const term = terminalRef.current;
@@ -374,7 +229,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       term.options.fontSize = newSize;
       setFontSize(newSize);
       saveFontSize(sessionId, newSize);
-      // Recompute grid dimensions and send to tmux
       const dims = fitAddonRef.current?.proposeDimensions();
       if (dims && dims.cols > 0 && dims.rows > 0) {
         term.resize(dims.cols, dims.rows);
@@ -382,21 +236,16 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       }
       return newSize;
     },
-    getFontSize: () => {
-      return terminalRef.current?.options.fontSize || DEFAULT_FONT_SIZE;
-    },
+    getFontSize: () => terminalRef.current?.options.fontSize || DEFAULT_FONT_SIZE,
   }), [sessionId]);
 
-  // Fit and resize terminal (memoized to avoid re-creating on every render)
+  // Fit and resize terminal
   const fitTerminal = useCallback(() => {
     const fit = fitAddonRef.current;
     const term = terminalRef.current;
     if (fit && term) {
-      // In control mode, use proposeDimensions instead of fit() to avoid
-      // overriding tmux's pane sizes
       const dims = fit.proposeDimensions();
       if (dims && dims.cols > 0 && dims.rows > 0) {
-        // Resize xterm.js grid to match the container
         if (term.cols !== dims.cols || term.rows !== dims.rows) {
           term.resize(dims.cols, dims.rows);
         }
@@ -405,189 +254,10 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     }
   }, []);
 
-  // Selection mode helpers
-  useEffect(() => {
-    selectionModeRef.current = selectionMode;
-    // Block xterm.js internal mouse handling during selection mode
-    const screen = containerRef.current?.querySelector('.xterm-screen') as HTMLElement | null;
-    if (screen) {
-      screen.style.pointerEvents = selectionMode ? 'none' : '';
-    }
-  }, [selectionMode]);
-
-  const exitSelectionMode = useCallback(() => {
-    setSelectionMode(false);
-    selectionModeRef.current = false;
-    setCopyButtonPos(null);
-    setSelectionRange(null);
-    selectionStartRef.current = null;
-    terminalRef.current?.clearSelection();
-  }, []);
-  const exitSelectionModeRef = useRef(exitSelectionMode);
-  exitSelectionModeRef.current = exitSelectionMode;
-
-  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
-
-  const draggingHandleRef = useRef<'start' | 'end' | null>(null);
-
-  const handleHandleDragStart = useCallback((e: React.TouchEvent, edge: 'start' | 'end') => {
-    e.preventDefault();
-    draggingHandleRef.current = edge;
-
-    const handleMove = (ev: TouchEvent) => {
-      ev.preventDefault();
-      const term = terminalRef.current;
-      const container = containerRef.current;
-      if (!term || !container) return;
-
-      const core = (term as any)._core;
-      const cellW = core?._renderService?.dimensions?.css?.cell?.width;
-      const cellH = core?._renderService?.dimensions?.css?.cell?.height;
-      if (!cellW || !cellH) return;
-
-      const screenEl = container.querySelector('.xterm-screen');
-      if (!screenEl) return;
-      const rect = screenEl.getBoundingClientRect();
-      const touch = ev.touches[0];
-      // Offset finger position upward so the cursor appears above the finger
-      const fingerOffsetY = 30;
-      const col = Math.max(0, Math.min(term.cols - 1, Math.floor((touch.clientX - rect.left) / cellW)));
-      const vRow = Math.max(0, Math.min(term.rows - 1, Math.floor((touch.clientY - fingerOffsetY - rect.top) / cellH)));
-      const viewportY = term.buffer.active.viewportY;
-
-      setSelectionRange(prev => {
-        if (!prev) return null;
-        let newRange: typeof prev;
-        if (draggingHandleRef.current === 'start') {
-          const endOffset = prev.endRow * term.cols + prev.endCol;
-          const newOffset = vRow * term.cols + col;
-          if (newOffset > endOffset) return prev;
-          newRange = { ...prev, startCol: col, startRow: vRow };
-          selectionStartRef.current = { col, row: viewportY + vRow, viewportRow: vRow };
-        } else {
-          const startOffset = prev.startRow * term.cols + prev.startCol;
-          const newOffset = vRow * term.cols + col;
-          if (newOffset < startOffset) return prev;
-          newRange = { ...prev, endCol: col, endRow: vRow };
-        }
-        // Update xterm selection
-        const sOffset = newRange.startRow * term.cols + newRange.startCol;
-        const eOffset = newRange.endRow * term.cols + newRange.endCol;
-        term.select(newRange.startCol, viewportY + newRange.startRow, eOffset - sOffset + 1);
-        return newRange;
-      });
-    };
-
-    const handleEnd = () => {
-      draggingHandleRef.current = null;
-      document.removeEventListener('touchmove', handleMove);
-      document.removeEventListener('touchend', handleEnd);
-    };
-
-    document.addEventListener('touchmove', handleMove, { passive: false });
-    document.addEventListener('touchend', handleEnd);
-  }, []);
-
-  const handleHandleMouseDragStart = useCallback((e: React.MouseEvent, edge: 'start' | 'end') => {
-    e.preventDefault();
-    e.stopPropagation();
-    draggingHandleRef.current = edge;
-
-    const handleMove = (ev: MouseEvent) => {
-      ev.preventDefault();
-      const term = terminalRef.current;
-      const container = containerRef.current;
-      if (!term || !container) return;
-
-      const core = (term as any)._core;
-      const cellW = core?._renderService?.dimensions?.css?.cell?.width;
-      const cellH = core?._renderService?.dimensions?.css?.cell?.height;
-      if (!cellW || !cellH) return;
-
-      const screenEl = container.querySelector('.xterm-screen');
-      if (!screenEl) return;
-      const rect = screenEl.getBoundingClientRect();
-      const col = Math.max(0, Math.min(term.cols - 1, Math.floor((ev.clientX - rect.left) / cellW)));
-      const vRow = Math.max(0, Math.min(term.rows - 1, Math.floor((ev.clientY - rect.top) / cellH)));
-      const viewportY = term.buffer.active.viewportY;
-
-      setSelectionRange(prev => {
-        if (!prev) return null;
-        let newRange: typeof prev;
-        if (draggingHandleRef.current === 'start') {
-          const endOffset = prev.endRow * term.cols + prev.endCol;
-          const newOffset = vRow * term.cols + col;
-          if (newOffset > endOffset) return prev;
-          newRange = { ...prev, startCol: col, startRow: vRow };
-          selectionStartRef.current = { col, row: viewportY + vRow, viewportRow: vRow };
-        } else {
-          const startOffset = prev.startRow * term.cols + prev.startCol;
-          const newOffset = vRow * term.cols + col;
-          if (newOffset < startOffset) return prev;
-          newRange = { ...prev, endCol: col, endRow: vRow };
-        }
-        const sOffset = newRange.startRow * term.cols + newRange.startCol;
-        const eOffset = newRange.endRow * term.cols + newRange.endCol;
-        term.select(newRange.startCol, viewportY + newRange.startRow, eOffset - sOffset + 1);
-        return newRange;
-      });
-    };
-
-    const handleEnd = () => {
-      draggingHandleRef.current = null;
-      document.removeEventListener('mousemove', handleMove, true);
-      document.removeEventListener('mouseup', handleEnd, true);
-    };
-
-    document.addEventListener('mousemove', handleMove, true);
-    document.addEventListener('mouseup', handleEnd, true);
-  }, []);
-
-  const handleCopySelection = useCallback(() => {
-    const sel = terminalRef.current?.getSelection();
-    if (!sel) {
-      setCopyFeedback('No selection');
-      setTimeout(() => setCopyFeedback(null), 1500);
-      exitSelectionMode();
-      return;
-    }
-    // Save text before clearing selection
-    const text = sel;
-    exitSelectionMode();
-    // Copy after selection is cleared
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).then(() => {
-        setCopyFeedback('Copied!');
-        setTimeout(() => setCopyFeedback(null), 1500);
-      }).catch(() => {
-        copyFallback(text);
-      });
-    } else {
-      copyFallback(text);
-    }
-  }, [exitSelectionMode]);
-
-  const copyFallback = (text: string) => {
-    try {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px';
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      setCopyFeedback('Copied!');
-    } catch {
-      setCopyFeedback('Failed');
-    }
-    setTimeout(() => setCopyFeedback(null), 1500);
-  };
-
   // Notify parent when ready and trigger resize on connect
   useEffect(() => {
     if (isConnected) {
       onReadyRef.current?.(send);
-      // Send initial resize after connection with small delay for layout to settle
       setTimeout(() => fitTerminal(), 150);
     }
   }, [isConnected, send, fitTerminal]);
@@ -597,8 +267,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     if (!containerRef.current) return;
 
     const container = containerRef.current;
-
-    // High-performance terminal configuration
     const initialFontSize = loadFontSize(sessionId);
     const themeColors = getTerminalThemes()[sessionTheme || 'default'];
     const term = new Terminal({
@@ -609,15 +277,15 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       letterSpacing: 0,
       lineHeight: 1,
       cursorStyle: 'block',
-      cursorBlink: false, // Disable cursor blink for performance
+      cursorBlink: false,
       cursorInactiveStyle: 'outline',
-      scrollback: 5000, // Keep enough scrollback for capture-pane -S - content
-      smoothScrollDuration: 0, // Disable smooth scroll
+      scrollback: 5000,
+      smoothScrollDuration: 0,
       scrollSensitivity: 3,
       allowProposedApi: true,
-      minimumContrastRatio: isLightMode() ? 4.5 : 1, // WCAG AA auto-fix in light mode
-      rescaleOverlappingGlyphs: false, // Disable glyph rescaling
-      drawBoldTextInBrightColors: false, // Disable bold color transformation
+      minimumContrastRatio: isLightMode() ? 4.5 : 1,
+      rescaleOverlappingGlyphs: false,
+      drawBoldTextInBrightColors: false,
       convertEol: false,
       ignoreBracketedPasteMode: false,
       theme: {
@@ -633,16 +301,13 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
 
-    // Enable Unicode 11 for correct CJK double-width character rendering
     const unicode11Addon = new Unicode11Addon();
     term.loadAddon(unicode11Addon);
     term.unicode.activeVersion = '11';
 
     term.open(container);
 
-    // Hide xterm.js native scrollbar - we handle scrolling via touch gestures / wheel events.
-    // Use scrollbar-width (standard) and inject a <style> for WebKit (Chrome/Safari/Android).
-    // Do NOT set overflow:hidden as xterm.js needs overflow-y:scroll internally.
+    // Hide xterm.js native scrollbar
     const xtermViewport = container.querySelector('.xterm-viewport') as HTMLElement;
     if (xtermViewport) {
       (xtermViewport.style as any).scrollbarWidth = 'none';
@@ -658,8 +323,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       }
     }
 
-    // Prevent OS keyboard on touch devices by modifying xterm's internal textarea
-    // Only apply on touch devices to preserve Japanese IME input on desktop
+    // Prevent OS keyboard on touch devices
     const isCoarseTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0)
       && window.matchMedia('(pointer: coarse)').matches;
     if (isCoarseTouchDevice) {
@@ -670,14 +334,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       }
     }
 
-    // Load WebGL addon for GPU-accelerated rendering
+    // Load WebGL addon
     try {
       const webglAddon = new WebglAddon();
       webglAddon.onContextLoss(() => {
         console.warn('[Terminal] WebGL context lost, disposing and reloading');
         webglAddon.dispose();
-        // After dispose, xterm falls back to DOM renderer which may not repaint.
-        // Try to reload WebGL after a short delay, or request content refresh.
         setTimeout(() => {
           try {
             const newWebgl = new WebglAddon();
@@ -690,7 +352,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           } catch {
             console.warn('[Terminal] WebGL reload failed, using canvas renderer');
           }
-          // Force a refresh to repaint terminal content
           term.refresh(0, term.rows - 1);
         }, 500);
       });
@@ -700,16 +361,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       console.warn('[Terminal] WebGL not available, using canvas renderer:', e);
     }
 
-    // Load web links addon for URL detection
-    // Handle OSC 52 (clipboard) - allows tmux to copy to system clipboard
+    // Handle OSC 52 (clipboard)
     term.parser.registerOscHandler(52, (data) => {
-      // Format: [target];[base64-data]
-      // target is usually 'c' for clipboard
       const parts = data.split(';');
       if (parts.length >= 2) {
         const base64Data = parts.slice(1).join(';');
         try {
-          // Decode base64 to UTF-8 properly
           const binaryString = atob(base64Data);
           const bytes = new Uint8Array(binaryString.length);
           for (let i = 0; i < binaryString.length; i++) {
@@ -740,21 +397,15 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         return false;
       }
       if (action === 'copy' || action === 'paste') {
-        // Prevent xterm from handling: copy avoids sending \x03 (SIGINT),
-        // paste delegates to DesktopLayout's handlePaste (supports images)
         e.preventDefault();
         return false;
       }
       return true;
     });
 
-    // Handle keyboard input - register once, use ref for send
-    const onDataDisposable = term.onData((data) => {
-      sendRef.current(data);
-    });
+    const onDataDisposable = term.onData((data) => sendRef.current(data));
 
-    // Track selection changes for copy functionality
-    // On desktop (non-touch), auto-copy selection to clipboard
+    // Track selection changes - auto-copy on desktop
     const isCoarseTouch = ('ontouchstart' in window || navigator.maxTouchPoints > 0)
       && window.matchMedia('(pointer: coarse)').matches;
     const onSelectionDisposable = term.onSelectionChange(() => {
@@ -765,7 +416,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       }
     });
 
-    // Connect to WebSocket (noopFn in control mode)
     connect();
 
     // Handle resize with debounce
@@ -773,23 +423,17 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     let lastSentCols = 0;
     let lastSentRows = 0;
     const doResize = () => {
-      if (resizeTimeout) {
-        clearTimeout(resizeTimeout);
-      }
+      if (resizeTimeout) clearTimeout(resizeTimeout);
       resizeTimeout = window.setTimeout(() => {
         if (fitAddonRef.current && terminalRef.current) {
           const dims = fitAddonRef.current.proposeDimensions();
           if (dims && dims.cols > 0 && dims.rows > 0) {
-            // On mobile: resize xterm.js grid to match container (keyboard appears/disappears).
-            // On desktop: skip term.resize() — xterm.js grid size is controlled exclusively
-            // by setExactSize() from tmux's %layout-change to match tmux pane dimensions.
             if (!hideKeyboardRef.current) {
               const t = terminalRef.current;
               if (t.cols !== dims.cols || t.rows !== dims.rows) {
                 t.resize(dims.cols, dims.rows);
               }
             }
-            // Only send resize to tmux if dimensions actually changed
             if (dims.cols !== lastSentCols || dims.rows !== lastSentRows) {
               lastSentCols = dims.cols;
               lastSentRows = dims.rows;
@@ -800,56 +444,38 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       }, 50);
     };
 
-    // ResizeObserver for container size changes
     const resizeObserver = new ResizeObserver(doResize);
     resizeObserver.observe(container);
 
-    // Force repaint when tab becomes visible (WebGL context may be stale after background)
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible' && terminalRef.current) {
         terminalRef.current.refresh(0, terminalRef.current.rows - 1);
       }
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
-
-    // Window resize event
     window.addEventListener('resize', doResize);
-
-    // Visual viewport resize (mobile keyboard)
     const viewport = window.visualViewport;
     viewport?.addEventListener('resize', doResize);
 
     // Focus terminal (only on non-touch devices)
-    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    if (!isTouchDevice) {
-      term.focus();
-    }
+    const isTouchDev = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    if (!isTouchDev) term.focus();
 
-    // Touch handling on container - scroll (1 finger) and pinch zoom (2 fingers)
-    // Using container instead of overlay to allow mouse events to reach xterm directly
+    // --- Touch handling ---
     let touchStartY: number | null = null;
     let touchMoved = false;
     let accumulatedDelta = 0;
     let scrollRafId: number | null = null;
-
-    // Momentum scroll state
     let momentumRafId: number | null = null;
     let lastTouchY = 0;
     let lastTouchTime = 0;
     const velocityHistory: Array<{ v: number; t: number }> = [];
-
-    // Pinch zoom state
     let initialPinchDistance: number | null = null;
     let initialFontSizeOnPinch: number = initialFontSize;
-
-    // Long press detection
     let longPressTimer: number | null = null;
     let longPressTriggered = false;
-    const LONG_PRESS_DURATION = 400; // ms
+    const LONG_PRESS_DURATION = 400;
 
-    // Scroll through terminal history.
-    // Uses xterm's local buffer if scrollback exists,
-    // falls back to tmux copy-mode via controlMode.onScroll.
     const scrollTerminal = (lines: number) => {
       const buf = term.buffer.active;
       if (buf.baseY > 0) {
@@ -859,7 +485,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       }
     };
 
-    // Update scroll indicator
     const updateScrollIndicator = () => {
       const buf = term.buffer.active;
       if (buf.viewportY < buf.baseY) {
@@ -872,7 +497,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       }
     };
 
-    // Stop momentum animation
     const stopMomentum = () => {
       if (momentumRafId !== null) {
         cancelAnimationFrame(momentumRafId);
@@ -888,8 +512,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
     let stoppedMomentum = false;
 
-    // Convert touch coordinates to terminal cell position
-    // Returns viewport-relative row (for overlay) and buffer-absolute row (for select API)
     const touchToCell = (clientX: number, clientY: number): { col: number; row: number; viewportRow: number } | null => {
       const core = (term as any)._core;
       const cellW = core?._renderService?.dimensions?.css?.cell?.width;
@@ -900,7 +522,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       const rect = screenEl.getBoundingClientRect();
       const col = Math.max(0, Math.min(term.cols - 1, Math.floor((clientX - rect.left) / cellW)));
       const viewportRow = Math.max(0, Math.min(term.rows - 1, Math.floor((clientY - rect.top) / cellH)));
-      // select() takes buffer-absolute row = viewportY + viewport-relative row
       const row = term.buffer.active.viewportY + viewportRow;
       return { col, row, viewportRow };
     };
@@ -909,41 +530,28 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     let touchStartClientY = 0;
 
     const handleTouchStart = (e: TouchEvent) => {
-      // If in selection mode, check if touch is on a control element
-      if (selectionModeRef.current) {
+      if (selection.selectionModeRef.current) {
         const target = e.target as HTMLElement;
-        // Let selection control elements (handles, copy/cancel buttons, preview) handle their own events
         if (target.closest('[data-selection-control]')) return;
-        // Check if touch point hits any selection control element (handles may overlay terminal)
         const touch = e.touches[0];
         if (touch) {
           const els = document.elementsFromPoint(touch.clientX, touch.clientY);
           if (els.some(el => (el as HTMLElement).closest?.('[data-selection-control]'))) return;
         }
-        exitSelectionModeRef.current();
+        selection.exitSelectionModeRef.current();
         return;
       }
 
-      // Clear any xterm.js selection on touch to prevent accidental selection
       term.clearSelection();
-
-      // Stop any ongoing momentum scroll - treat as consumed tap
       stoppedMomentum = momentumRafId !== null;
-      if (stoppedMomentum) {
-        stopMomentum();
-      }
+      if (stoppedMomentum) stopMomentum();
 
       if (e.touches.length === 2) {
-        // Pinch start - cancel long press
-        if (longPressTimer) {
-          clearTimeout(longPressTimer);
-          longPressTimer = null;
-        }
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
         initialPinchDistance = getPinchDistance(e.touches);
         initialFontSizeOnPinch = term.options.fontSize || initialFontSize;
-        touchMoved = true; // Prevent keyboard popup
+        touchMoved = true;
       } else if (e.touches.length === 1) {
-        // Scroll start
         touchStartY = e.touches[0].clientY;
         touchStartClientX = e.touches[0].clientX;
         touchStartClientY = e.touches[0].clientY;
@@ -954,19 +562,17 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         accumulatedDelta = 0;
         velocityHistory.length = 0;
 
-        // Start long press timer → enter selection mode
         longPressTimer = window.setTimeout(() => {
           longPressTriggered = true;
-          touchMoved = true; // Prevent tap action
-
+          touchMoved = true;
           const start = touchToCell(touchStartClientX, touchStartClientY);
           if (start) {
-            selectionStartRef.current = start;
-            selectionModeRef.current = true;
-            setSelectionMode(true);
-            setCopyButtonPos(null);
+            selection.selectionStartRef.current = start;
+            selection.selectionModeRef.current = true;
+            selection.setSelectionMode(true);
+            selection.setCopyButtonPos(null);
             term.select(start.col, start.row, 1);
-            setSelectionRange({ startCol: start.col, startRow: start.viewportRow, endCol: start.col, endRow: start.viewportRow });
+            selection.setSelectionRange({ startCol: start.col, startRow: start.viewportRow, endCol: start.col, endRow: start.viewportRow });
             navigator.vibrate?.(30);
           } else {
             showKeyboardRef.current();
@@ -976,49 +582,44 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      // Cancel long press on move (only if not yet triggered)
       if (longPressTimer && !longPressTriggered) {
         clearTimeout(longPressTimer);
         longPressTimer = null;
       }
 
-      // Selection mode: drag to extend selection
-      if (selectionModeRef.current && selectionStartRef.current && e.touches.length === 1) {
+      // Selection mode drag
+      if (selection.selectionModeRef.current && selection.selectionStartRef.current && e.touches.length === 1) {
         e.preventDefault();
         const current = touchToCell(e.touches[0].clientX, e.touches[0].clientY);
         if (!current) return;
-        const start = selectionStartRef.current;
+        const start = selection.selectionStartRef.current;
         const cols = term.cols;
-        // Use buffer-absolute row for select()
         const startOffset = start.row * cols + start.col;
         const currentOffset = current.row * cols + current.col;
-        // Use viewport-relative row for overlay
         const startVRow = start.viewportRow;
         const currentVRow = current.viewportRow;
 
         if (currentOffset >= startOffset) {
           term.select(start.col, start.row, currentOffset - startOffset + 1);
-          setSelectionRange({ startCol: start.col, startRow: startVRow, endCol: current.col, endRow: currentVRow });
+          selection.setSelectionRange({ startCol: start.col, startRow: startVRow, endCol: current.col, endRow: currentVRow });
         } else {
           term.select(current.col, current.row, startOffset - currentOffset + 1);
-          setSelectionRange({ startCol: current.col, startRow: currentVRow, endCol: start.col, endRow: startVRow });
+          selection.setSelectionRange({ startCol: current.col, startRow: currentVRow, endCol: start.col, endRow: startVRow });
         }
         return;
       }
 
-      // Pinch zoom (2 fingers)
+      // Pinch zoom
       if (e.touches.length === 2 && initialPinchDistance !== null) {
         e.preventDefault();
         touchMoved = true;
         const currentDistance = getPinchDistance(e.touches);
         const scale = currentDistance / initialPinchDistance;
         const newSize = Math.round(initialFontSizeOnPinch * scale);
-
         if (newSize !== term.options.fontSize) {
           const clampedSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, newSize));
           term.options.fontSize = clampedSize;
           setFontSize(clampedSize);
-          // After font size change, compute proposed size, resize xterm grid, and send to tmux
           const dims = fitAddonRef.current?.proposeDimensions();
           if (dims && dims.cols > 0 && dims.rows > 0) {
             term.resize(dims.cols, dims.rows);
@@ -1028,39 +629,25 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         return;
       }
 
-      // Scroll (1 finger)
+      // Scroll
       if (touchStartY === null || e.touches.length !== 1) return;
-
       const currentY = e.touches[0].clientY;
       const deltaY = touchStartY - currentY;
-
-      // Only start scrolling after moving more than 5px
       if (Math.abs(deltaY) > 5) {
-        // Close keyboard when scrolling starts
-        if (!touchMoved) {
-          closeInputBarRef.current();
-        }
+        if (!touchMoved) closeInputBarRef.current();
         touchMoved = true;
         e.preventDefault();
-
-        // Track velocity for momentum (px/ms)
         const now = e.timeStamp;
         const dt = now - lastTouchTime;
         const dy = lastTouchY - currentY;
         if (dt > 0) {
           velocityHistory.push({ v: dy / dt, t: now });
-          // Keep only last 100ms of samples
-          while (velocityHistory.length > 0 && now - velocityHistory[0].t > 100) {
-            velocityHistory.shift();
-          }
+          while (velocityHistory.length > 0 && now - velocityHistory[0].t > 100) velocityHistory.shift();
         }
         lastTouchY = currentY;
         lastTouchTime = now;
-
         touchStartY = currentY;
         accumulatedDelta += deltaY;
-
-        // Throttle with requestAnimationFrame
         if (scrollRafId === null) {
           scrollRafId = requestAnimationFrame(() => {
             scrollRafId = null;
@@ -1076,38 +663,25 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     };
 
     const handleTouchEnd = (e: TouchEvent) => {
-      // Cancel long press timer
-      if (longPressTimer) {
-        clearTimeout(longPressTimer);
-        longPressTimer = null;
-      }
+      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
 
-      // Selection mode: show copy button (skip if mouse-initiated to avoid trackpad interference)
-      if (selectionModeRef.current && selectionStartRef.current && !mouseInitiatedSelection) {
+      // Selection mode: show copy button
+      if (selection.selectionModeRef.current && selection.selectionStartRef.current && !mouseInitiatedSelection) {
         const sel = term.getSelection();
         if (sel && sel.length > 0) {
-          // Position copy button near last touch
           const touch = e.changedTouches[0];
           if (touch && container) {
             const rect = container.getBoundingClientRect();
-            setCopyButtonPos({
-              x: touch.clientX - rect.left,
-              y: touch.clientY - rect.top - 50,
-            });
+            selection.setCopyButtonPos({ x: touch.clientX - rect.left, y: touch.clientY - rect.top - 50 });
           }
         } else {
-          exitSelectionModeRef.current();
+          selection.exitSelectionModeRef.current();
         }
         return;
       }
 
-      // Cancel pending scroll RAF
-      if (scrollRafId !== null) {
-        cancelAnimationFrame(scrollRafId);
-        scrollRafId = null;
-      }
+      if (scrollRafId !== null) { cancelAnimationFrame(scrollRafId); scrollRafId = null; }
 
-      // Save font size after pinch zoom
       if (initialPinchDistance !== null) {
         const currentSize = term.options.fontSize || initialFontSize;
         saveFontSize(sessionId, currentSize);
@@ -1115,48 +689,30 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         initialPinchDistance = null;
       }
 
-      // Start momentum scroll if finger was moving fast enough
+      // Momentum scroll
       if (touchMoved && velocityHistory.length > 0) {
         const sum = velocityHistory.reduce((acc, s) => acc + s.v, 0);
-        let vel = sum / velocityHistory.length; // px/ms
-
+        let vel = sum / velocityHistory.length;
         if (Math.abs(vel) > 0.3) {
           const FRICTION = 0.97;
-          const MIN_VEL = 0.02; // px/ms
+          const MIN_VEL = 0.02;
           let residual = 0;
-
           let lastFrame = performance.now();
           const animate = (now: number) => {
             const dt = now - lastFrame;
             lastFrame = now;
             vel *= FRICTION;
-
-            if (Math.abs(vel) < MIN_VEL) {
-              momentumRafId = null;
-              updateScrollIndicator();
-              return;
-            }
-
+            if (Math.abs(vel) < MIN_VEL) { momentumRafId = null; updateScrollIndicator(); return; }
             residual += vel * dt;
             const lines = Math.trunc(residual / 8);
-            if (lines !== 0) {
-              residual -= lines * 8;
-              scrollTerminal(lines);
-              updateScrollIndicator();
-            }
-
+            if (lines !== 0) { residual -= lines * 8; scrollTerminal(lines); updateScrollIndicator(); }
             momentumRafId = requestAnimationFrame(animate);
           };
           momentumRafId = requestAnimationFrame(animate);
         }
       }
 
-      // Only show keyboard if it was a tap (no movement, no long press, not stopping momentum)
-      if (!touchMoved && !longPressTriggered && !stoppedMomentum) {
-        // Show custom keyboard on tap
-        showKeyboardRef.current();
-      }
-
+      if (!touchMoved && !longPressTriggered && !stoppedMomentum) showKeyboardRef.current();
       touchStartY = null;
       touchMoved = false;
       stoppedMomentum = false;
@@ -1165,21 +721,19 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       velocityHistory.length = 0;
     };
 
-    // Mouse long-press selection (desktop)
+    // --- Mouse long-press selection (desktop) ---
     let mouseLongPressTimer: number | null = null;
     let mouseStartX = 0;
     let mouseStartY = 0;
-    // Flag: selection mode was initiated by mouse (not touch).
-    // Prevents Mac trackpad touchend from exiting mouse-initiated selection.
     let mouseInitiatedSelection = false;
     let mouseIsDown = false;
 
     const handleMouseDown = (e: MouseEvent) => {
       if (e.button !== 0) return;
-      if (selectionModeRef.current) {
+      if (selection.selectionModeRef.current) {
         const target = e.target as HTMLElement;
         if (target.closest('[data-selection-control]')) return;
-        exitSelectionModeRef.current();
+        selection.exitSelectionModeRef.current();
         mouseInitiatedSelection = false;
         return;
       }
@@ -1191,12 +745,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         mouseInitiatedSelection = true;
         const start = touchToCell(mouseStartX, mouseStartY);
         if (start) {
-          selectionStartRef.current = start;
-          selectionModeRef.current = true;
-          setSelectionMode(true);
-          setCopyButtonPos(null);
+          selection.selectionStartRef.current = start;
+          selection.selectionModeRef.current = true;
+          selection.setSelectionMode(true);
+          selection.setCopyButtonPos(null);
           term.select(start.col, start.row, 1);
-          setSelectionRange({ startCol: start.col, startRow: start.viewportRow, endCol: start.col, endRow: start.viewportRow });
+          selection.setSelectionRange({ startCol: start.col, startRow: start.viewportRow, endCol: start.col, endRow: start.viewportRow });
         }
       }, LONG_PRESS_DURATION);
     };
@@ -1205,16 +759,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       if (mouseLongPressTimer) {
         const dx = e.clientX - mouseStartX;
         const dy = e.clientY - mouseStartY;
-        if (dx * dx + dy * dy > 25) {
-          clearTimeout(mouseLongPressTimer);
-          mouseLongPressTimer = null;
-        }
+        if (dx * dx + dy * dy > 25) { clearTimeout(mouseLongPressTimer); mouseLongPressTimer = null; }
       }
-      // Extend selection while dragging after long-press (only while mouse is held down)
-      if (mouseIsDown && mouseInitiatedSelection && selectionModeRef.current && selectionStartRef.current) {
+      if (mouseIsDown && mouseInitiatedSelection && selection.selectionModeRef.current && selection.selectionStartRef.current) {
         const current = touchToCell(e.clientX, e.clientY);
         if (current) {
-          const start = selectionStartRef.current;
+          const start = selection.selectionStartRef.current;
           const startOffset = start.row * (term.cols || 80) + start.col;
           const endOffset = current.row * (term.cols || 80) + current.col;
           const length = endOffset - startOffset;
@@ -1223,23 +773,18 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           } else {
             term.select(current.col, current.row, -length + 1);
           }
-          setSelectionRange({ startCol: start.col, startRow: start.viewportRow, endCol: current.col, endRow: current.viewportRow });
+          selection.setSelectionRange({ startCol: start.col, startRow: start.viewportRow, endCol: current.col, endRow: current.viewportRow });
         }
       }
     };
 
     const handleMouseUp = () => {
       mouseIsDown = false;
-      if (mouseLongPressTimer) {
-        clearTimeout(mouseLongPressTimer);
-        mouseLongPressTimer = null;
-      }
-      // Re-apply selection after xterm.js clears it on mouseup
-      if (mouseInitiatedSelection && selectionModeRef.current && selectionStartRef.current) {
+      if (mouseLongPressTimer) { clearTimeout(mouseLongPressTimer); mouseLongPressTimer = null; }
+      if (mouseInitiatedSelection && selection.selectionModeRef.current && selection.selectionStartRef.current) {
         const sel = term.getSelection();
-        const start = selectionStartRef.current;
+        const start = selection.selectionStartRef.current;
         if (sel && sel.length > 0) {
-          // Preserve the dragged selection range
           const selRange = term.getSelectionPosition();
           if (selRange) {
             requestAnimationFrame(() => {
@@ -1249,34 +794,23 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             });
           }
         } else {
-          requestAnimationFrame(() => {
-            term.select(start.col, start.row, 1);
-          });
+          requestAnimationFrame(() => term.select(start.col, start.row, 1));
         }
       }
     };
 
     const handleContextMenu = (e: Event) => {
-      if (hideKeyboardRef.current) {
-        // Desktop: allow native right-click menu for copy/paste
-        return;
-      }
-      // Mobile/tablet: prevent default
-      e.preventDefault();
+      if (hideKeyboardRef.current) return; // Desktop: allow native right-click
+      e.preventDefault(); // Mobile/tablet: prevent default
     };
 
-    // Mouse wheel scroll: xterm.js v6 viewport scroll area may not sync with
-    // internal buffer, so we intercept wheel events and call scrollLines() directly.
+    // Mouse wheel scroll
     const handleWheel = (e: WheelEvent) => {
       const term = terminalRef.current;
       if (!term) return;
       e.preventDefault();
-      // deltaY > 0 = wheel down (scroll toward newer content)
-      // scrollLines: positive = scroll down, negative = scroll up
       const lines = Math.ceil(Math.abs(e.deltaY) / 40);
       scrollTerminal(e.deltaY > 0 ? lines : -lines);
-
-      // Show tmux-style scroll position indicator
       const buf = term.buffer.active;
       if (buf.viewportY < buf.baseY) {
         const scrollback = buf.baseY;
@@ -1302,12 +836,8 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     }
 
     return () => {
-      if (longPressTimer) {
-        clearTimeout(longPressTimer);
-      }
-      if (mouseLongPressTimer) {
-        clearTimeout(mouseLongPressTimer);
-      }
+      if (longPressTimer) clearTimeout(longPressTimer);
+      if (mouseLongPressTimer) clearTimeout(mouseLongPressTimer);
       if (container) {
         container.removeEventListener('touchstart', handleTouchStart);
         container.removeEventListener('touchmove', handleTouchMove);
@@ -1318,9 +848,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         container.removeEventListener('contextmenu', handleContextMenu);
         container.removeEventListener('wheel', handleWheel);
       }
-      if (resizeTimeout) {
-        clearTimeout(resizeTimeout);
-      }
+      if (resizeTimeout) clearTimeout(resizeTimeout);
       resizeObserver.disconnect();
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('resize', doResize);
@@ -1332,19 +860,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       fitAddonRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, // Connect to WebSocket
-    connect, sessionTheme]);
+  }, [sessionId, connect, sessionTheme]);
 
   // Register control mode output listener
-  // IMPORTANT: Must be declared AFTER the main setup useEffect above,
-  // because React runs effects in declaration order. If this ran before
-  // the main setup, terminalRef.current would still be null.
-  // Track previous paneId to detect actual pane switches (vs initial mount or session change)
   const prevControlPaneIdRef = useRef<string | null>(null);
   const prevSessionIdRef = useRef(sessionId);
 
-  // Reset pane tracking when session changes - prevents spurious clear/reset
-  // when switching between sessions (different pane IDs are from different sessions, not a pane switch)
   if (prevSessionIdRef.current !== sessionId) {
     prevSessionIdRef.current = sessionId;
     prevControlPaneIdRef.current = null;
@@ -1354,7 +875,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     const cm = controlModeRef.current;
     if (!cm || !terminalRef.current) return;
 
-    // Only clear terminal on actual pane SWITCH within the same session
     if (prevControlPaneIdRef.current !== null && prevControlPaneIdRef.current !== cm.paneId) {
       terminalRef.current.clearSelection();
       terminalRef.current.clear();
@@ -1362,27 +882,19 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     }
     prevControlPaneIdRef.current = cm.paneId;
 
-    // Persistent decoder with stream: true to handle UTF-8 sequences split
-    // across WebSocket chunks (e.g. multi-byte Japanese characters).
     const decoder = new TextDecoder('utf-8', { fatal: false });
-    // Disable any mouse tracking mode that may have leaked through the filter.
-    // This ensures clean state for mouse selection on desktop.
     const term = terminalRef.current;
     if (term) {
       term.write('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l');
     }
 
     const cleanup = cm.registerOnData((data) => {
-      // stream: true keeps partial multi-byte sequences in decoder buffer
       const str = decoder.decode(data, { stream: true });
       const filtered = filterMouseTrackingOutput(str);
-      if (filtered.length > 0) {
-        terminalRef.current?.write(filtered);
-      }
+      if (filtered.length > 0) terminalRef.current?.write(filtered);
     });
     controlCleanupRef.current = cleanup;
     return () => {
-      // Flush any remaining bytes in decoder
       decoder.decode(new Uint8Array(0), { stream: false });
       cleanup();
       controlCleanupRef.current = null;
@@ -1390,7 +902,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [!!controlMode, controlMode?.paneId]);
 
-  // Track visual viewport for soft keyboard offset (mobile fullscreen only)
+  // Track visual viewport for soft keyboard offset
   useEffect(() => {
     const viewport = window.visualViewport;
     if (!viewport) return;
@@ -1398,43 +910,28 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     let prevViewportHeight = viewport.height;
 
     const updateKeyboardOffset = async () => {
-      // Only apply offset in browser fullscreen mode (not PWA standalone)
-      // PWA standalone mode handles viewport automatically
       const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
       const isBrowserFullscreen = document.fullscreenElement !== null;
 
-      // Detect keyboard appearance (viewport shrinks significantly)
       const heightDiff = prevViewportHeight - viewport.height;
       if (heightDiff > 100) {
-        // Keyboard likely appeared - check if in copy mode and exit
         try {
           const res = await authFetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/copy-mode`);
           if (res.ok) {
             const data = await res.json();
-            if (data.inCopyMode) {
-              // Send 'q' to exit copy mode
-              sendRef.current('q');
-            }
+            if (data.inCopyMode) sendRef.current('q');
           }
-        } catch {
-          // Ignore errors
-        }
+        } catch {}
       }
       prevViewportHeight = viewport.height;
 
-      if (isStandalone || !isBrowserFullscreen) {
-        setKeyboardOffset(0);
-        return;
-      }
-
-      // Calculate how much the viewport has shrunk (keyboard height)
+      if (isStandalone || !isBrowserFullscreen) { setKeyboardOffset(0); return; }
       const offset = window.innerHeight - viewport.height;
       setKeyboardOffset(offset > 0 ? offset : 0);
     };
 
     viewport.addEventListener('resize', updateKeyboardOffset);
     viewport.addEventListener('scroll', updateKeyboardOffset);
-    // Initial check
     updateKeyboardOffset();
 
     return () => {
@@ -1446,45 +943,31 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   // Exit copy mode when custom keyboard appears
   useEffect(() => {
     if (inputMode === 'hidden') return;
-
-    // Keyboard just appeared - check if in copy mode and exit
     const checkAndExitCopyMode = async () => {
       try {
         const res = await authFetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/copy-mode`);
         if (res.ok) {
           const data = await res.json();
-          if (data.inCopyMode) {
-            // Send 'q' to exit copy mode
-            sendRef.current('q');
-          }
+          if (data.inCopyMode) sendRef.current('q');
         }
-      } catch {
-        // Ignore errors
-      }
+      } catch {}
     };
-
     checkAndExitCopyMode();
   }, [inputMode, sessionId]);
 
-  // Show font size indicator when font size changes
+  // Show font size indicator
   useEffect(() => {
     if (isInitialized) {
       setShowFontSizeIndicator(true);
-      if (fontSizeTimeoutRef.current) {
-        clearTimeout(fontSizeTimeoutRef.current);
-      }
-      fontSizeTimeoutRef.current = window.setTimeout(() => {
-        setShowFontSizeIndicator(false);
-      }, 1500);
+      if (fontSizeTimeoutRef.current) clearTimeout(fontSizeTimeoutRef.current);
+      fontSizeTimeoutRef.current = window.setTimeout(() => setShowFontSizeIndicator(false), 1500);
     }
     return () => {
-      if (fontSizeTimeoutRef.current) {
-        clearTimeout(fontSizeTimeoutRef.current);
-      }
+      if (fontSizeTimeoutRef.current) clearTimeout(fontSizeTimeoutRef.current);
     };
   }, [isInitialized, fontSize]);
 
-  // Update terminal theme when session theme changes OR app theme (light/dark) changes
+  // Update terminal theme
   useEffect(() => {
     const term = terminalRef.current;
     const container = containerRef.current;
@@ -1492,8 +975,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
     const applyTerminalTheme = () => {
       const themeColors = getTerminalThemes()[sessionTheme || 'default'];
-
-      // Update xterm theme
       const light = isLightMode();
       term.options.minimumContrastRatio = light ? 4.5 : 1;
       term.options.theme = {
@@ -1504,256 +985,58 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         selectionBackground: light ? 'rgba(0, 0, 0, 0.15)' : 'rgba(255, 255, 255, 0.3)',
         ...(light ? LIGHT_ANSI_COLORS : {}),
       };
-
-      // Also update the viewport background directly for WebGL renderer
       const viewport = container.querySelector('.xterm-viewport') as HTMLElement;
-      if (viewport) {
-        viewport.style.backgroundColor = themeColors.background;
-      }
+      if (viewport) viewport.style.backgroundColor = themeColors.background;
       const screen = container.querySelector('.xterm-screen') as HTMLElement;
-      if (screen) {
-        screen.style.backgroundColor = themeColors.background;
-      }
-
-      // Force refresh to apply theme
+      if (screen) screen.style.backgroundColor = themeColors.background;
       term.refresh(0, term.rows - 1);
     };
 
     applyTerminalTheme();
 
-    // Watch for data-theme attribute changes on <html> for runtime light/dark switching
     const observer = new MutationObserver((mutations) => {
       for (const m of mutations) {
-        if (m.type === 'attributes' && m.attributeName === 'data-theme') {
-          applyTerminalTheme();
-        }
+        if (m.type === 'attributes' && m.attributeName === 'data-theme') applyTerminalTheme();
       }
     });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-
     return () => observer.disconnect();
   }, [sessionTheme]);
 
-  // Handle file selection for image upload
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Reset input so same file can be selected again
-    e.target.value = '';
-
-    setIsUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('image', file);
-
-      const response = await authFetch(`${API_BASE}/api/upload/image`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      const result = await response.json();
-
-      if (response.ok && result.path) {
-        // Insert the image path at cursor position in terminal
-        sendRef.current(result.path);
-      } else {
-        console.error('Upload failed:', result.error);
-        // Show error message in terminal
-        sendRef.current(`\r\n[Upload error: ${result.error || 'Unknown error'}]\r\n`);
-      }
-    } catch (err) {
-      console.error('Upload error:', err);
-      sendRef.current('\r\n[Upload error: Network error]\r\n');
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  // Open file picker
-  const handleOpenFilePicker = () => {
-    fileInputRef.current?.click();
-  };
-
-  // Extract URLs from terminal buffer (toggle menu)
-  const handleExtractUrls = () => {
-    // If menu is already open, close it
-    if (showUrlMenu) {
-      setShowUrlMenu(false);
-      return;
-    }
-
+  // URL extraction handler
+  const handleExtractUrls = useCallback(() => {
+    if (showUrlMenu) { setShowUrlMenu(false); return; }
     const term = terminalRef.current;
     if (!term) return;
-
     const urls: string[] = [];
     const urlRegex = /https?:\/\/[^\s<>"{}|\\^`[\]]+/g;
-
-    // Get visible buffer content
     const buffer = term.buffer.active;
     for (let i = 0; i < buffer.length; i++) {
       const line = buffer.getLine(i);
       if (line) {
         const text = line.translateToString();
         const matches = text.match(urlRegex);
-        if (matches) {
-          urls.push(...matches);
-        }
+        if (matches) urls.push(...matches);
       }
     }
-
-    // Remove duplicates and reverse (newest first)
-    const uniqueUrls = [...new Set(urls)].reverse();
-    setDetectedUrls(uniqueUrls);
+    setDetectedUrls([...new Set(urls)].reverse());
     setUrlPage(0);
     setShowUrlMenu(true);
-  };
+  }, [showUrlMenu]);
 
-  // Copy URL to clipboard
-  const handleCopyUrl = (url: string) => {
-    navigator.clipboard.writeText(url).then(() => {
-      setShowUrlMenu(false);
-    }).catch(console.error);
-  };
-
-  // Open URL in browser
-  const handleOpenUrl = (url: string) => {
-    window.open(url, '_blank');
-    setShowUrlMenu(false);
-  };
-
-  // Save to input history (shared with Keyboard/FloatingKeyboard)
-  const addToInputHistory = (text: string) => {
-    const history = inputHistoryRef.current;
-    const idx = history.indexOf(text);
-    if (idx !== -1) history.splice(idx, 1);
-    history.unshift(text);
-    if (history.length > 50) history.pop();
-    try { localStorage.setItem('cchub-input-history', JSON.stringify(history)); } catch {}
-  };
-
-  // Handle Enter key in textarea input
-  // Single Enter = newline, Double Enter (trailing \n + Enter) = send
-  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) => {
-    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-      if (inputValue.endsWith('\n')) {
-        // Double Enter: send content (strip trailing newline)
-        e.preventDefault();
-        const text = inputValue.replace(/\n$/, '');
-        if (text) {
-          addToInputHistory(text);
-          if (text.includes('\n')) {
-            // Multi-line: use bracketed paste mode so terminal treats it as pasted text
-            sendRef.current(`\x1b[200~${text}\x1b[201~`);
-          } else {
-            sendRef.current(text);
-          }
-        }
-        sendRef.current('\r');
-        setInputValue('');
-        setShowInputHistory(false);
-      }
-      // Single Enter: default textarea behavior (insert newline)
-    } else if (e.key === 'Backspace' && !inputValue && !e.nativeEvent.isComposing) {
-      // Send backspace to terminal when input is empty
-      e.preventDefault();
-      sendRef.current('\x7f');
-    } else if (!inputValue && !e.nativeEvent.isComposing) {
-      // Send arrow keys to terminal when input is empty
-      const arrowKeys: Record<string, string> = {
-        'ArrowUp': '\x1b[A',
-        'ArrowDown': '\x1b[B',
-        'ArrowLeft': '\x1b[D',
-        'ArrowRight': '\x1b[C',
-      };
-      if (arrowKeys[e.key]) {
-        e.preventDefault();
-        sendRef.current(arrowKeys[e.key]);
-      }
-    }
-  };
-
-  // Close input bar
   const handleCloseInputBar = useCallback(() => {
     setInputMode('hidden');
-    setInputValue('');
-    // Refit terminal after bar is hidden
-    setTimeout(() => {
-      fitTerminal();
-    }, 50);
+    setTimeout(() => fitTerminal(), 50);
   }, [fitTerminal]);
-
-  // Update ref for use in touch handlers
   closeInputBarRef.current = handleCloseInputBar;
 
-  // Show keyboard function for touch handlers
   const handleShowKeyboard = useCallback(() => {
     setInputMode('shortcuts');
-    // Scroll to bottom when keyboard appears (user wants to interact with latest output)
     terminalRef.current?.scrollToBottom();
-    // "Last-write-wins": re-send this client's size on first interaction
     fitTerminal();
-    setShowHint(true);
-    if (hintTimeoutRef.current) clearTimeout(hintTimeoutRef.current);
-    hintTimeoutRef.current = window.setTimeout(() => setShowHint(false), 5000);
   }, [fitTerminal]);
   showKeyboardRef.current = handleShowKeyboard;
 
-  // Swipe handling for input bar
-  const inputBarSwipeRef = useRef<{ startX: number; startY: number } | null>(null);
-
-  const handleInputBarTouchStart = (e: React.TouchEvent) => {
-    inputBarSwipeRef.current = {
-      startX: e.touches[0].clientX,
-      startY: e.touches[0].clientY,
-    };
-  };
-
-  const handleInputBarTouchEnd = (e: React.TouchEvent) => {
-    if (!inputBarSwipeRef.current) return;
-    const deltaX = e.changedTouches[0].clientX - inputBarSwipeRef.current.startX;
-    const deltaY = e.changedTouches[0].clientY - inputBarSwipeRef.current.startY;
-
-    // Horizontal swipe (more horizontal than vertical)
-    if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY)) {
-      // Show hint and reset timer on mode switch
-      setShowHint(true);
-      if (hintTimeoutRef.current) {
-        clearTimeout(hintTimeoutRef.current);
-      }
-      hintTimeoutRef.current = window.setTimeout(() => {
-        setShowHint(false);
-      }, 3000);
-
-      if (deltaX > 0) {
-        // Swipe right: shortcuts -> input
-        if (inputMode === 'shortcuts') {
-          setIsAnimating(true);
-          setInputMode('input');
-          // Focus after animation, then refit terminal when soft keyboard appears
-          setTimeout(() => {
-            setIsAnimating(false);
-            inputRef.current?.focus();
-            fitTerminal();
-          }, 350);
-        }
-      } else {
-        // Swipe left: input -> shortcuts
-        if (inputMode === 'input') {
-          setIsAnimating(true);
-          setInputMode('shortcuts');
-          setInputValue('');
-          setTimeout(() => {
-            setIsAnimating(false);
-            fitTerminal();
-          }, 350);
-        }
-      }
-    }
-    inputBarSwipeRef.current = null;
-  };
-
-  // Calculate container height based on visual viewport (for mobile keyboard)
   const themeColors = getTerminalThemes()[sessionTheme || 'default'];
   const containerStyle: React.CSSProperties = {
     ...(keyboardOffset > 0 ? { height: `calc(100% - ${keyboardOffset}px)` } : {}),
@@ -1765,12 +1048,11 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       className={`h-full w-full flex flex-col overflow-hidden${isTouchDevice ? ' select-none' : ''}`}
       style={containerStyle}
     >
-      {/* Terminal area - shrinks when input bar is shown */}
+      {/* Terminal area */}
       <div
         className={`flex-1 relative min-h-0${isTouchDevice ? ' select-none' : ''}`}
         onMouseUp={(e) => e.stopPropagation()}
       >
-        {/* Terminal container */}
         <div
           ref={containerRef}
           className="absolute inset-0 p-1"
@@ -1779,7 +1061,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             touchAction: 'none',
           }}
         />
-        {/* Touch overlay for scrolling - always pointer-events-none, touch handled via JS on container */}
         <div
           ref={overlayRef}
           className="absolute inset-0 z-10 pointer-events-none"
@@ -1793,598 +1074,71 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             </div>
           </div>
         )}
-        {/* Font size indicator */}
         {showFontSizeIndicator && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 bg-[var(--color-overlay)] px-4 py-2 rounded-lg pointer-events-none">
             <span className="text-th-text text-lg font-medium">{fontSize}px</span>
           </div>
         )}
-        {/* Scroll position indicator (tmux-style) */}
         {scrollIndicator && (
           <div className="absolute top-2 right-2 z-30 bg-[var(--color-overlay)] px-2 py-1 rounded text-xs text-yellow-400/80 pointer-events-none font-mono">
             {scrollIndicator}
           </div>
         )}
         {/* Selection mode controls */}
-        {selectionMode && (
-          <>
-            {/* Selection highlight overlay */}
-            {selectionRange && (() => {
-              const term = terminalRef.current;
-              const core = (term as any)?._core;
-              const cellW = core?._renderService?.dimensions?.css?.cell?.width;
-              const cellH = core?._renderService?.dimensions?.css?.cell?.height;
-              if (!cellW || !cellH || !term) return null;
-
-              const { startCol, startRow, endCol, endRow } = selectionRange;
-              const rects: { x: number; y: number; w: number; h: number }[] = [];
-
-              if (startRow === endRow) {
-                // Single line
-                rects.push({ x: startCol * cellW, y: startRow * cellH, w: (endCol - startCol + 1) * cellW, h: cellH });
-              } else {
-                // First line: from startCol to end of line
-                rects.push({ x: startCol * cellW, y: startRow * cellH, w: (term.cols - startCol) * cellW, h: cellH });
-                // Middle lines: full width
-                for (let r = startRow + 1; r < endRow; r++) {
-                  rects.push({ x: 0, y: r * cellH, w: term.cols * cellW, h: cellH });
-                }
-                // Last line: from start to endCol
-                rects.push({ x: 0, y: endRow * cellH, w: (endCol + 1) * cellW, h: cellH });
-              }
-
-              // Get offset from .xterm-screen inside container
-              const screenEl = containerRef.current?.querySelector('.xterm-screen');
-              const containerEl = containerRef.current;
-              let offsetX = 0, offsetY = 0;
-              if (screenEl && containerEl) {
-                const sr = screenEl.getBoundingClientRect();
-                const cr = containerEl.getBoundingClientRect();
-                offsetX = sr.left - cr.left;
-                offsetY = sr.top - cr.top;
-              }
-
-              // Start/end marker positions
-              const startX = startCol * cellW + offsetX;
-              const startY = startRow * cellH + offsetY;
-              const endX = (endCol + 1) * cellW + offsetX;
-              const endY = (endRow + 1) * cellH + offsetY;
-
-              return (
-                <>
-                  {rects.map((r, i) => (
-                    <div
-                      key={i}
-                      className="absolute pointer-events-none"
-                      style={{
-                        left: r.x + offsetX,
-                        top: r.y + offsetY,
-                        width: r.w,
-                        height: r.h,
-                        backgroundColor: 'rgba(59, 130, 246, 0.35)',
-                      }}
-                    />
-                  ))}
-                  {/* Start handle */}
-                  <div
-                    data-selection-control
-                    className="absolute z-50 touch-none flex items-center justify-center select-none"
-                    style={{ left: startX - 16, top: startY - 32, width: 32, height: 32, borderRadius: '50%', backgroundColor: 'rgba(59,130,246,0.9)', border: '2px solid white', boxShadow: '0 2px 8px rgba(0,0,0,0.5)', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
-                    onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); handleHandleDragStart(e, 'start'); }}
-                    onMouseDown={(e) => { e.stopPropagation(); handleHandleMouseDragStart(e, 'start'); }}
-                    onContextMenu={(e) => e.preventDefault()}
-                  >
-                    <span className="text-white text-xs font-bold">S</span>
-                  </div>
-                  {/* End handle */}
-                  <div
-                    data-selection-control
-                    className="absolute z-50 touch-none flex items-center justify-center select-none"
-                    style={{ left: endX - 16, top: endY + 4, width: 32, height: 32, borderRadius: '50%', backgroundColor: 'rgba(59,130,246,0.9)', border: '2px solid white', boxShadow: '0 2px 8px rgba(0,0,0,0.5)', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
-                    onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); handleHandleDragStart(e, 'end'); }}
-                    onMouseDown={(e) => { e.stopPropagation(); handleHandleMouseDragStart(e, 'end'); }}
-                    onContextMenu={(e) => e.preventDefault()}
-                  >
-                    <span className="text-white text-xs font-bold">E</span>
-                  </div>
-                </>
-              );
-            })()}
-            {/* Selection Mode badge + preview: position below selection when it overlaps top area */}
-            {(() => {
-              const term = terminalRef.current;
-              const core = term ? (term as any)._core : null;
-              const cellH = core?._renderService?.dimensions?.css?.cell?.height || 18;
-              const screenEl = containerRef.current?.querySelector('.xterm-screen');
-              const containerEl = containerRef.current;
-              let selOffsetY = 0;
-              if (screenEl && containerEl) {
-                const sr = screenEl.getBoundingClientRect();
-                const cr = containerEl.getBoundingClientRect();
-                selOffsetY = sr.top - cr.top;
-              }
-              const selTopPx = selectionRange ? selectionRange.startRow * cellH + selOffsetY : 0;
-              const selBottomPx = selectionRange ? (selectionRange.endRow + 1) * cellH + selOffsetY : 0;
-              const uiHeight = 120;
-              const overlapsTop = selTopPx < uiHeight;
-              const panelTop = overlapsTop ? Math.max(selBottomPx + 40, uiHeight) : 36;
-              const badgeTop = overlapsTop ? panelTop - 28 : 8;
-
-              const sel = terminalRef.current?.getSelection();
-              return (
-                <>
-                  <div className="absolute left-2 z-40 bg-blue-600/80 px-2 py-1 rounded text-xs text-white pointer-events-none" style={{ top: badgeTop }}>
-                    Selection Mode
-                  </div>
-                  {sel && (
-                    <div data-selection-control className="absolute left-2 right-2 z-40 bg-black/90 border border-blue-500/50 rounded-lg px-3 py-2 shadow-xl max-h-[40vh] overflow-auto select-none" style={{ top: panelTop, WebkitTouchCallout: 'none' }} onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
-                  <pre className="text-blue-200 font-mono text-xs whitespace-pre-wrap break-all mb-2">{sel}</pre>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      data-selection-control
-                      className="px-4 py-1.5 bg-blue-600 active:bg-blue-700 text-white rounded text-sm font-medium"
-                      onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); handleCopySelection(); }}
-                      onClick={handleCopySelection}
-                    >
-                      Copy
-                    </button>
-                    <button
-                      type="button"
-                      data-selection-control
-                      className="px-4 py-1.5 bg-gray-600 active:bg-gray-700 text-white rounded text-sm font-medium"
-                      onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); exitSelectionMode(); }}
-                      onClick={exitSelectionMode}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                    </div>
-                  )}
-                </>
-              );
-            })()}
-          </>
-        )}
-        {/* Copy feedback toast */}
-        {copyFeedback && (
-          <div className="absolute top-12 left-1/2 -translate-x-1/2 z-50 bg-blue-600 px-3 py-1.5 rounded-lg text-sm text-white font-medium shadow-lg pointer-events-none">
-            {copyFeedback}
-          </div>
+        {selection.selectionMode && (
+          <SelectionOverlay
+            terminalRef={terminalRef}
+            containerRef={containerRef}
+            selectionRange={selection.selectionRange}
+            copyFeedback={selection.copyFeedback}
+            onHandleTouchDragStart={selection.handleHandleDragStart}
+            onHandleMouseDragStart={selection.handleHandleMouseDragStart}
+            onCopy={selection.handleCopySelection}
+            onCancel={selection.exitSelectionMode}
+          />
         )}
         {/* URL menu */}
-        {showUrlMenu && (() => {
-          const totalPages = Math.ceil(detectedUrls.length / URL_PAGE_SIZE);
-          const startIdx = urlPage * URL_PAGE_SIZE;
-          const pageUrls = detectedUrls.slice(startIdx, startIdx + URL_PAGE_SIZE);
-          return (
-            <div className="absolute inset-0 z-40 bg-[var(--color-overlay)] flex items-center justify-center p-4">
-              <div className="bg-th-surface rounded-lg w-full max-w-md flex flex-col">
-                <div className="flex items-center justify-between p-3 border-b border-th-border">
-                  <span className="text-th-text font-medium">
-                    URL一覧 {detectedUrls.length > 0 && `(${startIdx + 1}-${Math.min(startIdx + URL_PAGE_SIZE, detectedUrls.length)}/${detectedUrls.length})`}
-                  </span>
-                  <button
-                    onClick={() => setShowUrlMenu(false)}
-                    className="text-th-text-muted hover:text-th-text text-xl px-2"
-                  >
-                    ×
-                  </button>
-                </div>
-                <div className="p-2">
-                  {detectedUrls.length === 0 ? (
-                    <p className="text-th-text-muted text-center py-4">URLが見つかりません</p>
-                  ) : (
-                    pageUrls.map((url, index) => (
-                      <div key={startIdx + index} className="flex items-center gap-2 p-2 hover:bg-th-surface-hover rounded">
-                        <span className="flex-1 text-th-text text-sm truncate">{url}</span>
-                        <button
-                          onClick={() => handleCopyUrl(url)}
-                          className="px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded text-white text-xs shrink-0"
-                        >
-                          コピー
-                        </button>
-                        <button
-                          onClick={() => handleOpenUrl(url)}
-                          className="px-2 py-1 bg-th-surface-active hover:bg-th-surface-hover rounded text-th-text text-xs shrink-0"
-                        >
-                          開く
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-                {totalPages > 1 && (
-                  <div className="flex items-center justify-center gap-4 p-3 border-t border-th-border">
-                    <button
-                      onClick={() => setUrlPage(p => Math.max(0, p - 1))}
-                      disabled={urlPage === 0}
-                      className={`px-3 py-1 rounded ${urlPage === 0 ? 'bg-th-surface-hover text-th-text-muted' : 'bg-th-surface-active text-th-text hover:bg-th-surface-hover'}`}
-                    >
-                      ← 前
-                    </button>
-                    <span className="text-th-text-secondary text-sm">{urlPage + 1} / {totalPages}</span>
-                    <button
-                      onClick={() => setUrlPage(p => Math.min(totalPages - 1, p + 1))}
-                      disabled={urlPage >= totalPages - 1}
-                      className={`px-3 py-1 rounded ${urlPage >= totalPages - 1 ? 'bg-th-surface-hover text-th-text-muted' : 'bg-th-surface-active text-th-text hover:bg-th-surface-hover'}`}
-                    >
-                      次 →
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })()}
+        {showUrlMenu && (
+          <UrlMenu
+            urls={detectedUrls}
+            urlPage={urlPage}
+            pageSize={URL_PAGE_SIZE}
+            onPageChange={setUrlPage}
+            onCopy={(url) => { navigator.clipboard.writeText(url).then(() => setShowUrlMenu(false)).catch(console.error); }}
+            onOpen={(url) => { window.open(url, '_blank'); setShowUrlMenu(false); }}
+            onClose={() => setShowUrlMenu(false)}
+          />
+        )}
       </div>
 
-      {/* Input bar - pushes terminal up (hidden when hideKeyboard prop is set) */}
-      {!hideKeyboard && inputMode !== 'hidden' && (
-        <div
-          ref={inputBarRef}
-          className="shrink-0 bg-th-bg border-t border-green-500 relative"
-          onTouchStart={handleInputBarTouchStart}
-          onTouchEnd={handleInputBarTouchEnd}
-        >
-          {/* Custom overlay content (from parent) - only show when overlay is visible */}
-          {showOverlay && overlayContent}
-
-          {/* Tap area to show overlay when hidden (keyboard visible state) */}
-          {!showOverlay && overlayContent && onOverlayTap && (
-            <div
-              className="h-4 flex items-center justify-center"
-              onClick={onOverlayTap}
-            >
-              <div className="w-10 h-1 bg-th-surface-active rounded-full" />
-            </div>
-          )}
-
-          {/* Hidden file input for image upload (shared across modes) */}
-          <input
-            type="file"
-            accept="image/png,image/jpeg,image/gif,image/webp"
-            className="hidden"
-            ref={fileInputRef}
-            onChange={handleFileSelect}
-          />
-          {/* Header bar with hint and position toggle - hidden when overlay content is present */}
-          {!overlayContent && (
-          <div
-            className={`bg-th-surface flex justify-between items-center overflow-hidden transition-all duration-300 ${
-              isTablet
-                ? (showPositionToggle ? 'px-2 py-1' : 'h-0 py-0')
-                : 'px-2 py-1'
-            }`}
-            onClick={() => isTablet && !showPositionToggle && setShowPositionToggle(true)}
-          >
-            {/* Hint text - only show on mobile or when position toggle is visible */}
-            {(!isTablet || showPositionToggle) && (
-              <span className="text-xs text-th-text-muted">
-                {showHint && 'スクロールで閉じる'}
-              </span>
-            )}
-            {isTablet && inputMode === 'shortcuts' && showPositionToggle && (
-              <button
-                onClick={handlePositionToggle}
-                className="px-2 py-0.5 bg-th-surface-hover text-th-text-secondary text-xs rounded"
-              >
-                {keyboardPosition === 'right' ? '← 左へ' : '右へ →'}
-              </button>
-            )}
-          </div>
-          )}
-
-          {/* Tap area to show position toggle when header is hidden */}
-          {isTablet && !showPositionToggle && inputMode === 'shortcuts' && (
-            <div
-              className="h-2 bg-th-surface flex items-center justify-center"
-              onClick={() => setShowPositionToggle(true)}
-            >
-              <div className="w-8 h-0.5 bg-th-surface-active rounded-full" />
-            </div>
-          )}
-
-          {/* Sliding container for keyboard modes */}
-          {isAnimating ? (
-            // During animation: render both for slide effect
-            <div className="overflow-hidden">
-              <div
-                className="flex transition-transform duration-300 ease-out"
-                style={{ transform: inputMode === 'input' ? 'translateX(-100%)' : 'translateX(0)' }}
-              >
-                {/* Full QWERTY keyboard mode */}
-                <div className={`w-full flex-shrink-0 ${isTablet ? 'flex' : ''} ${isTablet ? (keyboardPosition === 'left' ? 'justify-start' : 'justify-end') : ''}`}>
-                  <div className={isTablet ? 'w-1/3 max-w-sm' : 'w-full'}>
-                    <Keyboard
-                      onSend={(char) => sendRef.current(char)}
-                      onFilePicker={handleOpenFilePicker}
-                      onUrlExtract={handleExtractUrls}
-                      isUploading={isUploading}
-                      compact={isTablet}
-                      showModeToggle={true}
-                      inputMode="keyboard"
-                      onInputModeChange={(mode) => {
-                        if (mode === 'input') {
-                          setIsAnimating(true);
-                          setInputMode('input');
-                          setTimeout(() => {
-                            setIsAnimating(false);
-                            inputRef.current?.focus();
-                            fitTerminal();
-                          }, 350);
-                        }
-                      }}
-                    />
-                  </div>
-                </div>
-                {/* Text input mode */}
-                <div className="w-full flex-shrink-0 p-2 bg-th-bg">
-                  {/* History list (above input) */}
-                  {showInputHistory && inputHistoryRef.current.length > 0 && (
-                    <div className="max-h-40 overflow-y-auto border border-th-border rounded bg-th-bg mb-1">
-                      {inputHistoryRef.current.map((item, i) => (
-                        <button
-                          key={`${i}-${item}`}
-                          onClick={() => {
-                            setInputValue(item);
-                            setShowInputHistory(false);
-                            inputRef.current?.focus();
-                          }}
-                          onContextMenu={(e) => e.preventDefault()}
-                          className="w-full text-left px-3 py-2 text-sm text-th-text hover:bg-th-surface-hover active:bg-th-surface-active border-b border-th-border/30 last:border-b-0 truncate"
-                        >
-                          {item}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  <div className="flex gap-1.5">
-                    <input
-                      type="text"
-                      inputMode="text"
-                      lang="ja"
-                      value={inputValue}
-                      onChange={(e) => setInputValue(e.target.value)}
-                      onKeyDown={handleInputKeyDown}
-                      autoCapitalize="off"
-                      autoCorrect="off"
-                      autoComplete="off"
-                      spellCheck={false}
-                      placeholder="日本語入力可 - Enterで送信"
-                      className="flex-1 px-3 py-2 bg-th-surface border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-green-500"
-                      style={{ fontSize: '16px' }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        inputHistoryRef.current = (() => { try { return JSON.parse(localStorage.getItem('cchub-input-history') || '[]'); } catch { return []; } })();
-                        setShowInputHistory(prev => !prev);
-                      }}
-                      className={`px-2.5 rounded border border-th-border ${showInputHistory ? 'bg-blue-700 text-white border-blue-700' : 'bg-th-surface text-th-text-secondary'}`}
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : inputMode === 'shortcuts' ? (
-            // Keyboard mode
-            <div className={`${isTablet ? 'flex' : ''} ${isTablet ? (keyboardPosition === 'left' ? 'justify-start' : 'justify-end') : ''}`}>
-              {/* Hidden input for English keyboard */}
-              <input
-                type="text"
-                inputMode="none"
-                className="absolute opacity-0 w-0 h-0 pointer-events-none"
-                tabIndex={-1}
-                ref={inputRef as React.RefObject<HTMLInputElement | null>}
-              />
-              <div className={isTablet ? 'w-1/3 max-w-sm' : 'w-full'} data-onboarding="keyboard">
-                <Keyboard
-                  onSend={(char) => sendRef.current(char)}
-                  onFilePicker={handleOpenFilePicker}
-                  onUrlExtract={handleExtractUrls}
-                  isUploading={isUploading}
-                  compact={isTablet}
-                  showModeToggle={true}
-                  inputMode="keyboard"
-                  onInputModeChange={(mode) => {
-                    if (mode === 'input') {
-                      setIsAnimating(true);
-                      setInputMode('input');
-                      setTimeout(() => {
-                        setIsAnimating(false);
-                        inputRef.current?.focus();
-                        fitTerminal();
-                      }, 350);
-                    }
-                  }}
-                />
-              </div>
-            </div>
-          ) : (
-            // Input mode - mode toggle header + textarea + button row
-            <div className="bg-[#111111]">
-              {/* Mode toggle header */}
-              <div className="flex items-center justify-between px-2 py-1.5 border-b border-white/[0.04]">
-                <div className="inline-flex bg-white/[0.04] rounded-md p-0.5">
-                  <button
-                    onClick={() => {
-                      setIsAnimating(true);
-                      setInputMode('shortcuts');
-                      setInputValue('');
-                      setShowInputHistory(false);
-                      setTimeout(() => {
-                        setIsAnimating(false);
-                        fitTerminal();
-                      }, 350);
-                    }}
-                    className="px-3 py-1 text-[11px] text-zinc-600 rounded font-medium transition-colors"
-                  >
-                    キーボード
-                  </button>
-                  <button
-                    className="px-3 py-1 text-[11px] bg-white/[0.08] text-zinc-300 rounded font-medium"
-                  >
-                    入力
-                  </button>
-                </div>
-                <button
-                  onClick={() => {
-                    setInputMode('hidden');
-                    fitTerminal();
-                  }}
-                  className="p-1.5 text-zinc-600 hover:text-zinc-400 rounded transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="px-2.5 pt-2 pb-1.5">
-                {/* History dropdown */}
-                {showInputHistory && inputHistoryRef.current.length > 0 && (
-                  <div className="max-h-28 overflow-y-auto border border-white/[0.06] rounded-md bg-[#0a0a0a] mb-2">
-                    {inputHistoryRef.current.map((item, i) => (
-                      <button
-                        key={`${i}-${item}`}
-                        onClick={() => {
-                          setInputValue(item);
-                          setShowInputHistory(false);
-                          inputRef.current?.focus();
-                        }}
-                        onContextMenu={(e) => e.preventDefault()}
-                        className="w-full text-left px-3 py-2 text-[12px] text-zinc-300 hover:bg-white/[0.06] border-b border-white/[0.04] last:border-b-0 truncate transition-colors"
-                      >
-                        {item}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {/* Textarea full width */}
-                <textarea
-                  ref={inputRef as React.RefObject<HTMLTextAreaElement | null>}
-                  inputMode="text"
-                  lang="ja"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={handleInputKeyDown}
-                  autoCapitalize="off"
-                  autoCorrect="off"
-                  autoComplete="off"
-                  spellCheck={false}
-                  // biome-ignore lint/a11y/noAutofocus: required to show OS keyboard on mode switch
-                  autoFocus
-                  placeholder="日本語入力 - Enter×2で送信"
-                  rows={Math.min(Math.max(inputValue.split('\n').length, 1), 5)}
-                  className="w-full px-3 py-2 bg-[#0a0a0a] border border-white/[0.08] rounded-md text-[13px] text-white placeholder:text-zinc-700 focus:outline-none focus:border-blue-500/50 resize-none mb-1.5"
-                  style={{ fontSize: '16px' }}
-                />
-                {/* Bottom button row */}
-                <div className="flex items-center gap-1.5">
-                  {/* Left group: history, file picker, clear */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      inputHistoryRef.current = (() => { try { return JSON.parse(localStorage.getItem('cchub-input-history') || '[]'); } catch { return []; } })();
-                      setShowInputHistory(prev => !prev);
-                    }}
-                    className={`h-9 w-9 flex items-center justify-center rounded-md transition-colors ${
-                      showInputHistory ? 'bg-blue-600 text-white' : 'bg-white/[0.06] text-zinc-400 active:bg-white/[0.1]'
-                    }`}
-                  >
-                    <Clock className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={handleOpenFilePicker}
-                    disabled={isUploading}
-                    className={`h-9 w-9 flex items-center justify-center rounded-md ${
-                      isUploading
-                        ? 'bg-white/[0.06] text-zinc-600'
-                        : 'bg-white/[0.06] text-zinc-400 active:bg-white/[0.1]'
-                    }`}
-                  >
-                    <FileText className="w-4 h-4" />
-                  </button>
-                  {inputValue && (
-                    <button
-                      type="button"
-                      onClick={() => { setInputValue(''); inputRef.current?.focus(); }}
-                      className="h-9 w-9 flex items-center justify-center rounded-md bg-white/[0.06] text-zinc-500 active:bg-white/[0.1]"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                  {/* Spacer */}
-                  <div className="flex-1" />
-                  {/* Right group: arrow up, arrow down, send */}
-                  <button
-                    type="button"
-                    onClick={() => sendRef.current('\x1b[A')}
-                    className="h-9 w-9 flex items-center justify-center rounded-md bg-white/[0.06] text-zinc-400 active:bg-white/[0.1]"
-                  >
-                    <ChevronUp className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => sendRef.current('\x1b[B')}
-                    className="h-9 w-9 flex items-center justify-center rounded-md bg-white/[0.06] text-zinc-400 active:bg-white/[0.1]"
-                  >
-                    <ChevronDown className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (inputValue) {
-                        addToInputHistory(inputValue);
-                        if (inputValue.includes('\n')) {
-                          sendRef.current(`\x1b[200~${inputValue}\x1b[201~`);
-                        } else {
-                          sendRef.current(inputValue);
-                        }
-                      }
-                      sendRef.current('\r');
-                      setInputValue('');
-                      setShowInputHistory(false);
-                    }}
-                    className="h-9 w-9 flex items-center justify-center rounded-md bg-blue-600 active:bg-blue-700 text-white"
-                  >
-                    <CornerDownLeft className="w-4 h-4" strokeWidth={1.5} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      {/* Input bar (mobile/tablet keyboard) */}
+      <InputBar
+        inputMode={inputMode}
+        setInputMode={setInputMode}
+        sendRef={sendRef}
+        fitTerminal={fitTerminal}
+        isTablet={isTablet}
+        overlayContent={overlayContent}
+        onOverlayTap={onOverlayTap}
+        showOverlay={showOverlay}
+        hideKeyboard={hideKeyboard}
+      />
 
       {/* Bottom overlay when keyboard is hidden (mobile only) */}
       {!hideKeyboard && inputMode === 'hidden' && overlayContent && (
         <div className="fixed bottom-0 left-0 right-0 z-40 bg-th-bg border-t border-th-border">
           {overlayContent}
-
-          {/* Tap area to show overlay when hidden */}
           {!showOverlay && onOverlayTap && (
-            <div
-              className="absolute inset-0 z-50"
-              onClick={onOverlayTap}
-            />
+            <div className="absolute inset-0 z-50" onClick={onOverlayTap} />
           )}
         </div>
       )}
 
-      {/* Tap area at bottom when keyboard hidden and no overlay content */}
+      {/* Tap area at bottom when keyboard hidden */}
       {!hideKeyboard && inputMode === 'hidden' && !overlayContent && (
         <div
           className="fixed bottom-0 left-0 right-0 h-8 z-40 bg-[var(--color-overlay)] flex items-center justify-center"
-          onClick={() => {
-            setInputMode('shortcuts');
-            setShowHint(true);
-            if (hintTimeoutRef.current) clearTimeout(hintTimeoutRef.current);
-            hintTimeoutRef.current = window.setTimeout(() => setShowHint(false), 5000);
-          }}
+          onClick={handleShowKeyboard}
         >
           <svg className="w-5 h-5 text-th-text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <rect x="2" y="6" width="20" height="12" rx="2" />

@@ -65,17 +65,15 @@ function splitDisplayLines(text: string): string[] {
   return lines
 }
 
-/** Paginate by display lines instead of character count */
-function paginateMessage(msgs: ConversationMessage[], msgIndex: number, page: number): { text: string; pageInfo: string; totalPages: number } {
-  if (msgIndex < 0) return { text: '(no messages)', pageInfo: '', totalPages: 0 }
-  const fullText = formatMessage(msgs[msgIndex])
+/** Paginate a single message by display lines */
+function paginateSingleMessage(fullText: string, page: number): { text: string; pageInfo: string; totalPages: number } {
   const allLines = splitDisplayLines(fullText)
 
   if (allLines.length <= MAX_LINES) {
     return { text: fullText, pageInfo: '', totalPages: 1 }
   }
 
-  const overlap = 1  // repeat 1 line for context continuity
+  const overlap = 1
   const advance = MAX_LINES - overlap
   const totalPages = Math.ceil((allLines.length - MAX_LINES) / advance) + 1
   const p = Math.min(page, totalPages - 1)
@@ -84,6 +82,67 @@ function paginateMessage(msgs: ConversationMessage[], msgIndex: number, page: nu
   const text = pageLines.join('\n')
   const pageInfo = ` p${p + 1}/${totalPages}`
   return { text, pageInfo, totalPages }
+}
+
+/** Build multi-message view starting from a specific message index */
+function buildMultiMessageViewFrom(msgs: ConversationMessage[], fromIndex: number): { text: string; count: number } {
+  if (fromIndex < 0 || msgs.length === 0) return { text: '(no messages)', count: 0 }
+
+  const blocks: string[][] = []
+  for (let i = fromIndex; i >= 0; i--) {
+    blocks.unshift(splitDisplayLines(formatMessage(msgs[i])))
+  }
+
+  const result: string[] = []
+  let remaining = MAX_LINES
+  let count = 0
+
+  for (let i = blocks.length - 1; i >= 0 && remaining > 0; i--) {
+    const lines = blocks[i]
+    const needSeparator = result.length > 0 ? 1 : 0
+    const linesNeeded = lines.length + needSeparator
+
+    if (linesNeeded <= remaining) {
+      if (needSeparator) result.unshift('')
+      result.unshift(...lines)
+      remaining -= linesNeeded
+      count++
+    } else if (count === 0) {
+      const available = remaining
+      const startLine = Math.max(0, lines.length - available)
+      result.unshift(...lines.slice(startLine))
+      remaining = 0
+      count = 1
+    } else {
+      break
+    }
+  }
+
+  return { text: result.join('\n'), count }
+}
+
+/** Main pagination entry point */
+function paginateMessage(msgs: ConversationMessage[], msgIndex: number, page: number): { text: string; pageInfo: string; totalPages: number; multiCount: number } {
+  if (msgIndex < 0) return { text: '(no messages)', pageInfo: '', totalPages: 0, multiCount: 0 }
+
+  if (page === 0) {
+    const { text, count } = buildMultiMessageViewFrom(msgs, msgIndex)
+    if (count > 1) {
+      return { text, pageInfo: '', totalPages: 1, multiCount: count }
+    }
+  }
+
+  const fullText = formatMessage(msgs[msgIndex])
+  const result = paginateSingleMessage(fullText, page)
+  return { ...result, multiCount: 1 }
+}
+
+/** Calculate how many messages are shown at a given offset, for offset jumping */
+export function getMultiCountAt(msgs: ConversationMessage[], offset: number): number {
+  const msgIndex = msgs.length > 0 ? Math.max(0, msgs.length - 1 - offset) : -1
+  if (msgIndex < 0) return 1
+  const { count } = buildMultiMessageViewFrom(msgs, msgIndex)
+  return Math.max(1, count)
 }
 
 export interface AppState {
@@ -113,12 +172,62 @@ function statusLabel(s: Session): string {
   return ''
 }
 
+// ─── Content helpers (shared by build and in-place update) ───
+
+function sessionListHeader(state: AppState): string {
+  const { sessionIndex, sessions, apiUsagePercent } = state
+  return `CC Hub ${apiUsagePercent ? `API:${apiUsagePercent}` : ''} ${sessionIndex + 1}/${sessions.length}`
+}
+
+function sessionListBody(state: AppState): string {
+  const { sessions, sessionIndex } = state
+  const start = Math.max(0, sessionIndex - 3)
+  const visible = sessions.slice(start, start + MAX_LINES)
+  return visible.map((s, i) => {
+    const idx = start + i
+    const cursor = idx === sessionIndex ? '>' : ' '
+    return `${cursor}${statusLabel(s)} ${sName(s)}`
+  }).join('\n') || '(no sessions)'
+}
+
+function conversationContent(state: AppState): { headerText: string; bodyText: string; footerText: string; multiCount: number } {
+  const session = state.sessions[state.sessionIndex]
+  const waiting = session ? isWaiting(session) : false
+  const ind = session?.indicatorState
+  const statusBadge = waiting ? '  [!] WAITING' : ind === 'processing' ? '  [*]' : ''
+
+  const msgs = state.conversation
+  const msgIndex = msgs.length > 0
+    ? Math.max(0, msgs.length - 1 - state.conversationOffset)
+    : -1
+  const { text: bodyText, pageInfo, multiCount } = paginateMessage(msgs, msgIndex, state.conversationPage)
+  const role = multiCount > 1
+    ? `${multiCount}msgs`
+    : msgIndex >= 0 ? (msgs[msgIndex].role === 'user' ? 'YOU' : 'AI') : ''
+  const pos = msgs.length > 0 ? `${role} ${msgIndex + 1}/${msgs.length}${pageInfo}` : ''
+  const action = waiting ? 'tap:respond  ' : ''
+
+  return {
+    headerText: `${session ? sName(session) : '---'}${statusBadge}`,
+    bodyText,
+    footerText: `${action}dbl:back  ${pos}`,
+    multiCount,
+  }
+}
+
+function choiceBody(state: AppState): string {
+  return state.choiceOptions.map((opt, i) => {
+    const cursor = i === state.choiceIndex ? '>>>' : '   '
+    return `${cursor} ${opt}`
+  }).join('\n')
+}
+
 // ─── Page builders ───
 
 function buildSessionList(state: AppState): RebuildPageContainer {
-  const { sessions, sessionIndex, apiUsagePercent } = state
+  const headerText = sessionListHeader(state)
+  const listText = sessionListBody(state)
 
-  // Header - compact
   const header = new TextContainerProperty({
     xPosition: 0, yPosition: 0,
     width: W, height: 36,
@@ -126,19 +235,8 @@ function buildSessionList(state: AppState): RebuildPageContainer {
     paddingLength: 4,
     containerID: 1, containerName: 'header',
     isEventCapture: 0,
-    content: `CC Hub ${apiUsagePercent ? `API:${apiUsagePercent}` : ''} ${sessionIndex + 1}/${sessions.length}`,
+    content: headerText,
   })
-
-  // Session list - maximize space
-  const maxVisible = MAX_LINES
-  const start = Math.max(0, sessionIndex - 3)
-  const visible = sessions.slice(start, start + maxVisible)
-  const listText = visible.map((s, i) => {
-    const idx = start + i
-    const cursor = idx === sessionIndex ? '>' : ' '
-    const label = statusLabel(s)
-    return `${cursor}${label} ${sName(s)}`
-  }).join('\n')
 
   const list = new TextContainerProperty({
     xPosition: 4, yPosition: 36,
@@ -147,7 +245,7 @@ function buildSessionList(state: AppState): RebuildPageContainer {
     paddingLength: 4,
     containerID: 2, containerName: 'list',
     isEventCapture: 0,
-    content: listText || '(no sessions)',
+    content: listText,
   })
 
   // Footer - minimal
@@ -168,12 +266,8 @@ function buildSessionList(state: AppState): RebuildPageContainer {
 }
 
 function buildConversation(state: AppState): RebuildPageContainer {
-  const session = state.sessions[state.sessionIndex]
-  const waiting = session ? isWaiting(session) : false
-  const ind = session?.indicatorState
+  const { headerText, bodyText, footerText } = conversationContent(state)
 
-  // Header with session name + status badge
-  const statusBadge = waiting ? '  [!] WAITING' : ind === 'processing' ? '  [*]' : ''
   const header = new TextContainerProperty({
     xPosition: 0, yPosition: 0,
     width: W, height: 36,
@@ -181,18 +275,8 @@ function buildConversation(state: AppState): RebuildPageContainer {
     paddingLength: 4,
     containerID: 1, containerName: 'header',
     isEventCapture: 0,
-    content: `${session ? sName(session) : '---'}${statusBadge}`,
+    content: headerText,
   })
-
-  // Message body
-  const msgs = state.conversation
-  const msgIndex = msgs.length > 0
-    ? Math.max(0, msgs.length - 1 - state.conversationOffset)
-    : -1
-  const { text: msgText, pageInfo } = paginateMessage(msgs, msgIndex, state.conversationPage)
-
-  // Role indicator
-  const role = msgIndex >= 0 ? (msgs[msgIndex].role === 'user' ? 'YOU' : 'AI') : ''
 
   const body = new TextContainerProperty({
     xPosition: 4, yPosition: 36,
@@ -201,12 +285,9 @@ function buildConversation(state: AppState): RebuildPageContainer {
     paddingLength: 6,
     containerID: 2, containerName: 'body',
     isEventCapture: 0,
-    content: msgText,
+    content: bodyText,
   })
 
-  // Footer with navigation info
-  const pos = msgs.length > 0 ? `${role} ${msgIndex + 1}/${msgs.length}${pageInfo}` : ''
-  const action = waiting ? 'tap:respond  ' : ''
   const footer = new TextContainerProperty({
     xPosition: 0, yPosition: H - 36,
     width: W, height: 36,
@@ -214,7 +295,7 @@ function buildConversation(state: AppState): RebuildPageContainer {
     paddingLength: 4,
     containerID: 3, containerName: 'footer',
     isEventCapture: 1,
-    content: `${action}dbl:back  ${pos}`,
+    content: footerText,
   })
 
   return new RebuildPageContainer({
@@ -237,12 +318,6 @@ function buildChoice(state: AppState): RebuildPageContainer {
     content: `${session ? sName(session) : '---'}  [SELECT]`,
   })
 
-  // Choice list
-  const choiceText = state.choiceOptions.map((opt, i) => {
-    const cursor = i === state.choiceIndex ? '>>>' : '   '
-    return `${cursor} ${opt}`
-  }).join('\n')
-
   const body = new TextContainerProperty({
     xPosition: 4, yPosition: 36,
     width: W - 8, height: H - 36 - 36,
@@ -250,7 +325,7 @@ function buildChoice(state: AppState): RebuildPageContainer {
     paddingLength: 8,
     containerID: 2, containerName: 'body',
     isEventCapture: 0,
-    content: choiceText,
+    content: choiceBody(state),
   })
 
   const footer = new TextContainerProperty({
@@ -372,66 +447,40 @@ export async function updateDisplay(bridge: Bridge | null, state: AppState): Pro
   // In-place text updates
   switch (state.mode) {
     case 'session_list': {
-      const { sessions, sessionIndex, apiUsagePercent } = state
-      const start = Math.max(0, sessionIndex - 3)
-      const visible = sessions.slice(start, start + MAX_LINES)
-      const listText = visible.map((s, i) => {
-        const idx = start + i
-        const cursor = idx === sessionIndex ? '>' : ' '
-        return `${cursor}${statusLabel(s)} ${sName(s)}`
-      }).join('\n')
-
       await Promise.all([
         bridge.textContainerUpgrade(new TextContainerUpgrade({
           containerID: 1, containerName: 'header',
-          content: `CC Hub ${apiUsagePercent ? `API:${apiUsagePercent}` : ''} ${sessionIndex + 1}/${sessions.length}`,
+          content: sessionListHeader(state),
         })),
         bridge.textContainerUpgrade(new TextContainerUpgrade({
           containerID: 2, containerName: 'list',
-          content: listText || '(no sessions)',
+          content: sessionListBody(state),
         })),
       ])
       break
     }
     case 'conversation': {
-      const session = state.sessions[state.sessionIndex]
-      const waiting = session ? isWaiting(session) : false
-      const ind = session?.indicatorState
-      const statusBadge = waiting ? '  [!] WAITING' : ind === 'processing' ? '  [*]' : ''
-      const msgs = state.conversation
-      const msgIndex = msgs.length > 0
-        ? Math.max(0, msgs.length - 1 - state.conversationOffset)
-        : -1
-      const { text: msgText, pageInfo } = paginateMessage(msgs, msgIndex, state.conversationPage)
-      const role = msgIndex >= 0 ? (msgs[msgIndex].role === 'user' ? 'YOU' : 'AI') : ''
-      const pos = msgs.length > 0 ? `${role} ${msgIndex + 1}/${msgs.length}${pageInfo}` : ''
-      const action = waiting ? 'tap:respond  ' : ''
-
+      const { headerText, bodyText, footerText } = conversationContent(state)
       await Promise.all([
         bridge.textContainerUpgrade(new TextContainerUpgrade({
           containerID: 1, containerName: 'header',
-          content: `${session ? sName(session) : '---'}${statusBadge}`,
+          content: headerText,
         })),
         bridge.textContainerUpgrade(new TextContainerUpgrade({
           containerID: 2, containerName: 'body',
-          content: msgText,
+          content: bodyText,
         })),
         bridge.textContainerUpgrade(new TextContainerUpgrade({
           containerID: 3, containerName: 'footer',
-          content: `${action}dbl:back  ${pos}`,
+          content: footerText,
         })),
       ])
       break
     }
     case 'choice': {
-      const choiceText = state.choiceOptions.map((opt, i) => {
-        const cursor = i === state.choiceIndex ? '>>>' : '   '
-        return `${cursor} ${opt}`
-      }).join('\n')
-
       await bridge.textContainerUpgrade(new TextContainerUpgrade({
         containerID: 2, containerName: 'body',
-        content: choiceText,
+        content: choiceBody(state),
       }))
       break
     }

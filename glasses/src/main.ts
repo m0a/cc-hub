@@ -1,5 +1,5 @@
 import { getDashboard, getConversation, setBaseUrl } from './api.ts'
-import { initDisplay, updateDisplay, setupEvents, buildSetupGuide } from './display.ts'
+import { initDisplay, updateDisplay, setupEvents, buildSetupGuide, getMultiCountAt } from './display.ts'
 import type { AppState } from './display.ts'
 import { startPhoneUI } from './phone-ui.ts'
 import { CcHubWsClient } from './ws-client.ts'
@@ -167,12 +167,12 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
           if (state.sessionIndex > 0) state.sessionIndex--
           break
         case 'conversation': {
-          // Page up within message, then previous message
+          // Page up within message, then previous message(s)
           if (state.conversationPage > 0) {
             state.conversationPage--
           } else if (state.conversationOffset < state.conversation.length - 1) {
-            state.conversationOffset++
-            // Jump to last page of previous message
+            const jump = getMultiCountAt(state.conversation, state.conversationOffset)
+            state.conversationOffset = Math.min(state.conversation.length - 1, state.conversationOffset + jump)
             state.conversationPage = Math.max(0, currentMsgTotalPages() - 1)
           }
           break
@@ -193,12 +193,13 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
           if (state.sessionIndex < state.sessions.length - 1) state.sessionIndex++
           break
         case 'conversation': {
-          // Page down within message, then next message
+          // Page down within message, then next message(s)
           const totalPages = currentMsgTotalPages()
           if (state.conversationPage < totalPages - 1) {
             state.conversationPage++
           } else if (state.conversationOffset > 0) {
-            state.conversationOffset--
+            const jump = getMultiCountAt(state.conversation, state.conversationOffset - 1)
+            state.conversationOffset = Math.max(0, state.conversationOffset - jump)
             state.conversationPage = 0
           }
           break
@@ -394,7 +395,8 @@ function startDebugUI() {
         case 'conversation':
           if (state.conversationPage > 0) { state.conversationPage-- }
           else if (state.conversationOffset < state.conversation.length - 1) {
-            state.conversationOffset++
+            const jump = getMultiCountAt(state.conversation, state.conversationOffset)
+            state.conversationOffset = Math.min(state.conversation.length - 1, state.conversationOffset + jump)
             state.conversationPage = Math.max(0, currentMsgTotalPages() - 1)
           }
           break
@@ -407,7 +409,11 @@ function startDebugUI() {
         case 'conversation': {
           const tp = currentMsgTotalPages()
           if (state.conversationPage < tp - 1) { state.conversationPage++ }
-          else if (state.conversationOffset > 0) { state.conversationOffset--; state.conversationPage = 0 }
+          else if (state.conversationOffset > 0) {
+            const jump = getMultiCountAt(state.conversation, state.conversationOffset - 1)
+            state.conversationOffset = Math.max(0, state.conversationOffset - jump)
+            state.conversationPage = 0
+          }
           break
         }
         case 'choice': if (state.choiceIndex < state.choiceOptions.length - 1) state.choiceIndex++; break

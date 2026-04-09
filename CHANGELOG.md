@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.59] - 2026-04-09
+
+### Added
+- G2 Glasses: 行数ベースのページネーション（文字幅計算でCJK/ASCII自動判定）
+- G2 Glasses: 複数メッセージ表示（短いメッセージを7行に詰め込み）
+- G2 Glasses: スワイプ時の表示メッセージ数分ジャンプ
+
+### Changed
+- G2 Glasses: 全コンテナからボーダー削除、borderWidth: 0を明示
+- G2 Glasses: ヘッダー/フッター高さを36pxに統一
+- G2 Glasses: セッションリスト表示を7行に制限（スクロールインジケータ解消）
+- G2 Glasses: display.tsリファクタリング（コンテンツヘルパー抽出、DRY化）
+
 ## [0.1.58] - 2026-04-09
 
 ### Fixed

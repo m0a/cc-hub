@@ -15,17 +15,73 @@ const H = 288
 export type Bridge = Awaited<ReturnType<typeof waitForEvenAppBridge>>
 export type Mode = 'session_list' | 'conversation' | 'choice'
 
-const PAGE_SIZE = 180      // chars to display per page
-const PAGE_ADVANCE = 160   // chars to advance (overlap = PAGE_SIZE - PAGE_ADVANCE = 20)
+// Display metrics (measured on actual G2 hardware)
+// Body container: 568x210, border=0, padding=6 → effective 556x198
+const LINE_WIDTH = 52       // max half-width (ASCII) chars per line
+const MAX_LINES = 7         // max visible lines in body container
+const CJK_RATIO = 52 / 28  // CJK char width relative to ASCII (~1.857)
 
+/** Returns the display width of a single character in half-width units */
+function charWidth(ch: string): number {
+  const code = ch.codePointAt(0) ?? 0
+  // CJK Unified Ideographs, Hiragana, Katakana, Fullwidth forms, CJK Symbols
+  if (
+    (code >= 0x3000 && code <= 0x9FFF) ||   // CJK, Hiragana, Katakana, symbols
+    (code >= 0xF900 && code <= 0xFAFF) ||   // CJK Compatibility
+    (code >= 0xFF01 && code <= 0xFF60) ||   // Fullwidth Latin
+    (code >= 0xFFE0 && code <= 0xFFE6) ||   // Fullwidth symbols
+    (code >= 0x20000 && code <= 0x2FA1F)    // CJK Extension B+
+  ) {
+    return CJK_RATIO
+  }
+  return 1
+}
+
+/** Split text into display lines respecting character widths and newlines */
+function splitDisplayLines(text: string): string[] {
+  const lines: string[] = []
+  let currentLine = ''
+  let currentWidth = 0
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (ch === '\n') {
+      lines.push(currentLine)
+      currentLine = ''
+      currentWidth = 0
+      continue
+    }
+    const w = charWidth(ch)
+    if (currentWidth + w > LINE_WIDTH) {
+      lines.push(currentLine)
+      currentLine = ch
+      currentWidth = w
+    } else {
+      currentLine += ch
+      currentWidth += w
+    }
+  }
+  if (currentLine) lines.push(currentLine)
+  return lines
+}
+
+/** Paginate by display lines instead of character count */
 function paginateMessage(msgs: ConversationMessage[], msgIndex: number, page: number): { text: string; pageInfo: string; totalPages: number } {
   if (msgIndex < 0) return { text: '(no messages)', pageInfo: '', totalPages: 0 }
   const fullText = formatMessage(msgs[msgIndex])
-  if (fullText.length <= PAGE_SIZE) return { text: fullText, pageInfo: '', totalPages: 1 }
-  const totalPages = Math.ceil((fullText.length - PAGE_SIZE) / PAGE_ADVANCE) + 1
+  const allLines = splitDisplayLines(fullText)
+
+  if (allLines.length <= MAX_LINES) {
+    return { text: fullText, pageInfo: '', totalPages: 1 }
+  }
+
+  const overlap = 1  // repeat 1 line for context continuity
+  const advance = MAX_LINES - overlap
+  const totalPages = Math.ceil((allLines.length - MAX_LINES) / advance) + 1
   const p = Math.min(page, totalPages - 1)
-  const start = p * PAGE_ADVANCE
-  const text = fullText.slice(start, start + PAGE_SIZE)
+  const start = p * advance
+  const pageLines = allLines.slice(start, start + MAX_LINES)
+  const text = pageLines.join('\n')
   const pageInfo = ` p${p + 1}/${totalPages}`
   return { text, pageInfo, totalPages }
 }
@@ -65,7 +121,8 @@ function buildSessionList(state: AppState): RebuildPageContainer {
   // Header - compact
   const header = new TextContainerProperty({
     xPosition: 0, yPosition: 0,
-    width: W, height: 28,
+    width: W, height: 36,
+    borderWidth: 0,
     paddingLength: 4,
     containerID: 1, containerName: 'header',
     isEventCapture: 0,
@@ -73,7 +130,7 @@ function buildSessionList(state: AppState): RebuildPageContainer {
   })
 
   // Session list - maximize space
-  const maxVisible = 8
+  const maxVisible = MAX_LINES
   const start = Math.max(0, sessionIndex - 3)
   const visible = sessions.slice(start, start + maxVisible)
   const listText = visible.map((s, i) => {
@@ -84,11 +141,9 @@ function buildSessionList(state: AppState): RebuildPageContainer {
   }).join('\n')
 
   const list = new TextContainerProperty({
-    xPosition: 4, yPosition: 30,
-    width: W - 8, height: 228,
-    borderWidth: 1,
-    borderColor: 4,
-    borderRadius: 3,
+    xPosition: 4, yPosition: 36,
+    width: W - 8, height: H - 36 - 36,
+    borderWidth: 0,
     paddingLength: 4,
     containerID: 2, containerName: 'list',
     isEventCapture: 0,
@@ -97,9 +152,10 @@ function buildSessionList(state: AppState): RebuildPageContainer {
 
   // Footer - minimal
   const footer = new TextContainerProperty({
-    xPosition: 0, yPosition: H - 20,
-    width: W, height: 20,
-    paddingLength: 2,
+    xPosition: 0, yPosition: H - 36,
+    width: W, height: 36,
+    borderWidth: 0,
+    paddingLength: 4,
     containerID: 3, containerName: 'footer',
     isEventCapture: 1,
     content: `tap:open  swipe:nav`,
@@ -121,16 +177,14 @@ function buildConversation(state: AppState): RebuildPageContainer {
   const header = new TextContainerProperty({
     xPosition: 0, yPosition: 0,
     width: W, height: 36,
-    borderWidth: 1,
-    borderColor: waiting ? 10 : 4,
-    borderRadius: 0,
+    borderWidth: 0,
     paddingLength: 4,
     containerID: 1, containerName: 'header',
     isEventCapture: 0,
     content: `${session ? sName(session) : '---'}${statusBadge}`,
   })
 
-  // Message body with border
+  // Message body
   const msgs = state.conversation
   const msgIndex = msgs.length > 0
     ? Math.max(0, msgs.length - 1 - state.conversationOffset)
@@ -141,11 +195,9 @@ function buildConversation(state: AppState): RebuildPageContainer {
   const role = msgIndex >= 0 ? (msgs[msgIndex].role === 'user' ? 'YOU' : 'AI') : ''
 
   const body = new TextContainerProperty({
-    xPosition: 4, yPosition: 40,
-    width: W - 8, height: 210,
-    borderWidth: 1,
-    borderColor: msgIndex >= 0 && msgs[msgIndex].role === 'user' ? 6 : 3,
-    borderRadius: 3,
+    xPosition: 4, yPosition: 36,
+    width: W - 8, height: H - 36 - 36,
+    borderWidth: 0,
     paddingLength: 6,
     containerID: 2, containerName: 'body',
     isEventCapture: 0,
@@ -156,8 +208,9 @@ function buildConversation(state: AppState): RebuildPageContainer {
   const pos = msgs.length > 0 ? `${role} ${msgIndex + 1}/${msgs.length}${pageInfo}` : ''
   const action = waiting ? 'tap:respond  ' : ''
   const footer = new TextContainerProperty({
-    xPosition: 0, yPosition: H - 32,
-    width: W, height: 28,
+    xPosition: 0, yPosition: H - 36,
+    width: W, height: 36,
+    borderWidth: 0,
     paddingLength: 4,
     containerID: 3, containerName: 'footer',
     isEventCapture: 1,
@@ -177,8 +230,7 @@ function buildChoice(state: AppState): RebuildPageContainer {
   const header = new TextContainerProperty({
     xPosition: 0, yPosition: 0,
     width: W, height: 36,
-    borderWidth: 1,
-    borderColor: 10,
+    borderWidth: 0,
     paddingLength: 4,
     containerID: 1, containerName: 'header',
     isEventCapture: 0,
@@ -192,11 +244,9 @@ function buildChoice(state: AppState): RebuildPageContainer {
   }).join('\n')
 
   const body = new TextContainerProperty({
-    xPosition: 4, yPosition: 40,
-    width: W - 8, height: 210,
-    borderWidth: 2,
-    borderColor: 8,
-    borderRadius: 3,
+    xPosition: 4, yPosition: 36,
+    width: W - 8, height: H - 36 - 36,
+    borderWidth: 0,
     paddingLength: 8,
     containerID: 2, containerName: 'body',
     isEventCapture: 0,
@@ -204,8 +254,9 @@ function buildChoice(state: AppState): RebuildPageContainer {
   })
 
   const footer = new TextContainerProperty({
-    xPosition: 0, yPosition: H - 32,
-    width: W, height: 28,
+    xPosition: 0, yPosition: H - 36,
+    width: W, height: 36,
+    borderWidth: 0,
     paddingLength: 4,
     containerID: 3, containerName: 'footer',
     isEventCapture: 1,
@@ -323,7 +374,7 @@ export async function updateDisplay(bridge: Bridge | null, state: AppState): Pro
     case 'session_list': {
       const { sessions, sessionIndex, apiUsagePercent } = state
       const start = Math.max(0, sessionIndex - 3)
-      const visible = sessions.slice(start, start + 8)
+      const visible = sessions.slice(start, start + MAX_LINES)
       const listText = visible.map((s, i) => {
         const idx = start + i
         const cursor = idx === sessionIndex ? '>' : ' '

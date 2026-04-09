@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.61] - 2026-04-09
+
+### Added
+- glasses-upload スキル（EVEN Hubへのビルド・アップロード・Beta切替を自動化）
+
 ## [0.1.60] - 2026-04-09
 
 ### Fixed

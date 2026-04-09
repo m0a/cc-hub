@@ -260,18 +260,10 @@ export function buildSetupGuide(): RebuildPageContainer {
 let currentMode: Mode | null = null
 
 export async function initDisplay(): Promise<Bridge | null> {
-  // Skip SDK initialization in plain browser (no Flutter handler)
-  const isEvenHub = typeof (window as unknown as Record<string, unknown>).flutter_inappwebview !== 'undefined'
-    || navigator.userAgent.includes('EvenRealities')
-  if (!isEvenHub) {
-    console.log('[display] Not in Even Hub environment — debug mode')
-    return null
-  }
-
   try {
     const bridge = await Promise.race([
       waitForEvenAppBridge(),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('bridge timeout')), 5000)),
     ])
 
     const initial = new CreateStartUpPageContainer({

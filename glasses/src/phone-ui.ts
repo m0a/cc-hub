@@ -2,7 +2,6 @@
 
 import type { Bridge } from './display.ts'
 import { setBaseUrl, getDashboard, getSessions } from './api.ts'
-import { CcHubWsClient } from './ws-client.ts'
 
 const LS_KEY = 'cchub-url'
 
@@ -238,9 +237,11 @@ export async function startPhoneUI(bridge: Bridge | null): Promise<void> {
     connectStatus.innerHTML = '<span style="color: #888;">切断しました</span>'
   })
 
-  let diagClient: CcHubWsClient | null = null
+  // biome-ignore lint: dynamic import to avoid initialization order issues
+  let diagClient: any = null
 
-  function startWsDiag(sessions: Array<{ id: string; indicatorState?: string; panes?: Array<{ paneId: string }> }>) {
+  async function startWsDiag(sessions: Array<{ id: string; indicatorState?: string; panes?: Array<{ paneId: string }> }>) {
+    const { CcHubWsClient } = await import('./ws-client.ts')
     const diagEl = document.getElementById('ws-diag')
     if (!diagEl) return
 
@@ -253,7 +254,7 @@ export async function startPhoneUI(bridge: Bridge | null): Promise<void> {
       onReady() {
         if (firstSession) diagClient!.subscribe(firstSession.id)
       },
-      onError(msg) {
+      onError(msg: string) {
         diagEl.innerHTML = `<span style="color:#f44;">WS Error: ${msg}</span>`
       },
     })

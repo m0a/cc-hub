@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.58] - 2026-04-09
+
+### Fixed
+- G2 Glasses: 会話表示からツール結果のみのメッセージをスキップ、連続アシスタントメッセージをマージ
+- G2 Glasses: テキスト内容を先、ツール呼び出しを後に表示するよう改善
+- G2 Glasses: conversationモードでtapして会話リフレッシュ＋WS再接続
+- G2 Glasses: WS再接続時に自動re-subscribe
+- G2 Glasses: EVEN Hub SDK bridge初期化のタイムアウトを5秒に延長
+- G2 Glasses: phone UIのWS診断で動的インポートを使用し初期化順エラーを解消
+- G2 Glasses: シミュレーター用にdev環境でlocalhost URLを自動設定
+
 ## [0.1.57] - 2026-04-08
 
 ### Fixed

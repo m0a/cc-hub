@@ -4,7 +4,7 @@ import type { AppState } from './display.ts'
 import { startPhoneUI } from './phone-ui.ts'
 import { CcHubWsClient } from './ws-client.ts'
 import { formatMessage } from './types.ts'
-import type { Session } from './types.ts'
+import type { Session, ConversationMessage } from './types.ts'
 
 const LS_KEY = 'cchub-url'
 const POLL_INTERVAL = 5000
@@ -47,13 +47,35 @@ function currentSession(): Session | undefined {
   return state.sessions[state.sessionIndex]
 }
 
+/** Merge consecutive assistant messages and filter out tool-result-only messages */
+function filterConversation(msgs: ConversationMessage[]): ConversationMessage[] {
+  const result: ConversationMessage[] = []
+  for (const m of msgs) {
+    // Skip tool result-only messages (output is heavily truncated)
+    if (!m.content?.trim() && !m.toolUse?.length && m.toolResult?.length) continue
+
+    // Merge assistant tool-use-only message with previous assistant text
+    if (m.role === 'assistant' && !m.content?.trim() && m.toolUse?.length) {
+      const prev = result[result.length - 1]
+      if (prev?.role === 'assistant' && prev.content?.trim()) {
+        prev.toolUse = [...(prev.toolUse || []), ...m.toolUse]
+        continue
+      }
+    }
+
+    result.push({ ...m })
+  }
+  return result
+}
+
 async function loadConversation(): Promise<void> {
   const session = currentSession()
   if (!session?.ccSessionId) {
     state.conversation = []
     return
   }
-  state.conversation = await getConversation(session.ccSessionId, 20)
+  const raw = await getConversation(session.ccSessionId, 20)
+  state.conversation = filterConversation(raw)
   state.conversationOffset = 0
   state.conversationPage = 0
 }
@@ -63,6 +85,11 @@ async function loadConversation(): Promise<void> {
 async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof initDisplay>>>) {
   // Load CC Hub URL from LocalStorage
   let savedUrl = await bridge.getLocalStorage(LS_KEY)
+  // Dev mode: use proxy (relative URL) when running via Vite dev server
+  if (!savedUrl && location.hostname === 'localhost') {
+    savedUrl = location.origin
+    await bridge.setLocalStorage(LS_KEY, savedUrl)
+  }
   if (!savedUrl) {
     // Show setup guide and poll for URL
     await bridge.rebuildPageContainer(buildSetupGuide())
@@ -124,7 +151,11 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
     onTerminalOutput() {
       maybeRefreshConversation()
     },
-    onReady() {},
+    onReady() {
+      // Re-subscribe on reconnect
+      const s = currentSession()
+      if (s && state.mode !== 'session_list') wsClient.subscribe(s.id)
+    },
     onError() {},
   })
   wsClient.connect()
@@ -208,6 +239,11 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
               state.mode = 'choice'
               state.choiceIndex = 0
             }
+          } else {
+            // Refresh conversation + reconnect WS if needed
+            if (wsClient.getState() !== 'OPEN') wsClient.connect()
+            if (s) wsClient.subscribe(s.id)
+            await loadConversation()
           }
         }
           break

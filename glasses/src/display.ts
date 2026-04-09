@@ -137,6 +137,14 @@ function paginateMessage(msgs: ConversationMessage[], msgIndex: number, page: nu
   return { ...result, multiCount: 1 }
 }
 
+/** Get total pages for the message at a given offset */
+export function getTotalPagesAt(msgs: ConversationMessage[], offset: number): number {
+  const msgIndex = msgs.length > 0 ? Math.max(0, msgs.length - 1 - offset) : -1
+  if (msgIndex < 0) return 0
+  const { totalPages } = paginateMessage(msgs, msgIndex, 0)
+  return totalPages
+}
+
 /** Calculate how many messages are shown at a given offset, for offset jumping */
 export function getMultiCountAt(msgs: ConversationMessage[], offset: number): number {
   const msgIndex = msgs.length > 0 ? Math.max(0, msgs.length - 1 - offset) : -1

@@ -1,5 +1,5 @@
 import { getDashboard, getConversation, setBaseUrl } from './api.ts'
-import { initDisplay, updateDisplay, setupEvents, buildSetupGuide, getMultiCountAt } from './display.ts'
+import { initDisplay, updateDisplay, setupEvents, buildSetupGuide, getMultiCountAt, getTotalPagesAt } from './display.ts'
 import type { AppState } from './display.ts'
 import { startPhoneUI } from './phone-ui.ts'
 import { CcHubWsClient } from './ws-client.ts'
@@ -20,16 +20,8 @@ const state: AppState = {
   apiUsagePercent: '',
 }
 
-const PAGE_SIZE = 180
-const PAGE_ADVANCE = 160
-
 function currentMsgTotalPages(): number {
-  const msgs = state.conversation
-  const idx = msgs.length > 0 ? Math.max(0, msgs.length - 1 - state.conversationOffset) : -1
-  if (idx < 0) return 0
-  const len = formatMessage(msgs[idx]).length
-  if (len <= PAGE_SIZE) return 1
-  return Math.ceil((len - PAGE_SIZE) / PAGE_ADVANCE) + 1
+  return getTotalPagesAt(state.conversation, state.conversationOffset)
 }
 
 function sName(s: Session): string {
@@ -483,10 +475,12 @@ function startDebugUI() {
       const msgs = state.conversation
       const msgIndex = msgs.length > 0 ? Math.max(0, msgs.length - 1 - state.conversationOffset) : -1
       if (msgIndex >= 0) {
-        const fullText = formatMessage(msgs[msgIndex])
-        const totalPages = fullText.length <= PAGE_SIZE ? 1 : Math.ceil((fullText.length - PAGE_SIZE) / PAGE_ADVANCE) + 1
+        const totalPages = currentMsgTotalPages()
         const page = Math.min(state.conversationPage, totalPages - 1)
-        lines.push(fullText.slice(page * PAGE_ADVANCE, page * PAGE_ADVANCE + PAGE_SIZE))
+        const fullText = formatMessage(msgs[msgIndex])
+        // Simple character-based slice for debug UI
+        const chunkSize = 300
+        lines.push(fullText.slice(page * chunkSize, (page + 1) * chunkSize))
         var pageInfo = totalPages > 1 ? ` p${page + 1}/${totalPages}` : ''
       } else {
         lines.push('(no messages)')

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.60] - 2026-04-09
+
+### Fixed
+- G2 Glasses: 会話ページネーションのページ数計算を行数ベースに統一（最終ページに到達できない問題を修正）
+
 ## [0.1.59] - 2026-04-09
 
 ### Added

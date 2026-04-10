@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.62] - 2026-04-10
+
+### Fixed
+- セッションインジケーターが許可待ち/入力待ちなのに「処理中」と表示される問題を修正
+- hookオーバーライドTTLを24時間に統一（許可プロンプトで長時間待ってもステータスが消えなくなった）
+- jsonlからPendingTool状態を検出（新しいtool_useがjsonl未記録でもバッジ表示）
+
+### Added
+- G2 Glasses: requestContentAndWait でターミナルコンテンツ取得の信頼性向上
+
 ## [0.1.61] - 2026-04-09
 
 ### Added

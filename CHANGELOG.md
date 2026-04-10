@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.65] - 2026-04-11
+
+### Added
+- 会話ビューアーでツールブロックにdescription要約を表示（折りたたみ時に「Bash: コマンドの説明」のように表示）
+- G2 Glasses: 同じくツール名にdescriptionを併記
+
 ## [0.1.64] - 2026-04-10
 
 ### Fixed

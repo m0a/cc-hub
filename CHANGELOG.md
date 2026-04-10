@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.63] - 2026-04-10
+
+### Fixed
+- ダッシュボードの使用量データがレートリミット(429)で表示されない問題を修正
+- Anthropic usage APIのレスポンスを60秒キャッシュし、429時は5分バックオフ
+
 ## [0.1.62] - 2026-04-10
 
 ### Fixed

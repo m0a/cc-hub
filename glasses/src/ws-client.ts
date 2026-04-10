@@ -103,7 +103,7 @@ export class CcHubWsClient {
         this.callbacks.onSessionsUpdated(msg.sessions)
       } else if (msg.type === 'subscribed' && msg.sessionId) {
         console.log('[ws] subscribed to', msg.sessionId, '— sending resize')
-        this.send({ type: 'resize', sessionId: msg.sessionId, cols: 60, rows: 8, paneId: '%0' })
+        this.send({ type: 'resize', sessionId: msg.sessionId, cols: 120, rows: 20, paneId: '%0' })
       } else if (msg.type === 'initial-content' && msg.data && msg.sessionId) {
         const text = atob(msg.data)
         const clean = stripAnsi(text)
@@ -186,9 +186,10 @@ export class CcHubWsClient {
     if (!text) return []
     const lines = text.split('\n')
     const choices: string[] = []
-    // Look for numbered options like "  1. Yes" or "> 1. Yes"
+    // Look for numbered options like "  1. Yes", "> 1. Yes", or "❯ 1. Yes"
+    // Claude Code uses ❯ as the cursor marker. Dot may be followed by zero or more spaces.
     for (const line of lines) {
-      const match = line.match(/^\s*>?\s*(\d+)\.\s+(.+)/)
+      const match = line.match(/^\s*[❯>*]?\s*(\d+)\.\s*(.+)/)
       if (match) {
         choices.push(match[2].trim())
       }

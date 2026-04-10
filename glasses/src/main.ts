@@ -8,6 +8,9 @@ import type { Session, ConversationMessage } from './types.ts'
 
 const LS_KEY = 'cchub-url'
 const POLL_INTERVAL = 5000
+const INITIAL_LOAD_COUNT = 20
+const LOAD_MORE_INCREMENT = 20
+
 const state: AppState = {
   mode: 'session_list',
   sessions: [],
@@ -15,6 +18,9 @@ const state: AppState = {
   conversation: [],
   conversationOffset: 0,
   conversationPage: 0,
+  conversationLastLoaded: 0,
+  conversationHasMore: false,
+  conversationLoading: false,
   choiceIndex: 0,
   choiceOptions: [],
   apiUsagePercent: '',
@@ -64,12 +70,43 @@ async function loadConversation(): Promise<void> {
   const session = currentSession()
   if (!session?.ccSessionId) {
     state.conversation = []
+    state.conversationLastLoaded = 0
+    state.conversationHasMore = false
     return
   }
-  const raw = await getConversation(session.ccSessionId, 20)
+  const raw = await getConversation(session.ccSessionId, INITIAL_LOAD_COUNT)
   state.conversation = filterConversation(raw)
+  state.conversationLastLoaded = INITIAL_LOAD_COUNT
+  // If backend returned exactly the requested count, more may be available.
+  state.conversationHasMore = raw.length >= INITIAL_LOAD_COUNT
   state.conversationOffset = 0
   state.conversationPage = 0
+}
+
+/** Load more older messages by requesting a larger `last` count. Returns true if new messages were added. */
+async function loadMoreConversation(): Promise<boolean> {
+  const session = currentSession()
+  if (!session?.ccSessionId) return false
+  if (!state.conversationHasMore || state.conversationLoading) return false
+
+  state.conversationLoading = true
+  try {
+    const newLast = state.conversationLastLoaded + LOAD_MORE_INCREMENT
+    const raw = await getConversation(session.ccSessionId, newLast)
+    const filtered = filterConversation(raw)
+    // If no new messages were added, we've reached the beginning.
+    if (filtered.length <= state.conversation.length) {
+      state.conversationHasMore = false
+      state.conversationLastLoaded = newLast
+      return false
+    }
+    state.conversation = filtered
+    state.conversationLastLoaded = newLast
+    state.conversationHasMore = raw.length >= newLast
+    return true
+  } finally {
+    state.conversationLoading = false
+  }
 }
 
 // ── Glasses mode: G2 display + ring controls ──
@@ -166,6 +203,16 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
             const jump = getMultiCountAt(state.conversation, state.conversationOffset)
             state.conversationOffset = Math.min(state.conversation.length - 1, state.conversationOffset + jump)
             state.conversationPage = Math.max(0, currentMsgTotalPages() - 1)
+          } else if (state.conversationHasMore && !state.conversationLoading) {
+            // At oldest loaded message — fetch more.
+            // Offset is measured from the newest, so existing messages keep their offsets
+            // after prepending older ones. We advance by one after the load completes.
+            const loaded = await loadMoreConversation()
+            if (loaded && state.conversationOffset < state.conversation.length - 1) {
+              const jump = getMultiCountAt(state.conversation, state.conversationOffset)
+              state.conversationOffset = Math.min(state.conversation.length - 1, state.conversationOffset + jump)
+              state.conversationPage = Math.max(0, currentMsgTotalPages() - 1)
+            }
           }
           break
         }
@@ -389,6 +436,13 @@ function startDebugUI() {
             const jump = getMultiCountAt(state.conversation, state.conversationOffset)
             state.conversationOffset = Math.min(state.conversation.length - 1, state.conversationOffset + jump)
             state.conversationPage = Math.max(0, currentMsgTotalPages() - 1)
+          } else if (state.conversationHasMore && !state.conversationLoading) {
+            const loaded = await loadMoreConversation()
+            if (loaded && state.conversationOffset < state.conversation.length - 1) {
+              const jump = getMultiCountAt(state.conversation, state.conversationOffset)
+              state.conversationOffset = Math.min(state.conversation.length - 1, state.conversationOffset + jump)
+              state.conversationPage = Math.max(0, currentMsgTotalPages() - 1)
+            }
           }
           break
         case 'choice': if (state.choiceIndex > 0) state.choiceIndex--; break

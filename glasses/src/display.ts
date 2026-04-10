@@ -160,6 +160,9 @@ export interface AppState {
   conversation: ConversationMessage[]
   conversationOffset: number
   conversationPage: number
+  conversationLastLoaded: number
+  conversationHasMore: boolean
+  conversationLoading: boolean
   choiceIndex: number
   choiceOptions: string[]
   apiUsagePercent: string

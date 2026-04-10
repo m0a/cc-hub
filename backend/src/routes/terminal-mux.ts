@@ -19,12 +19,27 @@ export interface MuxData {
   mux: true;
   visitorId: string;
   subscriptions: Map<string, MuxSubscription>;
+  lastPingAt: number;
 }
 
 const tmuxService = new TmuxService();
 
 // Track mux connections for broadcast
 const activeMuxConnections = new Set<ServerWebSocket<MuxData>>();
+
+// Zombie detection: if no client ping for 60s, assume connection is dead.
+// Clients send pings every 10s (useMultiplexedTerminal.ts).
+const PING_TIMEOUT_MS = 60_000;
+setInterval(() => {
+  const now = Date.now();
+  for (const ws of activeMuxConnections) {
+    if (now - ws.data.lastPingAt > PING_TIMEOUT_MS) {
+      console.log(`[mux] Zombie connection detected: ${ws.data.visitorId} (last ping ${Math.round((now - ws.data.lastPingAt) / 1000)}s ago)`);
+      try { ws.close(1008, 'ping timeout'); } catch { /* ignore */ }
+      activeMuxConnections.delete(ws);
+    }
+  }
+}, 30_000);
 
 // =============================================================================
 // Sessions push: periodically push session list to connected mux clients
@@ -451,6 +466,7 @@ async function handleControlMessage(
         break;
       }
       case 'ping': {
+        ws.data.lastPingAt = Date.now();
         ws.send(JSON.stringify({ type: 'pong', timestamp: msg.timestamp }));
         break;
       }

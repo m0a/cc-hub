@@ -322,6 +322,7 @@ export default {
           mux: true,
           visitorId: crypto.randomUUID(),
           subscriptions: new Map(),
+          lastPingAt: Date.now(),
         },
       });
       if (upgraded) return undefined as unknown as Response;

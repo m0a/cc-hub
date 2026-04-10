@@ -205,6 +205,27 @@ export class CcHubWsClient {
     return this.subscribedSession
   }
 
+  /** Request fresh terminal content and wait for the response */
+  requestContentAndWait(sessionId: string, paneId?: string, timeoutMs = 3000): Promise<void> {
+    const targetPane = paneId || this.getActivePaneId(sessionId) || '%0'
+    return new Promise<void>((resolve) => {
+      const key = `${sessionId}:${targetPane}`
+      const before = this.terminalBuffers.get(key)
+      const timer = setTimeout(resolve, timeoutMs)
+      const check = () => {
+        const after = this.terminalBuffers.get(key)
+        if (after !== before) {
+          clearTimeout(timer)
+          resolve()
+        }
+      }
+      // Poll briefly for buffer change after initial-content arrives
+      const interval = setInterval(check, 50)
+      setTimeout(() => clearInterval(interval), timeoutMs)
+      this.send({ type: 'request-content', sessionId, paneId: targetPane })
+    })
+  }
+
   requestContent(sessionId: string, paneId?: string): void {
     const targetPane = paneId || this.getActivePaneId(sessionId) || '%0'
     this.send({ type: 'request-content', sessionId, paneId: targetPane })

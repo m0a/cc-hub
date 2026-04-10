@@ -223,9 +223,8 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
         case 'conversation': {
           const s = currentSession()
           if (s?.indicatorState === 'waiting_input' || (s?.waitingToolName && s.waitingToolName !== 'UserInput')) {
-            // Request fresh terminal content, then check for choices
-            wsClient.requestContent(s!.id)
-            await new Promise(r => setTimeout(r, 500))
+            // Request fresh terminal content and wait for response
+            await wsClient.requestContentAndWait(s!.id)
             const termChoices = wsClient.getChoices(s!.id)
             if (termChoices.length > 0) {
               state.choiceOptions = termChoices

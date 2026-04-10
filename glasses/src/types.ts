@@ -66,7 +66,10 @@ export function formatMessage(m: ConversationMessage): string {
   // Tool use (assistant requesting tools)
   if (m.toolUse?.length) {
     for (const t of m.toolUse) {
-      if (t.name === 'Edit' || t.name === 'Write') {
+      const desc = t.input?.description as string | undefined
+      if (desc) {
+        toolParts.push(`[${t.name}] ${desc}`)
+      } else if (t.name === 'Edit' || t.name === 'Write') {
         const path = (t.input?.file_path as string) || ''
         toolParts.push(`[${t.name}] ${shortenPath(path)}`)
       } else if (t.name === 'Bash') {

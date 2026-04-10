@@ -64,15 +64,45 @@ function isShortContent(content: string): boolean {
 }
 
 // Tool use display
+function getToolSummary(name: string, input: Record<string, unknown>): string {
+  // Bash has an explicit description field
+  if (typeof input.description === 'string' && input.description) {
+    return input.description;
+  }
+  // File-based tools: show the file path (basename)
+  const filePath = input.file_path || input.path || input.notebook_path;
+  if (typeof filePath === 'string' && filePath) {
+    const parts = filePath.split('/');
+    return parts[parts.length - 1] || filePath;
+  }
+  // Grep/search: show the pattern
+  if (typeof input.pattern === 'string' && input.pattern) {
+    return input.pattern;
+  }
+  // Bash without description: show truncated command
+  if (name === 'Bash' && typeof input.command === 'string') {
+    const cmd = input.command.split('\n')[0];
+    return cmd.length > 60 ? cmd.slice(0, 60) + '…' : cmd;
+  }
+  // Task tools
+  if (typeof input.prompt === 'string' && input.prompt) {
+    const p = input.prompt.split('\n')[0];
+    return p.length > 60 ? p.slice(0, 60) + '…' : p;
+  }
+  return '';
+}
+
 function ToolUseDisplay({ tools }: { tools: ToolUseInfo[] }) {
   return (
     <>
       {tools.map((tool, idx) => {
         const inputStr = JSON.stringify(tool.input, null, 2);
+        const summary = getToolSummary(tool.name, tool.input);
+        const title = summary ? `${tool.name}: ${summary}` : tool.name;
         return (
           <CollapsibleSection
             key={idx}
-            title={`${tool.name}`}
+            title={title}
             icon="🔧"
             variant="tool"
             defaultOpen={isShortContent(inputStr)}

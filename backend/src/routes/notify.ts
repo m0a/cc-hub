@@ -66,9 +66,9 @@ const notify = new Hono();
 
 // hookイベントによるindicatorStateの一時オーバーライド
 // ccSessionId → { state, expiresAt }
-const stateOverrides = new Map<string, { state: IndicatorState; expiresAt: number }>();
+const stateOverrides = new Map<string, { state: IndicatorState; expiresAt: number; toolName?: string }>();
 const OVERRIDE_TTL_WAITING = 30_000; // waiting_input: 30秒後に期限切れ（ポーリング間隔5秒に余裕を持たせる）
-const OVERRIDE_TTL_PROCESSING = 300_000; // processing: 5分（タスク実行中は長時間かかる。Stopイベントで上書きされる）
+const OVERRIDE_TTL_PROCESSING = 24 * 60 * 60_000; // processing: 24時間（StopやPostToolUseで明示的に上書きされるのでTTLは安全弁）
 
 function hookEventToState(event: string, toolName?: string): IndicatorState | null {
   switch (event) {
@@ -90,14 +90,14 @@ function hookEventToState(event: string, toolName?: string): IndicatorState | nu
 }
 
 /** セッションリスト取得時にオーバーライドを適用する */
-export function getIndicatorOverride(ccSessionId: string): IndicatorState | null {
+export function getIndicatorOverride(ccSessionId: string): { state: IndicatorState; toolName?: string } | null {
   const override = stateOverrides.get(ccSessionId);
   if (!override) return null;
   if (Date.now() > override.expiresAt) {
     stateOverrides.delete(ccSessionId);
     return null;
   }
-  return override.state;
+  return { state: override.state, toolName: override.toolName };
 }
 
 /**
@@ -125,10 +125,11 @@ notify.post('/', async (c) => {
 
     // indicatorStateオーバーライドを保存
     if (sessionId) {
-      const newState = hookEventToState(event, body.tool_name as string | undefined);
+      const toolName = body.tool_name as string | undefined;
+      const newState = hookEventToState(event, toolName);
       if (newState) {
         const ttl = newState === 'processing' ? OVERRIDE_TTL_PROCESSING : OVERRIDE_TTL_WAITING;
-        stateOverrides.set(sessionId, { state: newState, expiresAt: Date.now() + ttl });
+        stateOverrides.set(sessionId, { state: newState, expiresAt: Date.now() + ttl, toolName: event === 'PreToolUse' ? toolName : undefined });
       }
     }
 

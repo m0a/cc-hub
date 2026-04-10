@@ -96,8 +96,16 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
     const isClaudeRunning = s.currentCommand === 'claude';
     // Indicator state: hook events are the source of truth
     // Default for running Claude = completed (idle/waiting for user input)
-    const hookOverride = ccSession?.sessionId ? getIndicatorOverride(ccSession.sessionId) : null;
-    const indicatorState: IndicatorState = hookOverride ?? 'completed';
+    const hookResult = ccSession?.sessionId ? getIndicatorOverride(ccSession.sessionId) : null;
+    const hookState = hookResult?.state ?? null;
+    const hookToolName = hookResult?.toolName;
+    // When pane title shows ✳ (Claude Code idle marker) but hook says "processing",
+    // Claude is waiting for permission (not actually processing).
+    const isPaneTitleIdle = s.paneTitle?.startsWith('✳');
+    const indicatorState: IndicatorState = (hookState === 'processing' && isPaneTitleIdle) ? 'waiting_input' : (hookState ?? 'completed');
+    // Use hook tool name for waiting state when jsonl doesn't have it yet
+    const effectiveWaitingToolName = (indicatorState === 'waiting_input' && hookToolName && !ccSession?.waitingToolName)
+      ? hookToolName : ccSession?.waitingToolName;
 
     let durationMinutes: number | undefined;
     if (ccSession?.modified) {
@@ -116,7 +124,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       currentCommand: s.currentCommand,
       currentPath: s.currentPath,
       paneTitle: s.paneTitle,
-      waitingToolName: includeClaudeInfo ? ccSession?.waitingToolName : undefined,
+      waitingToolName: includeClaudeInfo ? effectiveWaitingToolName : undefined,
       ccSummary: includeClaudeInfo ? ccSession?.summary : undefined,
       ccFirstPrompt: includeClaudeInfo ? ccSession?.firstPrompt : undefined,
       indicatorState: includeClaudeInfo ? indicatorState : undefined,
@@ -151,7 +159,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
           agentColor: agentInfo?.agentColor,
           isActive: p.isActive,
           isDead: p.isDead || undefined,
-          indicatorState: hookOverride ?? paneIndicator,
+          indicatorState: (hookState === 'processing' && p.title?.startsWith('✳')) ? paneIndicator : (hookState ?? paneIndicator),
         };
         return pane;
       }) : undefined,

@@ -345,6 +345,22 @@ export class ClaudeCodeService {
         }
       }
 
+      // Step 4: If the last entry is a tool_result (all tool_uses resolved)
+      // but no new assistant message followed, check stop_reason to determine state.
+      // stop_reason=tool_use means Claude intended to continue → likely waiting for permission on next tool.
+      // stop_reason=end_turn would have been caught in Step 3.
+      const lastEntry = conversationEntries[conversationEntries.length - 1];
+      if (lastEntry.type === 'user' && lastEntry.message?.content?.some(
+        (b: { type: string }) => b.type === 'tool_result'
+      )) {
+        const stopReason2 = lastAssistantEntry.message?.stop_reason;
+        if (stopReason2 === 'tool_use') {
+          // Claude was mid-turn with more tools to use → likely waiting for permission
+          return 'PendingTool';
+        }
+        return 'UserInput';
+      }
+
       return null;
     } catch {
       return null;

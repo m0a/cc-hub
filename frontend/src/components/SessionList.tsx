@@ -608,7 +608,6 @@ function SessionItem({
 
   // Use indicatorState (not waitingForInput) to determine badge display
   const isWaiting = cardIndicator === 'waiting_input';
-  // Show badge for any waiting tool (UserInput = idle, no badge)
   const hasWaitingTool = !!extSession.waitingToolName && extSession.waitingToolName !== 'UserInput';
   const waitingLabel = extSession.waitingToolName === 'AskUserQuestion' ? t('session.waitingQuestion')
     : extSession.waitingToolName === 'EnterPlanMode' ? t('session.waitingPlan')

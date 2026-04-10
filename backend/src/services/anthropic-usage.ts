@@ -36,6 +36,12 @@ export interface UsageLimits {
 export class AnthropicUsageService {
   private claudeDir: string;
   private lastSuccessfulResult: UsageLimits | null = null;
+  private lastFetchAt = 0;
+  private inflight: Promise<UsageLimits | null> | null = null;
+  // Anthropic /api/oauth/usage has strict rate limits. Cache for 60s.
+  private readonly CACHE_TTL_MS = 60_000;
+  // On 429, back off for 5 minutes before retrying.
+  private rateLimitedUntil = 0;
 
   constructor() {
     this.claudeDir = join(homedir(), '.claude');
@@ -52,6 +58,32 @@ export class AnthropicUsageService {
   }
 
   async getUsageLimits(): Promise<UsageLimits | null> {
+    const now = Date.now();
+
+    // Serve from cache if fresh
+    if (this.lastSuccessfulResult && now - this.lastFetchAt < this.CACHE_TTL_MS) {
+      return this.lastSuccessfulResult;
+    }
+
+    // Respect rate-limit backoff window
+    if (now < this.rateLimitedUntil) {
+      return this.lastSuccessfulResult;
+    }
+
+    // Coalesce concurrent requests
+    if (this.inflight) {
+      return this.inflight;
+    }
+
+    this.inflight = this.fetchUsageLimits();
+    try {
+      return await this.inflight;
+    } finally {
+      this.inflight = null;
+    }
+  }
+
+  private async fetchUsageLimits(): Promise<UsageLimits | null> {
     const token = await this.getAccessToken();
     if (!token) {
       return this.lastSuccessfulResult;
@@ -68,6 +100,10 @@ export class AnthropicUsageService {
       });
 
       if (!response.ok) {
+        if (response.status === 429) {
+          // Back off for 5 minutes on rate limit
+          this.rateLimitedUntil = Date.now() + 5 * 60_000;
+        }
         console.error('Failed to fetch usage:', response.status);
         return this.lastSuccessfulResult;
       }
@@ -95,6 +131,7 @@ export class AnthropicUsageService {
       };
 
       this.lastSuccessfulResult = result;
+      this.lastFetchAt = Date.now();
       return result;
     } catch (err) {
       console.error('Error fetching usage:', err);

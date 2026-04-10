@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.64] - 2026-04-10
+
+### Fixed
+- ゾンビWebSocket接続の検出と切断（60秒間pingがない接続を閉じる）
+- デバイススリープ/ネットワーク切断でcloseイベントが発火しないケースに対応
+
 ## [0.1.63] - 2026-04-10
 
 ### Fixed

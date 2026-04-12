@@ -117,40 +117,33 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
 
   const handleUploadFiles = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
+    console.log(`[upload] files selected: ${fileList?.length ?? 0}`);
     if (!fileList || fileList.length === 0) return;
 
     setUploading(true);
-
-    // Vite dev proxy has a known issue with large multipart POSTs — bypass the proxy
-    // and hit the backend directly in dev. Production serves both from the same origin.
-    let uploadUrl = '/api/files/upload';
-    if (import.meta.env.DEV && location.port === '5173') {
-      uploadUrl = `${location.protocol}//${location.hostname}:3456/api/files/upload`;
+    for (const f of Array.from(fileList)) {
+      console.log(`[upload] ${f.name} (${f.size}B, ${f.type})`);
     }
 
     try {
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', uploadUrl);
-        xhr.addEventListener('load', () => {
-          if (xhr.status >= 200 && xhr.status < 300) resolve();
-          else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText || xhr.statusText}`));
-        });
-        xhr.addEventListener('error', () => reject(new Error('Network error')));
-        xhr.addEventListener('abort', () => reject(new Error('Upload aborted')));
-        xhr.addEventListener('timeout', () => reject(new Error('Upload timeout')));
-
-        const formData = new FormData();
-        formData.append('path', currentPath);
-        formData.append('sessionWorkingDir', sessionWorkingDir);
-        for (const f of Array.from(fileList)) {
-          formData.append('file', f);
-        }
-        xhr.send(formData);
-      });
+      const formData = new FormData();
+      formData.append('path', currentPath);
+      formData.append('sessionWorkingDir', sessionWorkingDir);
+      for (const f of Array.from(fileList)) {
+        formData.append('file', f);
+      }
+      console.log('[upload] sending POST /api/files/upload');
+      const res = await fetch('/api/files/upload', { method: 'POST', body: formData });
+      console.log(`[upload] response: ${res.status}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `${res.status}` }));
+        alert(`Upload failed: ${err.error || res.statusText}`);
+        return;
+      }
       await listDirectory(currentPath);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`[upload] error: ${msg}`, err);
       alert(`Upload failed: ${msg}`);
     } finally {
       setUploading(false);

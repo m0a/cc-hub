@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, X, Eye, EyeOff, FileText, ChevronRight, ChevronDown, List, FolderTree, GitBranch, MessageSquare, BarChart3, RotateCw, Upload, Download } from 'lucide-react';
 import { useFileViewer } from '../../hooks/useFileViewer';
-import { authFetch } from '../../services/api';
 import { FileBrowser } from './FileBrowser';
 import { CodeViewer } from './CodeViewer';
 import { ImageViewer } from './ImageViewer';
@@ -667,6 +666,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                 mimeType={selectedFile.mimeType}
                 fileName={getFileName(selectedFile.path)}
                 size={selectedFile.size}
+                srcUrl={`/api/files/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
               />
             ) : previewMode && isMarkdownFile(selectedFile.path) ? (
               <MarkdownViewer
@@ -774,14 +774,42 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                 </button>
               )}
 
-              {/* Hidden files toggle */}
+              {/* Upload + Hidden toggle (browser mode) */}
               {viewMode === 'browser' && (
+                <>
+                  <button
+                    onClick={handleUploadClick}
+                    disabled={uploading}
+                    className="p-1.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-50"
+                    title={uploading ? 'Uploading…' : `Upload to ${currentPath}`}
+                  >
+                    <Upload className="w-4 h-4" />
+                  </button>
+                  <input
+                    ref={uploadInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={handleUploadFiles}
+                  />
+                  <button
+                    onClick={() => setShowHidden(!showHidden)}
+                    className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                    title={t('files.showHidden')}
+                  >
+                    {showHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                  </button>
+                </>
+              )}
+
+              {/* Download button (file view mode) */}
+              {viewMode === 'file' && selectedFile && (
                 <button
-                  onClick={() => setShowHidden(!showHidden)}
-                  className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-                  title={t('files.showHidden')}
+                  onClick={handleDownloadFile}
+                  className="p-1.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors"
+                  title="Download"
                 >
-                  {showHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                  <Download className="w-4 h-4" />
                 </button>
               )}
 

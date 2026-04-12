@@ -9,7 +9,7 @@ CC Hub の tmux control mode 機能をブラウザで自動テストするスキ
 
 ## Prerequisites
 
-- dev環境が起動していること（ポート3000 + 5173）
+- dev環境が起動していること（ポート3456 + 5173）
 - agent-browser が利用可能であること
 
 ## Test Workflow
@@ -18,12 +18,12 @@ CC Hub の tmux control mode 機能をブラウザで自動テストするスキ
 
 ```bash
 # ポート確認
-fuser 3000/tcp 2>/dev/null && echo "Backend OK" || echo "Backend NOT running"
+fuser 3456/tcp 2>/dev/null && echo "Backend OK" || echo "Backend NOT running"
 fuser 5173/tcp 2>/dev/null && echo "Frontend OK" || echo "Frontend NOT running"
 
 # 起動されていない場合
 cd /home/m0a/cchub-work-1
-fuser -k -9 3000/tcp 2>/dev/null; fuser -k -9 5173/tcp 2>/dev/null
+fuser -k -9 3456/tcp 2>/dev/null; fuser -k -9 5173/tcp 2>/dev/null
 sleep 1 && nohup bun run dev > /tmp/cchub-dev.log 2>&1 &
 sleep 4
 ```
@@ -32,7 +32,7 @@ sleep 4
 
 ```bash
 agent-browser close 2>/dev/null
-agent-browser --ignore-https-errors open "https://localhost:3000?skipOnboarding=true"
+agent-browser --ignore-https-errors open "https://localhost:3456?skipOnboarding=true"
 agent-browser wait 4000
 ```
 
@@ -49,8 +49,9 @@ agent-browser screenshot
 #### 4-2. キーボード入力テスト
 ```bash
 agent-browser snapshot -i
-agent-browser click @e9   # Terminal input textbox (ref may vary)
-agent-browser type @e9 "echo test"
+# ターミナル領域をクリック（refは動的に取得すること — snapshot結果から terminal/xterm 要素を探す）
+agent-browser click @eXX   # Terminal canvas (ref varies per session)
+agent-browser type @eXX "echo test"
 agent-browser press Enter
 agent-browser wait 2000
 agent-browser screenshot
@@ -123,7 +124,7 @@ tail -100 /tmp/cchub-dev.log | grep -c '\[Resize\]'
 #### 4-7. リロード後の維持確認
 ```bash
 echo "=== Before reload ===" && tmux list-panes -t <session> -F '#{pane_id} #{pane_width}x#{pane_height}'
-agent-browser open https://localhost:3000
+agent-browser open https://localhost:3456
 agent-browser wait 5000
 echo "=== After reload ===" && tmux list-panes -t <session> -F '#{pane_id} #{pane_width}x#{pane_height}'
 # サイズが同じであること

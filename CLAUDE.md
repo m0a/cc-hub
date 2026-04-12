@@ -52,7 +52,7 @@ shared/      # Shared types and Zod schemas (types.ts)
 - **PromptHistoryService** (`services/prompt-history.ts`) - Searches prompt history across sessions
 - **FileService** (`services/file-service.ts`) - Secure file operations with path traversal prevention
 - **FileChangeTracker** (`services/file-change-tracker.ts`) - Parses Claude Code `.jsonl` logs to track file changes
-- **AnthropicUsageService** (`services/anthropic-usage.ts`) - Fetches usage limits from Anthropic API
+- **AnthropicUsageService** (`services/anthropic-usage.ts`) - Fetches usage limits from Anthropic API with 60s cache, 5min backoff on 429, in-flight request coalescing
 - **StatsService** (`services/stats-service.ts`) - Reads cached statistics from `~/.claude/stats-cache.json`
 - **UsageTrackerService** (`services/usage-tracker.ts`) - Reads limit tracker data
 - **UsageHistoryService** (`services/usage-history.ts`) - Records usage snapshots to `/tmp/cchub-usage-history.json` with 30s throttling
@@ -90,7 +90,10 @@ shared/      # Shared types and Zod schemas (types.ts)
 
 **Files** (`/api/files`):
 - `GET /list` - Directory listing
-- `GET /read` - File content (with size limits)
+- `GET /read` - File content (with size limits, images/media return metadata only)
+- `GET /raw` - Stream file inline for `<img>`/`<video>`/`<audio>` (Range request / 206 supported)
+- `GET /download` - Download file as attachment (streamed via `Bun.file()`)
+- `POST /upload` - Upload file(s) via multipart/form-data (streamed via `Bun.write()`)
 - `GET /browse` - Browse directory tree
 - `GET /changes/:sessionWorkingDir` - Claude Code changes from `.jsonl`
 - `GET /git-changes/:workingDir` - Git-tracked changed files (`git status --porcelain`)
@@ -137,11 +140,11 @@ shared/      # Shared types and Zod schemas (types.ts)
 - **Keyboard.tsx** - Virtual keyboard for mobile with long-press for symbols
 
 **Files** (`components/files/`):
-- **FileViewer.tsx** - Container with file browser and content viewer, Claude/Git change toggle, browser history navigation
+- **FileViewer.tsx** - Container with file browser and content viewer, Claude/Git change toggle, browser history navigation, file upload/download, video/audio playback
 - **FileBrowser.tsx** - Directory tree navigation
 - **CodeViewer.tsx** - Syntax highlighted code display
 - **DiffViewer.tsx** - Side-by-side diff view for file changes
-- **ImageViewer.tsx** - Image preview with zoom
+- **ImageViewer.tsx** - Image preview with zoom (uses `/files/raw` streaming for large images)
 - **MarkdownViewer.tsx** - Markdown rendering
 - **HtmlViewer.tsx** - HTML file rendering via iframe
 - **PromptComposer.tsx** - Prompt text composition interface

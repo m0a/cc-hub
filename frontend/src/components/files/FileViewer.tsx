@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, X, Eye, EyeOff, FileText, ChevronRight, ChevronDown, List, FolderTree, GitBranch, MessageSquare, BarChart3, RotateCw, Menu } from 'lucide-react';
+import { ArrowLeft, X, Eye, EyeOff, FileText, ChevronRight, ChevronDown, List, FolderTree, GitBranch, MessageSquare, BarChart3, RotateCw, Upload, Download } from 'lucide-react';
 import { useFileViewer } from '../../hooks/useFileViewer';
 import { FileBrowser } from './FileBrowser';
 import { CodeViewer } from './CodeViewer';
@@ -108,6 +108,67 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
   const [showHidden, setShowHidden] = useState(false);
   const [selectedChange, setSelectedChange] = useState<FileChange | null>(null);
   const [selectedGitDiff, setSelectedGitDiff] = useState<{ path: string; diff: string } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+
+  const handleUploadClick = useCallback(() => {
+    uploadInputRef.current?.click();
+  }, []);
+
+  const handleUploadFiles = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+
+    setUploading(true);
+
+    // Vite dev proxy has a known issue with large multipart POSTs — bypass the proxy
+    // and hit the backend directly in dev. Production serves both from the same origin.
+    let uploadUrl = '/api/files/upload';
+    if (import.meta.env.DEV && location.port === '5173') {
+      uploadUrl = `${location.protocol}//${location.hostname}:3456/api/files/upload`;
+    }
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', uploadUrl);
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText || xhr.statusText}`));
+        });
+        xhr.addEventListener('error', () => reject(new Error('Network error')));
+        xhr.addEventListener('abort', () => reject(new Error('Upload aborted')));
+        xhr.addEventListener('timeout', () => reject(new Error('Upload timeout')));
+
+        const formData = new FormData();
+        formData.append('path', currentPath);
+        formData.append('sessionWorkingDir', sessionWorkingDir);
+        for (const f of Array.from(fileList)) {
+          formData.append('file', f);
+        }
+        xhr.send(formData);
+      });
+      await listDirectory(currentPath);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      alert(`Upload failed: ${msg}`);
+    } finally {
+      setUploading(false);
+      if (uploadInputRef.current) uploadInputRef.current.value = '';
+    }
+  }, [currentPath, sessionWorkingDir, listDirectory]);
+
+  const handleDownloadFile = useCallback(() => {
+    if (!selectedFile) return;
+    const url = `/api/files/download?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`;
+    // Use a temporary anchor to trigger download with proper filename from Content-Disposition
+    const a = document.createElement('a');
+    a.href = url;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }, [selectedFile, sessionWorkingDir]);
 
   // View history stack for back navigation
   // Use module-level array to survive React strict mode and re-renders
@@ -391,13 +452,30 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                   </button>
                 </div>
                 {listMode === 'browser' && (
-                  <button
-                    onClick={() => setShowHidden(!showHidden)}
-                    className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-                    title={t('files.showHidden')}
-                  >
-                    {showHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                  </button>
+                  <>
+                    <button
+                      onClick={handleUploadClick}
+                      disabled={uploading}
+                      className="p-1.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-50"
+                      title={uploading ? 'Uploading…' : `Upload to ${currentPath}`}
+                    >
+                      <Upload className="w-4 h-4" />
+                    </button>
+                    <input
+                      ref={uploadInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={handleUploadFiles}
+                    />
+                    <button
+                      onClick={() => setShowHidden(!showHidden)}
+                      className={`p-1.5 rounded transition-colors ${showHidden ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                      title={t('files.showHidden')}
+                    >
+                      {showHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                    </button>
+                  </>
                 )}
                 <button
                   onClick={onClose}
@@ -473,6 +551,15 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                         {previewMode ? 'Source' : 'Preview'}
                       </button>
                     )}
+                    {viewMode === 'file' && selectedFile && (
+                      <button
+                        onClick={handleDownloadFile}
+                        className="p-1.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors"
+                        title="Download file"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+                    )}
                     {viewMode === 'diff' && (
                       <button
                         onClick={handleOpenFileFromDiff}
@@ -491,6 +578,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                           mimeType={selectedFile.mimeType}
                           fileName={getFileName(selectedFile.path)}
                           size={selectedFile.size}
+                          srcUrl={`/api/files/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
                         />
                       ) : previewMode && isMarkdownFile(selectedFile.path) ? (
                         <MarkdownViewer

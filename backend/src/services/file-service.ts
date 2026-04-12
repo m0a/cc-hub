@@ -203,6 +203,19 @@ export class FileService {
     const isText = TEXT_EXTENSIONS.has(ext) || this.isTextMime(mimeType);
     const isImage = IMAGE_EXTENSIONS.has(ext);
 
+    // Images are served via the streaming /files/raw endpoint.
+    // Skip content loading to avoid wasting memory on large files.
+    if (isImage) {
+      return {
+        path: validPath,
+        content: '',
+        encoding: 'base64',
+        mimeType,
+        size: stats.size,
+        truncated: false,
+      };
+    }
+
     const truncated = stats.size > maxSize;
     const readSize = truncated ? maxSize : stats.size;
 
@@ -216,9 +229,6 @@ export class FileService {
     if (isText) {
       content = contentBuffer.toString('utf-8');
       encoding = 'utf-8';
-    } else if (isImage) {
-      content = contentBuffer.toString('base64');
-      encoding = 'base64';
     } else {
       // Binary file - return as base64
       content = contentBuffer.toString('base64');

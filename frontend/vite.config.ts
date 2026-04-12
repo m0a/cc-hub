@@ -155,6 +155,19 @@ export default defineConfig({
         target: 'https://localhost:3456',
         changeOrigin: true,
         secure: false,
+        // Allow long uploads (videos etc.)
+        proxyTimeout: 10 * 60 * 1000,
+        timeout: 10 * 60 * 1000,
+        // Ensure Content-Length is preserved for multipart POSTs
+        // (http-proxy loses it in some edge cases)
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            const cl = req.headers['content-length'];
+            if (cl && !proxyReq.getHeader('content-length')) {
+              proxyReq.setHeader('content-length', cl);
+            }
+          });
+        },
       },
       '/ws': {
         target: 'wss://localhost:3456',

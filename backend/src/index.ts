@@ -295,6 +295,8 @@ console.log(`   Static: ${EMBEDDED_MODE ? '(embedded)' : staticRoot}`);
 export default {
   port,
   hostname: host,
+  // Allow large uploads (videos etc.) — 10GB
+  maxRequestBodySize: 10 * 1024 * 1024 * 1024,
   tls: {
     cert: Bun.file(certPath),
     key: Bun.file(keyPath),

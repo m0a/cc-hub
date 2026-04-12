@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { Image, ZoomIn, ZoomOut } from 'lucide-react';
 
 interface ImageViewerProps {
-  content: string; // base64 encoded
+  content: string; // base64 encoded (fallback for small images)
   mimeType: string;
   fileName?: string;
   size?: number;
+  /** Optional direct URL for streaming large images (avoids base64 truncation) */
+  srcUrl?: string;
 }
 
 function formatFileSize(bytes: number): string {
@@ -21,11 +23,12 @@ export function ImageViewer({
   mimeType,
   fileName,
   size,
+  srcUrl,
 }: ImageViewerProps) {
   const [scale, setScale] = useState(1);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
 
-  const dataUrl = `data:${mimeType};base64,${content}`;
+  const dataUrl = srcUrl || `data:${mimeType};base64,${content}`;
 
   const handleZoomIn = () => setScale(s => Math.min(s * 1.5, 5));
   const handleZoomOut = () => setScale(s => Math.max(s / 1.5, 0.1));

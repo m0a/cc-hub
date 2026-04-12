@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { readFile, mkdir, realpath } from 'node:fs/promises';
+import { readFile, mkdir, realpath, stat } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { FileService } from '../services/file-service';
@@ -404,5 +404,157 @@ files.post('/mkdir', async (c) => {
     }
     console.error('Mkdir error:', error);
     return c.json({ error: 'Failed to create directory' }, 500);
+  }
+});
+
+/**
+ * GET /files/raw - Serve a file inline (for <img>/<video> rendering, etc.)
+ * Query params:
+ *   - path: File path
+ *   - sessionWorkingDir: Working directory of the session (for security)
+ *
+ * Uses Bun.file() for streaming. No size limit. Content-Type inferred from
+ * the file service's known mime mapping.
+ */
+files.get('/raw', async (c) => {
+  const path = c.req.query('path');
+  const sessionWorkingDir = c.req.query('sessionWorkingDir');
+
+  if (!path || !sessionWorkingDir) {
+    return c.json({ error: 'Missing path or sessionWorkingDir parameter' }, 400);
+  }
+
+  try {
+    const validPath = await fileService.validatePath(path, sessionWorkingDir);
+    if (!validPath) {
+      return c.json({ error: 'Access denied' }, 403);
+    }
+
+    const stats = await stat(validPath);
+    if (stats.isDirectory()) {
+      return c.json({ error: 'Cannot serve a directory' }, 400);
+    }
+
+    const file = Bun.file(validPath);
+    const mime = file.type || 'application/octet-stream';
+    return new Response(file, {
+      headers: {
+        'Content-Type': mime,
+        'Content-Length': String(stats.size),
+        'Cache-Control': 'private, max-age=300',
+      },
+    });
+  } catch (error) {
+    console.error('Raw file error:', error);
+    return c.json({ error: 'Failed to serve file' }, 500);
+  }
+});
+
+/**
+ * GET /files/download - Download a file as binary attachment (streamed)
+ * Query params:
+ *   - path: File path to download
+ *   - sessionWorkingDir: Working directory of the session (for security)
+ *
+ * Uses Bun.file() which streams from disk — no size limit, low memory.
+ */
+files.get('/download', async (c) => {
+  const path = c.req.query('path');
+  const sessionWorkingDir = c.req.query('sessionWorkingDir');
+
+  if (!path || !sessionWorkingDir) {
+    return c.json({ error: 'Missing path or sessionWorkingDir parameter' }, 400);
+  }
+
+  try {
+    const validPath = await fileService.validatePath(path, sessionWorkingDir);
+    if (!validPath) {
+      return c.json({ error: 'Access denied' }, 403);
+    }
+
+    const stats = await stat(validPath);
+    if (stats.isDirectory()) {
+      return c.json({ error: 'Cannot download a directory' }, 400);
+    }
+
+    const filename = basename(validPath);
+    const asciiName = filename.replace(/[^\x20-\x7e]/g, '_');
+    const encodedName = encodeURIComponent(filename);
+
+    // Bun.file() returns a BunFile that streams from disk when used as a Response body.
+    const file = Bun.file(validPath);
+    return new Response(file, {
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': String(stats.size),
+        'Content-Disposition': `attachment; filename="${asciiName}"; filename*=UTF-8''${encodedName}`,
+        'Cache-Control': 'no-store',
+      },
+    });
+  } catch (error) {
+    console.error('Download error:', error);
+    return c.json({ error: 'Failed to download file' }, 500);
+  }
+});
+
+/**
+ * POST /files/upload - Upload file(s) into a session-scoped directory
+ * Body (multipart/form-data):
+ *   - file: File(s) to upload (repeatable)
+ *   - path: Destination directory
+ *   - sessionWorkingDir: Working directory of the session (for security)
+ *
+ * Uses Bun.write() which streams from the incoming File — no size limit,
+ * low memory.
+ */
+files.post('/upload', async (c) => {
+  try {
+    const formData = await c.req.formData();
+    const destPath = formData.get('path');
+    const sessionWorkingDir = formData.get('sessionWorkingDir');
+
+    if (typeof destPath !== 'string' || typeof sessionWorkingDir !== 'string') {
+      return c.json({ error: 'Missing path or sessionWorkingDir' }, 400);
+    }
+
+    const validDir = await fileService.validatePath(destPath, sessionWorkingDir);
+    if (!validDir) {
+      return c.json({ error: 'Access denied' }, 403);
+    }
+    const dirStat = await stat(validDir);
+    if (!dirStat.isDirectory()) {
+      return c.json({ error: 'Destination is not a directory' }, 400);
+    }
+
+    const fileEntries = formData.getAll('file');
+    if (fileEntries.length === 0) {
+      return c.json({ error: 'No file provided' }, 400);
+    }
+
+    const saved: Array<{ name: string; size: number; path: string }> = [];
+    for (const entry of fileEntries) {
+      if (!(entry instanceof File)) continue;
+
+      const safeName = basename(entry.name);
+      if (!safeName || safeName === '.' || safeName === '..') {
+        return c.json({ error: `Invalid filename: ${entry.name}` }, 400);
+      }
+
+      const targetPath = join(validDir, safeName);
+      // Defense-in-depth against symlinks pointing outside the session dir.
+      const validTarget = await fileService.validatePathWithParent(targetPath, sessionWorkingDir);
+      if (!validTarget) {
+        return c.json({ error: `Access denied for ${safeName}` }, 403);
+      }
+
+      // Bun.write accepts a File/Blob and streams it to disk.
+      await Bun.write(validTarget, entry);
+      saved.push({ name: safeName, size: entry.size, path: validTarget });
+    }
+
+    return c.json({ success: true, files: saved });
+  } catch (error) {
+    console.error('Upload error:', error);
+    return c.json({ error: 'Failed to upload file' }, 500);
   }
 });

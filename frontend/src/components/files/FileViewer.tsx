@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, X, Eye, EyeOff, FileText, ChevronRight, ChevronDown, List, FolderTree, GitBranch, MessageSquare, BarChart3, RotateCw, Upload, Download } from 'lucide-react';
 import { useFileViewer } from '../../hooks/useFileViewer';
+import { authFetch } from '../../services/api';
 import { FileBrowser } from './FileBrowser';
 import { CodeViewer } from './CodeViewer';
 import { ImageViewer } from './ImageViewer';
@@ -133,7 +134,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
         formData.append('file', f);
       }
       console.log('[upload] sending POST /api/files/upload');
-      const res = await fetch('/api/files/upload', { method: 'POST', body: formData });
+      const res = await authFetch('/api/files/upload', { method: 'POST', body: formData }, 300000);
       console.log(`[upload] response: ${res.status}`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: `${res.status}` }));

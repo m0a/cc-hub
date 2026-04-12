@@ -109,6 +109,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
   const [selectedChange, setSelectedChange] = useState<FileChange | null>(null);
   const [selectedGitDiff, setSelectedGitDiff] = useState<{ path: string; diff: string } | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
   const handleUploadClick = useCallback(() => {
@@ -140,17 +141,22 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
       console.log(`[upload] response: ${res.status}`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: `${res.status}` }));
-        alert(`Upload failed: ${err.error || res.statusText}`);
+        setUploadMessage({ text: `Upload failed: ${err.error || res.statusText}`, isError: true });
         return;
       }
+      const result = await res.json().catch(() => null);
+      const names = result?.files?.map((f: { name: string }) => f.name).join(', ') || '';
+      setUploadMessage({ text: `Uploaded: ${names}`, isError: false });
       await listDirectory(currentPath);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       console.error(`[upload] error: ${msg}`, err);
-      alert(`Upload failed: ${msg}`);
+      setUploadMessage({ text: `Upload failed: ${msg}`, isError: true });
     } finally {
       setUploading(false);
       if (uploadInputRef.current) uploadInputRef.current.value = '';
+      // Auto-dismiss toast after 4s
+      setTimeout(() => setUploadMessage(null), 4000);
     }
   }, [currentPath, sessionWorkingDir, listDirectory]);
 
@@ -490,6 +496,13 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
             </div>
           )}
 
+          {/* Upload toast */}
+          {uploadMessage && (
+            <div className={`px-3 py-2 text-sm border-b ${uploadMessage.isError ? 'bg-red-900/50 text-red-300 border-red-800' : 'bg-green-900/50 text-green-300 border-green-800'}`}>
+              {uploadMessage.text}
+            </div>
+          )}
+
           {/* Two-pane content */}
           <div ref={containerRef} className="flex-1 flex overflow-hidden">
             {/* Left pane: File list or Changes */}
@@ -643,6 +656,13 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
         {error && (
           <div className="px-3 py-2 bg-red-900/50 text-red-300 text-sm border-b border-red-800">
             {error}
+          </div>
+        )}
+
+        {/* Upload toast */}
+        {uploadMessage && (
+          <div className={`px-3 py-2 text-sm border-b ${uploadMessage.isError ? 'bg-red-900/50 text-red-300 border-red-800' : 'bg-green-900/50 text-green-300 border-green-800'}`}>
+            {uploadMessage.text}
           </div>
         )}
 

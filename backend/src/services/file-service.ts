@@ -76,6 +76,12 @@ const IMAGE_EXTENSIONS = new Set([
   '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.svg',
 ]);
 
+// Media extensions (served via /files/raw, not read into memory)
+const MEDIA_EXTENSIONS = new Set([
+  '.mp4', '.webm', '.ogg', '.mov', '.m4v',
+  '.mp3', '.wav', '.m4a', '.aac', '.flac', '.wma',
+]);
+
 export class FileService {
   /**
    * Validate that the requested path is within the allowed base directory.
@@ -203,9 +209,9 @@ export class FileService {
     const isText = TEXT_EXTENSIONS.has(ext) || this.isTextMime(mimeType);
     const isImage = IMAGE_EXTENSIONS.has(ext);
 
-    // Images are served via the streaming /files/raw endpoint.
+    // Images and media are served via the streaming /files/raw endpoint.
     // Skip content loading to avoid wasting memory on large files.
-    if (isImage) {
+    if (isImage || MEDIA_EXTENSIONS.has(ext)) {
       return {
         path: validPath,
         content: '',

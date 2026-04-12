@@ -53,6 +53,10 @@ const MARKDOWN_EXTENSIONS = new Set(['.md', '.mdx', '.markdown']);
 // HTML extensions (for preview mode)
 const HTML_EXTENSIONS = new Set(['.html', '.htm']);
 
+// Video/audio extensions
+const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.ogg', '.mov', '.m4v']);
+const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.wma']);
+
 function isImageFile(path: string): boolean {
   const ext = path.toLowerCase().match(/\.[^.]+$/)?.[0];
   return ext ? IMAGE_EXTENSIONS.has(ext) : false;
@@ -66,6 +70,20 @@ function isMarkdownFile(path: string): boolean {
 function isHtmlFile(path: string): boolean {
   const ext = path.toLowerCase().match(/\.[^.]+$/)?.[0];
   return ext ? HTML_EXTENSIONS.has(ext) : false;
+}
+
+function isVideoFile(path: string): boolean {
+  const ext = path.toLowerCase().match(/\.[^.]+$/)?.[0];
+  return ext ? VIDEO_EXTENSIONS.has(ext) : false;
+}
+
+function isAudioFile(path: string): boolean {
+  const ext = path.toLowerCase().match(/\.[^.]+$/)?.[0];
+  return ext ? AUDIO_EXTENSIONS.has(ext) : false;
+}
+
+function isMediaFile(path: string): boolean {
+  return isVideoFile(path) || isAudioFile(path);
 }
 
 function getFileName(path: string): string {
@@ -589,6 +607,25 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                           size={selectedFile.size}
                           srcUrl={`/api/files/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
                         />
+                      ) : isMediaFile(selectedFile.path) ? (
+                        <div className="flex flex-col items-center justify-center h-full p-4 bg-th-bg">
+                          {isVideoFile(selectedFile.path) ? (
+                            <video
+                              controls
+                              className="max-w-full max-h-full rounded"
+                              src={`/api/files/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
+                            />
+                          ) : (
+                            <audio
+                              controls
+                              className="w-full max-w-md"
+                              src={`/api/files/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
+                            />
+                          )}
+                          <div className="mt-2 text-xs text-th-text-muted">
+                            {getFileName(selectedFile.path)} • {selectedFile.size ? `${(selectedFile.size / 1024 / 1024).toFixed(1)} MB` : ''}
+                          </div>
+                        </div>
                       ) : previewMode && isMarkdownFile(selectedFile.path) ? (
                         <MarkdownViewer
                           content={selectedFile.content}
@@ -688,6 +725,25 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                 size={selectedFile.size}
                 srcUrl={`/api/files/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
               />
+            ) : isMediaFile(selectedFile.path) ? (
+              <div className="flex flex-col items-center justify-center h-full p-4 bg-th-bg">
+                {isVideoFile(selectedFile.path) ? (
+                  <video
+                    controls
+                    className="max-w-full max-h-full rounded"
+                    src={`/api/files/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
+                  />
+                ) : (
+                  <audio
+                    controls
+                    className="w-full max-w-md"
+                    src={`/api/files/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
+                  />
+                )}
+                <div className="mt-2 text-xs text-th-text-muted">
+                  {getFileName(selectedFile.path)} • {selectedFile.size ? `${(selectedFile.size / 1024 / 1024).toFixed(1)} MB` : ''}
+                </div>
+              </div>
             ) : previewMode && isMarkdownFile(selectedFile.path) ? (
               <MarkdownViewer
                 content={selectedFile.content}

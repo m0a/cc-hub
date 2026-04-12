@@ -2,17 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.66] - 2026-04-12
+## [0.1.73] - 2026-04-12
 
 ### Added
 - File Viewer: ファイルアップロード/ダウンロード機能（動画など大きいファイルも対応）
-- `POST /files/upload` — 複数ファイル一括アップロード、ストリーミング書き込み
-- `GET /files/download` — 添付ダウンロード、ストリーミング配信
-- `GET /files/raw` — 画像/動画の直接ストリーミング配信
+- `POST /files/upload` — 複数ファイル一括アップロード、ストリーミング書き込み（Bun.write）
+- `GET /files/download` — 添付ダウンロード、ストリーミング配信（Bun.file）
+- `GET /files/raw` — 画像/動画/音声の直接ストリーミング配信（Range request対応）
+- 動画再生（MP4, WebM, MOV等）と音声再生（MP3, WAV, FLAC等）をFileViewerに追加
+- アップロード成功/失敗のトースト通知
+- モバイルレイアウトにもアップロード/ダウンロードボタンを追加
 
 ### Fixed
-- 大きい画像が1MB制限で崩れて表示される問題を修正（ストリーミング配信に変更）
+- 大きい画像が1MB制限で崩れて表示される問題を修正（/files/raw ストリーミングに変更）
 - サーバーの最大リクエストボディサイズを10GBに拡張
+- モバイルPWAでFileオブジェクト参照が切れる問題にBlob変換で対応
+- 動画シーク・プログレッシブ再生対応（Range request / 206 Partial Content）
+- 動画プレーヤーの画面サイズ自動調整（object-contain, playsInline）
 
 ## [0.1.65] - 2026-04-11
 

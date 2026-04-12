@@ -608,21 +608,26 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                           srcUrl={`/api/files/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
                         />
                       ) : isMediaFile(selectedFile.path) ? (
-                        <div className="flex flex-col items-center justify-center h-full p-4 bg-th-bg">
-                          {isVideoFile(selectedFile.path) ? (
-                            <video
-                              controls
-                              className="max-w-full max-h-full rounded"
-                              src={`/api/files/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
-                            />
-                          ) : (
-                            <audio
-                              controls
-                              className="w-full max-w-md"
-                              src={`/api/files/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
-                            />
-                          )}
-                          <div className="mt-2 text-xs text-th-text-muted">
+                        <div className="flex flex-col h-full bg-th-bg">
+                          <div className="flex-1 flex items-center justify-center overflow-hidden p-2">
+                            {isVideoFile(selectedFile.path) ? (
+                              <video
+                                controls
+                                playsInline
+                                preload="metadata"
+                                className="w-full h-full object-contain rounded"
+                                src={`/api/files/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
+                              />
+                            ) : (
+                              <audio
+                                controls
+                                preload="metadata"
+                                className="w-full max-w-md"
+                                src={`/api/files/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
+                              />
+                            )}
+                          </div>
+                          <div className="px-3 py-1.5 text-xs text-th-text-muted text-center border-t border-th-border">
                             {getFileName(selectedFile.path)} • {selectedFile.size ? `${(selectedFile.size / 1024 / 1024).toFixed(1)} MB` : ''}
                           </div>
                         </div>

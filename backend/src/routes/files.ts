@@ -437,10 +437,34 @@ files.get('/raw', async (c) => {
 
     const file = Bun.file(validPath);
     const mime = file.type || 'application/octet-stream';
+    const totalSize = stats.size;
+
+    // Support Range requests for video/audio seeking and progressive playback
+    const rangeHeader = c.req.header('Range');
+    if (rangeHeader) {
+      const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+      if (match) {
+        const start = parseInt(match[1], 10);
+        const end = match[2] ? parseInt(match[2], 10) : totalSize - 1;
+        const chunkSize = end - start + 1;
+        return new Response(file.slice(start, end + 1), {
+          status: 206,
+          headers: {
+            'Content-Type': mime,
+            'Content-Length': String(chunkSize),
+            'Content-Range': `bytes ${start}-${end}/${totalSize}`,
+            'Accept-Ranges': 'bytes',
+            'Cache-Control': 'private, max-age=300',
+          },
+        });
+      }
+    }
+
     return new Response(file, {
       headers: {
         'Content-Type': mime,
-        'Content-Length': String(stats.size),
+        'Content-Length': String(totalSize),
+        'Accept-Ranges': 'bytes',
         'Cache-Control': 'private, max-age=300',
       },
     });

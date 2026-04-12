@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.66] - 2026-04-12
+
+### Added
+- File Viewer: ファイルアップロード/ダウンロード機能（動画など大きいファイルも対応）
+- `POST /files/upload` — 複数ファイル一括アップロード、ストリーミング書き込み
+- `GET /files/download` — 添付ダウンロード、ストリーミング配信
+- `GET /files/raw` — 画像/動画の直接ストリーミング配信
+
+### Fixed
+- 大きい画像が1MB制限で崩れて表示される問題を修正（ストリーミング配信に変更）
+- サーバーの最大リクエストボディサイズを10GBに拡張
+
 ## [0.1.65] - 2026-04-11
 
 ### Added

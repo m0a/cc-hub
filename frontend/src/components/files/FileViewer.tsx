@@ -130,11 +130,14 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
       const formData = new FormData();
       formData.append('path', currentPath);
       formData.append('sessionWorkingDir', sessionWorkingDir);
+      // Read files into Blobs first — on some mobile PWAs, the File reference
+      // from input[type=file] goes stale before fetch can read it.
       for (const f of Array.from(fileList)) {
-        formData.append('file', f);
+        const buf = await f.arrayBuffer();
+        formData.append('file', new Blob([buf], { type: f.type || 'application/octet-stream' }), f.name);
       }
       console.log('[upload] sending POST /api/files/upload');
-      const res = await authFetch('/api/files/upload', { method: 'POST', body: formData }, 300000);
+      const res = await fetch('/api/files/upload', { method: 'POST', body: formData });
       console.log(`[upload] response: ${res.status}`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: `${res.status}` }));

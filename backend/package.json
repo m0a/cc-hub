@@ -9,7 +9,8 @@
     "build": "bun build src/index.ts --outdir dist --target bun",
     "start": "bun run dist/index.js",
     "test": "bun test",
-    "lint": "bunx @biomejs/biome lint src/"
+    "lint": "bunx @biomejs/biome lint src/",
+    "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.7.6",

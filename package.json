@@ -19,6 +19,10 @@
     "test": "bun run --filter '*' test",
     "test:e2e": "bun run --filter frontend test:e2e",
     "lint": "bun run --filter '*' lint",
+    "typecheck": "bun run --filter '*' typecheck",
     "setup": "bun run scripts/setup.ts"
+  },
+  "devDependencies": {
+    "@typescript/native-preview": "^7.0.0-dev.20260421.2"
   }
 }

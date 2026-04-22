@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import type { ExtendedSessionResponse, SessionTheme, IndicatorState } from '../../../shared/types';
+import type { ExtendedSessionResponse, SessionResponse, SessionTheme, IndicatorState } from '../../../shared/types';
 import { authFetch, isTransientNetworkError } from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';

@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.74] - 2026-04-22
+
+### Added
+- TypeScript 7.0 beta (tsgo) による型チェック基盤を導入（tsc 5.9.3 比で約6.8倍高速化）
+- 各 workspace に `typecheck` スクリプト追加、root から `bun run typecheck` で一括実行可能
+- CI (`.github/workflows/test.yml`) に typecheck ステップを追加
+
+### Fixed
+- backend/frontend で検出されなかった既存型エラー 13 件を修正
+  - `SessionState` の narrow 解除、lost session の必須プロパティ補完
+  - テストコードの optional chaining 化
+  - frontend の CSS module 宣言（`vite-env.d.ts`）
+  - `SessionResponse` 型の import 漏れ
+- `backend/tsconfig.json`: `bun-types` → `bun`（`@types/bun` に整合）
+
 ## [0.1.73] - 2026-04-12
 
 ### Added

@@ -8,7 +8,7 @@
     "skipLibCheck": true,
     "declaration": true,
     "outDir": "dist",
-    "types": ["bun-types"],
+    "types": ["bun"],
     "resolveJsonModule": true,
     "paths": {
       "shared": ["../shared/types.ts"]

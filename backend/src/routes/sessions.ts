@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { CreateSessionSchema, PaneIdSchema, type IndicatorState, type PaneInfo, type ExtendedSessionResponse } from '../../../shared/types';
+import { CreateSessionSchema, PaneIdSchema, type IndicatorState, type PaneInfo, type ExtendedSessionResponse, type SessionState } from '../../../shared/types';
 import { TmuxService } from '../services/tmux';
 import { controlSessions, getOrCreateControlSession } from '../services/tmux-control';
 import { ClaudeCodeService } from '../services/claude-code';
@@ -93,7 +93,6 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       }
     }
 
-    const isClaudeRunning = s.currentCommand === 'claude';
     // Indicator state: hook events are the source of truth
     // Default for running Claude = completed (idle/waiting for user input)
     const hookResult = ccSession?.sessionId ? getIndicatorOverride(ccSession.sessionId) : null;
@@ -120,7 +119,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       name: s.name,
       createdAt: s.createdAt,
       lastAccessedAt: s.createdAt,
-      state: s.attached ? 'working' as const : 'idle' as const,
+      state: (s.attached ? 'working' : 'idle') as SessionState,
       currentCommand: s.currentCommand,
       currentPath: s.currentPath,
       paneTitle: s.paneTitle,
@@ -180,11 +179,22 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       name: lost.name,
       createdAt: '',
       lastAccessedAt: '',
-      state: 'lost',
+      state: 'lost' as SessionState,
+      currentCommand: undefined,
       currentPath: lost.currentPath,
+      paneTitle: undefined,
+      waitingToolName: undefined,
+      ccSummary: undefined,
+      ccFirstPrompt: undefined,
+      indicatorState: undefined,
+      ccSessionId: lost.ccSessionId,
+      messageCount: undefined,
+      gitBranch: undefined,
+      durationMinutes: undefined,
+      firstMessageId: undefined,
       theme: lost.theme,
       customTitle: lost.customTitle,
-      ccSessionId: lost.ccSessionId,
+      panes: undefined,
     });
   }
 

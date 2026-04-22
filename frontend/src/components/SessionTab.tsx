@@ -18,6 +18,7 @@ const stateColors: Record<SessionState, string> = {
   waiting_input: 'bg-red-500',
   waiting_permission: 'bg-red-500',
   disconnected: 'bg-gray-500',
+  lost: 'bg-gray-400',
 };
 
 export function SessionTab({ id, name, state, isActive, onSelect, onClose, onDelete }: SessionTabProps) {

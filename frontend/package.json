@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "bun test src/",
     "test:e2e": "playwright test",
-    "lint": "bunx @biomejs/biome lint src/"
+    "lint": "bunx @biomejs/biome lint src/",
+    "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

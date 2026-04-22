@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "pack": "evenhub pack",
     "test": "echo 'no tests'",
-    "lint": "echo 'no lint'"
+    "lint": "echo 'no lint'",
+    "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "^0.0.9"

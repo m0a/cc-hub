@@ -50,15 +50,15 @@ describe('parseTmuxLayout', () => {
 
     // Left child: vertical split
     const left = result.children?.[0];
-    expect(left.type).toBe('vertical');
-    expect(left.children).toHaveLength(2);
-    expect(left.children?.[0].paneId).toBe(0);
-    expect(left.children?.[1].paneId).toBe(2);
+    expect(left?.type).toBe('vertical');
+    expect(left?.children).toHaveLength(2);
+    expect(left?.children?.[0].paneId).toBe(0);
+    expect(left?.children?.[1].paneId).toBe(2);
 
     // Right child: leaf
     const right = result.children?.[1];
-    expect(right.type).toBe('leaf');
-    expect(right.paneId).toBe(1);
+    expect(right?.type).toBe('leaf');
+    expect(right?.paneId).toBe(1);
   });
 
   test('three-way horizontal split', () => {

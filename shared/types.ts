@@ -95,12 +95,15 @@ export interface PaneInfo {
 }
 
 export interface SessionMetrics {
-  contextTokens?: number;         // current context window size (last assistant message sum)
-  contextMaxTokens?: number;      // model-specific max (default 200000)
-  contextPercent?: number;        // 0-100
-  totalOutputTokens?: number;     // cumulative output tokens
-  totalCacheReadTokens?: number;  // cumulative cache reads (rough total usage)
-  memoryRssBytes?: number;        // total RSS across session's panes
+  contextTokens?: number;              // current context window size (last assistant message sum)
+  contextMaxTokens?: number;           // model-specific max (from Anthropic /v1/models)
+  contextPercent?: number;             // 0-100
+  totalInputTokens?: number;           // cumulative uncached input tokens
+  totalCacheCreationTokens?: number;   // cumulative cache creation tokens
+  totalCacheReadTokens?: number;       // cumulative cache read tokens
+  totalOutputTokens?: number;          // cumulative output tokens
+  totalTokens?: number;                // effective usage: input + cache_creation + output (cache_read excluded)
+  memoryRssBytes?: number;             // total RSS across session's panes
 }
 
 export const CreateSessionSchema = z.object({

@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { createInterface } from 'node:readline';
 import type { SessionMetrics } from '../../../shared/types';
+import { getMaxInputTokens } from './anthropic-models';
 
 const CONTEXT_MAX_DEFAULT = 200_000;
 
@@ -66,17 +67,23 @@ async function getProcessTreeRSS(pid: number): Promise<number> {
 interface JsonlCacheEntry {
   mtimeMs: number;
   size: number;
-  totalOutputTokens: number;
+  totalInputTokens: number;
+  totalCacheCreationTokens: number;
   totalCacheReadTokens: number;
+  totalOutputTokens: number;
   contextTokens: number;
+  latestModel?: string;
 }
 
 const jsonlCache = new Map<string, JsonlCacheEntry>();
 
 async function readJsonlUsage(filePath: string): Promise<{
-  totalOutputTokens: number;
+  totalInputTokens: number;
+  totalCacheCreationTokens: number;
   totalCacheReadTokens: number;
+  totalOutputTokens: number;
   contextTokens: number;
+  latestModel?: string;
 } | null> {
   try {
     const stat = await fs.promises.stat(filePath);
@@ -85,9 +92,12 @@ async function readJsonlUsage(filePath: string): Promise<{
       return cached;
     }
 
-    let totalOutputTokens = 0;
+    let totalInputTokens = 0;
+    let totalCacheCreationTokens = 0;
     let totalCacheReadTokens = 0;
+    let totalOutputTokens = 0;
     let contextTokens = 0;
+    let latestModel: string | undefined;
 
     const stream = fs.createReadStream(filePath, { encoding: 'utf-8' });
     const rl = createInterface({ input: stream, crlfDelay: Number.POSITIVE_INFINITY });
@@ -101,10 +111,16 @@ async function readJsonlUsage(filePath: string): Promise<{
           const createTok = Number(usage.cache_creation_input_tokens) || 0;
           const readTok = Number(usage.cache_read_input_tokens) || 0;
           const outTok = Number(usage.output_tokens) || 0;
-          totalOutputTokens += outTok;
+          totalInputTokens += inTok;
+          totalCacheCreationTokens += createTok;
           totalCacheReadTokens += readTok;
+          totalOutputTokens += outTok;
           // Last assistant message's effective context = in + cache_creation + cache_read
           contextTokens = inTok + createTok + readTok;
+          const model = obj?.message?.model;
+          if (typeof model === 'string' && model && model !== '<synthetic>') {
+            latestModel = model;
+          }
         }
       } catch {
         // Skip malformed lines
@@ -114,9 +130,12 @@ async function readJsonlUsage(filePath: string): Promise<{
     const entry: JsonlCacheEntry = {
       mtimeMs: stat.mtimeMs,
       size: stat.size,
-      totalOutputTokens,
+      totalInputTokens,
+      totalCacheCreationTokens,
       totalCacheReadTokens,
+      totalOutputTokens,
       contextTokens,
+      latestModel,
     };
     jsonlCache.set(filePath, entry);
     return entry;
@@ -129,11 +148,10 @@ export interface MetricsInput {
   ccSessionId?: string;
   workingDir?: string;
   pids?: (number | undefined)[];
-  contextMaxTokens?: number;
 }
 
 export async function computeSessionMetrics(input: MetricsInput): Promise<SessionMetrics | undefined> {
-  const { ccSessionId, workingDir, pids, contextMaxTokens = CONTEXT_MAX_DEFAULT } = input;
+  const { ccSessionId, workingDir, pids } = input;
   const metrics: SessionMetrics = {};
 
   if (ccSessionId && workingDir) {
@@ -141,13 +159,19 @@ export async function computeSessionMetrics(input: MetricsInput): Promise<Sessio
     const filePath = path.join(projectDir, `${ccSessionId}.jsonl`);
     const usage = await readJsonlUsage(filePath);
     if (usage) {
+      const max = await getMaxInputTokens(usage.latestModel ?? undefined);
+      const contextMaxTokens = max > 0 ? max : CONTEXT_MAX_DEFAULT;
       metrics.contextTokens = usage.contextTokens;
       metrics.contextMaxTokens = contextMaxTokens;
       metrics.contextPercent = contextMaxTokens > 0
         ? Math.min(100, Math.round((usage.contextTokens / contextMaxTokens) * 1000) / 10)
         : undefined;
-      metrics.totalOutputTokens = usage.totalOutputTokens;
+      metrics.totalInputTokens = usage.totalInputTokens;
+      metrics.totalCacheCreationTokens = usage.totalCacheCreationTokens;
       metrics.totalCacheReadTokens = usage.totalCacheReadTokens;
+      metrics.totalOutputTokens = usage.totalOutputTokens;
+      // Effective usage = input + cache_creation + output (cache_read is billed at 10%, treated as noise)
+      metrics.totalTokens = usage.totalInputTokens + usage.totalCacheCreationTokens + usage.totalOutputTokens;
     }
   }
 

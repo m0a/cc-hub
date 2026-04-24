@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.75] - 2026-04-24
+
+### Added
+- セッション一覧の各カードにメトリクス表示を追加
+  - **コンテキスト使用率**: .jsonl の最新 usage から算出、200k max に対する % をプログレスバーで可視化 (緑 <60% / アンバー 60-80% / 赤 ≥80%)
+  - **メモリ使用率**: tmux pane_pid から /proc ツリーを走査して RSS 合計を算出
+  - **トークン使用量**: .jsonl 全スキャンで output トークン累計を算出
+- mtime+size ベースのキャッシュで 2 回目以降 56-83ms の応答
+- デスクトップ (SessionList) とモバイル/タブレット (SessionListMini) 両方に対応
+
+### Changed
+- セッションカードの要約/プロンプト表示を `truncate` (1行+...) から `line-clamp-2` (最大2行) に変更し、読みやすさを向上
+
 ## [0.1.74] - 2026-04-22
 
 ### Added

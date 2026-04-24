@@ -11,7 +11,44 @@ function pathToProjectDir(workingDir: string): string {
   return path.join(os.homedir(), '.claude', 'projects', dirName);
 }
 
+interface ProcessTable {
+  tree: Map<number, number[]>;   // ppid -> [child pids]
+  rss: Map<number, number>;      // pid -> RSS bytes
+}
+
+let psCache: { timestamp: number; table: ProcessTable } | null = null;
+const PS_CACHE_TTL_MS = 1000;
+
+async function getProcessTable(): Promise<ProcessTable> {
+  if (psCache && Date.now() - psCache.timestamp < PS_CACHE_TTL_MS) {
+    return psCache.table;
+  }
+  // `ps -A -o pid=,ppid=,rss=` works identically on Linux and macOS.
+  // `=` suppresses the header; RSS is in kilobytes on both platforms.
+  const proc = Bun.spawn(['ps', '-A', '-o', 'pid=,ppid=,rss='], { stdout: 'pipe', stderr: 'pipe' });
+  const text = await new Response(proc.stdout).text();
+  await proc.exited;
+
+  const rss = new Map<number, number>();
+  const tree = new Map<number, number[]>();
+  for (const line of text.split('\n')) {
+    const m = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)$/);
+    if (!m?.[1] || !m[2] || !m[3]) continue;
+    const pid = Number.parseInt(m[1], 10);
+    const ppid = Number.parseInt(m[2], 10);
+    const rssKb = Number.parseInt(m[3], 10);
+    rss.set(pid, rssKb * 1024);
+    const children = tree.get(ppid);
+    if (children) children.push(pid);
+    else tree.set(ppid, [pid]);
+  }
+  const table: ProcessTable = { tree, rss };
+  psCache = { timestamp: Date.now(), table };
+  return table;
+}
+
 async function getProcessTreeRSS(pid: number): Promise<number> {
+  const { tree, rss } = await getProcessTable();
   const queue: number[] = [pid];
   const visited = new Set<number>();
   let totalBytes = 0;
@@ -19,16 +56,9 @@ async function getProcessTreeRSS(pid: number): Promise<number> {
     const p = queue.shift();
     if (p === undefined || visited.has(p)) continue;
     visited.add(p);
-    try {
-      const status = await Bun.file(`/proc/${p}/status`).text();
-      const m = status.match(/VmRSS:\s+(\d+)\s+kB/);
-      if (m?.[1]) totalBytes += Number.parseInt(m[1], 10) * 1024;
-      const childrenText = await Bun.file(`/proc/${p}/task/${p}/children`).text();
-      const childPids = childrenText.trim().split(/\s+/).filter(Boolean).map(Number);
-      for (const c of childPids) if (!visited.has(c)) queue.push(c);
-    } catch {
-      // Process may have exited
-    }
+    totalBytes += rss.get(p) ?? 0;
+    const children = tree.get(p);
+    if (children) for (const c of children) if (!visited.has(c)) queue.push(c);
   }
   return totalBytes;
 }

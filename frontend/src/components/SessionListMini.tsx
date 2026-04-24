@@ -142,7 +142,7 @@ function SessionMiniItem({
         )}
       </div>
       {(extSession.ccSummary || extSession.ccFirstPrompt) && (
-        <div className="text-[10px] text-blue-400 mt-0.5 truncate pl-3.5">
+        <div className="text-[10px] text-blue-400 mt-0.5 line-clamp-2 pl-3.5">
           {extSession.ccSummary || extSession.ccFirstPrompt}
         </div>
       )}

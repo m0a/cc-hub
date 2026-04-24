@@ -775,7 +775,7 @@ function SessionItem({
 
         {/* Last prompt / summary */}
         {(extSession.ccSummary || extSession.ccFirstPrompt) && (
-          <p className="mt-1.5 text-[12px] text-zinc-600 truncate leading-relaxed">
+          <p className="mt-1.5 text-[12px] text-zinc-600 leading-relaxed line-clamp-2">
             {extSession.ccSummary || extSession.ccFirstPrompt}
           </p>
         )}

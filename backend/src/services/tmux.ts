@@ -9,6 +9,7 @@ interface TmuxPaneInfo {
   tty: string;
   isActive: boolean;
   isDead: boolean;
+  pid?: number;            // pane_pid (shell PID)
 }
 
 interface TmuxSessionInfo {
@@ -220,7 +221,7 @@ export class TmuxService {
 
       // Get pane info for each session (command, path, title, tty, pane_id, active)
       // Use | as separator since path can contain :
-      const panesProc = Bun.spawn(['tmux', 'list-panes', '-a', '-F', '#{session_name}\x1f#{pane_id}\x1f#{pane_current_command}\x1f#{pane_title}\x1f#{pane_tty}\x1f#{pane_active}\x1f#{pane_dead}\x1f#{pane_current_path}'], {
+      const panesProc = Bun.spawn(['tmux', 'list-panes', '-a', '-F', '#{session_name}\x1f#{pane_id}\x1f#{pane_current_command}\x1f#{pane_title}\x1f#{pane_tty}\x1f#{pane_active}\x1f#{pane_dead}\x1f#{pane_pid}\x1f#{pane_current_path}'], {
         stdout: 'pipe',
         stderr: 'pipe',
       });
@@ -237,12 +238,13 @@ export class TmuxService {
           .filter((line) => line.length > 0)
           .forEach((line) => {
             const parts = line.split('\x1f');
-            if (parts.length >= 8) {
-              const [sessionName, paneId, command, title, tty, active, dead, ...pathParts] = parts;
+            if (parts.length >= 9) {
+              const [sessionName, paneId, command, title, tty, active, dead, pidStr, ...pathParts] = parts;
               // Path might contain \x1f (unlikely), so join the rest
               const panePath = pathParts.join('\x1f');
               const isActive = active === '1';
               const isDead = dead === '1';
+              const pidNum = pidStr ? Number.parseInt(pidStr, 10) : Number.NaN;
 
               // Collect all panes (pane_id already includes % prefix)
               if (!allPanes.has(sessionName)) {
@@ -256,6 +258,7 @@ export class TmuxService {
                 tty,
                 isActive,
                 isDead,
+                pid: Number.isFinite(pidNum) ? pidNum : undefined,
               });
             }
           });

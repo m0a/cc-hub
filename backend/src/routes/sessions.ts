@@ -7,6 +7,7 @@ import { ClaudeCodeService } from '../services/claude-code';
 import { SessionHistoryService } from '../services/session-history';
 import { PromptHistoryService } from '../services/prompt-history';
 import { getAllSessionMetadata, setSessionTheme, setSessionTitle, getSessionOrder, setSessionOrder, getLastKnownSessions, saveLastKnownSessions, removeLastKnownSession, type LastKnownSession } from '../services/session-metadata';
+import { computeSessionMetrics } from '../services/session-metrics';
 import { getIndicatorOverride } from './notify';
 import { pushSessionsNow } from './terminal-mux';
 
@@ -114,6 +115,13 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
 
     const includeClaudeInfo = s.currentCommand === 'claude';
 
+    const panePids: (number | undefined)[] = s.panes ? s.panes.map((p: { pid?: number }) => p.pid) : [];
+    const metrics = await computeSessionMetrics({
+      ccSessionId: includeClaudeInfo ? ccSession?.sessionId : undefined,
+      workingDir: s.currentPath,
+      pids: panePids,
+    });
+
     return {
       id: s.id,
       name: s.name,
@@ -134,7 +142,8 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       firstMessageId: includeClaudeInfo ? ccSession?.firstMessageId : undefined,
       theme: sessionMetadata[s.id]?.theme,
       customTitle: sessionMetadata[s.id]?.title,
-      panes: s.panes ? s.panes.map((p: { paneId: string; command: string; path: string; title: string; tty: string; isActive: boolean; isDead: boolean }) => {
+      metrics,
+      panes: s.panes ? s.panes.map((p: { paneId: string; command: string; path: string; title: string; tty: string; isActive: boolean; isDead: boolean; pid?: number }) => {
         const ttyName = p.tty?.replace('/dev/', '');
         const agentInfo = ttyName ? agentInfoByTty.get(ttyName) : undefined;
         let paneIndicator: IndicatorState | undefined;
@@ -159,6 +168,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
           isActive: p.isActive,
           isDead: p.isDead || undefined,
           indicatorState: (hookState === 'processing' && p.title?.startsWith('✳')) ? paneIndicator : (hookState ?? paneIndicator),
+          pid: p.pid,
         };
         return pane;
       }) : undefined,
@@ -194,6 +204,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       firstMessageId: undefined,
       theme: lost.theme,
       customTitle: lost.customTitle,
+      metrics: undefined,
       panes: undefined,
     });
   }

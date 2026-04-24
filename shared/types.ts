@@ -91,6 +91,16 @@ export interface PaneInfo {
   isActive: boolean;
   isDead?: boolean;
   indicatorState?: IndicatorState;
+  pid?: number;            // tmux pane_pid (shell/subprocess PID)
+}
+
+export interface SessionMetrics {
+  contextTokens?: number;         // current context window size (last assistant message sum)
+  contextMaxTokens?: number;      // model-specific max (default 200000)
+  contextPercent?: number;        // 0-100
+  totalOutputTokens?: number;     // cumulative output tokens
+  totalCacheReadTokens?: number;  // cumulative cache reads (rough total usage)
+  memoryRssBytes?: number;        // total RSS across session's panes
 }
 
 export const CreateSessionSchema = z.object({
@@ -299,6 +309,7 @@ export interface ExtendedSessionResponse extends SessionResponse {
   gitBranch?: string;
   durationMinutes?: number;
   firstMessageId?: string;
+  metrics?: SessionMetrics;
 }
 
 // =============================================================================

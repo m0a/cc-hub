@@ -28,6 +28,19 @@ const ACCENT_HEX: Record<SessionTheme, string> = {
   teal: '#14b8a6', blue: '#3b82f6', indigo: '#6366f1', purple: '#a855f7', pink: '#ec4899',
 };
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function formatTokenCount(n: number): string {
+  if (n < 1000) return `${n}`;
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
 import { useSessionHistory } from '../hooks/useSessionHistory';
 import { authFetch } from '../services/api';
 import { SessionHistory } from './SessionHistory';
@@ -765,6 +778,38 @@ function SessionItem({
           <p className="mt-1.5 text-[12px] text-zinc-600 truncate leading-relaxed">
             {extSession.ccSummary || extSession.ccFirstPrompt}
           </p>
+        )}
+
+        {/* Metrics row: context / memory / tokens */}
+        {extSession.metrics && (
+          <div className="mt-1.5 flex items-center gap-3 flex-wrap text-[11px] text-zinc-500">
+            {typeof extSession.metrics.contextPercent === 'number' && (
+              <div className="inline-flex items-center gap-1.5" title={`${formatTokenCount(extSession.metrics.contextTokens ?? 0)} / ${formatTokenCount(extSession.metrics.contextMaxTokens ?? 0)}`}>
+                <span className="text-zinc-600">ctx</span>
+                <div className="w-14 h-1 bg-white/10 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full transition-all ${
+                      extSession.metrics.contextPercent >= 80 ? 'bg-red-500' :
+                      extSession.metrics.contextPercent >= 60 ? 'bg-amber-500' :
+                      'bg-emerald-500'
+                    }`}
+                    style={{ width: `${Math.max(2, extSession.metrics.contextPercent)}%` }}
+                  />
+                </div>
+                <span className="font-mono tabular-nums">{extSession.metrics.contextPercent.toFixed(1)}%</span>
+              </div>
+            )}
+            {typeof extSession.metrics.memoryRssBytes === 'number' && extSession.metrics.memoryRssBytes > 0 && (
+              <span className="font-mono tabular-nums" title={`${extSession.metrics.memoryRssBytes} bytes`}>
+                <span className="text-zinc-600">mem</span> {formatBytes(extSession.metrics.memoryRssBytes)}
+              </span>
+            )}
+            {typeof extSession.metrics.totalOutputTokens === 'number' && extSession.metrics.totalOutputTokens > 0 && (
+              <span className="font-mono tabular-nums" title={`output: ${extSession.metrics.totalOutputTokens.toLocaleString()}`}>
+                <span className="text-zinc-600">out</span> {formatTokenCount(extSession.metrics.totalOutputTokens)}
+              </span>
+            )}
+          </div>
         )}
 
         {!hintSeen && (

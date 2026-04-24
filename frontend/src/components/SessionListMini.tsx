@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { SessionResponse, SessionTheme, IndicatorState, ConversationMessage } from '../../../shared/types';
+import type { SessionResponse, SessionTheme, IndicatorState, ConversationMessage, SessionMetrics } from '../../../shared/types';
 import { useSessions } from '../hooks/useSessions';
 import { useSessionHistory } from '../hooks/useSessionHistory';
 import { authFetch } from '../services/api';
@@ -50,6 +50,7 @@ function SessionMiniItem({
     messageCount?: number;
     gitBranch?: string;
     durationMinutes?: number;
+    metrics?: SessionMetrics;
   };
 
   const isClaudeRunning = extSession.currentCommand === 'claude';
@@ -156,8 +157,45 @@ function SessionMiniItem({
           )}
         </div>
       )}
+      {extSession.metrics && (
+        <div className="flex items-center gap-2 mt-0.5 text-[10px] pl-3.5 font-mono tabular-nums text-th-text-muted">
+          {typeof extSession.metrics.contextPercent === 'number' && (
+            <div className="inline-flex items-center gap-1">
+              <div className="w-8 h-0.5 bg-white/10 rounded-full overflow-hidden">
+                <div
+                  className={`h-full ${
+                    extSession.metrics.contextPercent >= 80 ? 'bg-red-500' :
+                    extSession.metrics.contextPercent >= 60 ? 'bg-amber-500' :
+                    'bg-emerald-500'
+                  }`}
+                  style={{ width: `${Math.max(2, extSession.metrics.contextPercent)}%` }}
+                />
+              </div>
+              <span>{extSession.metrics.contextPercent.toFixed(0)}%</span>
+            </div>
+          )}
+          {typeof extSession.metrics.memoryRssBytes === 'number' && extSession.metrics.memoryRssBytes > 0 && (
+            <span>{formatBytesMini(extSession.metrics.memoryRssBytes)}</span>
+          )}
+          {typeof extSession.metrics.totalOutputTokens === 'number' && extSession.metrics.totalOutputTokens > 0 && (
+            <span>{formatTokensMini(extSession.metrics.totalOutputTokens)}</span>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+function formatBytesMini(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}K`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(0)}M`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)}G`;
+}
+
+function formatTokensMini(n: number): string {
+  if (n < 1000) return `${n}`;
+  if (n < 1_000_000) return `${(n / 1000).toFixed(0)}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
 type TabType = 'sessions' | 'history' | 'search';

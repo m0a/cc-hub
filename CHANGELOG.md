@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.77] - 2026-04-24
+
+### Fixed
+- コンテキスト使用率が正しく計測されない問題を修正
+  - モデルの context window max をハードコード (200k) から Anthropic `/v1/models` API 経由の動的取得に変更
+  - Opus 4.7 (1M context) で 100% cap されていた問題を解消、`/context` コマンドと ±1% 以内で一致
+
+### Changed
+- トークン使用量表示を output のみから累計 used (input + cache_creation + output) に変更
+  - cache_read は billing 10% なので除外、実質のレート制限寄与度に近い値を表示
+  - UI ラベル `out` → `used`、tooltip に内訳 (in / cache_create / cache_read / out)
+
+### Added
+- `backend/src/services/anthropic-models.ts` 新規
+  - OAuth トークンで `/v1/models` を叩き、`model_id → max_input_tokens` を 24h キャッシュ
+
 ## [0.1.76] - 2026-04-24
 
 ### Fixed

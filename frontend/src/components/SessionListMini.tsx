@@ -177,8 +177,8 @@ function SessionMiniItem({
           {typeof extSession.metrics.memoryRssBytes === 'number' && extSession.metrics.memoryRssBytes > 0 && (
             <span>{formatBytesMini(extSession.metrics.memoryRssBytes)}</span>
           )}
-          {typeof extSession.metrics.totalOutputTokens === 'number' && extSession.metrics.totalOutputTokens > 0 && (
-            <span>{formatTokensMini(extSession.metrics.totalOutputTokens)}</span>
+          {typeof extSession.metrics.totalTokens === 'number' && extSession.metrics.totalTokens > 0 && (
+            <span>{formatTokensMini(extSession.metrics.totalTokens)}</span>
           )}
         </div>
       )}

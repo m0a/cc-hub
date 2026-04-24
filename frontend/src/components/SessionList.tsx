@@ -804,9 +804,9 @@ function SessionItem({
                 <span className="text-zinc-600">mem</span> {formatBytes(extSession.metrics.memoryRssBytes)}
               </span>
             )}
-            {typeof extSession.metrics.totalOutputTokens === 'number' && extSession.metrics.totalOutputTokens > 0 && (
-              <span className="font-mono tabular-nums" title={`output: ${extSession.metrics.totalOutputTokens.toLocaleString()}`}>
-                <span className="text-zinc-600">out</span> {formatTokenCount(extSession.metrics.totalOutputTokens)}
+            {typeof extSession.metrics.totalTokens === 'number' && extSession.metrics.totalTokens > 0 && (
+              <span className="font-mono tabular-nums" title={`input + cache_creation + output (excludes cache_read)\n\nin: ${extSession.metrics.totalInputTokens?.toLocaleString() ?? 0}\ncache create: ${extSession.metrics.totalCacheCreationTokens?.toLocaleString() ?? 0}\ncache read: ${extSession.metrics.totalCacheReadTokens?.toLocaleString() ?? 0}\nout: ${extSession.metrics.totalOutputTokens?.toLocaleString() ?? 0}`}>
+                <span className="text-zinc-600">used</span> {formatTokenCount(extSession.metrics.totalTokens)}
               </span>
             )}
           </div>

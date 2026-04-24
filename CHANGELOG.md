@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.76] - 2026-04-24
+
+### Fixed
+- メモリメトリクスを macOS でも取得可能に
+  - `/proc` 依存の実装を `ps -A -o pid=,ppid=,rss=` に統一（Linux/macOS 共通）
+  - 1 秒 TTL のプロセステーブルキャッシュを追加し、複数セッション間で `ps` spawn を共有
+
 ## [0.1.75] - 2026-04-24
 
 ### Added

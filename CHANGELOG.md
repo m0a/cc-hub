@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.85] - 2026-04-26
+
+### Fixed
+- ConversationViewer で Read ツールが画像を返した際に「(出力なし)」と表示されていた不具合を修正
+  - jsonl パース時に `tool_result` の content array から `type: "image"` ブロックを抽出し、base64 画像をインライン表示
+
+### Changed
+- `formatRelativeTime` を `frontend/src/utils/format.ts` に集約し、SessionList / SessionHistory / PromptSearch の重複実装を統一
+- 秒単位の相対時刻表示に対応（`time.secondsAgo` キー追加）
+- 未使用の `UsageTracker` サービスと `PromptSearch` コンポーネント、deprecated な `getSessionIdFromTty` を削除（-356 行）
+- リリーススキルを PR ベースのフローに変更し、リリース専用ブランチ (`release/vX.X.X`) を切る運用に統一
+
 ## [0.1.84] - 2026-04-25
 
 ### Fixed

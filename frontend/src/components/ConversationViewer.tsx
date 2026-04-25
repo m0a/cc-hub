@@ -126,6 +126,8 @@ function ToolResultDisplay({ results }: { results: ToolResultInfo[] }) {
         const maxPreview = 500;
         const isLong = result.output.length > maxPreview;
         const preview = isLong ? `${result.output.substring(0, maxPreview)}...` : result.output;
+        const hasImages = result.images && result.images.length > 0;
+        const hasOutput = result.output.length > 0;
 
         return (
           <CollapsibleSection
@@ -133,15 +135,31 @@ function ToolResultDisplay({ results }: { results: ToolResultInfo[] }) {
             title={result.toolName ? `${result.toolName} ${t('conversation.toolResult')}` : t('conversation.toolResult')}
             icon={result.isError ? '❌' : '📋'}
             variant={result.isError ? 'error' : 'result'}
-            defaultOpen={isShortContent(result.output)}
+            defaultOpen={isShortContent(result.output) || hasImages}
           >
-            <pre className={`whitespace-pre-wrap break-all ${result.isError ? 'text-red-300' : 'text-th-text-secondary'}`}>
-              {isLong ? (
-                <ExpandableText text={result.output} preview={preview} />
-              ) : (
-                result.output || t('conversation.noOutput')
-              )}
-            </pre>
+            {hasOutput && (
+              <pre className={`whitespace-pre-wrap break-all ${result.isError ? 'text-red-300' : 'text-th-text-secondary'}`}>
+                {isLong ? <ExpandableText text={result.output} preview={preview} /> : result.output}
+              </pre>
+            )}
+            {hasImages && (
+              <div className="flex flex-wrap gap-2 mt-1">
+                {result.images?.map((img, i) => (
+                  <img
+                    key={i}
+                    src={`data:${img.mediaType};base64,${img.data}`}
+                    alt="Tool result"
+                    className="max-w-[280px] h-auto rounded border border-white/[0.06]"
+                    loading="lazy"
+                  />
+                ))}
+              </div>
+            )}
+            {!hasOutput && !hasImages && (
+              <pre className="whitespace-pre-wrap break-all text-th-text-secondary">
+                {t('conversation.noOutput')}
+              </pre>
+            )}
           </CollapsibleSection>
         );
       })}

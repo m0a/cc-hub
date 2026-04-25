@@ -41,6 +41,19 @@ function formatTokenCount(n: number): string {
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
+function formatRelativeTime(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return '';
+  const diffSec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  return `${diffDay}d ago`;
+}
+
 import { useSessionHistory } from '../hooks/useSessionHistory';
 import { authFetch } from '../services/api';
 import { SessionHistory } from './SessionHistory';
@@ -772,6 +785,21 @@ function SessionItem({
           )}
         </div>
 
+        {/* Auto recap (away_summary) */}
+        {extSession.ccRecap && (
+          <div className="mt-1.5 rounded border border-white/5 bg-white/[0.02] px-2 py-1.5">
+            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
+              <span>recap</span>
+              {extSession.ccRecapAt && (
+                <span className="text-zinc-600 normal-case tracking-normal">· {formatRelativeTime(extSession.ccRecapAt)}</span>
+              )}
+            </div>
+            <p className="mt-0.5 text-[12px] text-zinc-400 leading-relaxed line-clamp-3">
+              {extSession.ccRecap}
+            </p>
+          </div>
+        )}
+
         {/* Last prompt / summary */}
         {(extSession.ccSummary || extSession.ccFirstPrompt) && (
           <p className="mt-1.5 text-[12px] text-zinc-600 leading-relaxed line-clamp-2">
@@ -1142,7 +1170,8 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
           || (s.customTitle || '').toLowerCase().includes(q)
           || (s.currentPath || '').toLowerCase().includes(q)
           || (s.ccFirstPrompt || '').toLowerCase().includes(q)
-          || (s.ccSummary || '').toLowerCase().includes(q);
+          || (s.ccSummary || '').toLowerCase().includes(q)
+          || (s.ccRecap || '').toLowerCase().includes(q);
       })
     : sessions;
 

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.81] - 2026-04-25
+
+### Added
+- セッション一覧の各セッションカードに Claude Code の auto-recap (`away_summary`) を表示
+  - Claude Code が端末をアンフォーカス後 3 分以上経つと自動生成する 1〜3 文のサマリ (「今何やってるか + 次のアクション」) をカード上部に表示
+  - `RECAP · 2h ago` のラベル + 相対タイムスタンプ + 本文 (3行で line-clamp)
+  - recap が無いセッションでは表示されず、既存の last-prompt サマリのみ
+  - セッション検索 (Ctrl+B のフィルタ) でも recap 本文がヒット対象に
+  - `~/.claude/projects/<dir>/<session>.jsonl` 内の `system/away_summary` エントリを末尾から拾う実装。既存の jsonl 読み取りキャッシュ (5秒 TTL) に乗るためオーバーヘッドなし
+
 ## [0.1.80] - 2026-04-25
 
 ### Refactored

@@ -25,6 +25,11 @@ async function readLastLines(filePath: string, lineCount: number): Promise<strin
   }
 }
 
+interface RecapEntry {
+  content: string;
+  timestamp: string;
+}
+
 interface ClaudeCodeSession {
   sessionId: string;
   summary?: string;
@@ -35,6 +40,7 @@ interface ClaudeCodeSession {
   projectPath?: string;
   waitingToolName?: string;
   firstMessageId?: string;  // For session matching with history
+  lastRecap?: RecapEntry;
 }
 
 interface SessionsIndex {
@@ -235,6 +241,43 @@ export class ClaudeCodeService {
             if (content.startsWith('{')) continue; // Skip JSON-like content
             // Return truncated message
             return content.slice(0, 100) + (content.length > 100 ? '...' : '');
+          }
+        } catch {
+          // Skip invalid JSON lines
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Read the latest auto-recap (system/away_summary) from the tail of a jsonl file.
+   * Claude Code emits these after the terminal has been unfocused for ≥3 minutes.
+   */
+  private async readLastAwaySummary(filePath: string): Promise<RecapEntry | null> {
+    try {
+      const text = await readLastLines(filePath, 300);
+      if (!text) return null;
+
+      const lines = text.trim().split('\n').reverse();
+      for (const line of lines) {
+        try {
+          const entry = JSON.parse(line);
+          if (
+            entry.type === 'system' &&
+            entry.subtype === 'away_summary' &&
+            typeof entry.content === 'string' &&
+            entry.content.length > 0
+          ) {
+            // Strip the trailing "(disable recaps in /config)" hint Claude Code appends.
+            const content = entry.content.replace(/\s*\(disable recaps in \/config\)\s*$/, '').trim();
+            if (!content) continue;
+            return {
+              content,
+              timestamp: entry.timestamp || '',
+            };
           }
         } catch {
           // Skip invalid JSON lines
@@ -491,11 +534,12 @@ export class ClaudeCodeService {
         return cached.data;
       }
 
-      const [firstPrompt, lastUserMessage, waitingToolName, firstMessageId] = await Promise.all([
+      const [firstPrompt, lastUserMessage, waitingToolName, firstMessageId, lastRecap] = await Promise.all([
         this.readFirstPromptFromFile(filePath),
         this.readLastUserMessage(filePath),
         this.checkWaitingState(filePath),
         this.readFirstMessageId(filePath),
+        this.readLastAwaySummary(filePath),
       ]);
 
       const data: ClaudeCodeSession = {
@@ -507,6 +551,7 @@ export class ClaudeCodeService {
 
         waitingToolName: waitingToolName || undefined,
         firstMessageId: firstMessageId || undefined,
+        lastRecap: lastRecap || undefined,
       };
 
       this.sessionDataCache.set(filePath, {
@@ -609,10 +654,11 @@ export class ClaudeCodeService {
             // But always check waiting state for accuracy
             if (indexEntry && (latestFile.mtime - (indexEntry.fileMtime || 0)) < 60000) {
               const filePath = join(projectDir, latestFile.name);
-              const [waitingToolName, lastUserMessage, firstMessageId] = await Promise.all([
+              const [waitingToolName, lastUserMessage, firstMessageId, lastRecap] = await Promise.all([
                 this.checkWaitingState(filePath),
                 this.readLastUserMessage(filePath),
                 this.readFirstMessageId(filePath),
+                this.readLastAwaySummary(filePath),
               ]);
 
               return {
@@ -623,19 +669,21 @@ export class ClaudeCodeService {
                 modified: indexEntry.modified,
                 gitBranch: indexEntry.gitBranch,
                 projectPath: indexEntry.projectPath,
-        
+
                 waitingToolName: waitingToolName || undefined,
                 firstMessageId: firstMessageId || undefined,
+                lastRecap: lastRecap || undefined,
               };
             }
 
             // For active sessions (not in index or much newer), read directly
             const filePath = join(projectDir, latestFile.name);
-            const [firstPrompt, lastUserMessage, waitingToolName, firstMessageId] = await Promise.all([
+            const [firstPrompt, lastUserMessage, waitingToolName, firstMessageId, lastRecap] = await Promise.all([
               this.readFirstPromptFromFile(filePath),
               this.readLastUserMessage(filePath),
               this.checkWaitingState(filePath),
               this.readFirstMessageId(filePath),
+              this.readLastAwaySummary(filePath),
             ]);
 
             return {
@@ -646,9 +694,10 @@ export class ClaudeCodeService {
               modified: new Date(latestFile.mtime).toISOString(),
               gitBranch: indexEntry?.gitBranch,
               projectPath: indexEntry?.projectPath,
-      
+
               waitingToolName: waitingToolName || undefined,
               firstMessageId: firstMessageId || undefined,
+              lastRecap: lastRecap || undefined,
             };
           }
 
@@ -747,11 +796,12 @@ export class ClaudeCodeService {
               const sessionId = fileStat.name.replace('.jsonl', '');
               const filePath = join(projectDir, fileStat.name);
 
-              const [firstPrompt, lastUserMessage, waitingToolName, firstMessageId] = await Promise.all([
+              const [firstPrompt, lastUserMessage, waitingToolName, firstMessageId, lastRecap] = await Promise.all([
                 this.readFirstPromptFromFile(filePath),
                 this.readLastUserMessage(filePath),
                 this.checkWaitingState(filePath),
                 this.readFirstMessageId(filePath),
+                this.readLastAwaySummary(filePath),
               ]);
 
               return {
@@ -760,9 +810,10 @@ export class ClaudeCodeService {
                 firstPrompt: firstPrompt || undefined,
                 modified: new Date(fileStat.mtime).toISOString(),
                 projectPath: currentPath,
-        
+
                 waitingToolName: waitingToolName || undefined,
                 firstMessageId: firstMessageId || undefined,
+                lastRecap: lastRecap || undefined,
               };
             })
           );

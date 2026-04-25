@@ -306,6 +306,8 @@ export interface ExtendedSessionResponse extends SessionResponse {
   paneTitle?: string;
   ccSummary?: string;
   ccFirstPrompt?: string;
+  ccRecap?: string;
+  ccRecapAt?: string;
   waitingToolName?: string;
   panes?: PaneInfo[];
   messageCount?: number;

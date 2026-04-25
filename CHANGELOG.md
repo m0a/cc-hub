@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.78] - 2026-04-25
+
+### Fixed
+- ターミナル表示の不安定さを2点修正
+  - **scrollback 二重化**: WebSocket 再接続時に古い履歴と新しい initial-content が重複し、スクロールアップで同じ出力が2回表示される問題を解消。再接続時は initial-content を破棄して live %output に任せる方式に変更
+  - **CJK グリフの重なり**: 日本語+ASCII 混在出力で文字が隣接セルに侵食する問題を `rescaleOverlappingGlyphs: true` で解消
+
 ## [0.1.77] - 2026-04-24
 
 ### Fixed

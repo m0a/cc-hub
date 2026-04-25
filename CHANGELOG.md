@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.86] - 2026-04-26
+
+### Fixed
+- 未知の拡張子のテキストファイルが File Viewer で開けず base64 化されていた問題を修正
+  - NUL バイト / 制御文字のヒューリスティックで判定し、テキストっぽければ UTF-8 で返す
+  - バイナリファイルは引き続き base64 で返却
+
 ## [0.1.85] - 2026-04-26
 
 ### Fixed

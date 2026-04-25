@@ -348,10 +348,16 @@ export interface ToolUseInfo {
   input: Record<string, unknown>;
 }
 
+export interface ToolResultImage {
+  mediaType: string;
+  data: string;
+}
+
 export interface ToolResultInfo {
   toolUseId: string;
   toolName?: string;
   output: string;
+  images?: ToolResultImage[];
   isError?: boolean;
 }
 

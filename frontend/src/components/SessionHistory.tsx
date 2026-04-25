@@ -5,6 +5,7 @@ import { useSessionHistory, type ProjectInfo } from '../hooks/useSessionHistory'
 import { authFetch } from '../services/api';
 import type { HistorySession, ConversationMessage, SessionResponse } from '../../../shared/types';
 import { ConversationViewer } from './ConversationViewer';
+import { formatRelativeTime } from '../utils/format';
 
 // Extended session type with ccSessionId
 interface ActiveSession extends SessionResponse {
@@ -15,22 +16,6 @@ interface SessionHistoryProps {
   onSessionResumed?: () => void;
   onSelectSession?: (session: SessionResponse) => void;
   activeSessions?: ActiveSession[];
-}
-
-function formatRelativeTime(isoDate: string, t: (key: string, options?: Record<string, unknown>) => string, locale: string): string {
-  const date = new Date(isoDate);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffMins < 1) return t('time.now');
-  if (diffMins < 60) return t('time.minutesAgo', { count: diffMins });
-  if (diffHours < 24) return t('time.hoursAgo', { count: diffHours });
-  if (diffDays < 7) return t('time.daysAgo', { count: diffDays });
-  const dateLocale = locale === 'ja' ? 'ja-JP' : 'en-US';
-  return date.toLocaleDateString(dateLocale);
 }
 
 function formatDuration(minutes: number | undefined, t: (key: string, options?: Record<string, unknown>) => string): string | null {

@@ -202,6 +202,7 @@
   },
   "time": {
     "now": "今",
+    "secondsAgo": "{{count}}秒前",
     "minutesAgo": "{{count}}分前",
     "hoursAgo": "{{count}}時間前",
     "daysAgo": "{{count}}日前",

@@ -7,22 +7,29 @@ description: CC Hub のリリース手順を実行する。バージョンバン
 
 ## Release Workflow
 
-1. **最新化確認**: `git fetch origin && git reset --hard origin/main` で work-1 ブランチを最新に同期
-2. **CHANGELOG.md 更新**: 新バージョンのエントリを先頭に追加（Added/Fixed/Changed セクション）
-3. **バージョンバンプ**: ルートの `package.json` の `version` フィールドをインクリメント（patch）
-4. **コミット & Push**:
+1. **最新化確認**: `git fetch origin` で最新を取得し、現在のブランチが origin/main の真上にあることを確認
+2. **リリースブランチ作成**: `git checkout -b release/vX.X.X` で専用ブランチを切る（work-1 などの作業ブランチを直接 push しない）
+3. **CHANGELOG.md 更新**: 新バージョンのエントリを先頭に追加（Added/Fixed/Changed セクション）
+4. **バージョンバンプ**: ルートの `package.json` の `version` フィールドをインクリメント（patch）
+5. **コミット & Push**:
    ```bash
    git add package.json CHANGELOG.md
    git commit -m "chore: bump version to X.X.X"
-   git push origin work-1:main
+   git push -u origin release/vX.X.X
    ```
-5. **GitHub Release 作成**:
+6. **PR 作成 & マージ**:
+   ```bash
+   gh pr create --base main --title "Release vX.X.X" --body "..."
+   gh pr merge --merge  # 履歴を保ったままマージ（必要なら --squash）
+   ```
+   マージ完了を確認してから次へ進む（`gh pr view --json state`）
+7. **GitHub Release 作成**:
    ```bash
    gh release create vX.X.X --title "vX.X.X" --notes "リリースノート"
    ```
-6. **CI 完了待ち**: `gh run list --limit 3` でワークフロー状況を確認。バイナリビルドは CI が自動で行うため、ローカルでの `bun run build:binary` は **絶対に不要**
-7. **本番更新**: `cchub update` を実行
-8. **ブランチリセット**: `git fetch origin && git checkout -B work-1 origin/main` で作業ブランチを最新の main にリセット
+8. **CI 完了待ち**: `gh run list --limit 3` でワークフロー状況を確認。バイナリビルドは CI が自動で行うため、ローカルでの `bun run build:binary` は **絶対に不要**
+9. **本番更新**: `cchub update` を実行
+10. **ブランチクリーンアップ**: `git fetch origin && git checkout -B work-1 origin/main && git branch -D release/vX.X.X` で作業ブランチを最新の main にリセットし、リリースブランチを削除
 
 ## Important Rules
 

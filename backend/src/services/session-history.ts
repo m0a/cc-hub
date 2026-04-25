@@ -35,10 +35,16 @@ export interface ToolUseInfo {
   input: Record<string, unknown>;
 }
 
+export interface ToolResultImage {
+  mediaType: string;
+  data: string;
+}
+
 export interface ToolResultInfo {
   toolUseId: string;
   toolName?: string;
   output: string;
+  images?: ToolResultImage[];
   isError?: boolean;
 }
 
@@ -590,18 +596,25 @@ export class SessionHistoryService {
                 } else if (block.type === 'tool_result') {
                   // Extract tool result content
                   let output = '';
+                  const images: ToolResultImage[] = [];
                   if (typeof block.content === 'string') {
                     output = block.content;
                   } else if (Array.isArray(block.content)) {
-                    output = block.content
-                      .filter((c: { type: string }) => c.type === 'text')
-                      .map((c: { text: string }) => c.text)
-                      .join('\n');
+                    const textParts: string[] = [];
+                    for (const c of block.content as Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }>) {
+                      if (c.type === 'text' && c.text) {
+                        textParts.push(c.text);
+                      } else if (c.type === 'image' && c.source?.type === 'base64') {
+                        images.push({ mediaType: c.source.media_type, data: c.source.data });
+                      }
+                    }
+                    output = textParts.join('\n');
                   }
                   toolResult.push({
                     toolUseId: block.tool_use_id,
                     toolName: toolNameMap.get(block.tool_use_id),
                     output,
+                    ...(images.length > 0 ? { images } : {}),
                     isError: block.is_error,
                   });
                 }

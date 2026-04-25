@@ -121,13 +121,6 @@ export class ClaudeCodeService {
   }
 
   /**
-   * @deprecated Use getSessionIdFromArgs with pre-fetched process info
-   */
-  async getSessionIdFromTty(tty: string): Promise<string | null> {
-    return this.getSessionIdFromArgs(tty, new Map());
-  }
-
-  /**
    * Get Claude Code session for a PTY by process start time
    * Used when -r flag is not present
    */

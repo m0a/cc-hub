@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.84] - 2026-04-25
+
+### Fixed
+- 日本語入力モードの InputBar 下段ボタン (履歴 / ファイル / クリア / ↑ / ↓ / 送信) の幅を `w-9` (36px) → `w-14` (56px) に拡大
+  - スマートフォンでタップしづらかった状態を解消
+
 ## [0.1.83] - 2026-04-25
 
 ### Fixed

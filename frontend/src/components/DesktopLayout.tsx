@@ -430,14 +430,17 @@ export function DesktopLayout({
       console.log(`[TP] initial-content for ${paneId}: ${data.length} bytes, expected=${wasExpected}`);
       expectingContentRef.current = false;
 
-      // Unexpected initial-content (e.g. WS reconnect): xterm.js still has the previous
-      // scrollback in its buffer. The fresh payload from the backend includes scrollback +
-      // visible, so writing it on top duplicates everything the user already sees.
-      // Skip the write and let the live %output stream pick up where it left off.
-      if (!wasExpected) return;
-
       // Expected (first connect, zoom, explicit request): full clear including scrollback
-      const clearSeq = new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x33, 0x4a, 0x1b, 0x5b, 0x48]); // ESC[2J + ESC[3J + ESC[H
+      // Unexpected (WS reconnect): clear visible only so user's scroll position is preserved.
+      // Note: the unexpected path can re-introduce scrollback duplicates because the fresh
+      // payload includes both scrollback and visible. The alternative (skip the write entirely)
+      // caused worse symptoms — CC's input prompts that arrived during disconnect were never
+      // rendered, so the user could miss permission/plan/AskUserQuestion prompts.
+      // The duplication is mostly an upstream Claude Code TUI redraw issue
+      // (anthropics/claude-code#49086), so we accept it here in exchange for reliable updates.
+      const clearSeq = wasExpected
+        ? new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x33, 0x4a, 0x1b, 0x5b, 0x48]) // ESC[2J + ESC[3J + ESC[H
+        : new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x48]); // ESC[2J + ESC[H (no scrollback clear)
 
       // Filter mouse tracking sequences from initial content to prevent
       // xterm.js from entering mouse mode (which blocks text selection)
@@ -454,9 +457,13 @@ export function DesktopLayout({
         for (const cb of callbacks) {
           cb(combined);
         }
-        requestAnimationFrame(() => {
-          terminalRefs.current?.get(paneId)?.scrollToBottom();
-        });
+        // Only scroll to bottom on expected content (first connect, zoom).
+        // On reconnect, preserve user's scroll position.
+        if (wasExpected) {
+          requestAnimationFrame(() => {
+            terminalRefs.current?.get(paneId)?.scrollToBottom();
+          });
+        }
       } else {
         // Buffer for replay when Terminal component mounts and registers callback
         if (!initialContentBufferRef.current.has(paneId)) {

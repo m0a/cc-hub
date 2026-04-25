@@ -636,6 +636,8 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                           truncated={selectedFile.truncated}
                           initialScrollRatio={scrollRatioRef.current}
                           onScrollRatioChange={handleScrollRatioChange}
+                          filePath={selectedFile.path}
+                          sessionWorkingDir={sessionWorkingDir}
                         />
                       ) : previewMode && isHtmlFile(selectedFile.path) ? (
                         <HtmlViewer
@@ -754,6 +756,8 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                 truncated={selectedFile.truncated}
                 initialScrollRatio={scrollRatioRef.current}
                 onScrollRatioChange={handleScrollRatioChange}
+                filePath={selectedFile.path}
+                sessionWorkingDir={sessionWorkingDir}
               />
             ) : previewMode && isHtmlFile(selectedFile.path) ? (
               <HtmlViewer

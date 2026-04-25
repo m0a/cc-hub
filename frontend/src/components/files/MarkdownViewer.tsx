@@ -36,6 +36,29 @@ interface MarkdownViewerProps {
   truncated?: boolean;
   initialScrollRatio?: number;
   onScrollRatioChange?: (ratio: number) => void;
+  filePath?: string;
+  sessionWorkingDir?: string;
+}
+
+function resolveImageSrc(src: string, filePath?: string, sessionWorkingDir?: string): string {
+  if (!src) return src;
+  // Absolute URL or data/blob — pass through
+  if (/^(https?:\/\/|data:|blob:|\/\/)/.test(src)) return src;
+  if (!filePath || !sessionWorkingDir) return src;
+
+  let absPath: string;
+  if (src.startsWith('/')) {
+    absPath = src;
+  } else {
+    const dir = filePath.replace(/\/[^/]*$/, '');
+    const parts = dir.split('/');
+    for (const segment of src.split('/')) {
+      if (segment === '..') parts.pop();
+      else if (segment !== '.' && segment !== '') parts.push(segment);
+    }
+    absPath = parts.join('/');
+  }
+  return `/api/files/raw?path=${encodeURIComponent(absPath)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`;
 }
 
 export function MarkdownViewer({
@@ -43,6 +66,8 @@ export function MarkdownViewer({
   truncated = false,
   initialScrollRatio = 0,
   onScrollRatioChange,
+  filePath,
+  sessionWorkingDir,
 }: MarkdownViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fontSizeRef = useRef(getFontSizeSetting());
@@ -217,7 +242,7 @@ export function MarkdownViewer({
             ),
             img: ({ src, alt }) => (
               <img
-                src={src}
+                src={resolveImageSrc(typeof src === 'string' ? src : '', filePath, sessionWorkingDir)}
                 alt={alt || 'Image'}
                 className="max-w-full h-auto rounded my-3"
                 loading="lazy"

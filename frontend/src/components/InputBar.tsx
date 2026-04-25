@@ -381,7 +381,7 @@ export const InputBar = memo(function InputBar({
                   inputHistoryRef.current = (() => { try { return JSON.parse(localStorage.getItem('cchub-input-history') || '[]'); } catch { return []; } })();
                   setShowInputHistory(prev => !prev);
                 }}
-                className={`h-9 w-9 flex items-center justify-center rounded-md transition-colors ${
+                className={`h-9 w-14 flex items-center justify-center rounded-md transition-colors ${
                   showInputHistory ? 'bg-blue-600 text-white' : 'bg-white/[0.06] text-zinc-400 active:bg-white/[0.1]'
                 }`}
               >
@@ -390,7 +390,7 @@ export const InputBar = memo(function InputBar({
               <button
                 onClick={handleOpenFilePicker}
                 disabled={isUploading}
-                className={`h-9 w-9 flex items-center justify-center rounded-md ${
+                className={`h-9 w-14 flex items-center justify-center rounded-md ${
                   isUploading ? 'bg-white/[0.06] text-zinc-600' : 'bg-white/[0.06] text-zinc-400 active:bg-white/[0.1]'
                 }`}
               >
@@ -400,7 +400,7 @@ export const InputBar = memo(function InputBar({
                 <button
                   type="button"
                   onClick={() => { setInputValue(''); inputRef.current?.focus(); }}
-                  className="h-9 w-9 flex items-center justify-center rounded-md bg-white/[0.06] text-zinc-500 active:bg-white/[0.1]"
+                  className="h-9 w-14 flex items-center justify-center rounded-md bg-white/[0.06] text-zinc-500 active:bg-white/[0.1]"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -409,14 +409,14 @@ export const InputBar = memo(function InputBar({
               <button
                 type="button"
                 onClick={() => sendRef.current('\x1b[A')}
-                className="h-9 w-9 flex items-center justify-center rounded-md bg-white/[0.06] text-zinc-400 active:bg-white/[0.1]"
+                className="h-9 w-14 flex items-center justify-center rounded-md bg-white/[0.06] text-zinc-400 active:bg-white/[0.1]"
               >
                 <ChevronUp className="w-4 h-4" />
               </button>
               <button
                 type="button"
                 onClick={() => sendRef.current('\x1b[B')}
-                className="h-9 w-9 flex items-center justify-center rounded-md bg-white/[0.06] text-zinc-400 active:bg-white/[0.1]"
+                className="h-9 w-14 flex items-center justify-center rounded-md bg-white/[0.06] text-zinc-400 active:bg-white/[0.1]"
               >
                 <ChevronDown className="w-4 h-4" />
               </button>
@@ -435,7 +435,7 @@ export const InputBar = memo(function InputBar({
                   setInputValue('');
                   setShowInputHistory(false);
                 }}
-                className="h-9 w-9 flex items-center justify-center rounded-md bg-blue-600 active:bg-blue-700 text-white"
+                className="h-9 w-14 flex items-center justify-center rounded-md bg-blue-600 active:bg-blue-700 text-white"
               >
                 <CornerDownLeft className="w-4 h-4" strokeWidth={1.5} />
               </button>

@@ -4,6 +4,20 @@
 
 A web-based terminal manager for remotely managing Claude Code sessions. Control Claude Code from your tablet or smartphone.
 
+## Screenshot
+
+![CC Hub on tablet — multi-pane terminal, floating keyboard, and dashboard](docs/images/tablet-mode.jpg)
+
+Tablet mode showing multi-pane terminal, floating keyboard, and the dashboard panel (usage limits, daily activity, model usage).
+
+![Session list with auto-recap](docs/images/session-list.jpg)
+
+Session list with Claude Code auto-recap, status badges (waiting / processing / lost), context usage, and color-coded themes per session.
+
+<img src="docs/images/mobile-session-list.png" alt="Mobile session list" width="320" />&nbsp;&nbsp;<img src="docs/images/mobile-keyboard.png" alt="Mobile terminal with custom keyboard" width="320" />
+
+Left: session list adapts to a single-column layout on smartphones. Right: terminal with the custom on-screen keyboard (long-press for symbols, JA toggle for IME).
+
 ## Features
 
 - **Multi-session Management** - Run and switch between multiple Claude Code sessions

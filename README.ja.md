@@ -4,6 +4,20 @@
 
 Claude Codeセッションをリモート管理するWebベースのターミナルマネージャー。タブレットやスマートフォンからClaude Codeを操作できます。
 
+## スクリーンショット
+
+![CC Hub をタブレットで使用 — マルチペインターミナル、フローティングキーボード、ダッシュボード](docs/images/tablet-mode.jpg)
+
+タブレットモード。マルチペインターミナル、フローティングキーボード、ダッシュボードパネル（使用量リミット、日別アクティビティ、Model Usage）を一画面で表示。
+
+![セッション一覧と auto-recap](docs/images/session-list.jpg)
+
+セッション一覧。Claude Code の auto-recap、ステータスバッジ（許可待ち / 処理中 / Lost）、コンテキスト使用量、セッション別カラーテーマを表示。
+
+<img src="docs/images/mobile-session-list.png" alt="モバイルでのセッション一覧" width="320" />&nbsp;&nbsp;<img src="docs/images/mobile-keyboard.png" alt="モバイルでのターミナルとカスタムキーボード" width="320" />
+
+左: スマートフォンでは同じセッション一覧が単列レイアウトに。右: ターミナル＋カスタムオンスクリーンキーボード（長押しで記号、JA切替でIME）。
+
 ## 機能
 
 - **マルチセッション管理** - 複数のClaude Codeセッションを同時に実行・切り替え

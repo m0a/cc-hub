@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.79] - 2026-04-25
+
+### Fixed
+- WS 再接続時に Claude Code の入力プロンプト (permission / plan / AskUserQuestion 等) が画面に表示されない問題を修正
+  - v0.1.78 で追加した「再接続時 initial-content 破棄」が副作用となり、再接続中に到着したプロンプト UI が xterm に書き込まれず、ユーザーがリロードするまで気づかない状態を引き起こしていた
+  - `onInitialContent` を v0.1.77 動作に戻し、wasExpected=false でも書き込む。clear sequence は visible のみ (ESC[2J + ESC[H) でユーザーのスクロール位置は保持
+  - scrollback 二重化は再現するが、上流の [Claude Code TUI redraw バグ](https://github.com/anthropics/claude-code/issues/49086) が支配的のため許容
+- v0.1.78 で導入した CJK の `rescaleOverlappingGlyphs: true` (文字重なり対策) は維持
+
 ## [0.1.78] - 2026-04-25
 
 ### Fixed

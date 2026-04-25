@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.83] - 2026-04-25
+
+### Fixed
+- File Viewer の Markdown プレビューで相対パス画像 (`![](docs/foo.png)` 等) が読み込めず壊れていた問題を修正
+  - `<img src>` をそのままブラウザに渡していたため、フロントエンドのオリジン (`/docs/foo.png`) として解決され 404 になっていた
+  - Markdown ファイルのディレクトリを基準に解決し、`/api/files/raw` 経由で配信するよう変更
+  - `http(s)://`、`data:`、`blob:` 等の絶対 URL は従来通りパススルー
+
+### Added
+- README にスクリーンショット (タブレット全景・セッション一覧・モバイル端末) を追加 (`docs/images/`)
+
 ## [0.1.82] - 2026-04-25
 
 ### Changed

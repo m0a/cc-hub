@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RotateCw, MessageSquare, FileText, BarChart3, ChevronDown, X as XIcon, Settings } from 'lucide-react';
+import { RotateCw, MessageSquare, FileText, BarChart3, ChevronDown, X as XIcon } from 'lucide-react';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { TerminalPage } from './pages/TerminalPage';
 import type { TerminalRef } from './components/Terminal';
@@ -14,7 +14,7 @@ import { useSessionHistory } from './hooks/useSessionHistory';
 import { useAuth } from './hooks/useAuth';
 import { useSessions } from './hooks/useSessions';
 import { authFetch, isTransientNetworkError } from './services/api';
-import type { SessionResponse, ExtendedSessionResponse, SessionState, ConversationMessage, SessionTheme, PaneInfo } from '../../shared/types';
+import type { SessionResponse, ExtendedSessionResponse, SessionState, ConversationMessage, SessionTheme } from '../../shared/types';
 
 // Loading screen with phase display and timeout detection
 function LoadingScreen({
@@ -990,7 +990,6 @@ export function App() {
           sessionStatus={activeSession?.state}
           onShowConversation={activeSession?.ccSessionId ? handleShowConversation : undefined}
           onShowDashboard={() => setShowMobileDashboard(true)}
-          onReload={handleReload}
         />
       ))}
 

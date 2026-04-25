@@ -39,7 +39,6 @@ interface FileViewerProps {
   sessionStatus?: 'working' | 'waiting_input' | 'waiting_permission' | 'idle' | 'disconnected' | 'lost';
   onShowConversation?: () => void;
   onShowDashboard?: () => void;
-  onReload?: () => void;
 }
 
 // Image extensions
@@ -90,7 +89,7 @@ function getFileName(path: string): string {
   return path.split('/').pop() || path;
 }
 
-export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyPrompt, hidden, onShowSessions, sessionName, sessionStatus, onShowConversation, onShowDashboard, onReload }: FileViewerProps) {
+export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyPrompt, hidden, onShowSessions, sessionName, sessionStatus, onShowConversation, onShowDashboard }: FileViewerProps) {
   const { t } = useTranslation();
   const {
     currentPath,

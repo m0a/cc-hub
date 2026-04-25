@@ -14,7 +14,6 @@ import {
 } from './terminal-themes';
 import { useSelectionMode } from '../hooks/useSelectionMode';
 import { SelectionOverlay } from './SelectionOverlay';
-import { UrlMenu } from './UrlMenu';
 import { InputBar, type InputMode } from './InputBar';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -94,10 +93,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const [showFontSizeIndicator, setShowFontSizeIndicator] = useState(false);
   const [scrollIndicator, setScrollIndicator] = useState<string | null>(null);
   const scrollIndicatorTimerRef = useRef<number | null>(null);
-  const [detectedUrls, setDetectedUrls] = useState<string[]>([]);
-  const [showUrlMenu, setShowUrlMenu] = useState(false);
-  const [urlPage, setUrlPage] = useState(0);
-  const URL_PAGE_SIZE = 5;
 
   const [isTouchDevice] = useState(() => {
     const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
@@ -217,7 +212,9 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       }
     },
     scrollToBottom: () => terminalRef.current?.scrollToBottom(),
-    setInputText: (text: string) => {
+    setInputText: (_text: string) => {
+      // Mobile InputBar doesn't yet support pre-populating text;
+      // we just open the input mode so the user can paste manually.
       setInputMode('input');
     },
     changeFontSize: (delta: number) => {
@@ -1003,27 +1000,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     return () => observer.disconnect();
   }, [sessionTheme]);
 
-  // URL extraction handler
-  const handleExtractUrls = useCallback(() => {
-    if (showUrlMenu) { setShowUrlMenu(false); return; }
-    const term = terminalRef.current;
-    if (!term) return;
-    const urls: string[] = [];
-    const urlRegex = /https?:\/\/[^\s<>"{}|\\^`[\]]+/g;
-    const buffer = term.buffer.active;
-    for (let i = 0; i < buffer.length; i++) {
-      const line = buffer.getLine(i);
-      if (line) {
-        const text = line.translateToString();
-        const matches = text.match(urlRegex);
-        if (matches) urls.push(...matches);
-      }
-    }
-    setDetectedUrls([...new Set(urls)].reverse());
-    setUrlPage(0);
-    setShowUrlMenu(true);
-  }, [showUrlMenu]);
-
   const handleCloseInputBar = useCallback(() => {
     setInputMode('hidden');
     setTimeout(() => fitTerminal(), 50);
@@ -1095,18 +1071,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             onHandleMouseDragStart={selection.handleHandleMouseDragStart}
             onCopy={selection.handleCopySelection}
             onCancel={selection.exitSelectionMode}
-          />
-        )}
-        {/* URL menu */}
-        {showUrlMenu && (
-          <UrlMenu
-            urls={detectedUrls}
-            urlPage={urlPage}
-            pageSize={URL_PAGE_SIZE}
-            onPageChange={setUrlPage}
-            onCopy={(url) => { navigator.clipboard.writeText(url).then(() => setShowUrlMenu(false)).catch(console.error); }}
-            onOpen={(url) => { window.open(url, '_blank'); setShowUrlMenu(false); }}
-            onClose={() => setShowUrlMenu(false)}
           />
         )}
       </div>

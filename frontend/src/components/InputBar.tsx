@@ -48,12 +48,6 @@ export const InputBar = memo(function InputBar({
   // Swipe handling
   const inputBarSwipeRef = useRef<{ startX: number; startY: number } | null>(null);
 
-  // URL menu state
-  const [detectedUrls, setDetectedUrls] = useState<string[]>([]);
-  const [showUrlMenu, setShowUrlMenu] = useState(false);
-  const [urlPage, setUrlPage] = useState(0);
-  const URL_PAGE_SIZE = 5;
-
   const API_BASE = import.meta.env.VITE_API_URL || '';
 
   // Auto-hide position toggle
@@ -138,10 +132,8 @@ export const InputBar = memo(function InputBar({
   const handleOpenFilePicker = () => fileInputRef.current?.click();
 
   const handleExtractUrls = () => {
-    if (showUrlMenu) { setShowUrlMenu(false); return; }
-    // URL extraction is delegated to parent - for now we toggle the menu
-    setUrlPage(0);
-    setShowUrlMenu(true);
+    // URL extraction is handled by DesktopLayout via terminalRef.extractUrls();
+    // mobile path is not yet wired up.
   };
 
   const handleInputBarTouchStart = (e: React.TouchEvent) => {

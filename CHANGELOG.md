@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.82] - 2026-04-25
+
+### Changed
+- セッション一覧カードのレイアウトを圧縮
+  - タイトルとパスを同じ行に並べる (例: `ホーム  /home/m0a`)
+  - recap タイムスタンプ (`2h ago` 等) を recap 本文の末尾にインライン配置
+  - recap ブロックの枠線・背景・"RECAP" ラベルを削除しフラット化
+  - recap が表示されているセッションでは last-prompt サマリを非表示 (recap が同じ情報を含むため)
+
 ## [0.1.81] - 2026-04-25
 
 ### Added

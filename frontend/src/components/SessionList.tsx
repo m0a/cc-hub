@@ -730,13 +730,18 @@ function SessionItem({
       )}
 
       <div className={`px-4 py-3 ${accentColor ? 'pl-5' : ''}`}>
-        {/* Top row: title + status badges */}
-        <div className="flex items-center gap-2 mb-1">
-          <h3 className={`text-[15px] font-medium truncate flex-1 tracking-[-0.01em] ${
+        {/* Top row: title + path + status badges */}
+        <div className="flex items-baseline gap-2 mb-1 min-w-0">
+          <h3 className={`text-[15px] font-medium truncate shrink-0 max-w-[55%] tracking-[-0.01em] ${
             isLive ? 'text-white' : isClaudeRunning ? 'text-zinc-300' : 'text-zinc-400'
           }`}>
             {displayTitle}
           </h3>
+          {shortPath && (
+            <span className="text-[12px] text-zinc-500 truncate font-mono flex-1 min-w-0">
+              {shortPath}
+            </span>
+          )}
 
           {/* Status badge - pill style */}
           {isWaiting && hasWaitingTool ? (
@@ -778,30 +783,20 @@ function SessionItem({
           })()}
         </div>
 
-        {/* Path row */}
-        <div className="flex items-center gap-3 text-[12px] text-zinc-500">
-          {shortPath && (
-            <span className="truncate font-mono">{shortPath}</span>
-          )}
-        </div>
-
-        {/* Auto recap (away_summary) */}
+        {/* Auto recap (away_summary) — timestamp shown inline at the tail */}
         {extSession.ccRecap && (
-          <div className="mt-1.5 rounded border border-white/5 bg-white/[0.02] px-2 py-1.5">
-            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
-              <span>recap</span>
-              {extSession.ccRecapAt && (
-                <span className="text-zinc-600 normal-case tracking-normal">· {formatRelativeTime(extSession.ccRecapAt)}</span>
-              )}
-            </div>
-            <p className="mt-0.5 text-[12px] text-zinc-400 leading-relaxed line-clamp-3">
-              {extSession.ccRecap}
-            </p>
-          </div>
+          <p className="mt-1 text-[12px] text-zinc-400 leading-relaxed line-clamp-3">
+            {extSession.ccRecap}
+            {extSession.ccRecapAt && (
+              <span className="ml-2 text-[10px] text-zinc-600">
+                {formatRelativeTime(extSession.ccRecapAt)}
+              </span>
+            )}
+          </p>
         )}
 
-        {/* Last prompt / summary */}
-        {(extSession.ccSummary || extSession.ccFirstPrompt) && (
+        {/* Last prompt / summary — hide when recap is present (recap already covers it) */}
+        {!extSession.ccRecap && (extSession.ccSummary || extSession.ccFirstPrompt) && (
           <p className="mt-1.5 text-[12px] text-zinc-600 leading-relaxed line-clamp-2">
             {extSession.ccSummary || extSession.ccFirstPrompt}
           </p>

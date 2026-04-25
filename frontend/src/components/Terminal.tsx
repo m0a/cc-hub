@@ -284,7 +284,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       scrollSensitivity: 3,
       allowProposedApi: true,
       minimumContrastRatio: isLightMode() ? 4.5 : 1,
-      rescaleOverlappingGlyphs: false,
+      rescaleOverlappingGlyphs: true,
       drawBoldTextInBrightColors: false,
       convertEol: false,
       ignoreBracketedPasteMode: false,

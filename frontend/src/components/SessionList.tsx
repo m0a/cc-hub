@@ -6,6 +6,7 @@ import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-
 import { CSS } from '@dnd-kit/utilities';
 import type { SessionResponse, ExtendedSessionResponse, IndicatorState, ConversationMessage, FileInfo, SessionTheme } from '../../../shared/types';
 import { useSessions } from '../hooks/useSessions';
+import { formatRelativeTime } from '../utils/format';
 
 // Theme color mapping
 const THEME_COLORS: Record<SessionTheme, { border: string; bg: string }> = {
@@ -39,19 +40,6 @@ function formatTokenCount(n: number): string {
   if (n < 1000) return `${n}`;
   if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k`;
   return `${(n / 1_000_000).toFixed(1)}M`;
-}
-
-function formatRelativeTime(iso: string): string {
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return '';
-  const diffSec = Math.max(0, Math.floor((Date.now() - t) / 1000));
-  if (diffSec < 60) return `${diffSec}s ago`;
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDay = Math.floor(diffHr / 24);
-  return `${diffDay}d ago`;
 }
 
 import { useSessionHistory } from '../hooks/useSessionHistory';
@@ -544,7 +532,7 @@ function SessionItem({
   onPaneAction?: (sessionId: string, action: 'focus' | 'close' | 'split', paneId: string, direction?: 'h' | 'v') => void;
   onClosePane?: (sessionId: string, paneId: string, name: string) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const longPressTimerRef = useRef<number | null>(null);
   const longPressFiredRef = useRef(false);
 
@@ -789,7 +777,7 @@ function SessionItem({
             {extSession.ccRecap}
             {extSession.ccRecapAt && (
               <span className="ml-2 text-[10px] text-zinc-600">
-                {formatRelativeTime(extSession.ccRecapAt)}
+                {formatRelativeTime(extSession.ccRecapAt, t, i18n.language)}
               </span>
             )}
           </p>

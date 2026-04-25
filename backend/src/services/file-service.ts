@@ -206,7 +206,7 @@ export class FileService {
 
     const ext = extname(validPath).toLowerCase();
     const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
-    const isText = TEXT_EXTENSIONS.has(ext) || this.isTextMime(mimeType);
+    const knownText = TEXT_EXTENSIONS.has(ext) || this.isTextMime(mimeType);
     const isImage = IMAGE_EXTENSIONS.has(ext);
 
     // Images and media are served via the streaming /files/raw endpoint.
@@ -228,6 +228,9 @@ export class FileService {
     // Read file
     const buffer = await readFile(validPath);
     const contentBuffer = truncated ? buffer.subarray(0, readSize) : buffer;
+
+    // Unknown extensions: try to decode as text if buffer looks textual
+    const isText = knownText || this.looksLikeText(contentBuffer);
 
     let content: string;
     let encoding: 'utf-8' | 'base64';
@@ -268,6 +271,26 @@ export class FileService {
    */
   private isTextMime(mime: string): boolean {
     return mime.startsWith('text/') || mime === 'application/json';
+  }
+
+  /**
+   * Heuristic: treat buffer as text if it contains no NUL bytes and
+   * the proportion of non-printable control bytes is low.
+   * Used to render unknown-extension files as text when possible.
+   */
+  private looksLikeText(buf: Buffer, maxCheck = 8192): boolean {
+    const len = Math.min(buf.length, maxCheck);
+    if (len === 0) return true;
+    let nonText = 0;
+    for (let i = 0; i < len; i++) {
+      const b = buf[i];
+      if (b === 0) return false;
+      // Allow tab(9), LF(10), CR(13), ESC(27); flag other C0 controls
+      if (b < 32 && b !== 9 && b !== 10 && b !== 13 && b !== 27) {
+        nonText++;
+      }
+    }
+    return nonText / len < 0.3;
   }
 
   /**

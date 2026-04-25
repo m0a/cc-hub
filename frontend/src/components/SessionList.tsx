@@ -83,7 +83,6 @@ interface SessionListProps {
   inline?: boolean;  // true for side panel, false for fullscreen
   contentScale?: number;  // Scale factor for content (tabs remain fixed)
   isOnboarding?: boolean;  // Show dummy session for onboarding
-  hideDashboardTab?: boolean;  // Hide dashboard tab (used in modal)
 }
 
 // Session menu dialog (color change + title edit + delete)
@@ -909,7 +908,7 @@ function SessionItem({
   );
 }
 
-export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, inline = false, contentScale, isOnboarding = false, hideDashboardTab = false }: SessionListProps) {
+export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, inline = false, contentScale, isOnboarding = false }: SessionListProps) {
   const { t } = useTranslation();
   const {
     sessions,

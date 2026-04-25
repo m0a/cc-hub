@@ -43,7 +43,6 @@ export function SessionModal({
 				<SessionList
 					onSelectSession={handleSelectSession}
 					inline={true}
-					hideDashboardTab={true}
 					onClose={onClose}
 				/>
 			</div>

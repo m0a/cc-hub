@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { FileService } from '../../src/services/file-service';
-import { mkdtemp, writeFile, mkdir, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 

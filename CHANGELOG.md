@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.80] - 2026-04-25
+
+### Refactored
+- デッドコード掃除 (-981 行)
+  - 未使用ファイル7個を削除: `UrlMenu.tsx`, `SessionListMini.tsx`, `SessionTabs.tsx`, `SessionTab.tsx`, `LanguageSwitcher.tsx`, `dashboard/CostEstimate.tsx`, `dashboard/LimitWarning.tsx`
+  - 未使用 state/関数/prop の削除 (Terminal/InputBar の URL menu dead state、`onReload`、`hideDashboardTab` 等)
+  - 未使用 import の削除 (`Settings`, `PaneInfo`, `UrlMenu`, `symlink`)
+  - 未使用 npm パッケージ削除: `@xterm/addon-web-links`, `qrcode.react`
+- 機能変更なし。dev 環境で sessions/dashboard/file browser の動作確認済み
+
 ## [0.1.79] - 2026-04-25
 
 ### Fixed

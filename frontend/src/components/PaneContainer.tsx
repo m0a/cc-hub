@@ -278,7 +278,7 @@ function TerminalPane({
       onMouseDown={onFocus}
     >
       {/* Pane header - overlay on tablet, normal on desktop */}
-      <div className={`flex items-center px-2 py-1 text-xs select-none ${
+      <div className={`flex items-center px-2 py-1 text-base select-none ${
         isTablet
           ? 'absolute top-0 right-0 z-50 justify-end pointer-events-auto bg-[var(--color-overlay)] backdrop-blur-sm rounded-bl-lg'
           : 'justify-between bg-[var(--color-overlay)] border-b border-th-border shrink-0'
@@ -293,14 +293,14 @@ function TerminalPane({
           {(hasCcSessionId || session?.currentCommand === 'claude') && (
             <button
               onClick={handleToggleConversation}
-              className={`${isTablet ? 'p-2.5' : 'p-1'} transition-colors ${
+              className={`${isTablet ? 'p-2.5' : 'p-1.5'} transition-colors ${
                 showConversation
                   ? 'text-blue-400 hover:text-blue-300'
                   : 'text-white/50 hover:text-th-text'
               }`}
               title={showConversation ? t('conversation.backToTerminal') : t('conversation.showHistory')}
             >
-              <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={isTablet ? 'w-5 h-5' : 'w-[18px] h-[18px]'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
               </svg>
             </button>
@@ -309,11 +309,11 @@ function TerminalPane({
           {!isTablet && session?.currentPath && !showConversation && (
             <button
               onClick={handleOpenFileViewer}
-              className="p-1 text-white/50 hover:text-th-text transition-colors"
+              className="p-1.5 text-white/50 hover:text-th-text transition-colors"
               title={t('files.title')}
               data-onboarding="file-browser"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
               </svg>
             </button>
@@ -322,10 +322,10 @@ function TerminalPane({
           {!isTablet && sessionId && !showConversation && (
             <button
               onClick={handleReload}
-              className="p-1 text-white/50 hover:text-th-text transition-colors"
+              className="p-1.5 text-white/50 hover:text-th-text transition-colors"
               title={t('files.reload')}
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
@@ -337,7 +337,7 @@ function TerminalPane({
                 e.stopPropagation();
                 controlModeContext.zoomPane?.(paneId);
               }}
-              className={`${isTablet ? 'p-2.5' : 'p-1'} transition-colors ${
+              className={`${isTablet ? 'p-2.5' : 'p-1.5'} transition-colors ${
                 controlModeContext.isZoomed
                   ? 'text-blue-400 hover:text-blue-300'
                   : 'text-white/50 hover:text-th-text'
@@ -345,36 +345,14 @@ function TerminalPane({
               title={controlModeContext.isZoomed ? 'Unzoom' : 'Zoom'}
             >
               {controlModeContext.isZoomed ? (
-                <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className={isTablet ? 'w-5 h-5' : 'w-[18px] h-[18px]'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 4H4m0 0v5m0-5l5 5m6-5h5m0 0v5m0-5l-5 5M9 20H4m0 0v-5m0 5l5-5m6 5h5m0 0v-5m0 5l-5-5" />
                 </svg>
               ) : (
-                <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className={isTablet ? 'w-5 h-5' : 'w-[18px] h-[18px]'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
                 </svg>
               )}
-            </button>
-          )}
-          {/* Cache clear & reload button */}
-          {!isTablet && (
-            <button
-              onClick={async (e) => {
-                e.stopPropagation();
-                await Promise.all([
-                  navigator.serviceWorker?.getRegistrations().then(regs => Promise.all(regs.map(r => r.unregister()))),
-                  caches?.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))),
-                ].filter(Boolean));
-                location.reload();
-              }}
-              className="p-1 text-yellow-500/70 hover:text-yellow-400 transition-colors"
-              title="キャッシュクリア & リロード (Ctrl+Shift+F5)"
-            >
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                <path d="M3 3v5h5" />
-                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-                <path d="M21 21v-5h-5" />
-              </svg>
             </button>
           )}
           {/* Split buttons - desktop only */}
@@ -385,11 +363,11 @@ function TerminalPane({
                   e.stopPropagation();
                   controlModeContext.splitPane(paneId, 'h');
                 }}
-                className="p-1 text-white/50 hover:text-th-text transition-colors"
+                className="p-1.5 text-white/50 hover:text-th-text transition-colors"
                 title="縦分割 (Ctrl+D)"
                 data-onboarding="split-pane"
               >
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                   <rect x="3" y="3" width="18" height="18" rx="2" />
                   <line x1="12" y1="3" x2="12" y2="21" />
                 </svg>
@@ -399,10 +377,10 @@ function TerminalPane({
                   e.stopPropagation();
                   controlModeContext.splitPane(paneId, 'v');
                 }}
-                className="p-1 text-white/50 hover:text-th-text transition-colors"
+                className="p-1.5 text-white/50 hover:text-th-text transition-colors"
                 title="横分割 (Ctrl+Shift+D)"
               >
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                   <rect x="3" y="3" width="18" height="18" rx="2" />
                   <line x1="3" y1="12" x2="21" y2="12" />
                 </svg>
@@ -430,7 +408,7 @@ function TerminalPane({
                 }, 3000);
               }
             }}
-            className={`${isTablet ? 'p-2.5' : 'p-1'} transition-colors ${
+            className={`${isTablet ? 'p-2.5' : 'p-1.5'} transition-colors ${
               confirmClose
                 ? 'text-red-400 bg-red-900/50 rounded'
                 : 'text-white/50 hover:text-red-400'
@@ -442,7 +420,7 @@ function TerminalPane({
                 {t('pane.confirmClose')}
               </span>
             ) : (
-              <svg className={isTablet ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={isTablet ? 'w-5 h-5' : 'w-[18px] h-[18px]'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             )}

@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.87] - 2026-04-27
+
+### Changed
+- デスクトップ表示のヘッダーアイコンとペインヘッダーアイコンを 14-16px から 18px に拡大、余白も `p-1` → `p-1.5` に調整して視認性を改善
+- ペインヘッダーのタイトル文字サイズを `text-xs` (12px) → `text-base` (16px) に拡大
+
+### Removed
+- ペインヘッダーの黄色「キャッシュクリア & リロード」ボタンを削除（通常リロードと紛らわしいため）
+
 ## [0.1.86] - 2026-04-26
 
 ### Fixed

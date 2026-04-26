@@ -1132,26 +1132,26 @@ export function DesktopLayout({
               <button
                 type="button"
                 onClick={() => setShowSessionModal(prev => !prev)}
-                className={`p-1 rounded-md transition-colors ${
+                className={`p-1.5 rounded-md transition-colors ${
                   showSessionModal
                     ? 'text-blue-400 bg-blue-500/20'
                     : 'text-zinc-600 hover:text-zinc-400'
                 }`}
                 title="Sessions (Ctrl+B)"
               >
-                <List className="w-3.5 h-3.5" />
+                <List className="w-[18px] h-[18px]" />
               </button>
               <button
                 type="button"
                 onClick={() => setShowDashboard(prev => !prev)}
-                className={`p-1 rounded-md transition-colors ${
+                className={`p-1.5 rounded-md transition-colors ${
                   showDashboard
                     ? 'text-blue-400 bg-blue-500/20'
                     : 'text-zinc-600 hover:text-zinc-400'
                 }`}
                 title="Dashboard (Ctrl+Shift+B)"
               >
-                <BarChart3 className="w-3.5 h-3.5" />
+                <BarChart3 className="w-[18px] h-[18px]" />
               </button>
             </div>
           </div>

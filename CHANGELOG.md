@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.88] - 2026-04-27
+
+### Fixed
+- macOS で `/api/sessions` のレスポンスから `currentPath` / `panes` / `ccSummary` 等が欠落していた問題を修正 (#110)
+  - `ps -eo tty,args --no-headers` (GNU 専用) を `ps -A -o tty,args` + ユーザー空間でのヘッダースキップに変更し、BSD ps と GNU ps の両方で動作するように
+  - `tmux list-panes` のフィールドセパレータを `\x1f` から ASCII の `||~~||` に変更（macOS + Bun.spawn で 0x1f が `_` に化ける問題を回避）
+
 ## [0.1.87] - 2026-04-27
 
 ### Changed

@@ -29,6 +29,7 @@ const ACCENT_HEX: Record<SessionTheme, string> = {
   teal: '#14b8a6', blue: '#3b82f6', indigo: '#6366f1', purple: '#a855f7', pink: '#ec4899',
 };
 
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -773,10 +774,10 @@ function SessionItem({
 
         {/* Auto recap (away_summary) — timestamp shown inline at the tail */}
         {extSession.ccRecap && (
-          <p className="mt-1 text-[12px] text-zinc-400 leading-relaxed line-clamp-3">
+          <p className="mt-1 text-[12px] text-amber-200 leading-relaxed line-clamp-3">
             {extSession.ccRecap}
             {extSession.ccRecapAt && (
-              <span className="ml-2 text-[10px] text-zinc-600">
+              <span className="ml-2 text-[10px] text-zinc-500">
                 {formatRelativeTime(extSession.ccRecapAt, t, i18n.language)}
               </span>
             )}

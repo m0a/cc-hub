@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.89] - 2026-04-27
+
+### Changed
+- セッションカードの recap テキスト色を `text-zinc-400` (灰) → `text-amber-200` (薄い琥珀) に変更し、暗背景での視認性とカードの華やかさを改善
+- recap タイムスタンプを `text-zinc-600` → `text-zinc-500` に微調整
+
 ## [0.1.88] - 2026-04-27
 
 ### Fixed

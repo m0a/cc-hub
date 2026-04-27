@@ -129,8 +129,10 @@ export class TmuxService {
     }
 
     try {
-      // Single ps call: TTY and args (stat/wchan no longer needed — indicator uses hook/jsonl)
-      const proc = Bun.spawn(['ps', '-eo', 'tty,args', '--no-headers'], {
+      // Single ps call: TTY and args (stat/wchan no longer needed — indicator uses hook/jsonl).
+      // `--no-headers` is GNU ps only; on macOS BSD ps it makes the command fail. Skip the
+      // header line in user-space instead so this works on both platforms.
+      const proc = Bun.spawn(['ps', '-A', '-o', 'tty,args'], {
         stdout: 'pipe',
         stderr: 'pipe',
       });
@@ -144,7 +146,11 @@ export class TmuxService {
 
       const ttySet = new Set(ttyNames);
 
-      for (const line of output.split('\n')) {
+      const lines = output.split('\n');
+      // Drop the header line if present (e.g. "TT       COMMAND" / "TTY      ARGS").
+      const startIdx = lines[0]?.match(/^\s*(TTY|TT)\b/i) ? 1 : 0;
+      for (let i = startIdx; i < lines.length; i++) {
+        const line = lines[i];
         const parts = line.trim().split(/\s+/);
         if (parts.length < 2) continue;
 
@@ -219,9 +225,13 @@ export class TmuxService {
           };
         });
 
-      // Get pane info for each session (command, path, title, tty, pane_id, active)
-      // Use | as separator since path can contain :
-      const panesProc = Bun.spawn(['tmux', 'list-panes', '-a', '-F', '#{session_name}\x1f#{pane_id}\x1f#{pane_current_command}\x1f#{pane_title}\x1f#{pane_tty}\x1f#{pane_active}\x1f#{pane_dead}\x1f#{pane_pid}\x1f#{pane_current_path}'], {
+      // Get pane info for each session (command, path, title, tty, pane_id, active).
+      // Use a multi-char ASCII sentinel as separator. Originally `\x1f` (US control char) was used,
+      // but on macOS + Bun.spawn the 0x1f byte in argv gets corrupted to 0x5f ('_') by the time
+      // tmux's format parser sees it, so all panes failed to parse. ASCII-only sentinel avoids it.
+      const SEP = '||~~||';
+      const fmtString = `#{session_name}${SEP}#{pane_id}${SEP}#{pane_current_command}${SEP}#{pane_title}${SEP}#{pane_tty}${SEP}#{pane_active}${SEP}#{pane_dead}${SEP}#{pane_pid}${SEP}#{pane_current_path}`;
+      const panesProc = Bun.spawn(['tmux', 'list-panes', '-a', '-F', fmtString], {
         stdout: 'pipe',
         stderr: 'pipe',
       });
@@ -237,11 +247,11 @@ export class TmuxService {
           .split('\n')
           .filter((line) => line.length > 0)
           .forEach((line) => {
-            const parts = line.split('\x1f');
+            const parts = line.split(SEP);
             if (parts.length >= 9) {
               const [sessionName, paneId, command, title, tty, active, dead, pidStr, ...pathParts] = parts;
-              // Path might contain \x1f (unlikely), so join the rest
-              const panePath = pathParts.join('\x1f');
+              // Path might contain SEP (extremely unlikely), so join the rest
+              const panePath = pathParts.join(SEP);
               const isActive = active === '1';
               const isDead = dead === '1';
               const pidNum = pidStr ? Number.parseInt(pidStr, 10) : Number.NaN;

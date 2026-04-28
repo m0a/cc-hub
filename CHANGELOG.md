@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.90] - 2026-04-28
+
+### Fixed
+- モバイル端末で FileViewer の Copy Prompt ボタンを押してもプロンプトテキストが入力欄に挿入されない不具合を修正 (#114)
+  - 6 週間前の Terminal.tsx 分割リファクタで失われていた InputBar へのテキスト注入経路を復元
+  - InputBar に forwardRef + useImperativeHandle で `setText(text)` を公開
+
 ## [0.1.89] - 2026-04-27
 
 ### Changed

@@ -14,7 +14,7 @@ import {
 } from './terminal-themes';
 import { useSelectionMode } from '../hooks/useSelectionMode';
 import { SelectionOverlay } from './SelectionOverlay';
-import { InputBar, type InputMode } from './InputBar';
+import { InputBar, type InputMode, type InputBarRef } from './InputBar';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -85,6 +85,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const refreshRef = useRef<() => void>(() => {});
   const closeInputBarRef = useRef<() => void>(() => {});
   const showKeyboardRef = useRef<() => void>(() => {});
+  const inputBarRef = useRef<InputBarRef>(null);
   const selectionRef = useRef<string>('');
   const [isInitialized, setIsInitialized] = useState(false);
   const [inputMode, setInputMode] = useState<InputMode>('hidden');
@@ -212,10 +213,8 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       }
     },
     scrollToBottom: () => terminalRef.current?.scrollToBottom(),
-    setInputText: (_text: string) => {
-      // Mobile InputBar doesn't yet support pre-populating text;
-      // we just open the input mode so the user can paste manually.
-      setInputMode('input');
+    setInputText: (text: string) => {
+      inputBarRef.current?.setText(text);
     },
     changeFontSize: (delta: number) => {
       const term = terminalRef.current;
@@ -1077,6 +1076,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
       {/* Input bar (mobile/tablet keyboard) */}
       <InputBar
+        ref={inputBarRef}
         inputMode={inputMode}
         setInputMode={setInputMode}
         sendRef={sendRef}

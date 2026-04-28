@@ -1,9 +1,13 @@
-import { useState, useRef, useCallback, memo } from 'react';
+import { useState, useRef, useCallback, memo, forwardRef, useImperativeHandle } from 'react';
 import { X, Clock, ChevronUp, ChevronDown, CornerDownLeft, FileText } from 'lucide-react';
 import { Keyboard } from './Keyboard';
 import { authFetch } from '../services/api';
 
 export type InputMode = 'hidden' | 'shortcuts' | 'input';
+
+export interface InputBarRef {
+  setText: (text: string) => void;
+}
 
 interface InputBarProps {
   inputMode: InputMode;
@@ -17,7 +21,7 @@ interface InputBarProps {
   hideKeyboard?: boolean;
 }
 
-export const InputBar = memo(function InputBar({
+export const InputBar = memo(forwardRef<InputBarRef, InputBarProps>(function InputBar({
   inputMode,
   setInputMode,
   sendRef,
@@ -27,11 +31,19 @@ export const InputBar = memo(function InputBar({
   onOverlayTap,
   showOverlay = true,
   hideKeyboard,
-}: InputBarProps) {
+}, ref) {
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [inputValue, setInputValue] = useState('');
   const [showInputHistory, setShowInputHistory] = useState(false);
+
+  useImperativeHandle(ref, () => ({
+    setText: (text: string) => {
+      setInputValue(text);
+      setInputMode('input');
+      setTimeout(() => inputRef.current?.focus(), 100);
+    },
+  }), [setInputMode]);
   const inputHistoryRef = useRef<string[]>(
     (() => { try { return JSON.parse(localStorage.getItem('cchub-input-history') || '[]'); } catch { return []; } })()
   );
@@ -445,4 +457,4 @@ export const InputBar = memo(function InputBar({
       )}
     </div>
   );
-});
+}));

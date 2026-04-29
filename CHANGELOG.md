@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.91] - 2026-04-29
+
+### Added
+- 会話履歴ビュー（chat mode）を追加 (#116)
+  - ターミナルの xterm 領域を Claude の会話履歴に置き換える別表示モード。`fs.watch` で JSONL を監視しリアルタイム更新（150ms debounce）
+  - WebSocket プロトコルに `subscribe-conversation` / `initial-conversation` / `conversation-update` / `unsubscribe-conversation` を追加
+  - ペインヘッダーの単一アイコントグルでターミナル⇄会話履歴を切替（Claude 起動中のみ有効）
+  - ペインごと・セッションごとの表示モードを localStorage に永続化（split/再マウントでも維持）
+  - 「処理中」「入力待ち」バッジを `indicatorState` ベースに統一（接続状態ではなく Claude の実状態を反映）
+- インライン画像のライトボックス表示
+  - 会話履歴・Read 等のツール結果に含まれる画像をタップで全画面表示。背景タップ／×ボタン／Esc で閉じる
+- 会話履歴のフォントサイズ調整
+  - ピンチズーム / 左下のフォントコントロール（−／A／＋）でサイズ変更、localStorage に永続化
+  - 通常時は `Aa` の小トリガーのみ表示、変更時のみフルコントロール表示
+- 入力エコー行
+  - FloatingKeyboard / InputBar から送信した文字を会話履歴下部にプロンプト風表示。送信先（ターミナル）が隠れていても入力中の文字を確認可能
+- 入力フォーム（デスクトップ）
+  - PC では会話履歴の下に textarea + 送信ボタンを表示。モバイルは Terminal InputBar、タブレットは FloatingKeyboard を流用
+
+### Changed
+- 会話履歴ビューの情報密度を向上（メッセージ間隔・行高・マージンの全体的な詰め）
+- ペインヘッダーのターミナル/チャット切替を 2 アイコンから単一アイコン（切替先表示）方式に変更
+- ペインが 1 つしかない時は close（×）と zoom（最大化）ボタンを非表示
+- スクロール時のキーボード制御
+  - 会話履歴を上にスクロールするとソフトキーボードを自動非表示にし表示領域を拡大
+  - 一番下まで戻るとキーボードを再表示（タッチ駆動 + 600ms クールダウンでレイアウトシフトの振動を防止）
+
 ## [0.1.90] - 2026-04-28
 
 ### Fixed

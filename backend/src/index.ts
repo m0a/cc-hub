@@ -324,6 +324,7 @@ export default {
           mux: true,
           visitorId: crypto.randomUUID(),
           subscriptions: new Map(),
+          conversationWatchers: new Map(),
           lastPingAt: Date.now(),
         },
       });

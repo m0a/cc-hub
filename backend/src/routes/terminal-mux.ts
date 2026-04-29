@@ -1,7 +1,8 @@
 import type { ServerWebSocket } from 'bun';
 import { TmuxService } from '../services/tmux';
 import { getOrCreateControlSession, type TmuxControlSession } from '../services/tmux-control';
-import type { ControlClientMessage, MuxClientMessage } from '../../../shared/types';
+import { ConversationWatcher } from '../services/conversation-watcher';
+import type { ControlClientMessage, MuxClientMessage, ConversationMessage } from '../../../shared/types';
 import { MUX_BINARY_TYPE } from '../../../shared/types';
 import { buildSessionsList } from './sessions';
 
@@ -19,6 +20,7 @@ export interface MuxData {
   mux: true;
   visitorId: string;
   subscriptions: Map<string, MuxSubscription>;
+  conversationWatchers: Map<string, ConversationWatcher>;
   lastPingAt: number;
 }
 
@@ -149,6 +151,16 @@ export async function muxMessage(ws: ServerWebSocket<MuxData>, message: string |
     return;
   }
 
+  if (msg.type === 'subscribe-conversation') {
+    await handleSubscribeConversation(ws, msg.sessionId);
+    return;
+  }
+
+  if (msg.type === 'unsubscribe-conversation') {
+    handleUnsubscribeConversation(ws, msg.sessionId);
+    return;
+  }
+
   // All other messages need sessionId
   const sessionId = (msg as { sessionId?: string }).sessionId;
   if (!sessionId) return;
@@ -174,6 +186,12 @@ export function muxClose(ws: ServerWebSocket<MuxData>, code: number, reason: str
     cleanupSubscription(ws, sessionId, sub);
   }
   ws.data.subscriptions.clear();
+
+  // Clean up conversation watchers
+  for (const watcher of ws.data.conversationWatchers.values()) {
+    try { watcher.stop(); } catch { /* ignore */ }
+  }
+  ws.data.conversationWatchers.clear();
 }
 
 async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) {
@@ -312,6 +330,75 @@ function cleanupSubscription(ws: ServerWebSocket<MuxData>, _sessionId: string, s
   }
   sub.controlSession.removeClientDeviceType(ws.data.visitorId);
   sub.controlSession.removeClient();
+}
+
+async function handleSubscribeConversation(ws: ServerWebSocket<MuxData>, sessionId: string) {
+  console.log(`[mux] subscribe-conversation: ${sessionId}`);
+
+  // Stop existing watcher for this session, if any
+  const existing = ws.data.conversationWatchers.get(sessionId);
+  if (existing) {
+    try { existing.stop(); } catch { /* ignore */ }
+    ws.data.conversationWatchers.delete(sessionId);
+  }
+
+  let workingDir: string | undefined;
+  try {
+    const sessions = await tmuxService.listSessions();
+    const session = sessions.find(s => s.id === sessionId);
+    workingDir = session?.currentPath;
+  } catch (err) {
+    console.warn(`[mux] subscribe-conversation: failed to list sessions: ${err}`);
+  }
+
+  if (!workingDir) {
+    try {
+      ws.send(JSON.stringify({ type: 'conversation-subscribed', sessionId, ccSessionId: null }));
+      ws.send(JSON.stringify({ type: 'initial-conversation', sessionId, messages: [] }));
+    } catch { /* disconnected */ }
+    return;
+  }
+
+  const watcher = new ConversationWatcher();
+  let initialMessages: ConversationMessage[] = [];
+  try {
+    initialMessages = await watcher.start(workingDir);
+  } catch (err) {
+    console.warn(`[mux] subscribe-conversation start failed for ${sessionId}:`, err);
+  }
+
+  watcher.onUpdate((newMessages) => {
+    try {
+      ws.send(JSON.stringify({ type: 'conversation-update', sessionId, messages: newMessages }));
+    } catch { /* disconnected */ }
+  });
+
+  ws.data.conversationWatchers.set(sessionId, watcher);
+
+  try {
+    ws.send(JSON.stringify({
+      type: 'conversation-subscribed',
+      sessionId,
+      ccSessionId: watcher.getCcSessionId(),
+    }));
+    ws.send(JSON.stringify({
+      type: 'initial-conversation',
+      sessionId,
+      messages: initialMessages,
+    }));
+  } catch { /* disconnected */ }
+}
+
+function handleUnsubscribeConversation(ws: ServerWebSocket<MuxData>, sessionId: string) {
+  console.log(`[mux] unsubscribe-conversation: ${sessionId}`);
+  const watcher = ws.data.conversationWatchers.get(sessionId);
+  if (watcher) {
+    try { watcher.stop(); } catch { /* ignore */ }
+    ws.data.conversationWatchers.delete(sessionId);
+  }
+  try {
+    ws.send(JSON.stringify({ type: 'conversation-unsubscribed', sessionId }));
+  } catch { /* disconnected */ }
 }
 
 async function handleControlMessage(

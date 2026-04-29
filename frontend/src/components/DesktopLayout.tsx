@@ -217,7 +217,13 @@ export function DesktopLayout({
     ? apiSessions.map(apiSession => {
         const propSession = propSessions.find(p => p.id === apiSession.id);
         return propSession
-          ? { ...propSession, theme: apiSession.theme }
+          ? {
+              ...propSession,
+              theme: apiSession.theme,
+              currentCommand: apiSession.currentCommand,
+              ccSessionId: apiSession.ccSessionId,
+              panes: apiSession.panes,
+            }
           : {
               id: apiSession.id,
               name: apiSession.name,
@@ -226,6 +232,7 @@ export function DesktopLayout({
               ccSessionId: apiSession.ccSessionId,
               currentCommand: apiSession.currentCommand,
               theme: apiSession.theme,
+              panes: apiSession.panes,
             };
       })
     : propSessions;
@@ -908,6 +915,7 @@ export function DesktopLayout({
         setShowDashboard(prev => !prev);
         return;
       }
+
 
       // Ctrl/Cmd + Shift + Arrow: Resize active pane
       if (e.shiftKey && !e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {

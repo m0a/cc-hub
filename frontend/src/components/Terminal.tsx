@@ -41,6 +41,10 @@ interface TerminalProps {
   showOverlay?: boolean;
   theme?: SessionTheme;
   controlMode?: ControlModeConfig;
+  /** When true, hides the xterm area but keeps the InputBar visible. */
+  hideTerminalArea?: boolean;
+  /** Replacement content shown in the xterm area when hideTerminalArea is true. */
+  terminalAreaOverlay?: React.ReactNode;
 }
 
 // Ref interface for external keyboard input
@@ -75,6 +79,8 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   showOverlay = true,
   theme: sessionTheme,
   controlMode,
+  hideTerminalArea,
+  terminalAreaOverlay,
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -1030,12 +1036,22 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       >
         <div
           ref={containerRef}
-          className="absolute inset-0 p-1"
+          className={`absolute inset-0 p-1${hideTerminalArea ? ' invisible pointer-events-none' : ''}`}
           style={{
             ...(isTouchDevice ? { WebkitTouchCallout: 'none', WebkitUserSelect: 'none' } : {}),
             touchAction: 'none',
           }}
         />
+        {/* Always render the overlay container so ChatView keeps its state /
+            subscription mounted; toggle visibility via display style. */}
+        {terminalAreaOverlay && (
+          <div
+            className="absolute inset-0 z-20 bg-[#0a0a0a]"
+            style={{ display: hideTerminalArea ? 'block' : 'none' }}
+          >
+            {terminalAreaOverlay}
+          </div>
+        )}
         <div
           ref={overlayRef}
           className="absolute inset-0 z-10 pointer-events-none"

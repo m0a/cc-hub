@@ -22,6 +22,12 @@ interface TerminalPageProps {
   theme?: SessionTheme;
   onPanesChange?: (panes: PaneLeafInfo[]) => void;
   externalActivePaneId?: string | null;
+  /** When set, replaces the xterm area while keeping the InputBar visible below.
+   *  Always rendered (when truthy) so React state/subscriptions persist; visibility
+   *  is toggled via `mainOverlayVisible`. */
+  mainOverlay?: ReactNode;
+  /** Whether the mainOverlay is currently shown. Defaults to `!!mainOverlay`. */
+  mainOverlayVisible?: boolean;
 }
 
 export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function TerminalPage({
@@ -35,6 +41,8 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
   theme,
   onPanesChange,
   externalActivePaneId,
+  mainOverlay,
+  mainOverlayVisible,
 }, ref) {
   const [error, setError] = useState<string | null>(null);
   const [activePaneId, setActivePaneId] = useState<string | null>(null);
@@ -293,7 +301,8 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
         </div>
       )}
 
-      {/* Terminal - full screen */}
+      {/* Terminal - full screen. mainOverlay (e.g. ChatView) replaces the
+          xterm area while the InputBar inside TerminalComponent remains visible. */}
       <main className="flex-1 relative overflow-hidden min-h-0 select-none">
         <TerminalComponent
           ref={ref}
@@ -304,6 +313,8 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
           showOverlay={showOverlay}
           theme={theme}
           controlMode={controlMode}
+          hideTerminalArea={!!mainOverlay && (mainOverlayVisible ?? true)}
+          terminalAreaOverlay={mainOverlay}
         />
       </main>
     </div>

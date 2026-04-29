@@ -1,20 +1,19 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RotateCw, MessageSquare, FileText, BarChart3, ChevronDown, X as XIcon } from 'lucide-react';
+import { RotateCw, MessageSquare, FileText, BarChart3, ChevronDown, X as XIcon, Terminal as TerminalIcon } from 'lucide-react';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { TerminalPage } from './pages/TerminalPage';
 import type { TerminalRef } from './components/Terminal';
 import { SessionList } from './components/SessionList';
 import { DesktopLayout } from './components/DesktopLayout';
 import { FileViewer } from './components/files/FileViewer';
-import { ConversationViewer } from './components/ConversationViewer';
+import { ChatView } from './components/chat/ChatView';
 import { LoginForm } from './components/LoginForm';
 import { Onboarding, useOnboarding } from './components/Onboarding';
-import { useSessionHistory } from './hooks/useSessionHistory';
 import { useAuth } from './hooks/useAuth';
 import { useSessions } from './hooks/useSessions';
 import { authFetch, isTransientNetworkError } from './services/api';
-import type { SessionResponse, ExtendedSessionResponse, SessionState, ConversationMessage, SessionTheme } from '../../shared/types';
+import type { SessionResponse, ExtendedSessionResponse, SessionState, SessionTheme, PaneInfo, IndicatorState } from '../../shared/types';
 
 // Loading screen with phase display and timeout detection
 function LoadingScreen({
@@ -80,6 +79,8 @@ interface OpenSession {
   ccSessionId?: string;
   currentCommand?: string;
   theme?: SessionTheme;
+  panes?: PaneInfo[];
+  indicatorState?: IndicatorState;
 }
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -229,11 +230,48 @@ export function App() {
   const fileViewerVisible = activeFileViewerDir ? fileViewerOpenDirs.has(activeFileViewerDir) : false;
   const overlayTimeoutRef = useRef<number | null>(null);
 
-  // Conversation viewer state
-  const { fetchConversation } = useSessionHistory();
-  const [showConversation, setShowConversation] = useState(false);
-  const [conversation, setConversation] = useState<ConversationMessage[]>([]);
-  const [loadingConversation, setLoadingConversation] = useState(false);
+  // Conversation viewer state — per-session (each session remembers whether
+  // it was last shown in chat mode or terminal mode). Persisted to localStorage.
+  const [conversationModeSessions, setConversationModeSessions] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('cchub-conversation-mode-sessions');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+  const showConversation = activeSessionId ? conversationModeSessions.has(activeSessionId) : false;
+  const setShowConversation = useCallback((show: boolean) => {
+    if (!activeSessionId) return;
+    setConversationModeSessions(prev => {
+      const has = prev.has(activeSessionId);
+      if (show === has) return prev;
+      const next = new Set(prev);
+      if (show) next.add(activeSessionId);
+      else next.delete(activeSessionId);
+      return next;
+    });
+  }, [activeSessionId]);
+
+  // Persist per-session conversation mode to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('cchub-conversation-mode-sessions', JSON.stringify([...conversationModeSessions]));
+    } catch {
+      // ignore quota errors
+    }
+  }, [conversationModeSessions]);
+
+  // Mobile: open the soft keyboard automatically when entering ChatView,
+  // since the xterm area (which normally surfaces the keyboard on focus) is hidden.
+  // Also re-fire on session switch — when toggling between two chat-mode sessions,
+  // `showConversation` stays true but the Terminal is remounted (key=activeSessionId),
+  // so the previous showKeyboard() targeted a stale instance.
+  useEffect(() => {
+    if (!showConversation) return;
+    const id = setTimeout(() => mobileTerminalRef.current?.showKeyboard(), 150);
+    return () => clearTimeout(id);
+  }, [showConversation, activeSessionId]);
 
   // Mobile pane tabs state
   const [mobilePanes, setMobilePanes] = useState<{ paneId: string; width: number; height: number }[]>([]);
@@ -249,22 +287,24 @@ export function App() {
   type DeviceType = 'mobile' | 'tablet' | 'desktop';
 
   const checkIsTouchDevice = (): boolean => {
-    // タッチデバイス判定: タッチイベント対応 かつ 粗いポインター（指）
     const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     const hasCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
     return hasTouch && hasCoarsePointer;
   };
 
   const checkDeviceType = (): DeviceType => {
-    // PCの場合は常にdesktop（ソフトキーボード不要）
-    if (!checkIsTouchDevice()) return 'desktop';
-
-    // タッチデバイスの場合は短辺で判定（向きに依存しない）
-    // screen.width/height は物理解像度ベースで向きに左右されにくい
-    const shortSide = Math.min(screen.width, screen.height);
-    const longSide = Math.max(screen.width, screen.height);
-    if (shortSide >= 500 && longSide >= 640) return 'tablet';
-    return 'mobile';
+    // 実タッチデバイス: 物理解像度の短辺で判定（向きに依存しない）
+    if (checkIsTouchDevice()) {
+      const shortSide = Math.min(screen.width, screen.height);
+      const longSide = Math.max(screen.width, screen.height);
+      if (shortSide >= 500 && longSide >= 640) return 'tablet';
+      return 'mobile';
+    }
+    // 非タッチデバイス（PC + DevToolsエミュレーション含む）: ビューポート幅で判定
+    const w = window.innerWidth;
+    if (w < 640) return 'mobile';
+    if (w < 1024) return 'tablet';
+    return 'desktop';
   };
 
   const [deviceType, setDeviceType] = useState<DeviceType>(checkDeviceType);
@@ -283,15 +323,31 @@ export function App() {
 
   // Sessions are now delivered via WS push (no HTTP polling needed)
 
-  // Update openSessions theme from API (for mobile view)
+  // Update openSessions live fields from API (for mobile view)
   useEffect(() => {
     if (deviceType !== 'mobile' || apiSessions.length === 0) return;
     setOpenSessions(prev => prev.map(session => {
       const apiSession = apiSessions.find(s => s.id === session.id);
-      if (apiSession && apiSession.theme !== session.theme) {
-        return { ...session, theme: apiSession.theme };
+      if (!apiSession) return session;
+      const next = {
+        ...session,
+        theme: apiSession.theme,
+        currentCommand: apiSession.currentCommand,
+        ccSessionId: apiSession.ccSessionId,
+        panes: apiSession.panes,
+        indicatorState: apiSession.indicatorState,
+      };
+      // Skip update if nothing actually changed (avoid extra renders)
+      if (
+        next.theme === session.theme &&
+        next.currentCommand === session.currentCommand &&
+        next.ccSessionId === session.ccSessionId &&
+        next.panes === session.panes &&
+        next.indicatorState === session.indicatorState
+      ) {
+        return session;
       }
-      return session;
+      return next;
     }));
   }, [deviceType, apiSessions]);
 
@@ -586,6 +642,13 @@ export function App() {
 
       return filtered;
     });
+    // Clean up per-session conversation mode entry
+    setConversationModeSessions(prev => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   }, [activeSessionId]);
 
   // Actually delete the session
@@ -637,36 +700,11 @@ export function App() {
   }, []);
 
   // Show conversation history for current session
-  const handleShowConversation = useCallback(async () => {
+  const handleShowConversation = useCallback(() => {
     const activeSession = openSessions.find(s => s.id === activeSessionId);
-    const ccSessionId = activeSession?.ccSessionId;
-    if (!ccSessionId) return;
-
+    if (!activeSession?.ccSessionId) return;
     setShowConversation(true);
-    setLoadingConversation(true);
-    setConversation([]);
-
-    try {
-      const messages = await fetchConversation(ccSessionId);
-      setConversation(messages);
-    } finally {
-      setLoadingConversation(false);
-    }
-  }, [openSessions, activeSessionId, fetchConversation]);
-
-  // Refresh conversation (for auto-refresh)
-  const handleRefreshConversation = useCallback(async () => {
-    const activeSession = openSessions.find(s => s.id === activeSessionId);
-    const ccSessionId = activeSession?.ccSessionId;
-    if (!ccSessionId) return;
-
-    try {
-      const messages = await fetchConversation(ccSessionId);
-      setConversation(messages);
-    } catch (err) {
-      console.error('Failed to refresh conversation:', err);
-    }
-  }, [openSessions, activeSessionId, fetchConversation]);
+  }, [openSessions, activeSessionId]);
 
   // Keep overlay visible (no auto-hide)
   const startOverlayTimer = useCallback(() => {
@@ -826,16 +864,27 @@ export function App() {
 
       {/* Right: Core actions */}
       <div className="flex items-center gap-1">
-        {activeSession?.ccSessionId && (
+        {activeSession?.ccSessionId && (showConversation ? (
+          <button
+            onClick={() => setShowConversation(false)}
+            className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
+            title="ターミナルに切替"
+            aria-label="Switch to Terminal"
+            data-onboarding="conversation"
+          >
+            <TerminalIcon className="w-5 h-5" />
+          </button>
+        ) : (
           <button
             onClick={handleShowConversation}
             className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
-            title="会話履歴"
+            title="会話履歴に切替"
+            aria-label="Switch to Chat"
             data-onboarding="conversation"
           >
             <MessageSquare className="w-5 h-5" />
           </button>
-        )}
+        ))}
         <button
           onClick={() => openFileViewer(activeSession?.currentPath || '/')}
           className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
@@ -869,24 +918,87 @@ export function App() {
       {/* Terminal - full screen */}
       {activeSession ? (
         <div className="flex-1 flex flex-col min-h-0" data-onboarding="terminal">
-          <TerminalPage
-            ref={mobileTerminalRef}
-            key={activeSessionId}
-            sessionId={activeSession.id}
-            onStateChange={(state) => updateSessionState(activeSession.id, state)}
-            overlayContent={overlayBar}
-            onOverlayTap={handleShowOverlay}
-            showOverlay={showOverlay}
-            theme={activeSession.theme}
-            onPanesChange={(panes) => {
-              setMobilePanes(panes);
-              // If active pane was removed, clear it so TerminalPage picks the first
-              if (mobileActivePaneId && !panes.some(p => p.paneId === mobileActivePaneId)) {
-                setMobileActivePaneId(null);
-              }
-            }}
-            externalActivePaneId={mobileActivePaneId}
-          />
+          {(() => {
+            // Use the session-level Claude indicator (set by hook events / jsonl).
+            // `state === 'working'` is unreliable here — it just means the tmux
+            // session is attached, so it would always be true once connected.
+            const indicator = activeSession.indicatorState;
+            const isProcessing = indicator === 'processing';
+            const isWaitingInput = indicator === 'waiting_input';
+            // Always-mounted chat overlay (visibility controlled via mainOverlayVisible).
+            // Keeping ChatView mounted preserves the conversation subscription so
+            // messages are pre-loaded by the time the user toggles to chat mode —
+            // avoiding the black/loading flash on every open.
+            const chatOverlay = activeSession.ccSessionId ? (
+              <div className="h-full flex flex-col bg-[#0a0a0a]">
+                <div
+                  className="flex items-center gap-2 px-3 py-2 border-b border-white/[0.06] shrink-0"
+                  style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 8px)' }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setShowConversation(false)}
+                    className="p-1.5 text-zinc-500 hover:text-zinc-300 shrink-0"
+                    title="ターミナルに切替"
+                    aria-label="Switch to Terminal"
+                  >
+                    <TerminalIcon className="w-5 h-5" />
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-[13px] font-medium text-white truncate">
+                        {activeSession.name || 'Conversation'}
+                      </h2>
+                      {isProcessing && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-blue-300 bg-blue-500/15 px-1.5 py-0.5 rounded shrink-0">
+                          <span className="inline-block w-2 h-2 border border-blue-300 border-t-transparent rounded-full animate-spin" />
+                          処理中
+                        </span>
+                      )}
+                      {!isProcessing && isWaitingInput && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-amber-300 bg-amber-500/15 px-1.5 py-0.5 rounded shrink-0">
+                          入力待ち
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-zinc-500 truncate">
+                      {activeSession.currentPath?.replace(/^\/home\/[^/]+\//, '~/') || ''}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex-1 min-h-0">
+                  <ChatView
+                    sessionId={activeSession.id}
+                    title={activeSession.name}
+                    subtitle={activeSession.currentPath?.replace(/^\/home\/[^/]+\//, '~/')}
+                    inline
+                    enabled
+                  />
+                </div>
+              </div>
+            ) : null;
+            return (
+              <TerminalPage
+                ref={mobileTerminalRef}
+                key={activeSessionId}
+                sessionId={activeSession.id}
+                onStateChange={(state) => updateSessionState(activeSession.id, state)}
+                overlayContent={overlayBar}
+                onOverlayTap={handleShowOverlay}
+                showOverlay={showOverlay}
+                theme={activeSession.theme}
+                onPanesChange={(panes) => {
+                  setMobilePanes(panes);
+                  if (mobileActivePaneId && !panes.some(p => p.paneId === mobileActivePaneId)) {
+                    setMobileActivePaneId(null);
+                  }
+                }}
+                externalActivePaneId={mobileActivePaneId}
+                mainOverlay={chatOverlay}
+                mainOverlayVisible={showConversation}
+              />
+            );
+          })()}
           {/* Pane tab bar - only shown when multiple panes exist */}
           {mobilePanes.length > 1 && (() => {
             // Get pane command info from API sessions data
@@ -996,19 +1108,8 @@ export function App() {
       {/* Session List Overlay */}
       {sessionListOverlay}
 
-      {/* Conversation Viewer Modal */}
-      {showConversation && (
-        <ConversationViewer
-          title={activeSession?.name || 'Conversation'}
-          subtitle={activeSession?.currentPath?.replace(/^\/home\/[^/]+\//, '~/') || ''}
-          messages={conversation}
-          isLoading={loadingConversation}
-          onClose={() => setShowConversation(false)}
-          scrollToBottom={true}
-          isActive={activeSession?.currentCommand === 'claude'}
-          onRefresh={handleRefreshConversation}
-        />
-      )}
+      {/* (Conversation overlay is rendered inside TerminalPage as mainOverlay
+          so it replaces the xterm area while keeping the InputBar visible.) */}
 
       {/* Onboarding overlay */}
       {showOnboarding && <Onboarding onComplete={completeOnboarding} onStepAction={onboardingStepAction} />}

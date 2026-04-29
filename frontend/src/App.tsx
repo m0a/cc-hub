@@ -973,6 +973,11 @@ export function App() {
                     subtitle={activeSession.currentPath?.replace(/^\/home\/[^/]+\//, '~/')}
                     inline
                     enabled
+                    onScrollGesture={() => mobileTerminalRef.current?.hideKeyboard()}
+                    onAtBottomChange={(atBottom) => {
+                      if (atBottom) mobileTerminalRef.current?.showKeyboard();
+                      else mobileTerminalRef.current?.hideKeyboard();
+                    }}
                   />
                 </div>
               </div>

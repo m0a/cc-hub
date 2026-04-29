@@ -261,6 +261,14 @@ interface ConversationViewerProps {
   isActive?: boolean;  // Whether the session is actively running
   onRefresh?: () => void;  // Callback to refresh conversation
   inline?: boolean;  // If true, render inline instead of fullscreen modal
+  /** Fires once per touch gesture when the user starts scrolling. Used to
+   *  collapse the input bar / soft keyboard so more of the conversation is
+   *  visible (mirrors Terminal's behavior). */
+  onScrollGesture?: () => void;
+  /** Fires when the scroll position transitions to / from the bottom. The
+   *  parent uses this to hide the keyboard while the user is reading
+   *  history and re-show it when they return to the latest message. */
+  onAtBottomChange?: (atBottom: boolean) => void;
 }
 
 // Markdown components configuration
@@ -404,6 +412,8 @@ export function ConversationViewer({
   isActive = false,
   onRefresh,
   inline = false,
+  onScrollGesture,
+  onAtBottomChange,
 }: ConversationViewerProps) {
   const { t } = useTranslation();
   const parentRef = useRef<HTMLDivElement>(null);
@@ -497,6 +507,76 @@ export function ConversationViewer({
     };
   }, [fontSize]);
 
+  // Track scroll gestures and at-bottom state. The atBottom transition is
+  // only reported during/just-after a user touch — otherwise viewport
+  // changes from the keyboard showing/hiding would themselves toggle the
+  // state and cause the keyboard to oscillate.
+  const onScrollGestureRef = useRef(onScrollGesture);
+  onScrollGestureRef.current = onScrollGesture;
+  const onAtBottomChangeRef = useRef(onAtBottomChange);
+  onAtBottomChangeRef.current = onAtBottomChange;
+  const atBottomRef = useRef(true);
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    const BOTTOM_THRESHOLD = 24;
+    const computeAtBottom = () => el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_THRESHOLD;
+
+    let userTouching = false;
+    let userTouchedUntil = 0; // timestamp; treat events within this window as user-driven
+    let startY: number | null = null;
+    let gestureFired = false;
+
+    let cooldownUntil = 0;
+    const reportIfChanged = () => {
+      if (Date.now() < cooldownUntil) return;
+      const atBottom = computeAtBottom();
+      if (atBottom === atBottomRef.current) return;
+      atBottomRef.current = atBottom;
+      cooldownUntil = Date.now() + 600; // ignore rapid layout-shift re-toggles
+      onAtBottomChangeRef.current?.(atBottom);
+    };
+
+    const onScroll = () => {
+      // Only react when the user is (or recently was) touching, to avoid
+      // feedback loops with keyboard show/hide layout shifts.
+      if (!userTouching && Date.now() > userTouchedUntil) return;
+      reportIfChanged();
+    };
+    const onStart = (e: TouchEvent) => {
+      userTouching = true;
+      if (e.touches.length !== 1) { startY = null; gestureFired = false; return; }
+      startY = e.touches[0].clientY;
+      gestureFired = false;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (gestureFired || startY === null || e.touches.length !== 1) return;
+      const dy = Math.abs(e.touches[0].clientY - startY);
+      if (dy > 5) {
+        gestureFired = true;
+        onScrollGestureRef.current?.();
+      }
+    };
+    const onEnd = () => {
+      userTouching = false;
+      userTouchedUntil = Date.now() + 350; // momentum scroll window
+      startY = null;
+      gestureFired = false;
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: true });
+    el.addEventListener('touchend', onEnd);
+    el.addEventListener('touchcancel', onEnd);
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+    };
+  }, []);
+
   const virtualizer = useVirtualizer({
     count: messages.length,
     getScrollElement: () => parentRef.current,
@@ -573,43 +653,64 @@ export function ConversationViewer({
 
   return (
     <div className={containerClass}>
-      {/* Floating font-size controls (bottom-left) — kept away from the
-          pane header's right-side icons. Hidden in modal mode. */}
+      {/* Floating font-size controls (bottom-left) — only visible when the
+          user is actively changing the size (via pinch / button) or hovering
+          the bottom-left hot-zone on desktop. Tap the small "Aa" badge on
+          touch devices to reveal. */}
       {inline && (
-        <div className="absolute bottom-2 left-2 z-30 flex items-center gap-1 pointer-events-none">
-          {showFontSizeIndicator && (
-            <div className="bg-black/70 text-white text-[11px] font-medium px-2 py-1 rounded shadow pointer-events-none">
+        <div className="absolute bottom-2 left-2 z-30 group">
+          {/* Tiny always-visible trigger */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowFontSizeIndicator(true);
+              if (fontSizeIndicatorTimerRef.current) clearTimeout(fontSizeIndicatorTimerRef.current);
+              fontSizeIndicatorTimerRef.current = window.setTimeout(() => setShowFontSizeIndicator(false), 4000);
+            }}
+            className={`w-6 h-6 rounded text-[10px] font-medium transition-opacity flex items-center justify-center bg-black/40 text-zinc-500 hover:text-zinc-300 ${
+              showFontSizeIndicator ? 'opacity-0' : 'opacity-60 hover:opacity-100'
+            }`}
+            aria-label="Show font size controls"
+            title="Font size"
+          >
+            Aa
+          </button>
+          {/* Full controls — shown on hover (desktop) or while indicator active */}
+          <div className={`absolute bottom-0 left-0 flex items-center gap-1 transition-opacity duration-150 ${
+            showFontSizeIndicator ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'
+          }`}>
+            <div className="flex items-center bg-black/70 backdrop-blur-sm rounded-md border border-white/[0.08]">
+              <button
+                type="button"
+                onClick={() => changeFontSize(-1)}
+                className="w-7 h-7 text-zinc-300 hover:text-white hover:bg-white/[0.08] flex items-center justify-center transition-colors text-sm"
+                aria-label="Decrease font size"
+                title="Decrease font size"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                onClick={resetFontSize}
+                className="px-1.5 h-7 text-[10px] text-zinc-400 hover:text-white hover:bg-white/[0.08] border-x border-white/[0.06] transition-colors"
+                aria-label="Reset font size"
+                title="Reset font size"
+              >
+                A
+              </button>
+              <button
+                type="button"
+                onClick={() => changeFontSize(1)}
+                className="w-7 h-7 text-zinc-300 hover:text-white hover:bg-white/[0.08] flex items-center justify-center transition-colors text-sm"
+                aria-label="Increase font size"
+                title="Increase font size"
+              >
+                ＋
+              </button>
+            </div>
+            <div className="bg-black/70 text-white text-[11px] font-medium px-2 py-1 rounded shadow">
               {fontSize}px
             </div>
-          )}
-          <div className="flex items-center bg-black/60 backdrop-blur-sm rounded-md border border-white/[0.08] pointer-events-auto">
-            <button
-              type="button"
-              onClick={() => changeFontSize(-1)}
-              className="w-7 h-7 text-zinc-300 hover:text-white hover:bg-white/[0.08] flex items-center justify-center transition-colors text-sm"
-              aria-label="Decrease font size"
-              title="Decrease font size"
-            >
-              −
-            </button>
-            <button
-              type="button"
-              onClick={resetFontSize}
-              className="px-1.5 h-7 text-[10px] text-zinc-400 hover:text-white hover:bg-white/[0.08] border-x border-white/[0.06] transition-colors"
-              aria-label="Reset font size"
-              title="Reset font size"
-            >
-              A
-            </button>
-            <button
-              type="button"
-              onClick={() => changeFontSize(1)}
-              className="w-7 h-7 text-zinc-300 hover:text-white hover:bg-white/[0.08] flex items-center justify-center transition-colors text-sm"
-              aria-label="Increase font size"
-              title="Increase font size"
-            >
-              ＋
-            </button>
           </div>
         </div>
       )}

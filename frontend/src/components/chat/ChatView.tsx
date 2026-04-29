@@ -16,6 +16,11 @@ interface ChatViewProps {
    *  (used on desktop where there's no soft keyboard / Terminal InputBar). */
   showComposer?: boolean;
   paneId?: string;
+  /** Notified when the user starts a scroll gesture — parent can collapse
+   *  the keyboard / input bar to expand the visible area. */
+  onScrollGesture?: () => void;
+  /** Notified when the conversation transitions to/from the bottom. */
+  onAtBottomChange?: (atBottom: boolean) => void;
 }
 
 export function ChatView({
@@ -27,6 +32,8 @@ export function ChatView({
   bottomPadding,
   showComposer = false,
   paneId,
+  onScrollGesture,
+  onAtBottomChange,
 }: ChatViewProps) {
   const { t } = useTranslation();
   const { messages, isReady, ccSessionId } = useConversationStream({
@@ -68,6 +75,8 @@ export function ChatView({
       onClose={() => { /* close handled by parent */ }}
       scrollToBottom
       inline={inline}
+      onScrollGesture={onScrollGesture}
+      onAtBottomChange={onAtBottomChange}
     />
   );
 

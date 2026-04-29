@@ -492,6 +492,7 @@ function TerminalPane({
             // the active pane (same as Terminal mode) — no in-view composer.
             showComposer={!isTablet}
             paneId={controlModeContext.getControlConfig(paneId)?.paneId}
+            theme={session?.theme}
           />
         )}
         {sessionId ? (

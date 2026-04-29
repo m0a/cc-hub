@@ -8,6 +8,7 @@ import { SessionList } from './components/SessionList';
 import { DesktopLayout } from './components/DesktopLayout';
 import { FileViewer } from './components/files/FileViewer';
 import { ChatView } from './components/chat/ChatView';
+import { getTerminalThemes } from './components/terminal-themes';
 import { LoginForm } from './components/LoginForm';
 import { Onboarding, useOnboarding } from './components/Onboarding';
 import { useAuth } from './hooks/useAuth';
@@ -929,8 +930,9 @@ export function App() {
             // Keeping ChatView mounted preserves the conversation subscription so
             // messages are pre-loaded by the time the user toggles to chat mode —
             // avoiding the black/loading flash on every open.
+            const themeBg = getTerminalThemes()[activeSession.theme || 'default'].background;
             const chatOverlay = activeSession.ccSessionId ? (
-              <div className="h-full flex flex-col bg-[#0a0a0a]">
+              <div className="h-full flex flex-col" style={{ backgroundColor: themeBg }}>
                 <div
                   className="flex items-center gap-2 px-3 py-2 border-b border-white/[0.06] shrink-0"
                   style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 8px)' }}
@@ -973,6 +975,7 @@ export function App() {
                     subtitle={activeSession.currentPath?.replace(/^\/home\/[^/]+\//, '~/')}
                     inline
                     enabled
+                    theme={activeSession.theme}
                     onScrollGesture={() => mobileTerminalRef.current?.hideKeyboard()}
                     onAtBottomChange={(atBottom) => {
                       if (atBottom) mobileTerminalRef.current?.showKeyboard();

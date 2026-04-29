@@ -3,6 +3,8 @@ import { ConversationViewer } from '../ConversationViewer';
 import { useConversationStream } from '../../hooks/useConversationStream';
 import { useInputEcho } from '../../hooks/useInputEcho';
 import { ChatComposer } from './ChatComposer';
+import { getTerminalThemes } from '../terminal-themes';
+import type { SessionTheme } from '../../../../shared/types';
 
 interface ChatViewProps {
   sessionId: string;
@@ -21,6 +23,8 @@ interface ChatViewProps {
   onScrollGesture?: () => void;
   /** Notified when the conversation transitions to/from the bottom. */
   onAtBottomChange?: (atBottom: boolean) => void;
+  /** Session theme — propagated to ConversationViewer for matching bg color. */
+  theme?: SessionTheme;
 }
 
 export function ChatView({
@@ -34,6 +38,7 @@ export function ChatView({
   paneId,
   onScrollGesture,
   onAtBottomChange,
+  theme,
 }: ChatViewProps) {
   const { t } = useTranslation();
   const { messages, isReady, ccSessionId } = useConversationStream({
@@ -45,11 +50,13 @@ export function ChatView({
   const resolvedTitle = title ?? t('conversation.claude');
   const resolvedSubtitle = subtitle ?? (ccSessionId ? `cc:${ccSessionId.slice(0, 8)}` : undefined);
 
+  const themeBg = getTerminalThemes()[theme || 'default'].background;
+
   // Avoid showing a "Loading..." flash every time the view opens. Until the
   // initial conversation arrives, render an empty container.
   if (!isReady && messages.length === 0) {
-    const emptyClass = inline ? 'h-full bg-[#0a0a0a]' : 'fixed inset-0 z-50 bg-[#0a0a0a]';
-    return <div className={emptyClass} />;
+    const emptyClass = inline ? 'h-full' : 'fixed inset-0 z-50';
+    return <div className={emptyClass} style={{ backgroundColor: themeBg }} />;
   }
 
   const composer = showComposer ? (
@@ -60,7 +67,10 @@ export function ChatView({
   // is currently typing via FloatingKeyboard / InputBar (terminal echo
   // surrogate). Only relevant when the in-view composer is not present.
   const echoLine = !composer ? (
-    <div className="shrink-0 px-3 py-1.5 border-t border-white/[0.06] bg-[#0a0a0a] font-mono text-[13px] text-zinc-300 whitespace-pre overflow-x-auto min-h-[32px] flex items-center">
+    <div
+      className="shrink-0 px-3 py-1.5 border-t border-white/[0.06] font-mono text-[13px] text-zinc-300 whitespace-pre overflow-x-auto min-h-[32px] flex items-center"
+      style={{ backgroundColor: themeBg }}
+    >
       <span className="text-blue-400/70 mr-2 select-none">{'>'}</span>
       {echo ? <span>{echo}<span className="inline-block w-[8px] h-[14px] bg-zinc-300 ml-[1px] align-middle animate-pulse" /></span> : <span className="text-zinc-700">入力待ち…</span>}
     </div>
@@ -77,6 +87,7 @@ export function ChatView({
       inline={inline}
       onScrollGesture={onScrollGesture}
       onAtBottomChange={onAtBottomChange}
+      theme={theme}
     />
   );
 

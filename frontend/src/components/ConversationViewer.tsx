@@ -4,7 +4,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import type { ConversationMessage, ToolUseInfo, ToolResultInfo } from '../../../shared/types';
+import type { ConversationMessage, ToolUseInfo, ToolResultInfo, SessionTheme } from '../../../shared/types';
+import { getTerminalThemes } from './terminal-themes';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -269,6 +270,8 @@ interface ConversationViewerProps {
    *  parent uses this to hide the keyboard while the user is reading
    *  history and re-show it when they return to the latest message. */
   onAtBottomChange?: (atBottom: boolean) => void;
+  /** Session theme — used to color the background to match the Terminal. */
+  theme?: SessionTheme;
 }
 
 // Markdown components configuration
@@ -414,6 +417,7 @@ export function ConversationViewer({
   inline = false,
   onScrollGesture,
   onAtBottomChange,
+  theme,
 }: ConversationViewerProps) {
   const { t } = useTranslation();
   const parentRef = useRef<HTMLDivElement>(null);
@@ -648,11 +652,12 @@ export function ConversationViewer({
 
   // Container class based on inline mode
   const containerClass = inline
-    ? 'h-full flex flex-col bg-[#0a0a0a] relative'
-    : 'fixed inset-0 z-50 flex flex-col bg-[#0a0a0a]';
+    ? 'h-full flex flex-col relative'
+    : 'fixed inset-0 z-50 flex flex-col';
+  const themeBg = getTerminalThemes()[theme || 'default'].background;
 
   return (
-    <div className={containerClass}>
+    <div className={containerClass} style={{ backgroundColor: themeBg }}>
       {/* Floating font-size controls (bottom-left) — only visible when the
           user is actively changing the size (via pinch / button) or hovering
           the bottom-left hot-zone on desktop. Tap the small "Aa" badge on
@@ -769,7 +774,7 @@ export function ConversationViewer({
 
       {/* Footer - only show in modal mode */}
       {!inline && (
-        <div className="flex items-center px-3 py-2 border-t border-white/[0.06] bg-[#0a0a0a] shrink-0">
+        <div className="flex items-center px-3 py-2 border-t border-white/[0.06] shrink-0" style={{ backgroundColor: themeBg }}>
           <button
             onClick={onClose}
             className="p-1.5 text-zinc-500 hover:text-zinc-300 transition-colors"

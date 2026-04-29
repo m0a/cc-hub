@@ -56,6 +56,25 @@ let sharedReconnectTimeout: number | null = null;
 let subscribedSession: string | null = null;
 let wsReady = false; // true after server sends 'ready'
 
+// Conversation subscriptions (multiple sessions can be subscribed at once)
+const subscribedConversations = new Set<string>();
+const pendingConversationSubs = new Set<string>();
+const pendingConversationUnsubs = new Set<string>();
+
+function flushConversationPending() {
+  if (!sharedWs || sharedWs.readyState !== WebSocket.OPEN || !wsReady) return;
+  for (const sid of pendingConversationUnsubs) {
+    sharedWs.send(JSON.stringify({ type: 'unsubscribe-conversation', sessionId: sid }));
+    subscribedConversations.delete(sid);
+  }
+  pendingConversationUnsubs.clear();
+  for (const sid of pendingConversationSubs) {
+    sharedWs.send(JSON.stringify({ type: 'subscribe-conversation', sessionId: sid }));
+    subscribedConversations.add(sid);
+  }
+  pendingConversationSubs.clear();
+}
+
 // Current hook instance's callbacks (only one active at a time)
 type MuxCallbacks = {
   onPaneOutput?: (paneId: string, data: Uint8Array) => void;
@@ -198,6 +217,11 @@ function ensureConnection(token?: string | null) {
         if (currentSession) {
           subscribeToSession(currentSession, true);
         }
+        // Re-subscribe any conversation streams that were active before reconnect
+        for (const sid of subscribedConversations) {
+          pendingConversationSubs.add(sid);
+        }
+        flushConversationPending();
         break;
       }
       case 'subscribed': {
@@ -264,6 +288,13 @@ function ensureConnection(token?: string | null) {
         );
         break;
       }
+      case 'conversation-subscribed':
+      case 'conversation-unsubscribed':
+      case 'initial-conversation':
+      case 'conversation-update': {
+        window.dispatchEvent(new CustomEvent('cchub-conversation', { detail: msg }));
+        break;
+      }
     }
   };
 
@@ -310,6 +341,59 @@ function registerVisibilityListener() {
       ensureConnection();
     }
   });
+}
+
+// =============================================================================
+// Conversation stream API (shared singleton, multiple subscribers supported)
+// =============================================================================
+
+export function subscribeConversation(sessionId: string, token?: string | null) {
+  pendingConversationUnsubs.delete(sessionId);
+  if (sharedWs?.readyState === WebSocket.OPEN && wsReady) {
+    if (!subscribedConversations.has(sessionId)) {
+      sharedWs.send(JSON.stringify({ type: 'subscribe-conversation', sessionId }));
+      subscribedConversations.add(sessionId);
+    } else {
+      // Already subscribed — re-request initial messages
+      sharedWs.send(JSON.stringify({ type: 'subscribe-conversation', sessionId }));
+    }
+  } else {
+    pendingConversationSubs.add(sessionId);
+    ensureConnection(token);
+  }
+}
+
+export function unsubscribeConversation(sessionId: string) {
+  pendingConversationSubs.delete(sessionId);
+  subscribedConversations.delete(sessionId);
+  if (sharedWs?.readyState === WebSocket.OPEN && wsReady) {
+    sharedWs.send(JSON.stringify({ type: 'unsubscribe-conversation', sessionId }));
+  } else {
+    pendingConversationUnsubs.add(sessionId);
+  }
+}
+
+/**
+ * Send terminal input to a specific pane on a session, regardless of which session
+ * the active terminal hook is subscribed to. Used by ChatView's composer.
+ */
+export function sendTerminalInput(sessionId: string, paneId: string, data: string): boolean {
+  if (sharedWs?.readyState !== WebSocket.OPEN || !wsReady) return false;
+  const bytes = new TextEncoder().encode(data);
+  const base64 = uint8ArrayToBase64(bytes);
+  sharedWs.send(JSON.stringify({ type: 'input', sessionId, paneId, data: base64 }));
+  dispatchInputEcho(sessionId, paneId, data);
+  return true;
+}
+
+/**
+ * Notify listeners that input was sent to a pane. Used by chat views to show a
+ * local echo of in-progress typing when the destination terminal is hidden.
+ */
+export function dispatchInputEcho(sessionId: string, paneId: string, data: string) {
+  window.dispatchEvent(new CustomEvent('cchub-input-echo', {
+    detail: { sessionId, paneId, data },
+  }));
 }
 
 // =============================================================================
@@ -390,6 +474,7 @@ export function useMultiplexedTerminal(options: UseMultiplexedTerminalOptions): 
     const bytes = new TextEncoder().encode(data);
     const base64 = uint8ArrayToBase64(bytes);
     sendSessionMessage({ type: 'input', paneId, data: base64 });
+    if (subscribedSession) dispatchInputEcho(subscribedSession, paneId, data);
   }, []);
 
   const resize = useCallback((cols: number, rows: number) => {

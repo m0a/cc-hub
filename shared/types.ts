@@ -426,6 +426,8 @@ export type ControlServerMessage =
 export type MuxClientMessage =
   | { type: 'subscribe'; sessionId: string }
   | { type: 'unsubscribe'; sessionId: string }
+  | { type: 'subscribe-conversation'; sessionId: string }
+  | { type: 'unsubscribe-conversation'; sessionId: string }
   | (ControlClientMessage & { sessionId: string });
 
 // Server → Client messages for /ws/mux
@@ -433,6 +435,10 @@ export type MuxServerMessage =
   | { type: 'subscribed'; sessionId: string }
   | { type: 'unsubscribed'; sessionId: string }
   | { type: 'sessions-updated'; sessions: SessionResponse[] }
+  | { type: 'conversation-subscribed'; sessionId: string; ccSessionId: string | null }
+  | { type: 'conversation-unsubscribed'; sessionId: string }
+  | { type: 'initial-conversation'; sessionId: string; messages: ConversationMessage[] }
+  | { type: 'conversation-update'; sessionId: string; messages: ConversationMessage[] }
   | (ControlServerMessage & { sessionId: string });
 
 // Binary frame format for mux output:

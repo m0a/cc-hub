@@ -8,6 +8,39 @@ import type { ConversationMessage, ToolUseInfo, ToolResultInfo } from '../../../
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+// Conversation font size (shared across all sessions)
+const CV_FONT_SIZE_KEY = 'cchub-conversation-font-size';
+const CV_DEFAULT_FONT_SIZE = 13;
+const CV_MIN_FONT_SIZE = 9;
+const CV_MAX_FONT_SIZE = 24;
+
+function loadCvFontSize(): number {
+  try {
+    const saved = localStorage.getItem(CV_FONT_SIZE_KEY);
+    if (saved) {
+      const n = parseInt(saved, 10);
+      if (!Number.isNaN(n) && n >= CV_MIN_FONT_SIZE && n <= CV_MAX_FONT_SIZE) return n;
+    }
+  } catch {
+    // ignore
+  }
+  return CV_DEFAULT_FONT_SIZE;
+}
+
+function saveCvFontSize(n: number) {
+  try {
+    localStorage.setItem(CV_FONT_SIZE_KEY, String(n));
+  } catch {
+    // ignore
+  }
+}
+
+function getPinchDistance(touches: TouchList): number {
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 // Convert [Image: source: /tmp/cchub-images/xxx.png] to actual image
 function processImageReferences(content: string): string {
   return content.replace(
@@ -37,17 +70,17 @@ function CollapsibleSection({
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   return (
-    <div className="my-1">
+    <div className="my-0.5">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 py-1 text-[11px] text-zinc-600 hover:text-zinc-400"
+        className="flex items-center gap-1.5 py-0.5 text-[length:var(--cv-fs-meta,11px)] text-zinc-600 hover:text-zinc-400"
       >
         <ChevronRight className={`w-3 h-3 shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
         <span>{icon}</span>
         <span className="truncate">{title}</span>
       </button>
       {isOpen && (
-        <div className="ml-4 pl-2 border-l border-white/[0.06] text-[11px] text-zinc-500 overflow-x-auto">
+        <div className="ml-4 pl-2 border-l border-white/[0.06] text-[length:var(--cv-fs-meta,11px)] text-zinc-500 overflow-x-auto">
           {children}
         </div>
       )}
@@ -144,15 +177,29 @@ function ToolResultDisplay({ results }: { results: ToolResultInfo[] }) {
             )}
             {hasImages && (
               <div className="flex flex-wrap gap-2 mt-1">
-                {result.images?.map((img, i) => (
-                  <img
-                    key={i}
-                    src={`data:${img.mediaType};base64,${img.data}`}
-                    alt="Tool result"
-                    className="max-w-[280px] h-auto rounded border border-white/[0.06]"
-                    loading="lazy"
-                  />
-                ))}
+                {result.images?.map((img, i) => {
+                  const src = `data:${img.mediaType};base64,${img.data}`;
+                  return (
+                    <img
+                      key={i}
+                      src={src}
+                      alt="Tool result"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.dispatchEvent(new CustomEvent('cchub-image-zoom', { detail: { src } }));
+                      }}
+                      onTouchEnd={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.dispatchEvent(new CustomEvent('cchub-image-zoom', { detail: { src } }));
+                      }}
+                      className="max-w-[280px] h-auto rounded border border-white/[0.06] cursor-zoom-in"
+                      loading="lazy"
+                      draggable={false}
+                    />
+                  );
+                })}
               </div>
             )}
             {!hasOutput && !hasImages && (
@@ -214,12 +261,20 @@ interface ConversationViewerProps {
   isActive?: boolean;  // Whether the session is actively running
   onRefresh?: () => void;  // Callback to refresh conversation
   inline?: boolean;  // If true, render inline instead of fullscreen modal
+  /** Fires once per touch gesture when the user starts scrolling. Used to
+   *  collapse the input bar / soft keyboard so more of the conversation is
+   *  visible (mirrors Terminal's behavior). */
+  onScrollGesture?: () => void;
+  /** Fires when the scroll position transitions to / from the bottom. The
+   *  parent uses this to hide the keyboard while the user is reading
+   *  history and re-show it when they return to the latest message. */
+  onAtBottomChange?: (atBottom: boolean) => void;
 }
 
 // Markdown components configuration
 const markdownComponents = {
   pre: ({ children }: { children?: React.ReactNode }) => (
-    <pre className="bg-white/[0.03] p-2 rounded overflow-x-auto my-1.5 text-[11px]">
+    <pre className="bg-white/[0.03] px-2 py-1 rounded overflow-x-auto my-1 text-[length:var(--cv-fs-meta,11px)]">
       {children}
     </pre>
   ),
@@ -231,13 +286,13 @@ const markdownComponents = {
       <code className="bg-white/[0.06] px-1 rounded text-zinc-300">{children}</code>
     );
   },
-  p: ({ children }: { children?: React.ReactNode }) => <p className="my-1">{children}</p>,
-  ul: ({ children }: { children?: React.ReactNode }) => <ul className="list-disc ml-4 my-1">{children}</ul>,
-  ol: ({ children }: { children?: React.ReactNode }) => <ol className="list-decimal ml-4 my-1">{children}</ol>,
-  li: ({ children }: { children?: React.ReactNode }) => <li className="my-0.5">{children}</li>,
-  h1: ({ children }: { children?: React.ReactNode }) => <h1 className="text-lg font-bold my-2">{children}</h1>,
-  h2: ({ children }: { children?: React.ReactNode }) => <h2 className="text-base font-bold my-2">{children}</h2>,
-  h3: ({ children }: { children?: React.ReactNode }) => <h3 className="text-sm font-bold my-1">{children}</h3>,
+  p: ({ children }: { children?: React.ReactNode }) => <p className="my-0.5">{children}</p>,
+  ul: ({ children }: { children?: React.ReactNode }) => <ul className="list-disc ml-4 my-0.5">{children}</ul>,
+  ol: ({ children }: { children?: React.ReactNode }) => <ol className="list-decimal ml-4 my-0.5">{children}</ol>,
+  li: ({ children }: { children?: React.ReactNode }) => <li className="my-0">{children}</li>,
+  h1: ({ children }: { children?: React.ReactNode }) => <h1 className="text-lg font-bold my-1">{children}</h1>,
+  h2: ({ children }: { children?: React.ReactNode }) => <h2 className="text-base font-bold my-1">{children}</h2>,
+  h3: ({ children }: { children?: React.ReactNode }) => <h3 className="text-sm font-bold my-0.5">{children}</h3>,
   strong: ({ children }: { children?: React.ReactNode }) => <strong className="font-bold text-th-text">{children}</strong>,
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
     <a href={href} className="text-blue-400 underline" target="_blank" rel="noopener noreferrer">
@@ -245,12 +300,12 @@ const markdownComponents = {
     </a>
   ),
   blockquote: ({ children }: { children?: React.ReactNode }) => (
-    <blockquote className="border-l-2 border-gray-500 pl-2 my-2 text-th-text-secondary">
+    <blockquote className="border-l-2 border-gray-500 pl-2 my-1 text-th-text-secondary">
       {children}
     </blockquote>
   ),
   table: ({ children }: { children?: React.ReactNode }) => (
-    <div className="overflow-x-auto my-2">
+    <div className="overflow-x-auto my-1">
       <table className="min-w-full text-xs border border-th-border">{children}</table>
     </div>
   ),
@@ -264,8 +319,21 @@ const markdownComponents = {
     <img
       src={src}
       alt={alt || 'Screenshot'}
-      className="max-w-[280px] h-auto rounded my-2 border border-white/[0.06]"
+      onClick={(e) => {
+        if (!src) return;
+        e.preventDefault();
+        e.stopPropagation();
+        window.dispatchEvent(new CustomEvent('cchub-image-zoom', { detail: { src } }));
+      }}
+      onTouchEnd={(e) => {
+        if (!src) return;
+        e.preventDefault();
+        e.stopPropagation();
+        window.dispatchEvent(new CustomEvent('cchub-image-zoom', { detail: { src } }));
+      }}
+      className="max-w-[280px] h-auto rounded my-2 border border-white/[0.06] cursor-zoom-in"
       loading="lazy"
+      draggable={false}
     />
   ),
 };
@@ -299,8 +367,8 @@ const MessageItem = memo(function MessageItem({ msg }: { msg: ConversationMessag
   const roleColor = msg.role === 'user' ? 'text-blue-400' : isSummaryMessage ? 'text-amber-400' : 'text-zinc-500';
 
   return (
-    <div className="py-2">
-      <div className={`text-[11px] font-medium ${roleColor} mb-1`}>
+    <div className="py-1">
+      <div className={`text-[length:var(--cv-fs-meta,11px)] font-medium ${roleColor} mb-0.5`}>
         {displayRole}
       </div>
 
@@ -309,7 +377,7 @@ const MessageItem = memo(function MessageItem({ msg }: { msg: ConversationMessag
 
       {/* Main text content */}
       {msg.content && (
-        <div className="text-[13px] text-zinc-300 markdown-content leading-relaxed">
+        <div className="text-zinc-300 markdown-content leading-snug">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={markdownComponents}
@@ -344,10 +412,170 @@ export function ConversationViewer({
   isActive = false,
   onRefresh,
   inline = false,
+  onScrollGesture,
+  onAtBottomChange,
 }: ConversationViewerProps) {
   const { t } = useTranslation();
   const parentRef = useRef<HTMLDivElement>(null);
   const [prevMessageCount, setPrevMessageCount] = useState(0);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+
+  // Inline images (rendered by markdownComponents) dispatch this event when
+  // tapped. Listening at the component level (rather than event delegation
+  // on the scroll container) sidesteps cases where parent handlers swallow
+  // the click on touch devices.
+  useEffect(() => {
+    const onZoom = (e: Event) => {
+      const detail = (e as CustomEvent<{ src: string }>).detail;
+      if (detail?.src) setLightboxSrc(detail.src);
+    };
+    window.addEventListener('cchub-image-zoom', onZoom);
+    return () => window.removeEventListener('cchub-image-zoom', onZoom);
+  }, []);
+
+  // Esc to close lightbox
+  useEffect(() => {
+    if (!lightboxSrc) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightboxSrc(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightboxSrc]);
+  const [fontSize, setFontSize] = useState<number>(loadCvFontSize);
+  const [showFontSizeIndicator, setShowFontSizeIndicator] = useState(false);
+  const fontSizeIndicatorTimerRef = useRef<number | null>(null);
+
+  const changeFontSize = useCallback((delta: number) => {
+    setFontSize(prev => {
+      const next = Math.max(CV_MIN_FONT_SIZE, Math.min(CV_MAX_FONT_SIZE, prev + delta));
+      if (next !== prev) saveCvFontSize(next);
+      return next;
+    });
+  }, []);
+  const resetFontSize = useCallback(() => {
+    setFontSize(CV_DEFAULT_FONT_SIZE);
+    saveCvFontSize(CV_DEFAULT_FONT_SIZE);
+  }, []);
+
+  // Briefly show the size indicator after any change
+  useEffect(() => {
+    setShowFontSizeIndicator(true);
+    if (fontSizeIndicatorTimerRef.current) clearTimeout(fontSizeIndicatorTimerRef.current);
+    fontSizeIndicatorTimerRef.current = window.setTimeout(() => setShowFontSizeIndicator(false), 1200);
+    return () => {
+      if (fontSizeIndicatorTimerRef.current) clearTimeout(fontSizeIndicatorTimerRef.current);
+    };
+  }, [fontSize]);
+
+  // Pinch-zoom on the message scroll container to change font size
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    let pinch: { d: number; size: number } | null = null;
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        pinch = { d: getPinchDistance(e.touches), size: fontSize };
+      }
+    };
+    const onMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && pinch) {
+        e.preventDefault();
+        const scale = getPinchDistance(e.touches) / pinch.d;
+        const next = Math.round(pinch.size * scale);
+        const clamped = Math.max(CV_MIN_FONT_SIZE, Math.min(CV_MAX_FONT_SIZE, next));
+        setFontSize(prev => (prev === clamped ? prev : clamped));
+      }
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2 && pinch) {
+        pinch = null;
+        // Persist the final size after pinch ends
+        setFontSize(prev => { saveCvFontSize(prev); return prev; });
+      }
+    };
+    el.addEventListener('touchstart', onStart, { passive: false });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd);
+    el.addEventListener('touchcancel', onEnd);
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+    };
+  }, [fontSize]);
+
+  // Track scroll gestures and at-bottom state. The atBottom transition is
+  // only reported during/just-after a user touch — otherwise viewport
+  // changes from the keyboard showing/hiding would themselves toggle the
+  // state and cause the keyboard to oscillate.
+  const onScrollGestureRef = useRef(onScrollGesture);
+  onScrollGestureRef.current = onScrollGesture;
+  const onAtBottomChangeRef = useRef(onAtBottomChange);
+  onAtBottomChangeRef.current = onAtBottomChange;
+  const atBottomRef = useRef(true);
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    const BOTTOM_THRESHOLD = 24;
+    const computeAtBottom = () => el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_THRESHOLD;
+
+    let userTouching = false;
+    let userTouchedUntil = 0; // timestamp; treat events within this window as user-driven
+    let startY: number | null = null;
+    let gestureFired = false;
+
+    let cooldownUntil = 0;
+    const reportIfChanged = () => {
+      if (Date.now() < cooldownUntil) return;
+      const atBottom = computeAtBottom();
+      if (atBottom === atBottomRef.current) return;
+      atBottomRef.current = atBottom;
+      cooldownUntil = Date.now() + 600; // ignore rapid layout-shift re-toggles
+      onAtBottomChangeRef.current?.(atBottom);
+    };
+
+    const onScroll = () => {
+      // Only react when the user is (or recently was) touching, to avoid
+      // feedback loops with keyboard show/hide layout shifts.
+      if (!userTouching && Date.now() > userTouchedUntil) return;
+      reportIfChanged();
+    };
+    const onStart = (e: TouchEvent) => {
+      userTouching = true;
+      if (e.touches.length !== 1) { startY = null; gestureFired = false; return; }
+      startY = e.touches[0].clientY;
+      gestureFired = false;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (gestureFired || startY === null || e.touches.length !== 1) return;
+      const dy = Math.abs(e.touches[0].clientY - startY);
+      if (dy > 5) {
+        gestureFired = true;
+        onScrollGestureRef.current?.();
+      }
+    };
+    const onEnd = () => {
+      userTouching = false;
+      userTouchedUntil = Date.now() + 350; // momentum scroll window
+      startY = null;
+      gestureFired = false;
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: true });
+    el.addEventListener('touchend', onEnd);
+    el.addEventListener('touchcancel', onEnd);
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+    };
+  }, []);
 
   const virtualizer = useVirtualizer({
     count: messages.length,
@@ -382,6 +610,29 @@ export function ConversationViewer({
     }
   }, [messages.length, isLoading, scrollToBottom, prevMessageCount, scrollToEnd]);
 
+  // Snap to bottom when the container becomes visible (e.g. unhidden after
+  // mounting under display:none). Without this, scrollToEnd above runs while
+  // the parent has 0 height and silently no-ops.
+  const messagesLenRef = useRef(messages.length);
+  messagesLenRef.current = messages.length;
+  useEffect(() => {
+    if (!scrollToBottom) return;
+    const el = parentRef.current;
+    if (!el) return;
+    let prevHeight = el.clientHeight;
+    const ro = new ResizeObserver(() => {
+      const h = el.clientHeight;
+      if (h > 0 && prevHeight === 0 && messagesLenRef.current > 0) {
+        requestAnimationFrame(() => {
+          virtualizer.scrollToIndex(messagesLenRef.current - 1, { align: 'end' });
+        });
+      }
+      prevHeight = h;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [scrollToBottom, virtualizer]);
+
   // Auto-refresh when session is active (silently in background)
   useEffect(() => {
     if (!isActive || !onRefresh) return;
@@ -397,16 +648,83 @@ export function ConversationViewer({
 
   // Container class based on inline mode
   const containerClass = inline
-    ? 'h-full flex flex-col bg-[#0a0a0a]'
+    ? 'h-full flex flex-col bg-[#0a0a0a] relative'
     : 'fixed inset-0 z-50 flex flex-col bg-[#0a0a0a]';
 
   return (
     <div className={containerClass}>
+      {/* Floating font-size controls (bottom-left) — only visible when the
+          user is actively changing the size (via pinch / button) or hovering
+          the bottom-left hot-zone on desktop. Tap the small "Aa" badge on
+          touch devices to reveal. */}
+      {inline && (
+        <div className="absolute bottom-2 left-2 z-30 group">
+          {/* Tiny always-visible trigger */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowFontSizeIndicator(true);
+              if (fontSizeIndicatorTimerRef.current) clearTimeout(fontSizeIndicatorTimerRef.current);
+              fontSizeIndicatorTimerRef.current = window.setTimeout(() => setShowFontSizeIndicator(false), 4000);
+            }}
+            className={`w-6 h-6 rounded text-[10px] font-medium transition-opacity flex items-center justify-center bg-black/40 text-zinc-500 hover:text-zinc-300 ${
+              showFontSizeIndicator ? 'opacity-0' : 'opacity-60 hover:opacity-100'
+            }`}
+            aria-label="Show font size controls"
+            title="Font size"
+          >
+            Aa
+          </button>
+          {/* Full controls — shown on hover (desktop) or while indicator active */}
+          <div className={`absolute bottom-0 left-0 flex items-center gap-1 transition-opacity duration-150 ${
+            showFontSizeIndicator ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'
+          }`}>
+            <div className="flex items-center bg-black/70 backdrop-blur-sm rounded-md border border-white/[0.08]">
+              <button
+                type="button"
+                onClick={() => changeFontSize(-1)}
+                className="w-7 h-7 text-zinc-300 hover:text-white hover:bg-white/[0.08] flex items-center justify-center transition-colors text-sm"
+                aria-label="Decrease font size"
+                title="Decrease font size"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                onClick={resetFontSize}
+                className="px-1.5 h-7 text-[10px] text-zinc-400 hover:text-white hover:bg-white/[0.08] border-x border-white/[0.06] transition-colors"
+                aria-label="Reset font size"
+                title="Reset font size"
+              >
+                A
+              </button>
+              <button
+                type="button"
+                onClick={() => changeFontSize(1)}
+                className="w-7 h-7 text-zinc-300 hover:text-white hover:bg-white/[0.08] flex items-center justify-center transition-colors text-sm"
+                aria-label="Increase font size"
+                title="Increase font size"
+              >
+                ＋
+              </button>
+            </div>
+            <div className="bg-black/70 text-white text-[11px] font-medium px-2 py-1 rounded shadow">
+              {fontSize}px
+            </div>
+          </div>
+        </div>
+      )}
       {/* Messages */}
       <div
         ref={parentRef}
-        className="flex-1 overflow-y-auto p-3 select-text overscroll-contain"
-        style={{ WebkitUserSelect: 'text', userSelect: 'text', WebkitTouchCallout: 'default' }}
+        className="flex-1 overflow-y-auto px-3 py-1 select-text overscroll-contain relative"
+        style={{
+          WebkitUserSelect: 'text',
+          userSelect: 'text',
+          WebkitTouchCallout: 'default',
+          fontSize: `${fontSize}px`,
+          ['--cv-fs-meta' as never]: `${Math.max(8, fontSize - 2)}px`,
+        }}
       >
         {isLoading ? (
           <div className="text-center text-th-text-muted py-8">
@@ -439,7 +757,7 @@ export function ConversationViewer({
                   data-index={virtualRow.index}
                   ref={virtualizer.measureElement}
                 >
-                  <div className="pb-3">
+                  <div className="pb-1">
                     <MessageItem msg={messages[virtualRow.index]} />
                   </div>
                 </div>
@@ -473,6 +791,33 @@ export function ConversationViewer({
               {isResuming ? t('session.resuming') : t('session.resume')}
             </button>
           )}
+        </div>
+      )}
+
+      {/* Image lightbox — tap an inline image to open at full size */}
+      {lightboxSrc && (
+        <div
+          className="fixed inset-0 z-[10000] bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setLightboxSrc(null)}
+          onTouchEnd={() => setLightboxSrc(null)}
+        >
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setLightboxSrc(null); }}
+            className="absolute top-3 right-3 z-10 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70"
+            aria-label="Close"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <img
+            src={lightboxSrc}
+            alt="Expanded"
+            className="max-w-full max-h-full object-contain select-none"
+            onClick={(e) => e.stopPropagation()}
+            draggable={false}
+          />
         </div>
       )}
     </div>

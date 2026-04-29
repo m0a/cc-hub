@@ -1,10 +1,11 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Terminal as TerminalIcon, MessageSquare } from 'lucide-react';
 import { TerminalComponent, type TerminalRef } from './Terminal';
-import { ConversationViewer } from './ConversationViewer';
+import { ChatView } from './chat/ChatView';
 
 import { authFetch } from '../services/api';
-import type { SessionState, ConversationMessage, SessionTheme } from '../../../shared/types';
+import type { SessionState, SessionTheme, PaneInfo } from '../../../shared/types';
 import type { ControlModeConfig } from './Terminal';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -23,6 +24,7 @@ interface ExtendedSession {
   ccSessionId?: string;
   currentCommand?: string;
   theme?: SessionTheme;
+  panes?: PaneInfo[];
 }
 
 // Control mode context passed through the pane tree
@@ -150,11 +152,25 @@ function TerminalPane({
   const { t } = useTranslation();
   const terminalRef = useRef<TerminalRef>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [showConversation, setShowConversation] = useState(false);
-  const [messages, setMessages] = useState<ConversationMessage[]>([]);
-  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
-  const [currentCcSessionId, setCurrentCcSessionId] = useState<string | null>(null);
-  const [isClaudeRunning, setIsClaudeRunning] = useState(false);
+  // Persist chat-mode state per pane so it survives remounts (e.g. after a
+  // split changes the React tree from <TerminalPane> to <SplitContainer>).
+  const conversationModeKey = sessionId ? `cchub-pane-conv-mode:${sessionId}:${paneId}` : null;
+  const [showConversation, setShowConversationState] = useState<boolean>(() => {
+    if (!conversationModeKey) return false;
+    try { return localStorage.getItem(conversationModeKey) === '1'; } catch { return false; }
+  });
+  const setShowConversation = useCallback<React.Dispatch<React.SetStateAction<boolean>>>((next) => {
+    setShowConversationState(prev => {
+      const value = typeof next === 'function' ? (next as (p: boolean) => boolean)(prev) : next;
+      if (conversationModeKey) {
+        try {
+          if (value) localStorage.setItem(conversationModeKey, '1');
+          else localStorage.removeItem(conversationModeKey);
+        } catch { /* ignore */ }
+      }
+      return value;
+    });
+  }, [conversationModeKey]);
   const [reloadKey, setReloadKey] = useState(0);
   const [confirmClose, setConfirmClose] = useState(false);
   const confirmCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -211,65 +227,38 @@ function TerminalPane({
 
   const session = sessionId ? sessions.find(s => s.id === sessionId) : null;
 
-  // Fetch fresh session info from API to get current ccSessionId
-  const fetchSessionInfo = useCallback(async () => {
-    if (!sessionId) return null;
-    try {
-      const response = await authFetch(`${API_BASE}/api/sessions`);
-      if (response.ok) {
-        const data = await response.json();
-        const freshSession = data.sessions.find((s: ExtendedSession) => s.id === sessionId);
-        if (freshSession) {
-          setCurrentCcSessionId(freshSession.ccSessionId || null);
-          setIsClaudeRunning(freshSession.currentCommand === 'claude');
-          return freshSession.ccSessionId || null;
-        }
-      }
-    } catch {
-      // Ignore errors
-    }
-    return null;
-  }, [sessionId]);
-
-  // Fetch conversation using fresh ccSessionId
-  const fetchConversation = useCallback(async (ccId?: string) => {
-    const targetCcSessionId = ccId || currentCcSessionId;
-    if (!targetCcSessionId) return;
-    try {
-      const response = await authFetch(`${API_BASE}/api/sessions/history/${targetCcSessionId}/conversation`);
-      if (response.ok) {
-        const data = await response.json();
-        setMessages(data.messages || []);
-      }
-    } catch {
-      // Ignore errors
-    }
-  }, [currentCcSessionId]);
-
-  // Reset conversation state when session changes
+  // Re-read persisted state when the (sessionId, paneId) pair changes — e.g.
+  // user picks a different session in this pane. Initial mount already
+  // hydrated from localStorage via useState, so this is a no-op then.
   useEffect(() => {
-    setShowConversation(false);
-    setMessages([]);
-    setCurrentCcSessionId(null);
-  }, [sessionId]);
-
-  // Handle toggle - fetch fresh session info first
-  const handleToggleConversation = useCallback(async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!showConversation) {
-      // Opening conversation - fetch fresh data
-      setIsLoadingMessages(true);
-      const freshCcSessionId = await fetchSessionInfo();
-      if (freshCcSessionId) {
-        await fetchConversation(freshCcSessionId);
-      }
-      setIsLoadingMessages(false);
+    if (!conversationModeKey) {
+      setShowConversationState(false);
+      return;
     }
-    setShowConversation(prev => !prev);
-  }, [showConversation, fetchSessionInfo, fetchConversation]);
+    try {
+      setShowConversationState(localStorage.getItem(conversationModeKey) === '1');
+    } catch {
+      setShowConversationState(false);
+    }
+  }, [conversationModeKey]);
 
-  // Check if we have a ccSessionId (from props or fresh fetch)
-  const hasCcSessionId = currentCcSessionId || session?.ccSessionId;
+  // Fall back to terminal view only if pane data has loaded AND Claude is
+  // not running on the active pane. Without the loaded check, the very first
+  // render after remount (e.g. after a split) sees panes=undefined and would
+  // wrongly clear chat mode.
+  const activeTmuxPane = session?.panes?.find(p => p.isActive);
+  const claudeRunning = activeTmuxPane?.currentCommand === 'claude';
+  const panesLoaded = !!session?.panes;
+  useEffect(() => {
+    if (!panesLoaded) return;
+    if (!claudeRunning && showConversation) {
+      setShowConversation(false);
+    }
+  }, [claudeRunning, showConversation, panesLoaded, setShowConversation]);
+
+  const handleToggleConversation = useCallback(() => {
+    setShowConversation(prev => !prev);
+  }, []);
 
   return (
     <div
@@ -289,22 +278,39 @@ function TerminalPane({
           </span>
         )}
         <div className={`flex items-center ${isTablet ? 'gap-0' : 'gap-1.5'}`}>
-          {/* Conversation toggle button - show for Claude sessions */}
-          {(hasCcSessionId || session?.currentCommand === 'claude') && (
-            <button
-              onClick={handleToggleConversation}
-              className={`${isTablet ? 'p-2.5' : 'p-1.5'} transition-colors ${
-                showConversation
-                  ? 'text-blue-400 hover:text-blue-300'
-                  : 'text-white/50 hover:text-th-text'
-              }`}
-              title={showConversation ? t('conversation.backToTerminal') : t('conversation.showHistory')}
-            >
-              <svg className={isTablet ? 'w-5 h-5' : 'w-[18px] h-[18px]'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-              </svg>
-            </button>
-          )}
+          {/* Terminal / Chat single-icon toggle — shows the destination mode */}
+          {(() => {
+            const claudeAvailable = claudeRunning;
+            const disabled = !showConversation && !claudeAvailable;
+            return (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!disabled) handleToggleConversation();
+                }}
+                disabled={disabled}
+                className={`${isTablet ? 'p-2' : 'p-1'} rounded transition-colors ${
+                  disabled
+                    ? 'text-white/20 cursor-not-allowed'
+                    : 'text-white/60 hover:text-th-text hover:bg-white/[0.06]'
+                }`}
+                title={
+                  showConversation
+                    ? 'ターミナルに切替'
+                    : claudeAvailable
+                      ? '会話履歴に切替'
+                      : 'Claude Code が起動していません'
+                }
+                aria-label={showConversation ? 'Switch to Terminal' : 'Switch to Chat'}
+              >
+                {showConversation ? (
+                  <TerminalIcon className={isTablet ? 'w-4 h-4' : 'w-[14px] h-[14px]'} />
+                ) : (
+                  <MessageSquare className={isTablet ? 'w-4 h-4' : 'w-[14px] h-[14px]'} />
+                )}
+              </button>
+            );
+          })()}
           {/* File browser button (desktop only) */}
           {!isTablet && session?.currentPath && !showConversation && (
             <button
@@ -330,8 +336,8 @@ function TerminalPane({
               </svg>
             </button>
           )}
-          {/* Zoom button */}
-          {sessionId && !showConversation && controlModeContext.zoomPane && (
+          {/* Zoom button — only meaningful when there are multiple panes */}
+          {sessionId && !showConversation && controlModeContext.zoomPane && (session?.panes?.length ?? 0) > 1 && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -387,44 +393,45 @@ function TerminalPane({
               </button>
             </div>
           )}
-          {/* Close button with confirmation */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (confirmClose) {
-                // Second tap: actually close
-                if (confirmCloseTimerRef.current) {
-                  clearTimeout(confirmCloseTimerRef.current);
-                  confirmCloseTimerRef.current = null;
-                }
-                setConfirmClose(false);
-                onClose();
-              } else {
-                // First tap: show warning
-                setConfirmClose(true);
-                confirmCloseTimerRef.current = setTimeout(() => {
+          {/* Close button with confirmation — only shown when there are
+              multiple panes (the backend rejects closing the last pane). */}
+          {(session?.panes?.length ?? 0) > 1 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (confirmClose) {
+                  if (confirmCloseTimerRef.current) {
+                    clearTimeout(confirmCloseTimerRef.current);
+                    confirmCloseTimerRef.current = null;
+                  }
                   setConfirmClose(false);
-                  confirmCloseTimerRef.current = null;
-                }, 3000);
-              }
-            }}
-            className={`${isTablet ? 'p-2.5' : 'p-1.5'} transition-colors ${
-              confirmClose
-                ? 'text-red-400 bg-red-900/50 rounded'
-                : 'text-white/50 hover:text-red-400'
-            }`}
-            title={confirmClose ? t('pane.confirmClose') : t('common.close')}
-          >
-            {confirmClose ? (
-              <span className={`${isTablet ? 'text-xs' : 'text-[10px]'} font-bold whitespace-nowrap`}>
-                {t('pane.confirmClose')}
-              </span>
-            ) : (
-              <svg className={isTablet ? 'w-5 h-5' : 'w-[18px] h-[18px]'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            )}
-          </button>
+                  onClose();
+                } else {
+                  setConfirmClose(true);
+                  confirmCloseTimerRef.current = setTimeout(() => {
+                    setConfirmClose(false);
+                    confirmCloseTimerRef.current = null;
+                  }, 3000);
+                }
+              }}
+              className={`${isTablet ? 'p-2.5' : 'p-1.5'} transition-colors ${
+                confirmClose
+                  ? 'text-red-400 bg-red-900/50 rounded'
+                  : 'text-white/50 hover:text-red-400'
+              }`}
+              title={confirmClose ? t('pane.confirmClose') : t('common.close')}
+            >
+              {confirmClose ? (
+                <span className={`${isTablet ? 'text-xs' : 'text-[10px]'} font-bold whitespace-nowrap`}>
+                  {t('pane.confirmClose')}
+                </span>
+              ) : (
+                <svg className={isTablet ? 'w-5 h-5' : 'w-[18px] h-[18px]'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              )}
+            </button>
+          )}
         </div>
       </div>
 
@@ -474,17 +481,17 @@ function TerminalPane({
 
       {/* Terminal, conversation, or session selector */}
       <div className="flex-1 min-h-0">
-        {showConversation && currentCcSessionId && (
-          <ConversationViewer
-            title="会話履歴"
+        {showConversation && sessionId && (
+          <ChatView
+            sessionId={sessionId}
+            title={t('conversation.history')}
             subtitle={session?.name}
-            messages={messages}
-            isLoading={isLoadingMessages}
-            onClose={() => setShowConversation(false)}
             inline={true}
-            scrollToBottom={true}
-            isActive={isClaudeRunning}
-            onRefresh={() => fetchConversation(currentCcSessionId || undefined)}
+            enabled={showConversation}
+            // Tablet has its own FloatingKeyboard that already routes input to
+            // the active pane (same as Terminal mode) — no in-view composer.
+            showComposer={!isTablet}
+            paneId={controlModeContext.getControlConfig(paneId)?.paneId}
           />
         )}
         {sessionId ? (

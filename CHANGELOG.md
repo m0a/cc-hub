@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.92] - 2026-04-29
+
+### Changed
+- 会話履歴ビューの背景色をセッションテーマカラーに同期
+  - ターミナル背景と一致した色（pink / indigo / teal 等）でチャットビュー全体（コンテナ・エコー行・ローディング表示）を着色
+  - 視覚的な一体感を向上、セッション切替時のテーマも追従
+
 ## [0.1.91] - 2026-04-29
 
 ### Added

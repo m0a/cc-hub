@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.93] - 2026-04-30
+
+### Fixed
+- セッションリストのステータス表示が macOS で正しく動作するよう修正 (#119)
+  - `/api/notify/hook-status` が必須4イベント（Stop / PreToolUse / UserPromptSubmit / PostToolUse[AskUserQuestion]）を個別検証するように変更
+  - 設定不足時のセットアップバナーが「全くないとき」だけでなく「不足があるとき」に表示されるように
+  - セットアップ用プロンプトが4イベントすべてをカバー、`prompt-recorder.sh` 等の既存 hook を保持するよう Claude へ指示
+- 手動 `/recap` slash command の出力がセッションリストに反映されるように修正
+  - `readLastAwaySummary` → `readLastRecap` にリネームし、`subtype:'local_command'` も `<command-name>/recap</command-name>` を直前の user entry に持つ場合は recap として採用
+  - 自動 `away_summary` と手動 `/recap` のうち最新を採用
+- `readLastLines` のバッファ推定不足を修正
+  - 200 バイト/行 → 2KB/行スタートで不足時は 4倍ずつリトライ（2K → 8K → 32K）、最終手段は全読み
+  - Claude Code の JSONL は tool result 埋め込みで平均 2KB/行のため、`300` 指定でも実質 28 行しか読めていなかった
+- `cchub status` が macOS で `systemctl not found` で落ちる問題を修正
+  - `platform()` で OS 判定し、`darwin` では `launchctl list com.cchub.server` を使用、PID と LastExitStatus を表示
+
+### Added
+- Anthropic API の使用量取得エラーをダッシュボードに表示
+  - エラー種別（rate-limited / no-credentials / unauthorized / fetch-failed / unknown）に応じたメッセージ
+  - レート制限中はキャッシュ値を `(showing cached value)` バッジ付きで表示し、再試行までのカウントダウンを表示
+  - 429 レスポンスの `Retry-After` ヘッダーを尊重（5分〜1時間にクランプ）
+- macOS Keychain からの OAuth トークン取得をサポート
+  - 新しい Claude Code が `~/.claude/.credentials.json` ではなく Keychain (`Claude Code-credentials`) に資格情報を保存するため、フォールバックを追加
+- `User-Agent` を `cchub/<version>` に変更（旧 `claude-code/2.0.32` は Claude Code への impersonation だったため）
+- DashboardPanel の幅を画面サイズに応じて拡張（xl: 420px、2xl: 480px）
+
+### Changed
+- `.gitignore` に `.claude-user-prompts/`、`.playwright-mcp/`、ルート直下 `*.png` を追加（ローカル開発の副産物を除外）
+
 ## [0.1.92] - 2026-04-29
 
 ### Changed

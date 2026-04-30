@@ -55,6 +55,7 @@ dashboard.get('/', async (c) => {
   const response: DashboardResponse = {
     limits: null, // Deprecated
     usageLimits,
+    usageLimitsStatus: anthropicUsageService.getStatus(),
     usageHistory: usageHistory,
     dailyActivity,
     modelUsage,

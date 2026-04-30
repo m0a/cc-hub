@@ -77,7 +77,7 @@ export function Dashboard({ className = '', compact = false }: DashboardProps) {
           <ServerInfo systemMetrics={data?.systemMetrics} diskUsage={data?.diskUsage} connectedClients={data?.connectedClients} />
         </div>
         <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
-          <UsageLimits data={data?.usageLimits || null} history={data?.usageHistory || []} />
+          <UsageLimits data={data?.usageLimits || null} status={data?.usageLimitsStatus} history={data?.usageHistory || []} />
         </div>
         <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
           <DailyUsageChart data={data?.dailyActivity || []} />

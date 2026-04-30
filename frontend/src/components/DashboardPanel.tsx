@@ -13,7 +13,7 @@ export function DashboardPanel({ isOpen, onClose }: DashboardPanelProps) {
 	if (!isOpen) return null;
 
 	return (
-		<div className="w-[350px] shrink-0 flex flex-col bg-th-bg border-l border-th-border z-[60]">
+		<div className="w-[360px] xl:w-[420px] 2xl:w-[480px] shrink-0 flex flex-col bg-th-bg border-l border-th-border z-[60]">
 			{/* Header */}
 			<div className="shrink-0 px-4 pt-3 pb-3 border-b border-white/[0.06]">
 				<div className="flex items-center justify-between max-w-lg">

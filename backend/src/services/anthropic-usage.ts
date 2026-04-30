@@ -2,6 +2,17 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { t } from '../i18n';
+import { VERSION } from '../cli';
+import type { UsageLimitsErrorReason, UsageLimitsStatus } from '../../../shared/types';
+
+function parseRetryAfter(header: string | null): number | null {
+  if (!header) return null;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds;
+  const date = Date.parse(header);
+  if (!Number.isNaN(date)) return Math.max(0, Math.floor((date - Date.now()) / 1000));
+  return null;
+}
 
 interface UsageResponse {
   five_hour: {
@@ -42,19 +53,54 @@ export class AnthropicUsageService {
   private readonly CACHE_TTL_MS = 60_000;
   // On 429, back off for 5 minutes before retrying.
   private rateLimitedUntil = 0;
+  private lastErrorReason: UsageLimitsErrorReason | undefined;
 
   constructor() {
     this.claudeDir = join(homedir(), '.claude');
   }
 
   private async getAccessToken(): Promise<string | null> {
+    // 1. Try the file-based credential store first.
     try {
       const content = await readFile(join(this.claudeDir, '.credentials.json'), 'utf-8');
       const data = JSON.parse(content);
-      return data?.claudeAiOauth?.accessToken || null;
+      const token = data?.claudeAiOauth?.accessToken;
+      if (token) return token;
     } catch {
-      return null;
+      // fall through to keychain on macOS
     }
+
+    // 2. macOS Keychain fallback (newer Claude Code stores creds here).
+    if (process.platform === 'darwin') {
+      try {
+        const result = Bun.spawnSync(['security', 'find-generic-password', '-s', 'Claude Code-credentials', '-w']);
+        if (result.exitCode === 0) {
+          const out = result.stdout.toString().trim();
+          const data = JSON.parse(out);
+          return data?.claudeAiOauth?.accessToken || null;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return null;
+  }
+
+  getStatus(): UsageLimitsStatus {
+    const now = Date.now();
+    const status: UsageLimitsStatus = {};
+    if (this.lastErrorReason) status.errorReason = this.lastErrorReason;
+    if (this.rateLimitedUntil > now) {
+      status.rateLimitedUntil = new Date(this.rateLimitedUntil).toISOString();
+    }
+    if (this.lastFetchAt > 0) {
+      status.lastFetchAt = new Date(this.lastFetchAt).toISOString();
+    }
+    if (this.lastSuccessfulResult && (this.rateLimitedUntil > now || this.lastErrorReason)) {
+      status.isStale = true;
+    }
+    return status;
   }
 
   async getUsageLimits(): Promise<UsageLimits | null> {
@@ -86,6 +132,7 @@ export class AnthropicUsageService {
   private async fetchUsageLimits(): Promise<UsageLimits | null> {
     const token = await this.getAccessToken();
     if (!token) {
+      this.lastErrorReason = 'no-credentials';
       return this.lastSuccessfulResult;
     }
 
@@ -94,21 +141,31 @@ export class AnthropicUsageService {
         headers: {
           'Authorization': `Bearer ${token}`,
           'anthropic-beta': 'oauth-2025-04-20',
-          'User-Agent': 'claude-code/2.0.32',
+          'User-Agent': `cchub/${VERSION}`,
           'Content-Type': 'application/json',
         },
       });
 
       if (!response.ok) {
         if (response.status === 429) {
-          // Back off for 5 minutes on rate limit
-          this.rateLimitedUntil = Date.now() + 5 * 60_000;
+          // Honor Retry-After when present; clamp to [5min, 1h].
+          const retryAfterSec = parseRetryAfter(response.headers.get('retry-after'));
+          const backoffMs = retryAfterSec != null
+            ? Math.min(Math.max(retryAfterSec * 1000, 5 * 60_000), 60 * 60_000)
+            : 5 * 60_000;
+          this.rateLimitedUntil = Date.now() + backoffMs;
+          this.lastErrorReason = 'rate-limited';
+        } else if (response.status === 401 || response.status === 403) {
+          this.lastErrorReason = 'unauthorized';
+        } else {
+          this.lastErrorReason = 'fetch-failed';
         }
         console.error('Failed to fetch usage:', response.status);
         return this.lastSuccessfulResult;
       }
 
       const data: UsageResponse = await response.json();
+      this.lastErrorReason = undefined;
 
       const fiveHourEstimate = this.estimateHitTime(data.five_hour.utilization, data.five_hour.resets_at, 5);
       const sevenDayEstimate = this.estimateHitTime(data.seven_day.utilization, data.seven_day.resets_at, 7 * 24);
@@ -135,6 +192,7 @@ export class AnthropicUsageService {
       return result;
     } catch (err) {
       console.error('Error fetching usage:', err);
+      this.lastErrorReason = 'unknown';
       return this.lastSuccessfulResult;
     }
   }

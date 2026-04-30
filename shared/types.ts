@@ -285,9 +285,24 @@ export interface SystemMetrics {
   cpuCount: number;
 }
 
+export type UsageLimitsErrorReason =
+  | 'no-credentials'
+  | 'rate-limited'
+  | 'unauthorized'
+  | 'fetch-failed'
+  | 'unknown';
+
+export interface UsageLimitsStatus {
+  errorReason?: UsageLimitsErrorReason;
+  rateLimitedUntil?: string; // ISO 8601 — when backoff ends
+  lastFetchAt?: string; // ISO 8601 — when the last attempt happened
+  isStale?: boolean; // true when serving cached data while backing off
+}
+
 export interface DashboardResponse {
   limits: LimitsInfo | null; // Deprecated, kept for compatibility
   usageLimits: UsageLimits | null; // New: from Anthropic API
+  usageLimitsStatus?: UsageLimitsStatus; // Error/state info for UI
   usageHistory: UsageSnapshot[]; // Usage history for line chart
   dailyActivity: DailyActivity[];
   modelUsage: ModelUsage[];

@@ -148,21 +148,24 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       panes: s.panes ? s.panes.map((p: { paneId: string; command: string; path: string; title: string; tty: string; isActive: boolean; isDead: boolean; pid?: number }) => {
         const ttyName = p.tty?.replace('/dev/', '');
         const agentInfo = ttyName ? agentInfoByTty.get(ttyName) : undefined;
+        const isClaudeOnPane = !p.isDead && !!ttyName && claudeOnPaneTtys.has(ttyName);
         let paneIndicator: IndicatorState | undefined;
         if (p.isDead) {
           paneIndicator = 'completed';
+        } else if (isClaudeOnPane) {
+          // Use session-level indicator for Claude panes (hook/jsonl based)
+          paneIndicator = indicatorState === 'completed' ? 'waiting_input' : indicatorState;
         } else {
-          const isClaudeOnPane = ttyName ? claudeOnPaneTtys.has(ttyName) : false;
-          if (isClaudeOnPane) {
-            // Use session-level indicator for Claude panes (hook/jsonl based)
-            paneIndicator = indicatorState === 'completed' ? 'waiting_input' : indicatorState;
-          } else {
-            paneIndicator = 'idle';
-          }
+          paneIndicator = 'idle';
         }
+        // Prefer the ps-based detection over tmux's pane_current_command, which
+        // on macOS sometimes returns the Claude version (e.g. "2.1.123") when the
+        // binary is invoked via a non-standard path. The frontend relies on this
+        // string equaling "claude" to enable the conversation toggle.
+        const currentCommand = isClaudeOnPane ? 'claude' : p.command;
         const pane: PaneInfo = {
           paneId: p.paneId,
-          currentCommand: p.command,
+          currentCommand,
           currentPath: p.path,
           title: p.title || undefined,
           agentName: agentInfo?.agentName,

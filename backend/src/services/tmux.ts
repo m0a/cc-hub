@@ -360,10 +360,17 @@ export class TmuxService {
 
   /**
    * Check if process args indicate a Claude Code process.
-   * Matches 'claude ...' (main binary) or paths containing '/claude/versions/' (team agents).
+   *
+   * Matches the executable name `claude` regardless of install location:
+   *   - `claude` / `claude --resume`              (PATH-resolved invocation)
+   *   - `/usr/local/bin/claude` / `~/.local/bin/claude -c`  (full path)
+   *   - paths containing `/claude/versions/`       (team agents / version-pinned)
+   *
+   * The leading `(?:^|\/)` and trailing `(?:\s|$)` anchors avoid false matches
+   * on substrings like `.claude/shell-snapshots/...` or `claude-foo-cwd`.
    */
   private isClaudeProcess(args: string): boolean {
-    return args.startsWith('claude ') || args === 'claude' || args.includes('/claude/versions/');
+    return /(?:^|\/)claude(?:\s|$)/.test(args) || args.includes('/claude/versions/');
   }
 
   /**

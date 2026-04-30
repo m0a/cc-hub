@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.94] - 2026-04-30
+
+### Added
+- macOS Keychain によるパスワード保存 (#121)
+  - `cchub setup -P pass` で渡されたパスワードを `~/Library/LaunchAgents/com.cchub.server.plist` に直接埋め込む代わりに、macOS Keychain (`service: cchub`) に保存
+  - `cchub` 起動時の優先順位: `-P` CLI 引数 → `CCHUB_PASSWORD` 環境変数 → Keychain
+  - 起動ログにパスワード取得元を表示 (`(Keychain)` / `(env)`)
+  - `cchub uninstall` で Keychain エントリも削除
+  - 既存インストールは plist の `-P` がそのまま使われるため互換性あり。Keychain への移行は次回の `cchub setup -P pass` で自動的に行われる
+  - Linux はヘッドレスサービス向けの信頼できる secret store がないため従来の `EnvironmentFile` 方式を維持
+
+### Fixed
+- `cchub --help` で `setup` の説明が常に「systemd service setup」となっていたのを「Register service (systemd on Linux, launchd on macOS)」に変更
+- launchd plist の文字列補間に XML エスケープを追加（`<`, `>`, `&`, `"`, `'` を含むパスワードでも plist が壊れない）
+
 ## [0.1.93] - 2026-04-30
 
 ### Fixed

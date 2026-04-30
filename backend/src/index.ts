@@ -275,10 +275,29 @@ if (needsCert) {
   console.log(`📜 Certificate generated: ${certDir}`);
 }
 
-// Store password in environment for auth middleware
-if (args.password) {
-  process.env.CCHUB_PASSWORD = args.password;
-  console.log(`🔒 ${t('server.passwordEnabled')}`);
+// Store password in environment for auth middleware. Priority:
+//   1. -P CLI arg
+//   2. CCHUB_PASSWORD env var (set by systemd EnvironmentFile etc.)
+//   3. macOS Keychain (service: cchub) — populated by `cchub setup`
+let resolvedPassword: string | undefined = args.password;
+let passwordSource: 'cli' | 'env' | 'keychain' | 'none' = args.password ? 'cli' : 'none';
+if (!resolvedPassword && process.env.CCHUB_PASSWORD) {
+  resolvedPassword = process.env.CCHUB_PASSWORD;
+  passwordSource = 'env';
+}
+if (!resolvedPassword && process.platform === 'darwin') {
+  const { readPassword } = await import('./utils/keychain');
+  const fromKeychain = readPassword();
+  if (fromKeychain) {
+    resolvedPassword = fromKeychain;
+    passwordSource = 'keychain';
+  }
+}
+if (resolvedPassword) {
+  process.env.CCHUB_PASSWORD = resolvedPassword;
+  const sourceLabel = passwordSource === 'keychain' ? ' (Keychain)' :
+    passwordSource === 'env' ? ' (env)' : '';
+  console.log(`🔒 ${t('server.passwordEnabled')}${sourceLabel}`);
 } else {
   console.log(`⚠️  ${t('server.passwordNotSet')}`);
 }

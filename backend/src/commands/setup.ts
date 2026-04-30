@@ -4,6 +4,17 @@ import { mkdir, writeFile, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir, platform } from 'node:os';
 import { t } from '../i18n';
+import { storePassword as storePasswordInKeychain } from '../utils/keychain';
+
+/** Escape special characters for safe inclusion in XML/plist content. */
+function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
 
 // ─── Linux: systemd ───
 
@@ -45,9 +56,14 @@ WantedBy=timers.target
 
 // ─── macOS: launchd ───
 
-function buildLaunchdPlist(execPath: string, port: number, password?: string): string {
+/**
+ * Build the launchd plist for the cchub server.
+ * The password is NOT embedded here — it is read from the macOS Keychain at
+ * runtime by `cchub` itself, so the plist file stays free of secrets.
+ */
+function buildLaunchdPlist(execPath: string, port: number): string {
   const args = [execPath, '-p', String(port)];
-  if (password) args.push('-P', password);
+  const logPath = join(homedir(), '.cc-hub', 'cchub.log');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -57,16 +73,16 @@ function buildLaunchdPlist(execPath: string, port: number, password?: string): s
   <string>com.cchub.server</string>
   <key>ProgramArguments</key>
   <array>
-${args.map(a => `    <string>${a}</string>`).join('\n')}
+${args.map(a => `    <string>${escapeXml(a)}</string>`).join('\n')}
   </array>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>${join(homedir(), '.cc-hub', 'cchub.log')}</string>
+  <string>${escapeXml(logPath)}</string>
   <key>StandardErrorPath</key>
-  <string>${join(homedir(), '.cc-hub', 'cchub.log')}</string>
+  <string>${escapeXml(logPath)}</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
@@ -78,6 +94,7 @@ ${args.map(a => `    <string>${a}</string>`).join('\n')}
 }
 
 function buildLaunchdUpdatePlist(execPath: string): string {
+  const logPath = join(homedir(), '.cc-hub', 'update.log');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -86,7 +103,7 @@ function buildLaunchdUpdatePlist(execPath: string): string {
   <string>com.cchub.update</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${execPath}</string>
+    <string>${escapeXml(execPath)}</string>
     <string>update</string>
     <string>--auto</string>
   </array>
@@ -96,9 +113,9 @@ function buildLaunchdUpdatePlist(execPath: string): string {
     <integer>4</integer>
   </dict>
   <key>StandardOutPath</key>
-  <string>${join(homedir(), '.cc-hub', 'update.log')}</string>
+  <string>${escapeXml(logPath)}</string>
   <key>StandardErrorPath</key>
-  <string>${join(homedir(), '.cc-hub', 'update.log')}</string>
+  <string>${escapeXml(logPath)}</string>
 </dict>
 </plist>
 `;
@@ -126,9 +143,19 @@ async function setupLaunchd(port: number, password?: string): Promise<void> {
   await mkdir(launchAgentsDir, { recursive: true });
   await mkdir(logDir, { recursive: true });
 
-  // Main service plist
+  // Store password in macOS Keychain instead of embedding in plist (which is
+  // world-readable). cchub at runtime reads it back via `security`.
+  if (password) {
+    if (storePasswordInKeychain(password)) {
+      console.log('🔐 パスワードを Keychain に保存しました (service: cchub)');
+    } else {
+      console.log('⚠️  Keychain への保存に失敗しました');
+    }
+  }
+
+  // Main service plist (no password embedded — read from Keychain at runtime)
   const plistPath = join(launchAgentsDir, 'com.cchub.server.plist');
-  await writeFile(plistPath, buildLaunchdPlist(execPath, port, password));
+  await writeFile(plistPath, buildLaunchdPlist(execPath, port));
   console.log(`✅ サービスファイル: ${plistPath}`);
 
   // Update plist

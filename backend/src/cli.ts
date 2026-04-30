@@ -23,7 +23,7 @@ CC Hub v${VERSION} - Claude Code Session Manager
 
 ${t('cli.usage')}
   ${t('cli.serverStart')}
-  cchub setup [options]     systemd service setup
+  cchub setup [options]     Register service (systemd on Linux, launchd on macOS)
   cchub uninstall           Remove service registration
   cchub update [options]    Check and apply updates
   cchub status              Show service status
@@ -41,7 +41,7 @@ update options:
 ${t('cli.examples')}
   ${t('cli.exampleStart')}
   ${t('cli.exampleWithPort')}
-  cchub setup -P secret      Setup systemd service
+  cchub setup -P secret      Register service with password (stored in Keychain on macOS)
   cchub update               Update to latest
 `);
 }

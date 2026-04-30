@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.95] - 2026-04-30
+
+### Fixed
+- 会話履歴ボタンが macOS で常に disabled になる問題を修正 (#123)
+  - 非標準パス(`~/.local/bin/claude`、`/opt/homebrew/bin/claude` 等)で起動した Claude Code を `isClaudeProcess` が認識できず、ペインの `currentCommand` が tmux の `pane_current_command` (バージョン番号 `2.1.123` 等) のまま伝搬していた
+  - `isClaudeProcess` の判定を `/(?:^|\/)claude(?:\s|$)/` 正規表現ベースに変更し、フルパス起動を含む全パターンを検出
+  - `buildSessionsList` で ps ベースの検出結果を使ってペインレベルの `currentCommand` も `'claude'` に正規化(従来は session レベルのみ正規化されていた)
+  - Linux の挙動は変更なし(元から `pane_current_command` が `claude` を正しく返す)
+
 ## [0.1.94] - 2026-04-30
 
 ### Added

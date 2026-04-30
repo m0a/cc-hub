@@ -6,20 +6,31 @@ import { createInterface } from 'node:readline';
 
 /**
  * Read last N lines from a file without spawning a subprocess.
- * Reads from the end of the file in chunks.
+ * Reads from the end of the file in chunks, retrying with larger chunks
+ * when initial estimate doesn't capture enough lines (Claude Code JSONL
+ * lines can be 2KB+ when they contain large tool results).
  */
 async function readLastLines(filePath: string, lineCount: number): Promise<string> {
   try {
     const file = Bun.file(filePath);
     const size = file.size;
     if (size === 0) return '';
-    // Read last chunk (estimate ~200 bytes per line)
-    const chunkSize = Math.min(size, lineCount * 200);
-    const buffer = await file.slice(size - chunkSize, size).text();
-    const lines = buffer.split('\n');
-    // If we didn't capture a full first line, drop it
-    if (chunkSize < size) lines.shift();
-    return lines.slice(-lineCount).join('\n');
+
+    let bytesPerLine = 2048;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const chunkSize = Math.min(size, lineCount * bytesPerLine);
+      const buffer = await file.slice(size - chunkSize, size).text();
+      const lines = buffer.split('\n');
+      // Drop incomplete first line unless we read the entire file
+      if (chunkSize < size) lines.shift();
+      if (lines.length >= lineCount || chunkSize >= size) {
+        return lines.slice(-lineCount).join('\n');
+      }
+      bytesPerLine *= 4; // 2K → 8K → 32K
+    }
+    // Last resort: read entire file
+    const buffer = await file.text();
+    return buffer.split('\n').slice(-lineCount).join('\n');
   } catch {
     return '';
   }
@@ -246,37 +257,70 @@ export class ClaudeCodeService {
   }
 
   /**
-   * Read the latest auto-recap (system/away_summary) from the tail of a jsonl file.
-   * Claude Code emits these after the terminal has been unfocused for ≥3 minutes.
+   * Read the latest recap from a jsonl file. Two sources:
+   *   1. system/away_summary — auto-emitted by Claude Code after the terminal has been
+   *      unfocused for ≥3 minutes.
+   *   2. system/local_command — output of a manual `/recap` slash command. Detected by
+   *      checking that the preceding user entry contains <command-name>/recap</command-name>.
+   * Returns whichever is most recent.
    */
-  private async readLastAwaySummary(filePath: string): Promise<RecapEntry | null> {
+  private async readLastRecap(filePath: string): Promise<RecapEntry | null> {
     try {
       const text = await readLastLines(filePath, 300);
       if (!text) return null;
 
-      const lines = text.trim().split('\n').reverse();
+      const lines = text.trim().split('\n');
+      let pendingRecapTrigger = false; // true when the most recent user entry was /recap
+      let lastRecap: RecapEntry | null = null;
+
       for (const line of lines) {
+        let entry: Record<string, unknown>;
         try {
-          const entry = JSON.parse(line);
-          if (
-            entry.type === 'system' &&
-            entry.subtype === 'away_summary' &&
-            typeof entry.content === 'string' &&
-            entry.content.length > 0
-          ) {
-            // Strip the trailing "(disable recaps in /config)" hint Claude Code appends.
-            const content = entry.content.replace(/\s*\(disable recaps in \/config\)\s*$/, '').trim();
-            if (!content) continue;
-            return {
-              content,
-              timestamp: entry.timestamp || '',
-            };
-          }
+          entry = JSON.parse(line);
         } catch {
-          // Skip invalid JSON lines
+          continue;
+        }
+
+        // Track /recap slash command triggers from user entries.
+        if (entry.type === 'user') {
+          const message = entry.message as { content?: unknown } | undefined;
+          const content = message?.content;
+          let text = '';
+          if (typeof content === 'string') {
+            text = content;
+          } else if (Array.isArray(content)) {
+            const block = content.find((b): b is { type: string; text: string } =>
+              typeof b === 'object' && b !== null && (b as { type?: string }).type === 'text'
+            );
+            text = block?.text || '';
+          }
+          pendingRecapTrigger = /<command-name>\/?recap<\/command-name>/.test(text);
+          continue;
+        }
+
+        if (entry.type !== 'system') continue;
+        const content = entry.content;
+        if (typeof content !== 'string' || content.length === 0) continue;
+        const timestamp = (entry.timestamp as string) || '';
+
+        if (entry.subtype === 'away_summary') {
+          // Strip the trailing "(disable recaps in /config)" hint Claude Code appends.
+          const cleaned = content.replace(/\s*\(disable recaps in \/config\)\s*$/, '').trim();
+          if (cleaned) lastRecap = { content: cleaned, timestamp };
+        } else if (entry.subtype === 'local_command' && pendingRecapTrigger) {
+          const cleaned = content
+            .replace(/^<local-command-stdout>/, '')
+            .replace(/<\/local-command-stdout>$/, '')
+            .trim();
+          // Skip error outputs (e.g. "API Error: 529 ..." when the recap call fails)
+          if (cleaned && !cleaned.startsWith('API Error')) {
+            lastRecap = { content: cleaned, timestamp };
+          }
+          pendingRecapTrigger = false;
         }
       }
-      return null;
+
+      return lastRecap;
     } catch {
       return null;
     }
@@ -532,7 +576,7 @@ export class ClaudeCodeService {
         this.readLastUserMessage(filePath),
         this.checkWaitingState(filePath),
         this.readFirstMessageId(filePath),
-        this.readLastAwaySummary(filePath),
+        this.readLastRecap(filePath),
       ]);
 
       const data: ClaudeCodeSession = {
@@ -651,7 +695,7 @@ export class ClaudeCodeService {
                 this.checkWaitingState(filePath),
                 this.readLastUserMessage(filePath),
                 this.readFirstMessageId(filePath),
-                this.readLastAwaySummary(filePath),
+                this.readLastRecap(filePath),
               ]);
 
               return {
@@ -676,7 +720,7 @@ export class ClaudeCodeService {
               this.readLastUserMessage(filePath),
               this.checkWaitingState(filePath),
               this.readFirstMessageId(filePath),
-              this.readLastAwaySummary(filePath),
+              this.readLastRecap(filePath),
             ]);
 
             return {
@@ -794,7 +838,7 @@ export class ClaudeCodeService {
                 this.readLastUserMessage(filePath),
                 this.checkWaitingState(filePath),
                 this.readFirstMessageId(filePath),
-                this.readLastAwaySummary(filePath),
+                this.readLastRecap(filePath),
               ]);
 
               return {

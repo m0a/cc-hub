@@ -158,33 +158,51 @@ notify.post('/', async (c) => {
   }
 });
 
+/**
+ * Required hook events for the session list indicator to work end-to-end:
+ * - Stop                              → completed
+ * - PreToolUse                        → processing (any tool)
+ * - UserPromptSubmit                  → processing (right after user submits)
+ * - PostToolUse with AskUserQuestion  → waiting_input
+ */
+type HookEntry = { matcher?: string; hooks?: Array<{ command?: string }> };
+
+function hasCchubNotify(entries: HookEntry[] | undefined, matcher?: string): boolean {
+  if (!Array.isArray(entries)) return false;
+  for (const entry of entries) {
+    if (matcher !== undefined && entry.matcher !== matcher) continue;
+    for (const hook of entry.hooks || []) {
+      if (hook.command?.includes('cchub notify')) return true;
+    }
+  }
+  return false;
+}
+
 /** Check if cchub notify is configured in ~/.claude/settings.json hooks */
 notify.get('/hook-status', async (c) => {
   try {
     const settingsPath = join(homedir(), '.claude', 'settings.json');
     const content = await readFile(settingsPath, 'utf-8');
     const settings = JSON.parse(content);
-    const hooks = settings.hooks || {};
+    const hooks = (settings.hooks || {}) as Record<string, HookEntry[]>;
 
-    // Check all hook events for "cchub notify" command
-    let configured = false;
-    for (const eventHooks of Object.values(hooks) as Array<Array<{ hooks?: Array<{ command?: string }> }>>) {
-      for (const entry of eventHooks) {
-        for (const hook of entry.hooks || []) {
-          if (hook.command?.includes('cchub notify')) {
-            configured = true;
-            break;
-          }
-        }
-        if (configured) break;
-      }
-      if (configured) break;
-    }
+    const events = {
+      stop: hasCchubNotify(hooks.Stop),
+      preToolUse: hasCchubNotify(hooks.PreToolUse),
+      userPromptSubmit: hasCchubNotify(hooks.UserPromptSubmit),
+      askUserQuestion: hasCchubNotify(hooks.PostToolUse, 'AskUserQuestion'),
+    };
+    const missing = Object.entries(events).filter(([, ok]) => !ok).map(([k]) => k);
+    const configured = missing.length === 0;
 
-    return c.json({ configured });
+    return c.json({ configured, events, missing });
   } catch {
     // settings.json doesn't exist or is invalid
-    return c.json({ configured: false });
+    return c.json({
+      configured: false,
+      events: { stop: false, preToolUse: false, userPromptSubmit: false, askUserQuestion: false },
+      missing: ['stop', 'preToolUse', 'userPromptSubmit', 'askUserQuestion'],
+    });
   }
 });
 

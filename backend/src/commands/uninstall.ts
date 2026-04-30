@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir, platform } from 'node:os';
 import { t } from '../i18n';
+import { deletePassword as deletePasswordFromKeychain } from '../utils/keychain';
 
 export async function uninstallService(): Promise<void> {
   if (platform() === 'darwin') {
@@ -39,6 +40,11 @@ async function uninstallLaunchd(): Promise<void> {
     console.log(`✅ ${t('uninstall.removedUpdate')}: ${updatePlistPath}`);
   } else {
     console.log(`⏭️  ${t('uninstall.notFound')}: ${updatePlistPath}`);
+  }
+
+  // Remove password from Keychain (no-op if not stored)
+  if (deletePasswordFromKeychain()) {
+    console.log('🔐 Keychain からパスワードを削除しました');
   }
 
   console.log('');

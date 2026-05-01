@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.96] - 2026-05-01
+
+### Fixed
+- セッションリストの `ctx` インジケーターが macOS で常に 100%(赤)になる問題を修正 (#125)
+  - `anthropic-models.ts` が `~/.claude/.credentials.json` のみ参照しており、Keychain にトークンを保存している新しい Claude Code 環境で `/v1/models` 取得に失敗
+  - 結果として `contextMaxTokens` が fallback の 200,000 になり、Opus 4.7 (1M context) のような実際の上限が大きいセッションで `contextPercent` が 100 で頭打ちになっていた
+  - file → Keychain のトークン取得ロジックを `utils/claude-credentials.ts` に共通化し、`anthropic-models.ts` / `anthropic-usage.ts` 両方で利用
+  - `anthropic-models.ts` の User-Agent も `cchub/<version>` に変更(v0.1.93 で `anthropic-usage.ts` に行った変更を踏襲)
+  - Linux は元から `.credentials.json` ベースで動いていたため挙動変更なし
+
 ## [0.1.95] - 2026-04-30
 
 ### Fixed

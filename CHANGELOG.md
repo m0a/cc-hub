@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.97] - 2026-05-01
+
+### Fixed
+- Model Usage チャートで Opus 4.5 / 4.6 / 4.7 の色がほぼ同じで判別できなかった問題を修正
+  - Opus 4.7 が `startsWith('Opus')` のフォールバックで Opus 4.6 と同じ `bg-purple-500` になっていた
+  - Opus 4.5 → `bg-fuchsia-500`、Opus 4.6 → `bg-violet-400`、Opus 4.7 → `bg-indigo-500` と色相段階に分散して識別性を改善
+
 ## [0.1.96] - 2026-05-01
 
 ### Fixed

@@ -29,8 +29,9 @@ export function ModelUsageChart({ data }: ModelUsageChartProps) {
   const total = data.reduce((sum, m) => sum + m.totalTokensIn + m.totalTokensOut + m.totalCacheRead, 0);
 
   const getColor = (model: string): string => {
-    if (model === 'Opus 4.6') return 'bg-purple-500';
-    if (model === 'Opus 4.5') return 'bg-fuchsia-400';
+    if (model === 'Opus 4.5') return 'bg-fuchsia-500';
+    if (model === 'Opus 4.6') return 'bg-violet-400';
+    if (model === 'Opus 4.7') return 'bg-indigo-500';
     if (model.startsWith('Opus')) return 'bg-purple-500';
     if (model.startsWith('Sonnet')) return 'bg-blue-500';
     return 'bg-gray-500';

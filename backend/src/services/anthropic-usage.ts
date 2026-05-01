@@ -1,8 +1,6 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
 import { t } from '../i18n';
 import { VERSION } from '../cli';
+import { getClaudeAccessToken } from '../utils/claude-credentials';
 import type { UsageLimitsErrorReason, UsageLimitsStatus } from '../../../shared/types';
 
 function parseRetryAfter(header: string | null): number | null {
@@ -45,7 +43,6 @@ export interface UsageLimits {
 }
 
 export class AnthropicUsageService {
-  private claudeDir: string;
   private lastSuccessfulResult: UsageLimits | null = null;
   private lastFetchAt = 0;
   private inflight: Promise<UsageLimits | null> | null = null;
@@ -55,36 +52,8 @@ export class AnthropicUsageService {
   private rateLimitedUntil = 0;
   private lastErrorReason: UsageLimitsErrorReason | undefined;
 
-  constructor() {
-    this.claudeDir = join(homedir(), '.claude');
-  }
-
   private async getAccessToken(): Promise<string | null> {
-    // 1. Try the file-based credential store first.
-    try {
-      const content = await readFile(join(this.claudeDir, '.credentials.json'), 'utf-8');
-      const data = JSON.parse(content);
-      const token = data?.claudeAiOauth?.accessToken;
-      if (token) return token;
-    } catch {
-      // fall through to keychain on macOS
-    }
-
-    // 2. macOS Keychain fallback (newer Claude Code stores creds here).
-    if (process.platform === 'darwin') {
-      try {
-        const result = Bun.spawnSync(['security', 'find-generic-password', '-s', 'Claude Code-credentials', '-w']);
-        if (result.exitCode === 0) {
-          const out = result.stdout.toString().trim();
-          const data = JSON.parse(out);
-          return data?.claudeAiOauth?.accessToken || null;
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    return null;
+    return getClaudeAccessToken();
   }
 
   getStatus(): UsageLimitsStatus {

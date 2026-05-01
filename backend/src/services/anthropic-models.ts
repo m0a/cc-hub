@@ -1,6 +1,5 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { VERSION } from '../cli';
+import { getClaudeAccessToken } from '../utils/claude-credentials';
 
 interface ModelInfo {
   id: string;
@@ -11,25 +10,14 @@ interface ModelsListResponse {
   data: ModelInfo[];
 }
 
-const CLAUDE_DIR = join(homedir(), '.claude');
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 const FALLBACK_MAX_TOKENS = 200_000;
 
 let cache: { timestamp: number; map: Map<string, number> } | null = null;
 let inflight: Promise<Map<string, number>> | null = null;
 
-async function getAccessToken(): Promise<string | null> {
-  try {
-    const content = await readFile(join(CLAUDE_DIR, '.credentials.json'), 'utf-8');
-    const data = JSON.parse(content);
-    return data?.claudeAiOauth?.accessToken ?? null;
-  } catch {
-    return null;
-  }
-}
-
 async function fetchModels(): Promise<Map<string, number>> {
-  const token = await getAccessToken();
+  const token = await getClaudeAccessToken();
   if (!token) return new Map();
   try {
     const response = await fetch('https://api.anthropic.com/v1/models?limit=100', {
@@ -37,7 +25,7 @@ async function fetchModels(): Promise<Map<string, number>> {
         Authorization: `Bearer ${token}`,
         'anthropic-version': '2023-06-01',
         'anthropic-beta': 'oauth-2025-04-20',
-        'User-Agent': 'claude-code/2.0.32',
+        'User-Agent': `cchub/${VERSION}`,
       },
     });
     if (!response.ok) return new Map();

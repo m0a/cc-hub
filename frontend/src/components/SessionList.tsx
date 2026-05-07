@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Folder, ChevronRight, ChevronLeft, Search, X, Play, GripVertical } from 'lucide-react';
+import { Plus, Folder, ChevronRight, ChevronLeft, Search, X, Play, GripVertical, MessageSquare } from 'lucide-react';
 import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -543,6 +543,7 @@ function SessionItem({
   onShowMenu,
   onResume,
   onDelete,
+  onShowConversation,
   onClosePane,
 }: {
   session: ExtendedSessionResponse;
@@ -551,7 +552,7 @@ function SessionItem({
   onShowMenu: (session: ExtendedSessionResponse) => void;
   onResume?: (sessionId: string, ccSessionId?: string) => void;
   onDelete?: (sessionId: string) => void;
-  onShowConversation?: (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => void;
+  onShowConversation?: (sessionId: string, title: string, subtitle: string, isActive: boolean, agent?: string) => void;
   onPaneAction?: (sessionId: string, action: 'focus' | 'close' | 'split', paneId: string, direction?: 'h' | 'v') => void;
   onClosePane?: (sessionId: string, paneId: string, name: string) => void;
 }) {
@@ -830,6 +831,35 @@ function SessionItem({
                 {agentLabel}
               </span>
             )}
+            {(() => {
+              // Conversation viewer trigger.
+              // Claude → ccSessionId (.jsonl). Codex → agentSessionId (rollout).
+              const conversationId = extSession.agent === 'codex'
+                ? extSession.agentSessionId
+                : extSession.ccSessionId;
+              if (!conversationId || !onShowConversation) return null;
+              const isActive = !isLost;
+              return (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onShowConversation(
+                      conversationId,
+                      displayTitle,
+                      shortPath || session.name,
+                      isActive,
+                      extSession.agent,
+                    );
+                  }}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium bg-zinc-500/10 text-zinc-400 hover:bg-zinc-500/20 hover:text-zinc-200 transition-colors"
+                  title={t('session.showConversation', '会話を見る')}
+                >
+                  <MessageSquare className="w-3 h-3" />
+                  <span>{t('session.conversation', '会話')}</span>
+                </button>
+              );
+            })()}
             {typeof extSession.metrics?.contextPercent === 'number' && (
               <div className="inline-flex items-center gap-1.5" title={`${formatTokenCount(extSession.metrics.contextTokens ?? 0)} / ${formatTokenCount(extSession.metrics.contextMaxTokens ?? 0)}`}>
                 <span className="text-zinc-600">ctx</span>
@@ -985,6 +1015,7 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
     title: string;
     subtitle: string;
     isActive: boolean;
+    agent?: string;
   } | null>(null);
   const [conversation, setConversation] = useState<ConversationMessage[]>([]);
   const [loadingConversation, setLoadingConversation] = useState(false);
@@ -1044,12 +1075,18 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
   }, [sessions, onSelectSession, createSession]);
 
   // Show conversation for an active session
-  const handleShowConversation = useCallback(async (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => {
-    setViewingConversation({ sessionId: ccSessionId, title, subtitle, isActive });
+  const handleShowConversation = useCallback(async (
+    sessionId: string,
+    title: string,
+    subtitle: string,
+    isActive: boolean,
+    agent?: string,
+  ) => {
+    setViewingConversation({ sessionId, title, subtitle, isActive, agent });
     setLoadingConversation(true);
     setConversation([]);
     try {
-      const messages = await fetchConversation(ccSessionId);
+      const messages = await fetchConversation(sessionId, undefined, agent);
       setConversation(messages);
     } finally {
       setLoadingConversation(false);
@@ -1060,7 +1097,7 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
   const handleRefreshConversation = useCallback(async () => {
     if (!viewingConversation) return;
     try {
-      const messages = await fetchConversation(viewingConversation.sessionId);
+      const messages = await fetchConversation(viewingConversation.sessionId, undefined, viewingConversation.agent);
       setConversation(messages);
     } catch (err) {
       console.error('Failed to refresh conversation:', err);

@@ -5,6 +5,7 @@ import { TmuxService } from '../services/tmux';
 import { controlSessions, getOrCreateControlSession } from '../services/tmux-control';
 import { ClaudeCodeService } from '../services/claude-code';
 import { CodexService } from '../services/codex';
+import { CodexConversationService } from '../services/codex-conversation';
 import { SessionHistoryService } from '../services/session-history';
 import { PromptHistoryService } from '../services/prompt-history';
 import { getAllSessionMetadata, setSessionTheme, setSessionTitle, getSessionOrder, setSessionOrder, getLastKnownSessions, saveLastKnownSessions, removeLastKnownSession, type LastKnownSession } from '../services/session-metadata';
@@ -15,6 +16,7 @@ import { pushSessionsNow } from './terminal-mux';
 const tmuxService = new TmuxService();
 const claudeCodeService = new ClaudeCodeService();
 const codexService = new CodexService();
+const codexConversationService = new CodexConversationService();
 const sessionHistoryService = new SessionHistoryService();
 const promptHistoryService = new PromptHistoryService();
 
@@ -434,11 +436,15 @@ sessions.get('/history', async (c) => {
 
 // GET /sessions/history/:sessionId/conversation - Get conversation history for a session
 // ?last=N returns only the last N messages (for lightweight clients like G2 glasses)
+// ?agent=codex routes to the Codex rollout reader instead of Claude's jsonl
 sessions.get('/history/:sessionId/conversation', async (c) => {
   const sessionId = c.req.param('sessionId');
   const projectDirName = c.req.query('projectDirName');
   const last = c.req.query('last') ? parseInt(c.req.query('last')!, 10) : undefined;
-  const messages = await sessionHistoryService.getConversation(sessionId, projectDirName);
+  const agent = c.req.query('agent');
+  const messages = agent === 'codex'
+    ? await codexConversationService.getConversation(sessionId)
+    : await sessionHistoryService.getConversation(sessionId, projectDirName);
   return c.json({ messages: last ? messages.slice(-last) : messages });
 });
 

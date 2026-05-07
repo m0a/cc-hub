@@ -756,12 +756,6 @@ function SessionItem({
             </span>
           )}
 
-          {agentLabel && (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-zinc-500/15 text-zinc-400 shrink-0">
-              {agentLabel}
-            </span>
-          )}
-
           {/* Status badge - pill style */}
           {isWaiting && hasWaitingTool ? (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/15 text-amber-400">
@@ -821,10 +815,15 @@ function SessionItem({
           </p>
         )}
 
-        {/* Metrics row: context / memory / tokens */}
-        {extSession.metrics && (
+        {/* Metadata row: agent / context / memory / tokens */}
+        {(agentLabel || extSession.metrics) && (
           <div className="mt-1.5 flex items-center gap-3 flex-wrap text-[11px] text-zinc-500">
-            {typeof extSession.metrics.contextPercent === 'number' && (
+            {agentLabel && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full font-medium bg-zinc-500/15 text-zinc-400">
+                {agentLabel}
+              </span>
+            )}
+            {typeof extSession.metrics?.contextPercent === 'number' && (
               <div className="inline-flex items-center gap-1.5" title={`${formatTokenCount(extSession.metrics.contextTokens ?? 0)} / ${formatTokenCount(extSession.metrics.contextMaxTokens ?? 0)}`}>
                 <span className="text-zinc-600">ctx</span>
                 <div className="w-14 h-1 bg-white/10 rounded-full overflow-hidden">
@@ -840,12 +839,12 @@ function SessionItem({
                 <span className="font-mono tabular-nums">{extSession.metrics.contextPercent.toFixed(1)}%</span>
               </div>
             )}
-            {typeof extSession.metrics.memoryRssBytes === 'number' && extSession.metrics.memoryRssBytes > 0 && (
+            {typeof extSession.metrics?.memoryRssBytes === 'number' && extSession.metrics.memoryRssBytes > 0 && (
               <span className="font-mono tabular-nums" title={`${extSession.metrics.memoryRssBytes} bytes`}>
                 <span className="text-zinc-600">mem</span> {formatBytes(extSession.metrics.memoryRssBytes)}
               </span>
             )}
-            {typeof extSession.metrics.totalTokens === 'number' && extSession.metrics.totalTokens > 0 && (
+            {typeof extSession.metrics?.totalTokens === 'number' && extSession.metrics.totalTokens > 0 && (
               <span className="font-mono tabular-nums" title={`input + cache_creation + output (excludes cache_read)\n\nin: ${extSession.metrics.totalInputTokens?.toLocaleString() ?? 0}\ncache create: ${extSession.metrics.totalCacheCreationTokens?.toLocaleString() ?? 0}\ncache read: ${extSession.metrics.totalCacheReadTokens?.toLocaleString() ?? 0}\nout: ${extSession.metrics.totalOutputTokens?.toLocaleString() ?? 0}`}>
                 <span className="text-zinc-600">used</span> {formatTokenCount(extSession.metrics.totalTokens)}
               </span>

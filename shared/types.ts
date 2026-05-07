@@ -52,6 +52,7 @@ export const AGENT_PROVIDERS = {
   claude: {
     id: 'claude',
     command: 'claude',
+    resumeCommand: 'claude -r',
     labelKey: 'session.agentProvider.claude',
     processPatterns: [/(?:^|\/)claude(?:\s|$)/, /\/claude\/versions\//],
     supportsConversationMetadata: true,
@@ -59,6 +60,7 @@ export const AGENT_PROVIDERS = {
   codex: {
     id: 'codex',
     command: 'codex',
+    resumeCommand: 'codex resume',
     labelKey: 'session.agentProvider.codex',
     processPatterns: [/(?:^|\/)codex(?:\s|$)/, /\/@openai\/codex\//],
     supportsConversationMetadata: false,
@@ -84,6 +86,11 @@ export function detectAgentProviderFromArgs(args: string): AgentProvider | undef
 
 export function agentSupportsConversationMetadata(agent: string | undefined): boolean {
   return !!agent && isAgentProvider(agent) && AGENT_PROVIDERS[agent].supportsConversationMetadata;
+}
+
+export function agentResumeCommand(agent: AgentProvider, sessionId?: string): string {
+  const base = AGENT_PROVIDERS[agent].resumeCommand;
+  return sessionId ? `${base} ${sessionId}` : base;
 }
 
 export interface SessionResponse {

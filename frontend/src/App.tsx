@@ -549,7 +549,7 @@ export function App() {
           const response = await authFetch(`${API_BASE}/api/sessions/history/resume`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: session.ccSessionId, projectPath: session.currentPath }),
+            body: JSON.stringify({ sessionId: session.ccSessionId, projectPath: session.currentPath, agent: session.agent }),
           });
           if (!response.ok) {
             throw new Error('Failed to resume session');

@@ -3,6 +3,7 @@ import {
   AGENT_PROVIDER_IDS,
   AGENT_PROVIDERS,
   CreateSessionSchema,
+  agentResumeCommand,
   agentSupportsConversationMetadata,
   detectAgentProviderFromArgs,
 } from '../../../shared/types';
@@ -74,5 +75,12 @@ describe('Agent provider registry', () => {
     ];
 
     expect(findDuplicateAgentWorkingDirSession(sessions, 'codex', '/repo')?.name).toBe('legacy-codex');
+  });
+
+  test('builds resume commands per agent', () => {
+    expect(agentResumeCommand('claude')).toBe('claude -r');
+    expect(agentResumeCommand('claude', 'abc-123')).toBe('claude -r abc-123');
+    expect(agentResumeCommand('codex')).toBe('codex resume');
+    expect(agentResumeCommand('codex', 'thread-xyz')).toBe('codex resume thread-xyz');
   });
 });

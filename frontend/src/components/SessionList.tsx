@@ -1011,7 +1011,7 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
           const response = await authFetch(`${API_BASE}/api/sessions/history/resume`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: ccSessionId, projectPath: session.currentPath }),
+            body: JSON.stringify({ sessionId: ccSessionId, projectPath: session.currentPath, agent: session.agent }),
           });
           if (response.ok) {
             const data = await response.json();
@@ -1028,11 +1028,11 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
           if (newSession) onSelectSession(newSession);
         }
       } else {
-        // Active session: resume claude in existing tmux session
+        // Active session: resume the agent in the existing tmux session
         const response = await authFetch(`${API_BASE}/api/sessions/${sessionId}/resume`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ccSessionId }),
+          body: JSON.stringify({ ccSessionId, agent: session?.agent }),
         });
         if (response.ok && session) {
           onSelectSession(session);

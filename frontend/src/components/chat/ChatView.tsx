@@ -1,10 +1,11 @@
 import { useTranslation } from 'react-i18next';
 import { ConversationViewer } from '../ConversationViewer';
 import { useConversationStream } from '../../hooks/useConversationStream';
+import { useCodexConversation } from '../../hooks/useCodexConversation';
 import { useInputEcho } from '../../hooks/useInputEcho';
 import { ChatComposer } from './ChatComposer';
 import { getTerminalThemes } from '../terminal-themes';
-import type { SessionTheme } from '../../../../shared/types';
+import type { AgentProvider, SessionTheme } from '../../../../shared/types';
 
 interface ChatViewProps {
   sessionId: string;
@@ -25,6 +26,11 @@ interface ChatViewProps {
   onAtBottomChange?: (atBottom: boolean) => void;
   /** Session theme — propagated to ConversationViewer for matching bg color. */
   theme?: SessionTheme;
+  /** Provider for the active session. Codex sessions skip the WebSocket stream
+   *  (server-side rollout-tail isn't implemented) and poll the HTTP endpoint. */
+  agent?: AgentProvider;
+  /** Codex thread id, used as the conversation key when agent=codex. */
+  agentSessionId?: string | null;
 }
 
 export function ChatView({
@@ -39,16 +45,30 @@ export function ChatView({
   onScrollGesture,
   onAtBottomChange,
   theme,
+  agent,
+  agentSessionId,
 }: ChatViewProps) {
   const { t } = useTranslation();
-  const { messages, isReady, ccSessionId } = useConversationStream({
+  const isCodex = agent === 'codex';
+  const claudeStream = useConversationStream({
     sessionId,
-    enabled,
+    enabled: enabled && !isCodex,
   });
+  const codexStream = useCodexConversation({
+    threadId: agentSessionId,
+    enabled: enabled && isCodex,
+  });
+  const messages = isCodex ? codexStream.messages : claudeStream.messages;
+  const isReady = isCodex ? codexStream.isReady : claudeStream.isReady;
+  const ccSessionId = isCodex ? null : claudeStream.ccSessionId;
   const echo = useInputEcho(sessionId);
 
   const resolvedTitle = title ?? t('conversation.claude');
-  const resolvedSubtitle = subtitle ?? (ccSessionId ? `cc:${ccSessionId.slice(0, 8)}` : undefined);
+  const resolvedSubtitle = subtitle ?? (
+    isCodex
+      ? agentSessionId ? `codex:${agentSessionId.slice(0, 8)}` : undefined
+      : ccSessionId ? `cc:${ccSessionId.slice(0, 8)}` : undefined
+  );
 
   const themeBg = getTerminalThemes()[theme || 'default'].background;
 
@@ -88,6 +108,7 @@ export function ChatView({
       onScrollGesture={onScrollGesture}
       onAtBottomChange={onAtBottomChange}
       theme={theme}
+      agent={agent}
     />
   );
 

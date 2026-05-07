@@ -5,7 +5,7 @@ import { TerminalComponent, type TerminalRef } from './Terminal';
 import { ChatView } from './chat/ChatView';
 
 import { authFetch } from '../services/api';
-import type { SessionState, SessionTheme, PaneInfo } from '../../../shared/types';
+import type { AgentProvider, SessionState, SessionTheme, PaneInfo } from '../../../shared/types';
 import type { ControlModeConfig } from './Terminal';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -22,6 +22,8 @@ interface ExtendedSession {
   state: SessionState;
   currentPath?: string;
   ccSessionId?: string;
+  agent?: AgentProvider;
+  agentSessionId?: string;
   currentCommand?: string;
   theme?: SessionTheme;
   panes?: PaneInfo[];
@@ -242,19 +244,21 @@ function TerminalPane({
     }
   }, [conversationModeKey]);
 
-  // Fall back to terminal view only if pane data has loaded AND Claude is
-  // not running on the active pane. Without the loaded check, the very first
-  // render after remount (e.g. after a split) sees panes=undefined and would
-  // wrongly clear chat mode.
+  // Fall back to terminal view only if pane data has loaded AND no supported
+  // agent is running on the active pane. Without the loaded check, the very
+  // first render after remount (e.g. after a split) sees panes=undefined and
+  // would wrongly clear chat mode.
   const activeTmuxPane = session?.panes?.find(p => p.isActive);
   const claudeRunning = activeTmuxPane?.currentCommand === 'claude';
+  const codexRunning = activeTmuxPane?.currentCommand === 'codex';
+  const conversationAvailable = claudeRunning || codexRunning;
   const panesLoaded = !!session?.panes;
   useEffect(() => {
     if (!panesLoaded) return;
-    if (!claudeRunning && showConversation) {
+    if (!conversationAvailable && showConversation) {
       setShowConversation(false);
     }
-  }, [claudeRunning, showConversation, panesLoaded, setShowConversation]);
+  }, [conversationAvailable, showConversation, panesLoaded, setShowConversation]);
 
   const handleToggleConversation = useCallback(() => {
     setShowConversation(prev => !prev);
@@ -280,8 +284,7 @@ function TerminalPane({
         <div className={`flex items-center ${isTablet ? 'gap-0' : 'gap-1.5'}`}>
           {/* Terminal / Chat single-icon toggle — shows the destination mode */}
           {(() => {
-            const claudeAvailable = claudeRunning;
-            const disabled = !showConversation && !claudeAvailable;
+            const disabled = !showConversation && !conversationAvailable;
             return (
               <button
                 onClick={(e) => {
@@ -297,9 +300,9 @@ function TerminalPane({
                 title={
                   showConversation
                     ? 'ターミナルに切替'
-                    : claudeAvailable
+                    : conversationAvailable
                       ? '会話履歴に切替'
-                      : 'Claude Code が起動していません'
+                      : 'エージェントが起動していません'
                 }
                 aria-label={showConversation ? 'Switch to Terminal' : 'Switch to Chat'}
               >
@@ -493,6 +496,8 @@ function TerminalPane({
             showComposer={!isTablet}
             paneId={controlModeContext.getControlConfig(paneId)?.paneId}
             theme={session?.theme}
+            agent={session?.agent}
+            agentSessionId={session?.agentSessionId}
           />
         )}
         {sessionId ? (

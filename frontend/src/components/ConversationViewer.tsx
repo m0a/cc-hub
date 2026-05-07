@@ -272,6 +272,8 @@ interface ConversationViewerProps {
   onAtBottomChange?: (atBottom: boolean) => void;
   /** Session theme — used to color the background to match the Terminal. */
   theme?: SessionTheme;
+  /** Agent that produced these messages. Switches the assistant role label. */
+  agent?: string;
 }
 
 // Markdown components configuration
@@ -342,7 +344,7 @@ const markdownComponents = {
 };
 
 // Memoized message item component
-const MessageItem = memo(function MessageItem({ msg }: { msg: ConversationMessage }) {
+const MessageItem = memo(function MessageItem({ msg, agent }: { msg: ConversationMessage; agent?: string }) {
   const { t } = useTranslation();
 
   // Determine if this is a tool-result-only message (system response)
@@ -364,7 +366,7 @@ const MessageItem = memo(function MessageItem({ msg }: { msg: ConversationMessag
   } else if (msg.role === 'user') {
     displayRole = t('conversation.you');
   } else {
-    displayRole = t('conversation.claude');
+    displayRole = agent === 'codex' ? t('conversation.codex') : t('conversation.claude');
   }
 
   const roleColor = msg.role === 'user' ? 'text-blue-400' : isSummaryMessage ? 'text-amber-400' : 'text-zinc-500';
@@ -418,6 +420,7 @@ export function ConversationViewer({
   onScrollGesture,
   onAtBottomChange,
   theme,
+  agent,
 }: ConversationViewerProps) {
   const { t } = useTranslation();
   const parentRef = useRef<HTMLDivElement>(null);
@@ -763,7 +766,7 @@ export function ConversationViewer({
                   ref={virtualizer.measureElement}
                 >
                   <div className="pb-1">
-                    <MessageItem msg={messages[virtualRow.index]} />
+                    <MessageItem msg={messages[virtualRow.index]} agent={agent} />
                   </div>
                 </div>
               ))}

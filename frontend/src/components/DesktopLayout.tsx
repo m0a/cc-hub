@@ -222,6 +222,8 @@ export function DesktopLayout({
               theme: apiSession.theme,
               currentCommand: apiSession.currentCommand,
               ccSessionId: apiSession.ccSessionId,
+              agent: apiSession.agent,
+              agentSessionId: apiSession.agentSessionId,
               panes: apiSession.panes,
             }
           : {
@@ -230,6 +232,8 @@ export function DesktopLayout({
               state: apiSession.state,
               currentPath: apiSession.currentPath,
               ccSessionId: apiSession.ccSessionId,
+              agent: apiSession.agent,
+              agentSessionId: apiSession.agentSessionId,
               currentCommand: apiSession.currentCommand,
               theme: apiSession.theme,
               panes: apiSession.panes,

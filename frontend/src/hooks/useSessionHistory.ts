@@ -35,7 +35,7 @@ interface UseSessionHistoryResult {
   // Actions
   refresh: () => Promise<void>;
   resumeSession: (sessionId: string, projectPath: string) => Promise<{ tmuxSessionId: string } | null>;
-  fetchConversation: (sessionId: string, projectDirName?: string, agent?: string) => Promise<ConversationMessage[]>;
+  fetchConversation: (sessionId: string, projectDirName?: string) => Promise<ConversationMessage[]>;
 }
 
 export function useSessionHistory(): UseSessionHistoryResult {
@@ -141,18 +141,11 @@ export function useSessionHistory(): UseSessionHistoryResult {
     }
   }, []);
 
-  const fetchConversation = useCallback(async (
-    sessionId: string,
-    projectDirName?: string,
-    agent?: string,
-  ): Promise<ConversationMessage[]> => {
+  const fetchConversation = useCallback(async (sessionId: string, projectDirName?: string): Promise<ConversationMessage[]> => {
     try {
       const url = new URL(`${API_BASE}/api/sessions/history/${sessionId}/conversation`, window.location.origin);
       if (projectDirName) {
         url.searchParams.set('projectDirName', projectDirName);
-      }
-      if (agent) {
-        url.searchParams.set('agent', agent);
       }
       const response = await authFetch(url.toString(), {
         cache: 'no-store',

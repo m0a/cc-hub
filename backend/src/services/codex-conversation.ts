@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { Database } from 'bun:sqlite';
-import type { ConversationMessage } from '../../../shared/types';
+import type { ConversationMessage, ToolUseInfo, ToolResultInfo } from '../../../shared/types';
 
 interface RolloutEvent {
   timestamp?: string;
@@ -10,7 +10,10 @@ interface RolloutEvent {
   payload?: {
     type?: string;
     message?: string;
-    images?: unknown[];
+    name?: string;
+    arguments?: string;
+    call_id?: string;
+    output?: string;
   };
 }
 
@@ -18,11 +21,28 @@ interface ThreadRow {
   rollout_path: string | null;
 }
 
+function parseFunctionArguments(raw: unknown): Record<string, unknown> {
+  if (typeof raw !== 'string') return {};
+  try {
+    const value = JSON.parse(raw);
+    return value && typeof value === 'object' ? (value as Record<string, unknown>) : { value };
+  } catch {
+    return { raw };
+  }
+}
+
 /**
  * Reads conversation messages from a Codex thread's rollout JSONL.
- * Codex stores user/assistant text under `event_msg/user_message` and
- * `event_msg/agent_message`; tool calls and other interaction events
- * are intentionally skipped here for a clean text-first view.
+ *
+ * Codex emits a stream of events; we collapse them into Claude-shaped
+ * conversation turns:
+ *  - `event_msg/user_message`            → role=user
+ *  - `event_msg/agent_message`           → role=assistant content (multiple
+ *    agent_messages between tool calls join with blank lines)
+ *  - `response_item/function_call`       → ToolUseInfo on the active
+ *    assistant turn
+ *  - `response_item/function_call_output`→ ToolResultInfo on the next
+ *    user turn (toolName is looked up from the matching call_id)
  */
 export class CodexConversationService {
   private dbPath: string;
@@ -64,6 +84,24 @@ export class CodexConversationService {
     }
 
     const messages: ConversationMessage[] = [];
+    let current: ConversationMessage | null = null;
+    const callIdToName = new Map<string, string>();
+
+    const flush = () => {
+      if (!current) return;
+      const hasContent = !!current.content || !!current.toolUse?.length || !!current.toolResult?.length;
+      if (hasContent) messages.push(current);
+      current = null;
+    };
+
+    const ensureRole = (role: 'user' | 'assistant', timestamp?: string): ConversationMessage => {
+      if (current?.role !== role) {
+        flush();
+        current = { role, content: '', timestamp };
+      }
+      return current as ConversationMessage;
+    };
+
     for (const line of text.split('\n')) {
       const trimmed = line.trim();
       if (!trimmed) continue;
@@ -73,19 +111,56 @@ export class CodexConversationService {
       } catch {
         continue;
       }
-      if (event.type !== 'event_msg') continue;
+
       const payload = event.payload;
       if (!payload) continue;
-      const role = payload.type === 'user_message' ? 'user' : payload.type === 'agent_message' ? 'assistant' : null;
-      if (!role) continue;
-      const content = typeof payload.message === 'string' ? payload.message : '';
-      if (!content) continue;
-      messages.push({
-        role,
-        content,
-        timestamp: event.timestamp,
-      });
+      const ts = event.timestamp;
+
+      if (event.type === 'event_msg' && payload.type === 'user_message') {
+        flush();
+        const content = typeof payload.message === 'string' ? payload.message : '';
+        if (content) messages.push({ role: 'user', content, timestamp: ts });
+        continue;
+      }
+
+      if (event.type === 'event_msg' && payload.type === 'agent_message') {
+        const content = typeof payload.message === 'string' ? payload.message : '';
+        if (!content) continue;
+        const turn = ensureRole('assistant', ts);
+        turn.content = turn.content ? `${turn.content}\n\n${content}` : content;
+        turn.timestamp ??= ts;
+        continue;
+      }
+
+      if (event.type === 'response_item' && payload.type === 'function_call') {
+        const callId = typeof payload.call_id === 'string' ? payload.call_id : '';
+        const name = typeof payload.name === 'string' ? payload.name : 'tool';
+        if (callId) callIdToName.set(callId, name);
+        const turn = ensureRole('assistant', ts);
+        const tool: ToolUseInfo = {
+          id: callId,
+          name,
+          input: parseFunctionArguments(payload.arguments),
+        };
+        turn.toolUse = turn.toolUse ? [...turn.toolUse, tool] : [tool];
+        continue;
+      }
+
+      if (event.type === 'response_item' && payload.type === 'function_call_output') {
+        const callId = typeof payload.call_id === 'string' ? payload.call_id : '';
+        const output = typeof payload.output === 'string' ? payload.output : '';
+        const turn = ensureRole('user', ts);
+        const result: ToolResultInfo = {
+          toolUseId: callId,
+          toolName: callIdToName.get(callId),
+          output,
+        };
+        turn.toolResult = turn.toolResult ? [...turn.toolResult, result] : [result];
+        continue;
+      }
     }
+
+    flush();
     return messages;
   }
 }

@@ -41,21 +41,36 @@ describe('CodexConversationService', () => {
     ]);
   });
 
-  test('skips tool calls and other events', () => {
+  test('attaches function_call/output as toolUse/toolResult', () => {
     writeRollout([
       { timestamp: '2026-05-07T09:47:30Z', type: 'event_msg', payload: { type: 'user_message', message: 'lsして' } },
-      { timestamp: '2026-05-07T09:47:31Z', type: 'event_msg', payload: { type: 'task_started' } },
-      { timestamp: '2026-05-07T09:47:32Z', type: 'response_item', payload: { type: 'function_call' } },
-      { timestamp: '2026-05-07T09:47:33Z', type: 'event_msg', payload: { type: 'exec_command_end', stdout: 'a b c' } },
-      { timestamp: '2026-05-07T09:47:34Z', type: 'event_msg', payload: { type: 'token_count' } },
-      { timestamp: '2026-05-07T09:47:40Z', type: 'event_msg', payload: { type: 'agent_message', message: 'a, b, c が見えました' } },
+      { timestamp: '2026-05-07T09:47:31Z', type: 'event_msg', payload: { type: 'agent_message', message: '一覧を取ります' } },
+      { timestamp: '2026-05-07T09:47:32Z', type: 'response_item', payload: { type: 'function_call', name: 'exec_command', arguments: '{"cmd":"ls"}', call_id: 'c1' } },
+      { timestamp: '2026-05-07T09:47:33Z', type: 'response_item', payload: { type: 'function_call_output', call_id: 'c1', output: 'a\nb\nc' } },
+      { timestamp: '2026-05-07T09:47:34Z', type: 'event_msg', payload: { type: 'agent_message', message: 'a, b, c が見えました' } },
     ]);
 
     const svc = new CodexConversationService();
     const messages = svc.parseRollout(rolloutPath);
-    expect(messages.map(m => m.role)).toEqual(['user', 'assistant']);
+    expect(messages.map(m => m.role)).toEqual(['user', 'assistant', 'user', 'assistant']);
     expect(messages[0].content).toBe('lsして');
-    expect(messages[1].content).toBe('a, b, c が見えました');
+    expect(messages[1].content).toBe('一覧を取ります');
+    expect(messages[1].toolUse?.[0]).toEqual({ id: 'c1', name: 'exec_command', input: { cmd: 'ls' } });
+    expect(messages[2].toolResult?.[0]).toEqual({ toolUseId: 'c1', toolName: 'exec_command', output: 'a\nb\nc' });
+    expect(messages[3].content).toBe('a, b, c が見えました');
+  });
+
+  test('joins consecutive agent_messages with a blank line', () => {
+    writeRollout([
+      { timestamp: '2026-05-07T09:47:30Z', type: 'event_msg', payload: { type: 'user_message', message: 'go' } },
+      { timestamp: '2026-05-07T09:47:31Z', type: 'event_msg', payload: { type: 'agent_message', message: '考えます' } },
+      { timestamp: '2026-05-07T09:47:32Z', type: 'event_msg', payload: { type: 'agent_message', message: '次のステップへ' } },
+    ]);
+    const svc = new CodexConversationService();
+    const messages = svc.parseRollout(rolloutPath);
+    expect(messages).toHaveLength(2);
+    expect(messages[1].role).toBe('assistant');
+    expect(messages[1].content).toBe('考えます\n\n次のステップへ');
   });
 
   test('returns empty array on missing file', () => {

@@ -633,6 +633,7 @@ function SessionItem({
   const extSession = session;
   const agent = extSession.agent ?? extSession.currentCommand;
   const supportsConversationMetadata = agentSupportsConversationMetadata(agent);
+  const agentLabel = agent && isAgentProvider(agent) ? t(AGENT_PROVIDERS[agent].labelKey) : undefined;
   // Derive card-level indicatorState from panes (priority: waiting_input > processing > idle)
   const cardIndicator: IndicatorState | undefined = (() => {
     if (extSession.panes && extSession.panes.length > 0) {
@@ -752,6 +753,12 @@ function SessionItem({
           {shortPath && (
             <span className="text-[12px] text-zinc-500 truncate font-mono flex-1 min-w-0">
               {shortPath}
+            </span>
+          )}
+
+          {agentLabel && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-zinc-500/15 text-zinc-400 shrink-0">
+              {agentLabel}
             </span>
           )}
 

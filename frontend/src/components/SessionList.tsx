@@ -998,20 +998,25 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
       .catch(() => {});
   }, [hookBannerDismissed]);
 
-  // Resume a Claude session
+  // Resume an agent session, preserving the original agent (claude / codex / ...)
   const handleResume = useCallback(async (sessionId: string, ccSessionId?: string) => {
     try {
-      // Check if this is a lost session (no tmux session exists)
       const session = sessions.find(s => s.id === sessionId);
       const isLost = session?.state === 'lost';
+      // Per-agent conversation id: Claude → ccSessionId, Codex → agentSessionId.
+      // Pick the one matching the session's agent so we don't accidentally
+      // hand a Codex thread id to `claude -r` (or vice versa).
+      const conversationId = session?.agent === 'codex'
+        ? session.agentSessionId
+        : (ccSessionId ?? session?.ccSessionId);
 
       if (isLost && session?.currentPath) {
-        if (ccSessionId) {
-          // Lost session with ccSessionId: resume via history API
+        if (conversationId) {
+          // Lost session with a known conversation id: resume via history API
           const response = await authFetch(`${API_BASE}/api/sessions/history/resume`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: ccSessionId, projectPath: session.currentPath, agent: session.agent }),
+            body: JSON.stringify({ sessionId: conversationId, projectPath: session.currentPath, agent: session.agent }),
           });
           if (response.ok) {
             const data = await response.json();
@@ -1023,8 +1028,9 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
             setTimeout(checkNewSession, 2000);
           }
         } else {
-          // Lost session without ccSessionId: create new session in the same directory
-          const newSession = await createSession(session.name, session.currentPath);
+          // Lost session without a conversation id: create a fresh session in the same
+          // directory using the original agent so a Codex session doesn't come back as Claude.
+          const newSession = await createSession(session.name, session.currentPath, session.agent);
           if (newSession) onSelectSession(newSession);
         }
       } else {
@@ -1032,7 +1038,7 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
         const response = await authFetch(`${API_BASE}/api/sessions/${sessionId}/resume`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ccSessionId, agent: session?.agent }),
+          body: JSON.stringify({ ccSessionId: conversationId, agent: session?.agent }),
         });
         if (response.ok && session) {
           onSelectSession(session);

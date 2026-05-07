@@ -1,7 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { ConversationViewer } from '../ConversationViewer';
-import { useConversationStream } from '../../hooks/useConversationStream';
-import { useCodexConversation } from '../../hooks/useCodexConversation';
+import { useAgentConversation } from '../../hooks/useAgentConversation';
 import { useInputEcho } from '../../hooks/useInputEcho';
 import { ChatComposer } from './ChatComposer';
 import { getTerminalThemes } from '../terminal-themes';
@@ -49,28 +48,17 @@ export function ChatView({
   agentSessionId,
 }: ChatViewProps) {
   const { t } = useTranslation();
-  const isCodex = agent === 'codex';
-  const isClaude = agent === 'claude';
-  const claudeStream = useConversationStream({
+  const { messages, isReady, conversationId } = useAgentConversation({
+    agent,
     sessionId,
-    enabled: enabled && isClaude,
+    agentSessionId,
+    enabled,
   });
-  const codexStream = useCodexConversation({
-    threadId: agentSessionId,
-    enabled: enabled && isCodex,
-  });
-  const messages = isCodex ? codexStream.messages : isClaude ? claudeStream.messages : [];
-  // `isReady=true` for unsupported agents so the empty state renders instead
-  // of the loading skeleton (which would never resolve).
-  const isReady = isCodex ? codexStream.isReady : isClaude ? claudeStream.isReady : true;
-  const ccSessionId = isClaude ? claudeStream.ccSessionId : null;
   const echo = useInputEcho(sessionId);
 
   const resolvedTitle = title ?? t('conversation.claude');
   const resolvedSubtitle = subtitle ?? (
-    isCodex
-      ? agentSessionId ? `codex:${agentSessionId.slice(0, 8)}` : undefined
-      : ccSessionId ? `cc:${ccSessionId.slice(0, 8)}` : undefined
+    conversationId ? `${agent ?? 'agent'}:${conversationId.slice(0, 8)}` : undefined
   );
 
   const themeBg = getTerminalThemes()[theme || 'default'].background;

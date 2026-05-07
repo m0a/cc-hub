@@ -12,6 +12,8 @@ export interface UseAgentConversationOptions {
   enabled?: boolean;
 }
 
+export type AgentConversationError = 'missing-agent' | 'unsupported-agent';
+
 export interface UseAgentConversationResult {
   messages: ConversationMessage[];
   isReady: boolean;
@@ -21,6 +23,11 @@ export interface UseAgentConversationResult {
    * thread id; null otherwise.
    */
   conversationId: string | null;
+  /**
+   * Set when no provider is wired for the requested `agent` value. Consumers
+   * should render an inline error rather than a blank conversation.
+   */
+  error: AgentConversationError | null;
 }
 
 /**
@@ -52,16 +59,23 @@ export function useAgentConversation({
         messages: claude.messages,
         isReady: claude.isReady,
         conversationId: claude.ccSessionId,
+        error: null,
       };
     case 'codex':
       return {
         messages: codex.messages,
         isReady: codex.isReady,
         conversationId: agentSessionId ?? null,
+        error: null,
       };
     default:
-      // `isReady=true` so consumers fall through to their empty state instead
+      // `isReady=true` so consumers fall through to their error state instead
       // of showing a loading skeleton that would never resolve.
-      return { messages: [], isReady: true, conversationId: null };
+      return {
+        messages: [],
+        isReady: true,
+        conversationId: null,
+        error: agent === undefined ? 'missing-agent' : 'unsupported-agent',
+      };
   }
 }

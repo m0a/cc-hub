@@ -48,7 +48,7 @@ export function ChatView({
   agentSessionId,
 }: ChatViewProps) {
   const { t } = useTranslation();
-  const { messages, isReady, conversationId } = useAgentConversation({
+  const { messages, isReady, conversationId, error } = useAgentConversation({
     agent,
     sessionId,
     agentSessionId,
@@ -62,6 +62,26 @@ export function ChatView({
   );
 
   const themeBg = getTerminalThemes()[theme || 'default'].background;
+
+  if (error) {
+    const errorClass = inline ? 'h-full' : 'fixed inset-0 z-50';
+    const errorMessage = error === 'unsupported-agent'
+      ? t('conversation.errorUnsupportedAgent', { agent: String(agent) })
+      : t('conversation.errorMissingAgent');
+    return (
+      <div
+        className={`${errorClass} flex flex-col items-center justify-center px-6 text-center`}
+        style={{ backgroundColor: themeBg }}
+      >
+        <div className="text-sm font-medium text-red-300 mb-2">
+          {t('conversation.errorTitle')}
+        </div>
+        <div className="text-xs text-th-text-muted max-w-sm leading-relaxed">
+          {errorMessage}
+        </div>
+      </div>
+    );
+  }
 
   // Avoid showing a "Loading..." flash every time the view opens. Until the
   // initial conversation arrives, render an empty container.

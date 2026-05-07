@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.103] - 2026-05-08
+
+### Fixed
+- Codex 使用量ダッシュボードで 5h cycle の reset 時刻を過ぎても exhausted 状態が残り、制限超過表示が継続していた問題を修正 (#136)
+  - `credits.has_credits === false` の exceeded 上書きは、5h cycle の `resetsAt` が未来の場合だけ適用
+  - reset 後は最新の windowed rate limit を優先し、古い no-credits イベントで 100% 表示に戻さない
+- Usage チャートが cycle start に人工的な 0% 点を追加していたため、履歴が少ない cycle で縦方向のスパイクが描画される問題を修正 (#136)
+  - 実サンプルのみを時系列ソートして描画
+
 ## [0.1.102] - 2026-05-08
 
 ### Fixed

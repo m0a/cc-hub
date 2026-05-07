@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.100] - 2026-05-07
+
+### Added
+- ダッシュボードに Codex 用の使用量リミット表示を追加 (#130)
+  - `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` の `token_count` イベントに含まれる `rate_limits` を読み取り、Anthropic Usage Limits と同じ形のチャートで表示
+  - `primary` / `secondary` を `window_minutes` で 5h/7d に振り分け（24h 未満は短期サイクル扱い）
+  - ダッシュボード上部に `Claude` / `Codex` の agent タブを追加（両方のデータが存在するときのみ表示）。片方しか無い環境では自動でそちら側を表示
+  - `UsageLimits` コンポーネントを optional cycle 対応にリファクタし、未対応 cycle を「現在のプランでは未対応」プレースホルダで表示
+  - plan_type を見出し横にバッジ表示（free / plus 等）
+- Codex のレート制限到達検知 (#130)
+  - `credits.has_credits === false` を検出すると `rateLimitExceeded` フラグを立て、5h cycle を 100% / exceeded で上書き、ダッシュボードに赤いバナーを表示
+  - OpenAI はリミット到達時に primary/secondary を null で返すため、その後の rollout イベントで誤って古いデータを表示してしまう問題への対処も兼ねる
+
+### Fixed
+- プラン遷移後に rate_limits が空イベントになる問題への対処 (#130)
+  - 例: free → plus に upgrade した直後の rollout は windows が null だが plan_type は更新済み。windows が populated されている最新イベントを別途追跡して、グラフ用データと plan/credits 用データを独立に取得する構造に変更
+
 ## [0.1.99] - 2026-05-07
 
 ### Fixed

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { CreateSessionSchema, PaneIdSchema, type IndicatorState, type PaneInfo, type ExtendedSessionResponse, type SessionState } from '../../../shared/types';
+import { AGENT_PROVIDERS, CreateSessionSchema, DEFAULT_AGENT_PROVIDER, PaneIdSchema, agentSupportsConversationMetadata, type AgentProvider, type IndicatorState, type PaneInfo, type ExtendedSessionResponse, type SessionState } from '../../../shared/types';
 import { TmuxService } from '../services/tmux';
 import { controlSessions, getOrCreateControlSession } from '../services/tmux-control';
 import { ClaudeCodeService } from '../services/claude-code';
@@ -15,6 +15,14 @@ const tmuxService = new TmuxService();
 const claudeCodeService = new ClaudeCodeService();
 const sessionHistoryService = new SessionHistoryService();
 const promptHistoryService = new PromptHistoryService();
+
+export function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+export function agentStartCommand(agent: AgentProvider, workingDir: string): string {
+  return `cd ${shellQuote(workingDir)} && ${AGENT_PROVIDERS[agent].command}`;
+}
 
 /** Notify mux clients of session changes after mutations */
 function notifySessionChange(): void {
@@ -43,7 +51,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
 
   const sessionIdByTmuxId = new Map<string, string>();
   for (const s of tmuxSessions) {
-    if (s.currentCommand === 'claude' && s.paneTty) {
+    if (agentSupportsConversationMetadata(s.agent ?? s.currentCommand) && s.paneTty) {
       const sessionId = claudeCodeService.getSessionIdFromArgs(s.paneTty, processInfo.ttyArgs);
       if (sessionId) {
         sessionIdByTmuxId.set(s.id, sessionId);
@@ -52,7 +60,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
   }
 
   const claudePaths = tmuxSessions
-    .filter((s): s is typeof s & { currentPath: string } => s.currentCommand === 'claude' && !!s.currentPath)
+    .filter((s): s is typeof s & { currentPath: string } => agentSupportsConversationMetadata(s.agent ?? s.currentCommand) && !!s.currentPath)
     .map(s => s.currentPath);
   const ccSessionsByPath = await claudeCodeService.getSessionsForPaths(claudePaths);
 
@@ -61,7 +69,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
   const results = await Promise.all(tmuxSessions.map(async (s) => {
     let ccSession: Awaited<ReturnType<typeof claudeCodeService.getSessionForPath>> | undefined;
 
-    if (s.currentCommand === 'claude' && s.currentPath) {
+    if (agentSupportsConversationMetadata(s.agent ?? s.currentCommand) && s.currentPath) {
       const ptySessionId = sessionIdByTmuxId.get(s.id);
 
       if (ptySessionId) {
@@ -113,7 +121,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       durationMinutes = Math.round((Date.now() - modified.getTime()) / 60000);
     }
 
-    const includeClaudeInfo = s.currentCommand === 'claude';
+    const includeClaudeInfo = agentSupportsConversationMetadata(s.agent ?? s.currentCommand);
 
     const panePids: (number | undefined)[] = s.panes ? s.panes.map((p: { pid?: number }) => p.pid) : [];
     const metrics = await computeSessionMetrics({
@@ -129,6 +137,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       lastAccessedAt: s.createdAt,
       state: (s.attached ? 'working' : 'idle') as SessionState,
       currentCommand: s.currentCommand,
+      agent: s.agent,
       currentPath: s.currentPath,
       paneTitle: s.paneTitle,
       waitingToolName: includeClaudeInfo ? effectiveWaitingToolName : undefined,
@@ -148,6 +157,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       panes: s.panes ? s.panes.map((p: { paneId: string; command: string; path: string; title: string; tty: string; isActive: boolean; isDead: boolean; pid?: number }) => {
         const ttyName = p.tty?.replace('/dev/', '');
         const agentInfo = ttyName ? agentInfoByTty.get(ttyName) : undefined;
+        const paneAgent = ttyName ? processInfo.agentByTty.get(ttyName) : undefined;
         const isClaudeOnPane = !p.isDead && !!ttyName && claudeOnPaneTtys.has(ttyName);
         let paneIndicator: IndicatorState | undefined;
         if (p.isDead) {
@@ -162,7 +172,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
         // on macOS sometimes returns the Claude version (e.g. "2.1.123") when the
         // binary is invoked via a non-standard path. The frontend relies on this
         // string equaling "claude" to enable the conversation toggle.
-        const currentCommand = isClaudeOnPane ? 'claude' : p.command;
+        const currentCommand = paneAgent ?? p.command;
         const pane: PaneInfo = {
           paneId: p.paneId,
           currentCommand,
@@ -211,6 +221,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       firstMessageId: undefined,
       theme: lost.theme,
       customTitle: lost.customTitle,
+      agent: lost.agent,
       metrics: undefined,
       panes: undefined,
     });
@@ -222,6 +233,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       id: s.id,
       name: s.name,
       currentPath: s.currentPath,
+      agent: s.agent,
       theme: s.theme,
       customTitle: s.customTitle,
       ccSessionId: s.ccSessionId,
@@ -260,6 +272,7 @@ sessions.post('/', async (c) => {
   notifySessionChange();
   const body = await c.req.json().catch(() => ({}));
   const parsed = CreateSessionSchema.safeParse(body);
+  const agent = parsed.success ? parsed.data.agent : DEFAULT_AGENT_PROVIDER;
 
   // Generate session name
   const tmuxSessions = await tmuxService.listSessions();
@@ -273,10 +286,10 @@ sessions.post('/', async (c) => {
     return c.json({ error: 'Session already exists' }, 400);
   }
 
-  // Guard: reject if a Claude session is already running in the same directory
+  // Guard: reject if the same agent is already running in the same directory
   if (parsed.success && parsed.data.workingDir) {
     const conflicting = tmuxSessions.find(
-      s => s.currentCommand === 'claude' && s.currentPath === parsed.data.workingDir
+      s => s.currentCommand === agent && s.currentPath === parsed.data.workingDir
     );
     if (conflicting) {
       return c.json({ error: 'duplicate_working_dir', existingSession: conflicting.name }, 409);
@@ -286,22 +299,22 @@ sessions.post('/', async (c) => {
   try {
     await tmuxService.createSession(name);
 
-    // Start claude if workingDir is specified
+    // Start the selected agent if workingDir is specified
     if (parsed.success && parsed.data.workingDir) {
-      await tmuxService.sendKeys(name, `cd ${parsed.data.workingDir} && claude`);
+      await tmuxService.sendKeys(name, agentStartCommand(agent, parsed.data.workingDir));
 
-      // Send initial prompt after claude starts (interactive mode)
+      // Send initial prompt after the agent starts (interactive mode)
       if (parsed.data.initialPrompt) {
         const prompt = parsed.data.initialPrompt;
         const sessionName = name;
-        // Poll until claude process is running on the session's TTY
+        // Poll until the selected agent process is running on the session's TTY
         (async () => {
           for (let i = 0; i < 30; i++) { // up to 30 seconds
             await new Promise(r => setTimeout(r, 1000));
             const sessions = await tmuxService.listSessions();
             const session = sessions.find(s => s.name === sessionName);
-            if (session?.currentCommand === 'claude') {
-              // Wait a bit more for claude to be fully ready
+            if (session?.currentCommand === agent) {
+              // Wait a bit more for the TUI to be fully ready
               await new Promise(r => setTimeout(r, 2000));
               await tmuxService.sendKeys(sessionName, prompt);
               // Send extra Enter to submit the prompt
@@ -320,6 +333,7 @@ sessions.post('/', async (c) => {
       createdAt: new Date().toISOString(),
       lastAccessedAt: new Date().toISOString(),
       state: 'idle',
+      agent,
     }, 201);
   } catch (_error) {
     return c.json({ error: 'Failed to create session' }, 500);
@@ -521,6 +535,7 @@ sessions.get('/:id', async (c) => {
     lastAccessedAt: session.createdAt,
     state: session.attached ? 'working' : 'idle',
     currentCommand: session.currentCommand,
+    agent: session.agent,
     currentPath: session.currentPath,
   });
 });
@@ -552,7 +567,7 @@ sessions.delete('/:id', async (c) => {
 
   try {
     await tmuxService.killSession(id);
-    removeLastKnownSession(id).catch(() => {});
+    await removeLastKnownSession(id).catch(() => {});
     return c.json({ success: true });
   } catch (_error) {
     return c.json({ error: 'Failed to delete session' }, 500);
@@ -859,4 +874,3 @@ sessions.post('/:id/prompt', async (c) => {
     return c.json({ error: 'Failed to send prompt' }, 500);
   }
 });
-

@@ -4,7 +4,7 @@ import { Plus, Folder, ChevronRight, ChevronLeft, Search, X, Play, GripVertical 
 import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { SessionResponse, ExtendedSessionResponse, IndicatorState, ConversationMessage, FileInfo, SessionTheme } from '../../../shared/types';
+import { AGENT_PROVIDER_IDS, AGENT_PROVIDERS, DEFAULT_AGENT_PROVIDER, agentSupportsConversationMetadata, isAgentProvider, type AgentProvider, type SessionResponse, type ExtendedSessionResponse, type IndicatorState, type ConversationMessage, type FileInfo, type SessionTheme } from '../../../shared/types';
 import { useSessions } from '../hooks/useSessions';
 import { formatRelativeTime } from '../utils/format';
 
@@ -222,13 +222,14 @@ function CreateSessionModal({
   existingNames,
   externalError,
 }: {
-  onConfirm: (name: string, workingDir?: string) => void;
+  onConfirm: (name: string, workingDir?: string, agent?: AgentProvider) => void;
   onCancel: () => void;
   existingNames: Set<string>;
   externalError?: string | null;
 }) {
   const { t } = useTranslation();
   const [name, setName] = useState('');
+  const [agent, setAgent] = useState<AgentProvider>(DEFAULT_AGENT_PROVIDER);
   const [nameManuallyEdited, setNameManuallyEdited] = useState(false);
   const [currentPath, setCurrentPath] = useState<string>('');
   const [directories, setDirectories] = useState<FileInfo[]>([]);
@@ -300,7 +301,7 @@ function CreateSessionModal({
   };
 
   const handleSubmit = () => {
-    onConfirm(name, currentPath);
+    onConfirm(name, currentPath, agent);
   };
 
   const handleCreateFolder = async () => {
@@ -341,6 +342,27 @@ function CreateSessionModal({
             onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
             className="w-full px-3 py-2 bg-th-bg border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-blue-500 text-sm"
           />
+        </div>
+
+        {/* Agent provider */}
+        <div className="mb-3">
+          <div className="text-xs text-th-text-secondary mb-1">{t('session.agent')}</div>
+          <div className="grid grid-cols-2 gap-2">
+            {AGENT_PROVIDER_IDS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setAgent(option)}
+                className={`px-3 py-2 rounded border text-sm font-medium transition-colors ${
+                  agent === option
+                    ? 'border-blue-500 bg-blue-600/20 text-blue-300'
+                    : 'border-th-border bg-th-bg text-th-text-secondary hover:bg-th-surface-active'
+                }`}
+              >
+                {t(AGENT_PROVIDERS[option].labelKey)}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Directory picker */}
@@ -609,7 +631,8 @@ function SessionItem({
   };
 
   const extSession = session;
-  const isClaudeRunning = extSession.currentCommand === 'claude';
+  const agent = extSession.agent ?? extSession.currentCommand;
+  const supportsConversationMetadata = agentSupportsConversationMetadata(agent);
   // Derive card-level indicatorState from panes (priority: waiting_input > processing > idle)
   const cardIndicator: IndicatorState | undefined = (() => {
     if (extSession.panes && extSession.panes.length > 0) {
@@ -633,12 +656,12 @@ function SessionItem({
   // Use customTitle if set, then pane title if cc is running and title exists, otherwise use session name
   const displayTitle = session.customTitle
     ? session.customTitle
-    : isClaudeRunning && extSession.paneTitle
+    : supportsConversationMetadata && extSession.paneTitle
       ? extSession.paneTitle.replace(/^[✳★●◆]\s*/, '')  // Remove status icons
       : session.name;
 
   // Show resume button only when Claude is not running and we have a ccSessionId
-  const showResumeButton = !isClaudeRunning && extSession.ccSessionId;
+  const showResumeButton = !supportsConversationMetadata && extSession.ccSessionId;
 
   const handleResume = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -722,7 +745,7 @@ function SessionItem({
         {/* Top row: title + path + status badges */}
         <div className="flex items-baseline gap-2 mb-1 min-w-0">
           <h3 className={`text-[15px] font-medium truncate shrink-0 max-w-[55%] tracking-[-0.01em] ${
-            isLive ? 'text-white' : isClaudeRunning ? 'text-zinc-300' : 'text-zinc-400'
+            isLive ? 'text-white' : supportsConversationMetadata ? 'text-zinc-300' : 'text-zinc-400'
           }`}>
             {displayTitle}
           </h3>
@@ -840,7 +863,7 @@ function SessionItem({
         >
           {extSession.panes.map((pane) => {
             const cmd = pane.currentCommand || 'shell';
-            const isClaudePane = cmd === 'claude' || !!pane.agentName;
+            const isAgentPane = isAgentProvider(cmd) || !!pane.agentName;
             const paneTitle = pane.title?.replace(/^[✳★●◆⠂⠈⠐⠠⠄⠁✻✽⏳]\s*/, '').trim();
             const displayName = pane.agentName || paneTitle || cmd;
             const agentColorMap: Record<string, string> = {
@@ -851,7 +874,7 @@ function SessionItem({
             };
             const nameColor = pane.agentColor && agentColorMap[pane.agentColor]
               ? agentColorMap[pane.agentColor]
-              : isClaudePane ? 'text-green-300' : 'text-zinc-300';
+              : isAgentPane ? 'text-green-300' : 'text-zinc-300';
             const paneIndicator = pane.indicatorState;
             const paneDotClass = pane.isDead
               ? 'bg-red-400'
@@ -862,7 +885,7 @@ function SessionItem({
                   : 'bg-zinc-600';
             const paneBgClass = pane.isDead
               ? 'bg-red-900/20 hover:bg-red-900/30'
-              : isClaudePane
+              : isAgentPane
                 ? 'hover:bg-white/[0.04]'
                 : 'hover:bg-white/[0.04]';
 
@@ -1081,10 +1104,10 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
 
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const handleCreateSession = async (name: string, workingDir?: string) => {
+  const handleCreateSession = async (name: string, workingDir?: string, agent?: AgentProvider) => {
     setCreateError(null);
     try {
-      const session = await createSession(name || undefined, workingDir);
+      const session = await createSession(name || undefined, workingDir, agent);
       if (session) {
         setShowCreateModal(false);
         onSelectSession(session);

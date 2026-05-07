@@ -46,11 +46,16 @@
     "deleteWarning": "This action cannot be undone.",
     "sessionName": "Session Name",
     "sessionNamePlaceholder": "Leave blank for auto-generation",
+    "agent": "Agent",
+    "agentProvider": {
+      "claude": "Claude",
+      "codex": "Codex"
+    },
     "workingDirectory": "Working Directory",
     "newFolder": "New Folder",
     "folderName": "Folder name",
     "noSubdirectories": "No subdirectories",
-    "duplicateWorkingDir": "A Claude session is already running in this directory ({{name}})",
+    "duplicateWorkingDir": "A session for the same agent is already running in this directory ({{name}})",
     "resumeFailed": "Failed to resume session",
     "history": "History",
     "longPressHint": "Long press to delete",

@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import type { ExtendedSessionResponse, SessionResponse, SessionTheme, IndicatorState } from '../../../shared/types';
+import { DEFAULT_AGENT_PROVIDER, type AgentProvider, type ExtendedSessionResponse, type SessionResponse, type SessionTheme, type IndicatorState } from '../../../shared/types';
 import { authFetch, isTransientNetworkError } from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -44,7 +44,7 @@ interface UseSessionsReturn {
   sessions: ExtendedSessionResponse[];
   isLoading: boolean;
   error: string | null;
-  createSession: (name?: string, workingDir?: string) => Promise<ExtendedSessionResponse | null>;
+  createSession: (name?: string, workingDir?: string, agent?: AgentProvider) => Promise<ExtendedSessionResponse | null>;
   deleteSession: (id: string) => Promise<boolean>;
   updateSessionTheme: (id: string, theme: SessionTheme | null) => Promise<boolean>;
 }
@@ -88,12 +88,12 @@ export function useSessions(): UseSessionsReturn {
     };
   }, []);
 
-  const createSession = useCallback(async (name?: string, workingDir?: string): Promise<SessionResponse | null> => {
+  const createSession = useCallback(async (name?: string, workingDir?: string, agent: AgentProvider = DEFAULT_AGENT_PROVIDER): Promise<SessionResponse | null> => {
     setError(null);
     const response = await authFetch(`${API_BASE}/api/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, workingDir }),
+      body: JSON.stringify({ name, workingDir, agent }),
     });
 
     if (!response.ok) {

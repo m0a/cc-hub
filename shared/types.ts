@@ -48,6 +48,44 @@ export interface AuthResponse {
 // Session theme colors
 export type SessionTheme = 'red' | 'orange' | 'amber' | 'green' | 'teal' | 'blue' | 'indigo' | 'purple' | 'pink';
 
+export const AGENT_PROVIDERS = {
+  claude: {
+    id: 'claude',
+    command: 'claude',
+    labelKey: 'session.agentProvider.claude',
+    processPatterns: [/(?:^|\/)claude(?:\s|$)/, /\/claude\/versions\//],
+    supportsConversationMetadata: true,
+  },
+  codex: {
+    id: 'codex',
+    command: 'codex',
+    labelKey: 'session.agentProvider.codex',
+    processPatterns: [/(?:^|\/)codex(?:\s|$)/, /\/@openai\/codex\//],
+    supportsConversationMetadata: false,
+  },
+} as const;
+
+export type AgentProvider = keyof typeof AGENT_PROVIDERS;
+export const AGENT_PROVIDER_IDS = Object.keys(AGENT_PROVIDERS) as [AgentProvider, ...AgentProvider[]];
+export const DEFAULT_AGENT_PROVIDER: AgentProvider = 'claude';
+
+export function isAgentProvider(value: string): value is AgentProvider {
+  return value in AGENT_PROVIDERS;
+}
+
+export function detectAgentProviderFromArgs(args: string): AgentProvider | undefined {
+  for (const agent of Object.values(AGENT_PROVIDERS)) {
+    if (agent.processPatterns.some(pattern => pattern.test(args))) {
+      return agent.id;
+    }
+  }
+  return undefined;
+}
+
+export function agentSupportsConversationMetadata(agent: string | undefined): boolean {
+  return !!agent && isAgentProvider(agent) && AGENT_PROVIDERS[agent].supportsConversationMetadata;
+}
+
 export interface SessionResponse {
   id: string;
   name: string;
@@ -55,6 +93,7 @@ export interface SessionResponse {
   lastAccessedAt: string;
   state: SessionState;
   currentPath?: string;
+  agent?: AgentProvider;
   theme?: SessionTheme;
   customTitle?: string;
 }
@@ -110,6 +149,7 @@ export const CreateSessionSchema = z.object({
   name: z.string().min(1).max(64).optional(),
   workingDir: z.string().optional(),
   initialPrompt: z.string().max(1000).optional(),
+  agent: z.enum(AGENT_PROVIDER_IDS).optional().default(DEFAULT_AGENT_PROVIDER),
 });
 
 export const ResizeTerminalSchema = z.object({
@@ -460,4 +500,3 @@ export type MuxServerMessage =
 // [0x02][sessionId\0][paneId\0][raw data]
 // 0x02 = mux output (vs 0x01 = legacy single-session output)
 export const MUX_BINARY_TYPE = 0x02;
-

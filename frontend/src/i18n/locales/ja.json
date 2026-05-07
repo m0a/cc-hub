@@ -46,11 +46,16 @@
     "deleteWarning": "この操作は取り消せません。",
     "sessionName": "セッション名",
     "sessionNamePlaceholder": "空欄で自動生成",
+    "agent": "エージェント",
+    "agentProvider": {
+      "claude": "Claude",
+      "codex": "Codex"
+    },
     "workingDirectory": "作業ディレクトリ",
     "newFolder": "新規フォルダ",
     "folderName": "フォルダ名",
     "noSubdirectories": "サブディレクトリがありません",
-    "duplicateWorkingDir": "このディレクトリでは既にClaudeセッションが実行中です（{{name}}）",
+    "duplicateWorkingDir": "このディレクトリでは既に同じエージェントのセッションが実行中です（{{name}}）",
     "resumeFailed": "セッションの再開に失敗しました",
     "history": "履歴",
     "longPressHint": "長押しで削除",

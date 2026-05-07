@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.101] - 2026-05-08
+
+### Added
+- Codex セッションの会話履歴ビューア (#132)
+  - ペインヘッダーの Terminal ↔ Chat トグル（既存ボタン）を Codex セッションでも有効化
+  - `~/.codex/sessions/.../rollout-*.jsonl` を読み取り、`user_message` / `agent_message` をテキストとして、`function_call` / `function_call_output` を toolUse / toolResult として Claude 互換の `ConversationMessage[]` に変換
+  - HTTP polling (5秒間隔) で会話を取得・更新（Codex 側に WebSocket hook がないため）
+  - ConversationViewer の役割ラベルを agent 別に切替（Codex セッションでは "Codex" 表示）
+- 各 agent の会話取得方式を統一する `useAgentConversation` ファサード hook
+  - Claude → WebSocket stream / Codex → HTTP polling / 不明な agent → 明示的なエラー表示
+  - 新しい agent を足すときは ChatView を触らずファサードに分岐を追加するだけ
+
+### Fixed
+- DesktopLayout のセッション merge で `agent` / `agentSessionId` がコピーされず、Codex セッションの会話表示が同じ cwd の Claude jsonl にフォールバックしていた問題を修正
+- ChatView が `agent` 未指定時に暗黙的に Claude WebSocket にフォールバックしていた挙動を撤廃。未対応 agent は中央寄せのエラーメッセージを表示
+
 ## [0.1.100] - 2026-05-07
 
 ### Added

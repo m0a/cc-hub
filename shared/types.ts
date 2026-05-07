@@ -311,6 +311,12 @@ export interface CodexUsageLimits {
   sevenDay?: UsageCycleInfo;
   planType?: string;
   capturedAt?: string; // timestamp of the rollout event the limits were read from
+  /**
+   * True when Codex's most recent rate_limits event reports `credits.has_credits === false`.
+   * OpenAI returns null primary/secondary windows once exhausted, so the cycle data
+   * may be from an earlier in-cycle measurement; this flag signals "currently exhausted".
+   */
+  rateLimitExceeded?: boolean;
 }
 
 // Usage history snapshot for line chart

@@ -84,6 +84,8 @@
     "usageLimits": "Usage Limits",
     "codexUsageLimits": "Codex Usage Limits",
     "codexOtherMetricsComingSoon": "Codex daily activity, model usage, and cost estimates are coming soon",
+    "cycleNotInPlan": "Not available on current plan",
+    "codexRateLimitExceeded": "Codex rate limit exceeded — wait for reset or purchase credits",
     "resetIn": "Reset in",
     "limitPrediction": "Limit Prediction",
     "dailyStats": "Daily Activity",

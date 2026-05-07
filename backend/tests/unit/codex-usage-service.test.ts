@@ -119,6 +119,62 @@ describe('CodexUsageService', () => {
     expect(result?.capturedAt).toBe('2026-05-06T09:00:00Z');
   });
 
+  test('marks rate limit exceeded when latest event reports no credits', () => {
+    const fiveHourReset = Math.floor(Date.UTC(2026, 4, 7, 16, 48, 0) / 1000);
+    const sevenDayReset = Math.floor(Date.UTC(2026, 4, 14, 11, 48, 0) / 1000);
+    placeRollout('2026/05/07', 'rollout-2026-05-07T09-47-05-aaa.jsonl', [
+      // Older event with populated windows (so we still chart something)
+      makeRolloutLine({
+        timestamp: '2026-05-07T12:21:17Z',
+        rate_limits: {
+          primary: { used_percent: 75.0, window_minutes: 300, resets_at: fiveHourReset },
+          secondary: { used_percent: 12.0, window_minutes: 10080, resets_at: sevenDayReset },
+          plan_type: 'plus',
+        },
+      }),
+      // Newer event after exhaustion: windows null, no credits
+      makeRolloutLine({
+        timestamp: '2026-05-07T14:03:01Z',
+        rate_limits: {
+          primary: null,
+          secondary: null,
+          credits: { has_credits: false, unlimited: false, balance: '0' },
+          plan_type: null,
+        },
+      }),
+    ]);
+
+    const svc = new CodexUsageService(sessionsDir);
+    const result = svc.computeUsageLimits(Date.UTC(2026, 4, 7, 14, 5, 0));
+    expect(result?.rateLimitExceeded).toBe(true);
+    expect(result?.fiveHour?.utilization).toBe(100);
+    expect(result?.fiveHour?.status).toBe('exceeded');
+    // 7d cycle still reports the last known windowed value
+    expect(result?.sevenDay?.utilization).toBe(12.0);
+    // capturedAt comes from the latest (exhausted) event
+    expect(result?.capturedAt).toBe('2026-05-07T14:03:01Z');
+    // planType falls back to the windowed event when latest reports null
+    expect(result?.planType).toBe('plus');
+  });
+
+  test('does not mark exhaustion when credits are unlimited', () => {
+    const fiveHourReset = Math.floor(Date.UTC(2026, 4, 7, 16, 48, 0) / 1000);
+    placeRollout('2026/05/07', 'rollout-2026-05-07T09-47-05-aaa.jsonl', [
+      makeRolloutLine({
+        rate_limits: {
+          primary: { used_percent: 50.0, window_minutes: 300, resets_at: fiveHourReset },
+          secondary: null,
+          credits: { has_credits: false, unlimited: true, balance: '0' },
+          plan_type: 'enterprise',
+        },
+      }),
+    ]);
+    const svc = new CodexUsageService(sessionsDir);
+    const result = svc.computeUsageLimits(Date.UTC(2026, 4, 7, 14, 5, 0));
+    expect(result?.rateLimitExceeded).toBeUndefined();
+    expect(result?.fiveHour?.utilization).toBe(50.0);
+  });
+
   test('caches results within TTL', async () => {
     const resetsAtSec = Math.floor(Date.UTC(2026, 4, 14, 0, 0, 0) / 1000);
     placeRollout('2026/05/07', 'rollout-2026-05-07T09-47-05-aaa.jsonl', [

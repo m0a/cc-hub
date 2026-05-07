@@ -9,10 +9,17 @@ interface RateLimitWindow {
   resets_at?: number; // unix epoch seconds
 }
 
+interface RateLimitsCredits {
+  has_credits?: boolean;
+  unlimited?: boolean;
+  balance?: string;
+}
+
 interface RateLimitsPayload {
   limit_id?: string;
   primary?: RateLimitWindow | null;
   secondary?: RateLimitWindow | null;
+  credits?: RateLimitsCredits | null;
   plan_type?: string;
 }
 
@@ -69,11 +76,26 @@ function classifyWindow(minutes: number | undefined): 'fiveHour' | 'sevenDay' | 
   return 'sevenDay';
 }
 
-function findLatestRateLimitsInText(text: string): { event: TokenCountEvent; rateLimits: RateLimitsPayload } | undefined {
+interface RolloutScan {
+  /** Most recent rate_limits event regardless of populated windows. Carries plan/credits state. */
+  latest?: { event: TokenCountEvent; rateLimits: RateLimitsPayload };
+  /** Most recent rate_limits event with at least one populated window. Carries cycle data. */
+  windowed?: { event: TokenCountEvent; rateLimits: RateLimitsPayload };
+}
+
+/**
+ * Walk events newest-first. Codex keeps emitting rate_limits after a cycle is
+ * exhausted, but with both windows null — those are useful for credits/plan
+ * state but not for the chart. So we collect two views:
+ *  - `latest`: the very newest rate_limits event (any windows)
+ *  - `windowed`: the newest event whose primary or secondary is populated
+ */
+function scanRolloutText(text: string): RolloutScan {
   const lines = text.split('\n');
+  const out: RolloutScan = {};
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]?.trim();
-    if (!line || !line.includes('"rate_limits"')) continue;
+    if (!line?.includes('"rate_limits"')) continue;
     let event: TokenCountEvent;
     try {
       event = JSON.parse(line) as TokenCountEvent;
@@ -82,29 +104,34 @@ function findLatestRateLimitsInText(text: string): { event: TokenCountEvent; rat
     }
     if (event.type !== 'event_msg' || event.payload?.type !== 'token_count') continue;
     const rateLimits = event.payload?.rate_limits;
-    if (rateLimits) return { event, rateLimits };
+    if (!rateLimits) continue;
+    if (!out.latest) out.latest = { event, rateLimits };
+    if (!out.windowed && (rateLimits.primary || rateLimits.secondary)) {
+      out.windowed = { event, rateLimits };
+    }
+    if (out.latest && out.windowed) return out;
   }
-  return undefined;
+  return out;
 }
 
-function readLatestRateLimits(rolloutPath: string): { event: TokenCountEvent; rateLimits: RateLimitsPayload } | undefined {
+function readRolloutScan(rolloutPath: string): RolloutScan {
   try {
     const stat = statSync(rolloutPath);
     const maxTailBytes = 4 * 1024 * 1024;
     if (stat.size <= maxTailBytes) {
-      return findLatestRateLimitsInText(readFileSync(rolloutPath, 'utf8'));
+      return scanRolloutText(readFileSync(rolloutPath, 'utf8'));
     }
     const fd = openSync(rolloutPath, 'r');
     try {
       const bytesToRead = Math.min(stat.size, maxTailBytes);
       const buffer = Buffer.alloc(bytesToRead);
       readSync(fd, buffer, 0, bytesToRead, stat.size - bytesToRead);
-      return findLatestRateLimitsInText(buffer.toString('utf8'));
+      return scanRolloutText(buffer.toString('utf8'));
     } finally {
       closeSync(fd);
     }
   } catch {
-    return undefined;
+    return {};
   }
 }
 
@@ -173,29 +200,52 @@ export class CodexUsageService {
   /** Exposed for tests. */
   computeUsageLimits(now: number = Date.now()): CodexUsageLimits | null {
     const candidates = findRolloutCandidates(this.sessionsDir, CodexUsageService.ROLLOUT_SCAN_LIMIT);
+
+    let aggregateLatest: { event: TokenCountEvent; rateLimits: RateLimitsPayload } | undefined;
+    let aggregateWindowed: { event: TokenCountEvent; rateLimits: RateLimitsPayload } | undefined;
+
     for (const candidate of candidates) {
-      const found = readLatestRateLimits(candidate.path);
-      if (!found) continue;
-      const { event, rateLimits } = found;
-
-      const result: CodexUsageLimits = {
-        planType: rateLimits.plan_type,
-        capturedAt: event.timestamp,
-      };
-
-      const cycles: Array<{ minutes: number | undefined; window: RateLimitWindow | null | undefined }> = [
-        { minutes: rateLimits.primary?.window_minutes, window: rateLimits.primary },
-        { minutes: rateLimits.secondary?.window_minutes, window: rateLimits.secondary },
-      ];
-      for (const { minutes, window } of cycles) {
-        const slot = classifyWindow(minutes);
-        if (!slot) continue;
-        const info = buildCycleInfo(window, now);
-        if (info && !result[slot]) result[slot] = info;
-      }
-
-      if (result.fiveHour || result.sevenDay) return result;
+      const scan = readRolloutScan(candidate.path);
+      if (!aggregateLatest && scan.latest) aggregateLatest = scan.latest;
+      if (!aggregateWindowed && scan.windowed) aggregateWindowed = scan.windowed;
+      if (aggregateLatest && aggregateWindowed) break;
     }
-    return null;
+
+    if (!aggregateLatest && !aggregateWindowed) return null;
+
+    const windowedSource = aggregateWindowed ?? aggregateLatest;
+    const latestSource = aggregateLatest ?? aggregateWindowed;
+    if (!windowedSource || !latestSource) return null;
+
+    const result: CodexUsageLimits = {
+      planType: latestSource.rateLimits.plan_type ?? windowedSource.rateLimits.plan_type,
+      capturedAt: latestSource.event.timestamp,
+    };
+
+    const cycles: Array<{ minutes: number | undefined; window: RateLimitWindow | null | undefined }> = [
+      { minutes: windowedSource.rateLimits.primary?.window_minutes, window: windowedSource.rateLimits.primary },
+      { minutes: windowedSource.rateLimits.secondary?.window_minutes, window: windowedSource.rateLimits.secondary },
+    ];
+    for (const { minutes, window } of cycles) {
+      const slot = classifyWindow(minutes);
+      if (!slot) continue;
+      const info = buildCycleInfo(window, now);
+      if (info && !result[slot]) result[slot] = info;
+    }
+
+    // Codex stops returning windows once the cycle is exhausted, so the windowed
+    // source can be stale by the time we read this. Detect exhaustion from the
+    // latest event's credits and override the short cycle status accordingly.
+    const credits = latestSource.rateLimits.credits;
+    const exhausted = !!credits && credits.has_credits === false && credits.unlimited !== true;
+    if (exhausted) {
+      result.rateLimitExceeded = true;
+      if (result.fiveHour) {
+        result.fiveHour = { ...result.fiveHour, utilization: 100, status: 'exceeded' };
+      }
+    }
+
+    if (!result.fiveHour && !result.sevenDay && !result.rateLimitExceeded) return null;
+    return result;
   }
 }

@@ -29,7 +29,22 @@ export function Dashboard({ className = '', compact = false }: DashboardProps) {
   const [cacheClearing, setCacheClearing] = useState(false);
   const [agentTab, setAgentTab] = useState<AgentTab>('claude');
   const codexLimits = data?.codexUsageLimits;
-  const showAgentTabs = !!codexLimits;
+  const codexAvailable = !!codexLimits;
+  // Claude is "available" when we have any actionable Claude data. The endpoint
+  // returns empty arrays / no-credentials errors on a Codex-only machine.
+  const claudeAvailable = !!data && (
+    !!data.usageLimits
+    || (data.dailyActivity?.length ?? 0) > 0
+    || (data.modelUsage?.length ?? 0) > 0
+  );
+  const showAgentTabs = claudeAvailable && codexAvailable;
+  // When only one provider is available we ignore `agentTab` and force the
+  // available one. Otherwise respect the user's tab selection (default Claude).
+  const effectiveTab: AgentTab = showAgentTabs
+    ? agentTab
+    : codexAvailable && !claudeAvailable
+      ? 'codex'
+      : 'claude';
 
   const handleClearCache = useCallback(async () => {
     setCacheClearing(true);
@@ -97,13 +112,19 @@ export function Dashboard({ className = '', compact = false }: DashboardProps) {
         </div>
       )}
 
-      {agentTab === 'codex' ? (
+      {effectiveTab === 'codex' ? (
         <div className={compact ? 'space-y-3' : 'md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0'}>
           <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2">
             <UsageLimits
               data={codexLimits || null}
               history={[]}
               title={t('dashboard.codexUsageLimits')}
+              showMissingCycles
+              badge={codexLimits?.planType}
+              banner={codexLimits?.rateLimitExceeded
+                ? { message: t('dashboard.codexRateLimitExceeded'), tone: 'danger' }
+                : undefined
+              }
             />
           </div>
           <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2 text-th-text-muted text-xs">

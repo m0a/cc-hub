@@ -241,7 +241,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       ccRecapAt: undefined,
       indicatorState: undefined,
       ccSessionId: lost.ccSessionId,
-      agentSessionId: undefined,
+      agentSessionId: lost.agentSessionId,
       messageCount: undefined,
       gitBranch: undefined,
       durationMinutes: undefined,
@@ -264,6 +264,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       theme: s.theme,
       customTitle: s.customTitle,
       ccSessionId: s.ccSessionId,
+      agentSessionId: s.agentSessionId,
     })),
     ...lostSessions,
   ];

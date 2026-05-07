@@ -545,17 +545,21 @@ export function App() {
   }, [activeSessionId, isLoading]);
 
   const handleSelectSession = useCallback(async (session: ExtendedSessionResponse) => {
-    // Lost session: resume with claude -r if ccSessionId available, otherwise recreate
+    // Lost session: resume with the original agent's resume command when we have
+    // a conversation id (Claude → ccSessionId, Codex → agentSessionId), otherwise
+    // recreate a fresh session preserving the original agent.
     if (session.state === 'lost') {
       try {
         let newSessionId: string;
         let newSessionName: string;
-        if (session.ccSessionId && session.currentPath) {
-          // Resume with conversation history via claude -r
+        const conversationId = session.agent === 'codex'
+          ? session.agentSessionId
+          : session.ccSessionId;
+        if (conversationId && session.currentPath) {
           const response = await authFetch(`${API_BASE}/api/sessions/history/resume`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: session.ccSessionId, projectPath: session.currentPath, agent: session.agent }),
+            body: JSON.stringify({ sessionId: conversationId, projectPath: session.currentPath, agent: session.agent }),
           });
           if (!response.ok) {
             throw new Error('Failed to resume session');
@@ -564,8 +568,8 @@ export function App() {
           newSessionId = data.tmuxSessionId;
           newSessionName = data.tmuxSessionId;
         } else {
-          // No ccSessionId: fallback to new session
-          const newSession = await createSession(session.name, session.currentPath);
+          // No conversation id: fall back to a fresh session in the same agent.
+          const newSession = await createSession(session.name, session.currentPath, session.agent);
           if (!newSession) return;
           newSessionId = newSession.id;
           newSessionName = newSession.name;
@@ -576,6 +580,8 @@ export function App() {
           state: 'working' as const,
           currentPath: session.currentPath,
           ccSessionId: session.ccSessionId,
+          agent: session.agent,
+          agentSessionId: session.agentSessionId,
           theme: session.theme,
         }]);
         setActiveSessionId(newSessionId);

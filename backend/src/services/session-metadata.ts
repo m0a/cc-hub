@@ -19,6 +19,8 @@ export interface LastKnownSession {
   theme?: SessionTheme;
   customTitle?: string;
   ccSessionId?: string;
+  /** Codex thread id (rollout). Used to drive `codex resume <id>` after reboot. */
+  agentSessionId?: string;
 }
 
 interface MetadataStore {

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { AGENT_PROVIDERS, CreateSessionSchema, DEFAULT_AGENT_PROVIDER, PaneIdSchema, agentSupportsConversationMetadata, type AgentProvider, type IndicatorState, type PaneInfo, type ExtendedSessionResponse, type SessionState } from '../../../shared/types';
+import { AGENT_PROVIDERS, AGENT_PROVIDER_IDS, CreateSessionSchema, DEFAULT_AGENT_PROVIDER, PaneIdSchema, agentResumeCommand, agentSupportsConversationMetadata, type AgentProvider, type IndicatorState, type PaneInfo, type ExtendedSessionResponse, type SessionState } from '../../../shared/types';
 import { TmuxService } from '../services/tmux';
 import { controlSessions, getOrCreateControlSession } from '../services/tmux-control';
 import { ClaudeCodeService } from '../services/claude-code';
@@ -284,6 +284,8 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
 
 const ResumeSessionSchema = z.object({
   ccSessionId: z.string().optional(),
+  sessionId: z.string().optional(),
+  agent: z.enum(AGENT_PROVIDER_IDS).optional(),
 });
 
 // GET /sessions - List all tmux sessions (debug/fallback only, frontend uses WS push)
@@ -478,6 +480,7 @@ sessions.get('/prompts/search', async (c) => {
 const ResumeHistorySchema = z.object({
   sessionId: z.string(),
   projectPath: z.string(),
+  agent: z.enum(AGENT_PROVIDER_IDS).optional(),
 });
 
 sessions.post('/history/resume', async (c) => {
@@ -489,16 +492,15 @@ sessions.post('/history/resume', async (c) => {
   }
 
   const { sessionId, projectPath } = parsed.data;
+  const agent: AgentProvider = parsed.data.agent ?? DEFAULT_AGENT_PROVIDER;
 
   try {
     // Generate a unique tmux session name based on project
     const projectName = projectPath.split('/').pop() || 'session';
     const tmuxSessions = await tmuxService.listSessions();
 
-    // Guard: reject if a Claude session is already running in the same directory
-    const conflicting = tmuxSessions.find(
-      s => s.currentCommand === 'claude' && s.currentPath === projectPath
-    );
+    // Guard: reject if the same agent is already running in the same directory
+    const conflicting = findDuplicateAgentWorkingDirSession(tmuxSessions, agent, projectPath);
     if (conflicting) {
       return c.json({ error: 'duplicate_working_dir', existingSession: conflicting.name }, 409);
     }
@@ -511,20 +513,21 @@ sessions.post('/history/resume', async (c) => {
     // Create new tmux session
     await tmuxService.createSession(tmuxSessionName);
 
-    // Change to project directory and run claude -r
-    const command = `cd ${projectPath} && claude -r ${sessionId}`;
+    // Change to project directory and run the agent's resume command
+    const command = `cd ${shellQuote(projectPath)} && ${agentResumeCommand(agent, sessionId)}`;
     const success = await tmuxService.sendKeys(tmuxSessionName, command);
 
     if (!success) {
       // Clean up the session if command failed
       await tmuxService.killSession(tmuxSessionName);
-      return c.json({ error: 'Failed to start Claude session' }, 500);
+      return c.json({ error: 'Failed to start agent session' }, 500);
     }
 
     return c.json({
       success: true,
       tmuxSessionId: tmuxSessionName,
       ccSessionId: sessionId,
+      agent,
     });
   } catch (_error) {
     return c.json({ error: 'Failed to resume session from history' }, 500);
@@ -597,23 +600,24 @@ sessions.delete('/:id', async (c) => {
   }
 });
 
-// POST /sessions/:id/resume - Resume a Claude Code session
+// POST /sessions/:id/resume - Resume an agent session in an existing tmux session
 sessions.post('/:id/resume', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => ({}));
   const parsed = ResumeSessionSchema.safeParse(body);
 
-  const exists = await tmuxService.sessionExists(id);
-  if (!exists) {
+  const tmuxSessions = await tmuxService.listSessions();
+  const session = tmuxSessions.find(s => s.id === id);
+  if (!session) {
     return c.json({ error: 'Session not found' }, 404);
   }
 
   try {
-    // Build the claude resume command
-    const ccSessionId = parsed.success ? parsed.data.ccSessionId : undefined;
-    const command = ccSessionId ? `claude -r ${ccSessionId}` : 'claude -r';
+    const sessionId = parsed.success ? (parsed.data.sessionId ?? parsed.data.ccSessionId) : undefined;
+    const requestedAgent = parsed.success ? parsed.data.agent : undefined;
+    const agent: AgentProvider = requestedAgent ?? session.agent ?? DEFAULT_AGENT_PROVIDER;
+    const command = agentResumeCommand(agent, sessionId);
 
-    // Send the command to the tmux session
     const success = await tmuxService.sendKeys(id, command);
     if (!success) {
       return c.json({ error: 'Failed to send command' }, 500);

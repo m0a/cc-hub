@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.102] - 2026-05-08
+
+### Fixed
+- Lost セッション（再起動などで tmux から消えたセッション）の Resume ボタンが Codex セッションでも Claude として復活していた問題を修正 (#134)
+  - `LastKnownSession` に `agentSessionId` を追加し、再起動を跨いで Codex thread id を保持
+  - Resume 時は `session.agent` に応じて conversation id を選択（Codex → `agentSessionId`、Claude → `ccSessionId`）し、`/sessions/history/resume` に渡す
+  - conversation id が無い場合のフォールバックも `createSession` に元の agent を渡すように変更（旧挙動: claude 固定）
+
 ## [0.1.101] - 2026-05-08
 
 ### Added

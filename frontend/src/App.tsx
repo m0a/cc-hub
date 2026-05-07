@@ -14,7 +14,7 @@ import { Onboarding, useOnboarding } from './components/Onboarding';
 import { useAuth } from './hooks/useAuth';
 import { useSessions } from './hooks/useSessions';
 import { authFetch, isTransientNetworkError } from './services/api';
-import type { SessionResponse, ExtendedSessionResponse, SessionState, SessionTheme, PaneInfo, IndicatorState } from '../../shared/types';
+import type { AgentProvider, SessionResponse, ExtendedSessionResponse, SessionState, SessionTheme, PaneInfo, IndicatorState } from '../../shared/types';
 
 // Loading screen with phase display and timeout detection
 function LoadingScreen({
@@ -78,6 +78,8 @@ interface OpenSession {
   state: SessionState;
   currentPath?: string;
   ccSessionId?: string;
+  agent?: AgentProvider;
+  agentSessionId?: string;
   currentCommand?: string;
   theme?: SessionTheme;
   panes?: PaneInfo[];
@@ -335,6 +337,8 @@ export function App() {
         theme: apiSession.theme,
         currentCommand: apiSession.currentCommand,
         ccSessionId: apiSession.ccSessionId,
+        agent: apiSession.agent,
+        agentSessionId: apiSession.agentSessionId,
         panes: apiSession.panes,
         indicatorState: apiSession.indicatorState,
       };
@@ -343,6 +347,8 @@ export function App() {
         next.theme === session.theme &&
         next.currentCommand === session.currentCommand &&
         next.ccSessionId === session.ccSessionId &&
+        next.agent === session.agent &&
+        next.agentSessionId === session.agentSessionId &&
         next.panes === session.panes &&
         next.indicatorState === session.indicatorState
       ) {
@@ -703,7 +709,7 @@ export function App() {
   // Show conversation history for current session
   const handleShowConversation = useCallback(() => {
     const activeSession = openSessions.find(s => s.id === activeSessionId);
-    if (!activeSession?.ccSessionId) return;
+    if (!activeSession?.ccSessionId && !activeSession?.agentSessionId) return;
     setShowConversation(true);
   }, [openSessions, activeSessionId]);
 
@@ -976,6 +982,8 @@ export function App() {
                     inline
                     enabled
                     theme={activeSession.theme}
+                    agent={activeSession.agent}
+                    agentSessionId={activeSession.agentSessionId}
                     onScrollGesture={() => mobileTerminalRef.current?.hideKeyboard()}
                     onAtBottomChange={(atBottom) => {
                       if (atBottom) mobileTerminalRef.current?.showKeyboard();
@@ -1108,7 +1116,7 @@ export function App() {
           }}
           sessionName={activeSession?.name}
           sessionStatus={activeSession?.state}
-          onShowConversation={activeSession?.ccSessionId ? handleShowConversation : undefined}
+          onShowConversation={(activeSession?.ccSessionId || activeSession?.agentSessionId) ? handleShowConversation : undefined}
           onShowDashboard={() => setShowMobileDashboard(true)}
         />
       ))}

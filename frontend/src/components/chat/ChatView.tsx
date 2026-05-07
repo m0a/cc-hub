@@ -1,10 +1,10 @@
 import { useTranslation } from 'react-i18next';
 import { ConversationViewer } from '../ConversationViewer';
-import { useConversationStream } from '../../hooks/useConversationStream';
+import { useAgentConversation } from '../../hooks/useAgentConversation';
 import { useInputEcho } from '../../hooks/useInputEcho';
 import { ChatComposer } from './ChatComposer';
 import { getTerminalThemes } from '../terminal-themes';
-import type { SessionTheme } from '../../../../shared/types';
+import type { AgentProvider, SessionTheme } from '../../../../shared/types';
 
 interface ChatViewProps {
   sessionId: string;
@@ -25,6 +25,11 @@ interface ChatViewProps {
   onAtBottomChange?: (atBottom: boolean) => void;
   /** Session theme — propagated to ConversationViewer for matching bg color. */
   theme?: SessionTheme;
+  /** Provider for the active session. Codex sessions skip the WebSocket stream
+   *  (server-side rollout-tail isn't implemented) and poll the HTTP endpoint. */
+  agent?: AgentProvider;
+  /** Codex thread id, used as the conversation key when agent=codex. */
+  agentSessionId?: string | null;
 }
 
 export function ChatView({
@@ -39,18 +44,44 @@ export function ChatView({
   onScrollGesture,
   onAtBottomChange,
   theme,
+  agent,
+  agentSessionId,
 }: ChatViewProps) {
   const { t } = useTranslation();
-  const { messages, isReady, ccSessionId } = useConversationStream({
+  const { messages, isReady, conversationId, error } = useAgentConversation({
+    agent,
     sessionId,
+    agentSessionId,
     enabled,
   });
   const echo = useInputEcho(sessionId);
 
   const resolvedTitle = title ?? t('conversation.claude');
-  const resolvedSubtitle = subtitle ?? (ccSessionId ? `cc:${ccSessionId.slice(0, 8)}` : undefined);
+  const resolvedSubtitle = subtitle ?? (
+    conversationId ? `${agent ?? 'agent'}:${conversationId.slice(0, 8)}` : undefined
+  );
 
   const themeBg = getTerminalThemes()[theme || 'default'].background;
+
+  if (error) {
+    const errorClass = inline ? 'h-full' : 'fixed inset-0 z-50';
+    const errorMessage = error === 'unsupported-agent'
+      ? t('conversation.errorUnsupportedAgent', { agent: String(agent) })
+      : t('conversation.errorMissingAgent');
+    return (
+      <div
+        className={`${errorClass} flex flex-col items-center justify-center px-6 text-center`}
+        style={{ backgroundColor: themeBg }}
+      >
+        <div className="text-sm font-medium text-red-300 mb-2">
+          {t('conversation.errorTitle')}
+        </div>
+        <div className="text-xs text-th-text-muted max-w-sm leading-relaxed">
+          {errorMessage}
+        </div>
+      </div>
+    );
+  }
 
   // Avoid showing a "Loading..." flash every time the view opens. Until the
   // initial conversation arrives, render an empty container.
@@ -88,6 +119,7 @@ export function ChatView({
       onScrollGesture={onScrollGesture}
       onAtBottomChange={onAtBottomChange}
       theme={theme}
+      agent={agent}
     />
   );
 

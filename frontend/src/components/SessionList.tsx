@@ -697,7 +697,14 @@ function SessionItem({
             </span>
           </div>
           {shortPath && (
-            <p className="text-[12px] text-zinc-600 truncate mb-2">{shortPath}</p>
+            <p className="text-[12px] text-zinc-600 truncate mb-1.5">{shortPath}</p>
+          )}
+          {agentLabel && (
+            <div className="mb-2 flex items-center gap-2 text-[11px] text-zinc-500">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full font-medium bg-zinc-500/15 text-zinc-500">
+                {agentLabel}
+              </span>
+            </div>
           )}
           <div className="flex items-center gap-2">
             <button

@@ -1,11 +1,23 @@
 import { useTranslation } from 'react-i18next';
-import type { UsageLimits as UsageLimitsType, UsageLimitsStatus, UsageSnapshot } from '../../../../shared/types';
+import type { UsageCycleInfo, UsageLimitsStatus, UsageSnapshot } from '../../../../shared/types';
 import { UsageChart } from './UsageChart';
 
+interface UsageLimitsData {
+  fiveHour?: UsageCycleInfo;
+  sevenDay?: UsageCycleInfo;
+}
+
 interface UsageLimitsProps {
-  data: UsageLimitsType | null;
+  data: UsageLimitsData | null;
   status?: UsageLimitsStatus;
   history: UsageSnapshot[];
+  title?: string;
+  /** Render a placeholder for cycles that are absent from `data` (e.g. Codex free plan has no 5h). */
+  showMissingCycles?: boolean;
+  /** Small badge shown next to the title (e.g. plan name). */
+  badge?: string;
+  /** Optional banner shown above the cycles, e.g. "rate limit exceeded". */
+  banner?: { message: string; tone?: 'info' | 'warning' | 'danger' };
 }
 
 function formatTimeUntil(iso: string): string {
@@ -67,13 +79,49 @@ function getStatusMessage(
   }
 }
 
-export function UsageLimits({ data, status, history }: UsageLimitsProps) {
-  const { t } = useTranslation();
+function MissingCyclePlaceholder({ label, message }: { label: string; message: string }) {
+  return (
+    <div className="mb-3">
+      <div className="flex justify-between text-xs mb-1">
+        <span className="text-th-text-secondary">{label}</span>
+        <span className="text-th-text-muted">—</span>
+      </div>
+      <div className="text-[10px] text-th-text-muted">{message}</div>
+    </div>
+  );
+}
 
-  if (!data) {
+function Banner({ banner }: { banner: NonNullable<UsageLimitsProps['banner']> }) {
+  const toneClass = banner.tone === 'danger'
+    ? 'border-red-500/40 bg-red-500/10 text-red-300'
+    : banner.tone === 'warning'
+      ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+      : 'border-blue-500/40 bg-blue-500/10 text-blue-300';
+  return (
+    <div className={`text-[11px] mb-2 px-2 py-1.5 rounded border ${toneClass}`}>
+      {banner.message}
+    </div>
+  );
+}
+
+export function UsageLimits({ data, status, history, title, showMissingCycles = false, badge, banner }: UsageLimitsProps) {
+  const { t } = useTranslation();
+  const heading = title ?? t('dashboard.usageLimits');
+  const headingNode = (
+    <div className="flex items-center gap-2">
+      <span className="text-sm font-medium text-th-text">{heading}</span>
+      {badge && (
+        <span className="text-[10px] text-th-text-muted uppercase tracking-wide px-1.5 py-0.5 bg-white/[0.06] rounded">
+          {badge}
+        </span>
+      )}
+    </div>
+  );
+
+  if (!data || (!data.fiveHour && !data.sevenDay)) {
     return (
       <div className="p-3 bg-th-surface rounded-md">
-        <div className="text-sm font-medium text-th-text mb-2">{t('dashboard.usageLimits')}</div>
+        <div className="mb-2">{headingNode}</div>
         {status?.errorReason ? (
           <ErrorMessage status={status} />
         ) : (
@@ -83,36 +131,51 @@ export function UsageLimits({ data, status, history }: UsageLimitsProps) {
     );
   }
 
+  const missingMessage = t('dashboard.cycleNotInPlan');
+
   return (
     <div className="p-3 bg-th-surface rounded-md">
       <div className="flex items-center justify-between mb-3">
-        <div className="text-sm font-medium text-th-text">{t('dashboard.usageLimits')}</div>
+        {headingNode}
         {status?.isStale && (
           <div className="text-[10px] text-th-text-muted">{t('dashboard.usageStaleData')}</div>
         )}
       </div>
 
       {status?.errorReason && <ErrorMessage status={status} />}
+      {banner && <Banner banner={banner} />}
 
-      <UsageChart
-        label={t('dashboard.fiveHourCycle')}
-        field="fiveHour"
-        snapshots={history}
-        currentUtilization={data.fiveHour.utilization}
-        resetsAt={data.fiveHour.resetsAt}
-        status={data.fiveHour.status || 'safe'}
-        statusMessage={getStatusMessage(t, data.fiveHour.status, data.fiveHour.timeRemaining, data.fiveHour.estimatedHitTime)}
-      />
+      {data.fiveHour ? (
+        <UsageChart
+          label={t('dashboard.fiveHourCycle')}
+          field="fiveHour"
+          snapshots={history}
+          currentUtilization={data.fiveHour.utilization}
+          resetsAt={data.fiveHour.resetsAt}
+          status={data.fiveHour.status || 'safe'}
+          statusMessage={getStatusMessage(t, data.fiveHour.status, data.fiveHour.timeRemaining, data.fiveHour.estimatedHitTime)}
+        />
+      ) : (
+        showMissingCycles && (
+          <MissingCyclePlaceholder label={t('dashboard.fiveHourCycle')} message={missingMessage} />
+        )
+      )}
 
-      <UsageChart
-        label={t('dashboard.sevenDayCycle')}
-        field="sevenDay"
-        snapshots={history}
-        currentUtilization={data.sevenDay.utilization}
-        resetsAt={data.sevenDay.resetsAt}
-        status={data.sevenDay.status || 'safe'}
-        statusMessage={getStatusMessage(t, data.sevenDay.status, data.sevenDay.timeRemaining, data.sevenDay.estimatedHitTime)}
-      />
+      {data.sevenDay ? (
+        <UsageChart
+          label={t('dashboard.sevenDayCycle')}
+          field="sevenDay"
+          snapshots={history}
+          currentUtilization={data.sevenDay.utilization}
+          resetsAt={data.sevenDay.resetsAt}
+          status={data.sevenDay.status || 'safe'}
+          statusMessage={getStatusMessage(t, data.sevenDay.status, data.sevenDay.timeRemaining, data.sevenDay.estimatedHitTime)}
+        />
+      ) : (
+        showMissingCycles && (
+          <MissingCyclePlaceholder label={t('dashboard.sevenDayCycle')} message={missingMessage} />
+        )
+      )}
     </div>
   );
 }

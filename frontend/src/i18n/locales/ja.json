@@ -82,6 +82,10 @@
   "dashboard": {
     "title": "ダッシュボード",
     "usageLimits": "使用量リミット",
+    "codexUsageLimits": "Codex 使用量リミット",
+    "codexOtherMetricsComingSoon": "Codex の日別アクティビティ・モデル別使用量・コスト推定は準備中です",
+    "cycleNotInPlan": "現在のプランでは未対応",
+    "codexRateLimitExceeded": "Codex のリミット到達中（リセットまで利用不可、もしくは追加クレジット購入が必要）",
     "resetIn": "リセットまで",
     "limitPrediction": "リミット到達予測",
     "dailyStats": "日別アクティビティ",

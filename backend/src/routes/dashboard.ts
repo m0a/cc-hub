@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { StatsService } from '../services/stats-service';
 import { AnthropicUsageService } from '../services/anthropic-usage';
+import { CodexUsageService } from '../services/codex-usage';
 import { UsageHistoryService } from '../services/usage-history';
 import { SystemMetricsService } from '../services/system-metrics';
 import { getConnectedClientCount } from './terminal-mux';
@@ -9,6 +10,7 @@ import type { DashboardResponse } from '../../../shared/types';
 
 const statsService = new StatsService();
 const anthropicUsageService = new AnthropicUsageService();
+const codexUsageService = new CodexUsageService();
 const usageHistoryService = new UsageHistoryService();
 const systemMetricsService = new SystemMetricsService();
 
@@ -34,8 +36,9 @@ export const dashboard = new Hono();
 
 // GET /dashboard - Get dashboard data
 dashboard.get('/', async (c) => {
-  const [usageLimits, dailyActivity, modelUsage, hourlyActivity, usageHistory, systemMetrics, diskUsage] = await Promise.all([
+  const [usageLimits, codexUsageLimits, dailyActivity, modelUsage, hourlyActivity, usageHistory, systemMetrics, diskUsage] = await Promise.all([
     anthropicUsageService.getUsageLimits(),
+    codexUsageService.getUsageLimits(),
     statsService.getDailyActivity(14),
     statsService.getModelUsage(),
     statsService.getHourlyActivity(),
@@ -56,6 +59,7 @@ dashboard.get('/', async (c) => {
     limits: null, // Deprecated
     usageLimits,
     usageLimitsStatus: anthropicUsageService.getStatus(),
+    codexUsageLimits,
     usageHistory: usageHistory,
     dailyActivity,
     modelUsage,

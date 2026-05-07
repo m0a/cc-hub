@@ -19,12 +19,32 @@ interface DashboardProps {
   compact?: boolean; // true when in narrow side panel
 }
 
+type AgentTab = 'claude' | 'codex';
+
 export function Dashboard({ className = '', compact = false }: DashboardProps) {
   const { t, i18n } = useTranslation();
   const { data, isLoading, error } = useDashboard(30000);
   const { theme, toggleTheme } = useTheme();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [cacheClearing, setCacheClearing] = useState(false);
+  const [agentTab, setAgentTab] = useState<AgentTab>('claude');
+  const codexLimits = data?.codexUsageLimits;
+  const codexAvailable = !!codexLimits;
+  // Claude is "available" when we have any actionable Claude data. The endpoint
+  // returns empty arrays / no-credentials errors on a Codex-only machine.
+  const claudeAvailable = !!data && (
+    !!data.usageLimits
+    || (data.dailyActivity?.length ?? 0) > 0
+    || (data.modelUsage?.length ?? 0) > 0
+  );
+  const showAgentTabs = claudeAvailable && codexAvailable;
+  // When only one provider is available we ignore `agentTab` and force the
+  // available one. Otherwise respect the user's tab selection (default Claude).
+  const effectiveTab: AgentTab = showAgentTabs
+    ? agentTab
+    : codexAvailable && !claudeAvailable
+      ? 'codex'
+      : 'claude';
 
   const handleClearCache = useCallback(async () => {
     setCacheClearing(true);
@@ -69,28 +89,72 @@ export function Dashboard({ className = '', compact = false }: DashboardProps) {
 
   return (
     <div className={`overflow-y-auto overscroll-contain px-4 py-4 ${className}`}>
-      <div className={compact ? 'space-y-3' : 'md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0'}>
-        <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
-          <NetworkLatency />
+      {showAgentTabs && (
+        <div className="flex gap-1 mb-3 text-xs">
+          {(['claude', 'codex'] as const).map(id => {
+            const isActive = agentTab === id;
+            const label = id === 'claude' ? 'Claude' : 'Codex';
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setAgentTab(id)}
+                className={`px-3 py-1.5 rounded-md transition-colors ${
+                  isActive
+                    ? 'bg-white/[0.08] text-th-text'
+                    : 'bg-white/[0.03] text-th-text-muted hover:text-th-text hover:bg-white/[0.05]'
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
-        <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
-          <ServerInfo systemMetrics={data?.systemMetrics} diskUsage={data?.diskUsage} connectedClients={data?.connectedClients} />
-        </div>
-        <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
-          <UsageLimits data={data?.usageLimits || null} status={data?.usageLimitsStatus} history={data?.usageHistory || []} />
-        </div>
-        <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
-          <DailyUsageChart data={data?.dailyActivity || []} />
-        </div>
-        <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
-          <ModelUsageChart data={data?.modelUsage || []} />
-        </div>
-        {data?.hourlyActivity && Object.keys(data.hourlyActivity).length > 0 && (
+      )}
+
+      {effectiveTab === 'codex' ? (
+        <div className={compact ? 'space-y-3' : 'md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0'}>
           <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2">
-            <HourlyHeatmap data={data.hourlyActivity} />
+            <UsageLimits
+              data={codexLimits || null}
+              history={[]}
+              title={t('dashboard.codexUsageLimits')}
+              showMissingCycles
+              badge={codexLimits?.planType}
+              banner={codexLimits?.rateLimitExceeded
+                ? { message: t('dashboard.codexRateLimitExceeded'), tone: 'danger' }
+                : undefined
+              }
+            />
           </div>
-        )}
-      </div>
+          <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2 text-th-text-muted text-xs">
+            {t('dashboard.codexOtherMetricsComingSoon')}
+          </div>
+        </div>
+      ) : (
+        <div className={compact ? 'space-y-3' : 'md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0'}>
+          <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
+            <NetworkLatency />
+          </div>
+          <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
+            <ServerInfo systemMetrics={data?.systemMetrics} diskUsage={data?.diskUsage} connectedClients={data?.connectedClients} />
+          </div>
+          <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
+            <UsageLimits data={data?.usageLimits || null} status={data?.usageLimitsStatus} history={data?.usageHistory || []} />
+          </div>
+          <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
+            <DailyUsageChart data={data?.dailyActivity || []} />
+          </div>
+          <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
+            <ModelUsageChart data={data?.modelUsage || []} />
+          </div>
+          {data?.hourlyActivity && Object.keys(data.hourlyActivity).length > 0 && (
+            <div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2">
+              <HourlyHeatmap data={data.hourlyActivity} />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Settings section */}
       <div className="mt-6 pt-4 border-t border-white/[0.06]">

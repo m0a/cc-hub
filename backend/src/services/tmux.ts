@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { detectAgentProviderFromArgs, type AgentProvider } from '../../../shared/types';
 
 interface TmuxPaneInfo {
   paneId: string;          // "%0", "%1"
@@ -18,6 +19,7 @@ interface TmuxSessionInfo {
   createdAt: string;
   attached: boolean;
   currentCommand?: string;
+  agent?: AgentProvider;
   currentPath?: string;
   paneTitle?: string;
   paneTty?: string;
@@ -45,6 +47,12 @@ set -g remain-on-exit on
 export interface ParsedProcessInfo {
   /** TTYs that have a Claude Code process running */
   claudeTtys: Set<string>;
+  /** TTYs that have a Codex process running */
+  codexTtys: Set<string>;
+  /** Provider → TTYs that have that provider running */
+  agentTtys: Map<AgentProvider, Set<string>>;
+  /** TTY → detected agent provider */
+  agentByTty: Map<string, AgentProvider>;
   /** TTY → agent info (name/color) for team agent processes */
   agentInfo: Map<string, { agentName: string; agentColor?: string }>;
   /** TTY → all process args lines (for session ID extraction etc.) */
@@ -119,6 +127,9 @@ export class TmuxService {
 
     const result: ParsedProcessInfo = {
       claudeTtys: new Set(),
+      codexTtys: new Set(),
+      agentTtys: new Map(),
+      agentByTty: new Map(),
       agentInfo: new Map(),
       ttyArgs: new Map(),
     };
@@ -160,12 +171,23 @@ export class TmuxService {
         const args = parts.slice(1).join(' ');
 
         // Collect all args per TTY for external consumers
-        if (!result.ttyArgs.has(tty)) result.ttyArgs.set(tty, []);
-        result.ttyArgs.get(tty)!.push(args);
+        let ttyArgs = result.ttyArgs.get(tty);
+        if (!ttyArgs) {
+          ttyArgs = [];
+          result.ttyArgs.set(tty, ttyArgs);
+        }
+        ttyArgs.push(args);
 
-        // Consumer 1: Claude detection (batchCheckClaudeOnTtys)
-        if (this.isClaudeProcess(args)) {
-          result.claudeTtys.add(tty);
+        // Consumer 1: supported agent detection
+        const detectedAgent = detectAgentProviderFromArgs(args);
+        if (detectedAgent) {
+          if (!result.agentTtys.has(detectedAgent)) {
+            result.agentTtys.set(detectedAgent, new Set());
+          }
+          result.agentTtys.get(detectedAgent)?.add(tty);
+          result.agentByTty.set(tty, detectedAgent);
+          if (detectedAgent === 'claude') result.claudeTtys.add(tty);
+          if (detectedAgent === 'codex') result.codexTtys.add(tty);
         }
 
         // Consumer 2: Agent info (batchGetAgentInfo)
@@ -257,10 +279,12 @@ export class TmuxService {
               const pidNum = pidStr ? Number.parseInt(pidStr, 10) : Number.NaN;
 
               // Collect all panes (pane_id already includes % prefix)
-              if (!allPanes.has(sessionName)) {
-                allPanes.set(sessionName, []);
+              let panes = allPanes.get(sessionName);
+              if (!panes) {
+                panes = [];
+                allPanes.set(sessionName, panes);
               }
-              allPanes.get(sessionName)!.push({
+              panes.push({
                 paneId,
                 command,
                 path: panePath,
@@ -274,7 +298,7 @@ export class TmuxService {
           });
       }
 
-      // Batch check: which TTYs have claude running (single ps call for all pane TTYs)
+      // Batch check: which TTYs have supported agents running (single ps call for all pane TTYs)
       // Must run before pane selection so we can pick the right representative pane.
       const allTtys = new Set<string>();
       for (const [, panes] of allPanes) {
@@ -282,18 +306,19 @@ export class TmuxService {
           if (p.tty) allTtys.add(p.tty.replace('/dev/', ''));
         }
       }
-      const claudeOnTtySet = await this.batchCheckClaudeOnTtys([...allTtys]);
+      const processInfo = await this.batchProcessInfo([...allTtys]);
+      const agentByTty = processInfo.agentByTty;
 
       // Derive session-level pane info from all panes (backward compatibility).
-      // Priority: pane with claude running (via ps) > first non-dead pane > first pane.
+      // Priority: pane with a supported agent running (via ps) > first non-dead pane > first pane.
       const paneInfo = new Map<string, { command: string; path: string; title: string; tty: string }>();
       for (const [sessionName, panes] of allPanes) {
-        const claudePane = panes.find(p => {
+        const agentPane = panes.find(p => {
           const ttyName = p.tty?.replace('/dev/', '');
-          return ttyName && claudeOnTtySet.has(ttyName);
+          return ttyName && agentByTty.has(ttyName);
         });
         const alivePane = panes.find(p => !p.isDead);
-        const bestPane = claudePane || alivePane || panes[0];
+        const bestPane = agentPane || alivePane || panes[0];
         if (bestPane) {
           paneInfo.set(sessionName, {
             command: bestPane.command,
@@ -306,7 +331,7 @@ export class TmuxService {
 
       // Get preview + waiting status (single capture-pane call per session)
       const previews = new Map<string, string>();
-      const claudeOnTty = new Map<string, boolean>();
+      const agentBySession = new Map<string, AgentProvider>();
       await Promise.all(
         sessions.map(async (session) => {
           // Single capture-pane call for both preview and waiting detection
@@ -324,10 +349,11 @@ export class TmuxService {
             }
           }
 
-          // Use batch result for claude detection
+          // Use batch result for agent detection
           const info = paneInfo.get(session.id);
           if (info?.tty) {
-            claudeOnTty.set(session.id, claudeOnTtySet.has(info.tty.replace('/dev/', '')));
+            const agent = agentByTty.get(info.tty.replace('/dev/', ''));
+            if (agent) agentBySession.set(session.id, agent);
           }
         })
       );
@@ -335,13 +361,14 @@ export class TmuxService {
       // Merge all info into sessions
       const result = sessions.map((session) => {
         const info = paneInfo.get(session.id);
-        // Claude Code detection: Check if 'claude' process exists on the TTY
-        const isClaudeRunning = claudeOnTty.get(session.id) || false;
-        const currentCommand = isClaudeRunning ? 'claude' : info?.command;
+        // Agent detection: Check if a supported agent process exists on the TTY.
+        const agent = agentBySession.get(session.id);
+        const currentCommand = agent ?? info?.command;
         const sessionPanes = allPanes.get(session.id);
         return {
           ...session,
           currentCommand,
+          agent,
           currentPath: info?.path,
           paneTitle: info?.title,
           paneTty: info?.tty,
@@ -356,21 +383,6 @@ export class TmuxService {
     } catch {
       return [];
     }
-  }
-
-  /**
-   * Check if process args indicate a Claude Code process.
-   *
-   * Matches the executable name `claude` regardless of install location:
-   *   - `claude` / `claude --resume`              (PATH-resolved invocation)
-   *   - `/usr/local/bin/claude` / `~/.local/bin/claude -c`  (full path)
-   *   - paths containing `/claude/versions/`       (team agents / version-pinned)
-   *
-   * The leading `(?:^|\/)` and trailing `(?:\s|$)` anchors avoid false matches
-   * on substrings like `.claude/shell-snapshots/...` or `claude-foo-cwd`.
-   */
-  private isClaudeProcess(args: string): boolean {
-    return /(?:^|\/)claude(?:\s|$)/.test(args) || args.includes('/claude/versions/');
   }
 
   /**

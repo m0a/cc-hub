@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { readFile, writeFile, unlink } from 'node:fs/promises';
 import { ensureDataDir } from '../utils/storage';
-import type { SessionTheme } from '../../../shared/types';
+import type { AgentProvider, SessionTheme } from '../../../shared/types';
 
 const METADATA_FILE = 'session-metadata.json';
 const LAST_KNOWN_FILE = 'last-known-sessions.json';
@@ -15,6 +15,7 @@ export interface LastKnownSession {
   id: string;
   name: string;
   currentPath?: string;
+  agent?: AgentProvider;
   theme?: SessionTheme;
   customTitle?: string;
   ccSessionId?: string;

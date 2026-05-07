@@ -175,6 +175,37 @@ describe('CodexUsageService', () => {
     expect(result?.fiveHour?.utilization).toBe(50.0);
   });
 
+  test('does not keep exhaustion after the cycle reset time has passed', () => {
+    const fiveHourReset = Math.floor(Date.UTC(2026, 4, 7, 10, 0, 0) / 1000);
+    const sevenDayReset = Math.floor(Date.UTC(2026, 4, 14, 0, 0, 0) / 1000);
+    placeRollout('2026/05/07', 'rollout-2026-05-07T09-47-05-aaa.jsonl', [
+      makeRolloutLine({
+        timestamp: '2026-05-07T09:30:00Z',
+        rate_limits: {
+          primary: { used_percent: 88.0, window_minutes: 300, resets_at: fiveHourReset },
+          secondary: { used_percent: 15.0, window_minutes: 10080, resets_at: sevenDayReset },
+          plan_type: 'plus',
+        },
+      }),
+      makeRolloutLine({
+        timestamp: '2026-05-07T09:35:00Z',
+        rate_limits: {
+          primary: null,
+          secondary: null,
+          credits: { has_credits: false, unlimited: false, balance: '0' },
+          plan_type: null,
+        },
+      }),
+    ]);
+
+    const svc = new CodexUsageService(sessionsDir);
+    const result = svc.computeUsageLimits(Date.UTC(2026, 4, 7, 11, 0, 0));
+
+    expect(result?.rateLimitExceeded).toBeUndefined();
+    expect(result?.fiveHour?.utilization).toBe(88.0);
+    expect(result?.fiveHour?.status).toBe('warning');
+  });
+
   test('caches results within TTL', async () => {
     const resetsAtSec = Math.floor(Date.UTC(2026, 4, 14, 0, 0, 0) / 1000);
     placeRollout('2026/05/07', 'rollout-2026-05-07T09-47-05-aaa.jsonl', [

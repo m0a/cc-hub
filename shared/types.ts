@@ -357,6 +357,7 @@ export interface DashboardResponse {
 export interface ExtendedSessionResponse extends SessionResponse {
   indicatorState?: IndicatorState;
   ccSessionId?: string;
+  agentSessionId?: string;
   currentCommand?: string;
   paneTitle?: string;
   ccSummary?: string;

@@ -13,12 +13,14 @@ This MVP keeps Claude Code as the default behavior and adds Codex as an addition
 - Start the selected agent in the selected working directory.
 - Detect running Claude Code and Codex processes from tmux pane TTYs.
 - Return the detected `agent` in session API responses.
+- Read basic Codex thread metadata from the local Codex state database.
 - Add a Claude/Codex selector to the new session modal.
 - Preserve existing Claude-specific metadata behavior.
 
 ## Out of Scope
 
 - Codex-specific session metadata equivalent to Claude Code recap, token metrics, or session IDs.
+- Generated Codex recaps equivalent to Claude Code recap hooks.
 - Codex prompt/recap parsing.
 - Agent filtering or sorting in the session list.
 - Full agent-provider abstraction for adding future CLIs.
@@ -82,6 +84,21 @@ The frontend sends the selected `agent` in the session creation payload. Claude 
 
 Codex session cards use the session name instead of pane title for display, because Codex pane titles can resolve to the host name.
 
+### Codex Metadata
+
+Codex does not currently expose the same JSONL recap fields that CC Hub reads for Claude Code.
+
+The MVP reads basic local metadata from `~/.codex/state_5.sqlite`:
+
+- thread ID
+- title
+- first user message
+- token count
+- git branch
+- updated time
+
+This metadata is used to enrich Codex session cards without enabling Claude-only actions such as conversation replay or `claude -r` resume.
+
 ## Changed Files
 
 - `shared/types.ts`
@@ -94,11 +111,14 @@ Codex session cards use the session name instead of pane title for display, beca
   - Adds Codex process detection.
   - Adds TTY-to-agent mapping.
   - Selects an agent pane as the representative session pane when available.
+- `backend/src/services/codex.ts`
+  - Reads latest Codex thread metadata per working directory from local Codex state.
 - `backend/src/routes/sessions.ts`
   - Reads `agent` from create-session requests.
   - Starts the selected CLI.
   - Applies duplicate guard by same agent and same working directory.
   - Includes `agent` in list/detail/create responses.
+  - Enriches Codex sessions with title, first prompt, thread ID, git branch, and token count when available.
   - Removes last-known metadata during delete.
 - `frontend/src/hooks/useSessions.ts`
   - Sends `agent` in create-session requests.
@@ -153,7 +173,9 @@ Completed checks:
 - `bun run typecheck`
 - `bun run test`
 - Focused agent-provider unit tests for registry IDs, create-session schema, process detection, provider capabilities, and start command quoting.
+- Codex metadata unit tests for missing DB, latest thread selection by cwd, and archived thread filtering.
 - API confirmed an existing Codex session reports `currentCommand: "codex"` and `agent: "codex"`.
+- API confirmed an existing Codex session can include `ccSummary`, `ccFirstPrompt`, `agentSessionId`, `gitBranch`, and token count derived from local Codex metadata.
 - API confirmed duplicate working directory handling for an existing Codex session.
 - A temporary Codex smoke session was created, detected as Codex, shown in the UI, and deleted.
 

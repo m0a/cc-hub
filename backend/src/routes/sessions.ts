@@ -4,6 +4,7 @@ import { AGENT_PROVIDERS, CreateSessionSchema, DEFAULT_AGENT_PROVIDER, PaneIdSch
 import { TmuxService } from '../services/tmux';
 import { controlSessions, getOrCreateControlSession } from '../services/tmux-control';
 import { ClaudeCodeService } from '../services/claude-code';
+import { CodexService } from '../services/codex';
 import { SessionHistoryService } from '../services/session-history';
 import { PromptHistoryService } from '../services/prompt-history';
 import { getAllSessionMetadata, setSessionTheme, setSessionTitle, getSessionOrder, setSessionOrder, getLastKnownSessions, saveLastKnownSessions, removeLastKnownSession, type LastKnownSession } from '../services/session-metadata';
@@ -13,6 +14,7 @@ import { pushSessionsNow } from './terminal-mux';
 
 const tmuxService = new TmuxService();
 const claudeCodeService = new ClaudeCodeService();
+const codexService = new CodexService();
 const sessionHistoryService = new SessionHistoryService();
 const promptHistoryService = new PromptHistoryService();
 
@@ -71,11 +73,16 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
     .filter((s): s is typeof s & { currentPath: string } => agentSupportsConversationMetadata(s.agent ?? s.currentCommand) && !!s.currentPath)
     .map(s => s.currentPath);
   const ccSessionsByPath = await claudeCodeService.getSessionsForPaths(claudePaths);
+  const codexPaths = tmuxSessions
+    .filter((s): s is typeof s & { currentPath: string } => (s.agent ?? s.currentCommand) === 'codex' && !!s.currentPath)
+    .map(s => s.currentPath);
+  const codexThreadsByPath = await codexService.getThreadsForPaths(codexPaths);
 
   const order = await getSessionOrder();
 
   const results = await Promise.all(tmuxSessions.map(async (s) => {
     let ccSession: Awaited<ReturnType<typeof claudeCodeService.getSessionForPath>> | undefined;
+    const codexThread = s.currentPath ? codexThreadsByPath.get(s.currentPath) : undefined;
 
     if (agentSupportsConversationMetadata(s.agent ?? s.currentCommand) && s.currentPath) {
       const ptySessionId = sessionIdByTmuxId.get(s.id);
@@ -130,6 +137,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
     }
 
     const includeClaudeInfo = agentSupportsConversationMetadata(s.agent ?? s.currentCommand);
+    const includeCodexInfo = (s.agent ?? s.currentCommand) === 'codex';
 
     const panePids: (number | undefined)[] = s.panes ? s.panes.map((p: { pid?: number }) => p.pid) : [];
     const metrics = await computeSessionMetrics({
@@ -137,6 +145,9 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       workingDir: s.currentPath,
       pids: panePids,
     });
+    const sessionMetrics = includeCodexInfo && codexThread?.tokensUsed
+      ? { ...metrics, totalTokens: codexThread.tokensUsed }
+      : metrics;
 
     return {
       id: s.id,
@@ -149,19 +160,20 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       currentPath: s.currentPath,
       paneTitle: s.paneTitle,
       waitingToolName: includeClaudeInfo ? effectiveWaitingToolName : undefined,
-      ccSummary: includeClaudeInfo ? ccSession?.summary : undefined,
-      ccFirstPrompt: includeClaudeInfo ? ccSession?.firstPrompt : undefined,
+      ccSummary: includeClaudeInfo ? ccSession?.summary : includeCodexInfo ? codexThread?.title : undefined,
+      ccFirstPrompt: includeClaudeInfo ? ccSession?.firstPrompt : includeCodexInfo ? codexThread?.firstPrompt : undefined,
       ccRecap: includeClaudeInfo ? ccSession?.lastRecap?.content : undefined,
       ccRecapAt: includeClaudeInfo ? ccSession?.lastRecap?.timestamp : undefined,
       indicatorState: includeClaudeInfo ? indicatorState : undefined,
       ccSessionId: includeClaudeInfo ? ccSession?.sessionId : undefined,
+      agentSessionId: includeCodexInfo ? codexThread?.sessionId : undefined,
       messageCount: includeClaudeInfo ? ccSession?.messageCount : undefined,
-      gitBranch: includeClaudeInfo ? ccSession?.gitBranch : undefined,
-      durationMinutes: includeClaudeInfo ? durationMinutes : undefined,
+      gitBranch: includeClaudeInfo ? ccSession?.gitBranch : includeCodexInfo ? codexThread?.gitBranch : undefined,
+      durationMinutes: includeClaudeInfo ? durationMinutes : includeCodexInfo && codexThread?.updatedAt ? Math.round((Date.now() - new Date(codexThread.updatedAt).getTime()) / 60000) : undefined,
       firstMessageId: includeClaudeInfo ? ccSession?.firstMessageId : undefined,
       theme: sessionMetadata[s.id]?.theme,
       customTitle: sessionMetadata[s.id]?.title,
-      metrics,
+      metrics: sessionMetrics,
       panes: s.panes ? s.panes.map((p: { paneId: string; command: string; path: string; title: string; tty: string; isActive: boolean; isDead: boolean; pid?: number }) => {
         const ttyName = p.tty?.replace('/dev/', '');
         const agentInfo = ttyName ? agentInfoByTty.get(ttyName) : undefined;
@@ -223,6 +235,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       ccRecapAt: undefined,
       indicatorState: undefined,
       ccSessionId: lost.ccSessionId,
+      agentSessionId: undefined,
       messageCount: undefined,
       gitBranch: undefined,
       durationMinutes: undefined,

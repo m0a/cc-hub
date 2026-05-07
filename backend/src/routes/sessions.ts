@@ -24,6 +24,14 @@ export function agentStartCommand(agent: AgentProvider, workingDir: string): str
   return `cd ${shellQuote(workingDir)} && ${AGENT_PROVIDERS[agent].command}`;
 }
 
+export function findDuplicateAgentWorkingDirSession<T extends { agent?: string; currentCommand?: string; currentPath?: string }>(
+  sessions: T[],
+  agent: AgentProvider,
+  workingDir: string,
+): T | undefined {
+  return sessions.find(s => (s.agent ?? s.currentCommand) === agent && s.currentPath === workingDir);
+}
+
 /** Notify mux clients of session changes after mutations */
 function notifySessionChange(): void {
   pushSessionsNow();
@@ -288,9 +296,7 @@ sessions.post('/', async (c) => {
 
   // Guard: reject if the same agent is already running in the same directory
   if (parsed.success && parsed.data.workingDir) {
-    const conflicting = tmuxSessions.find(
-      s => s.currentCommand === agent && s.currentPath === parsed.data.workingDir
-    );
+    const conflicting = findDuplicateAgentWorkingDirSession(tmuxSessions, agent, parsed.data.workingDir);
     if (conflicting) {
       return c.json({ error: 'duplicate_working_dir', existingSession: conflicting.name }, 409);
     }

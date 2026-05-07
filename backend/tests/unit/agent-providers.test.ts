@@ -6,7 +6,7 @@ import {
   agentSupportsConversationMetadata,
   detectAgentProviderFromArgs,
 } from '../../../shared/types';
-import { agentStartCommand, shellQuote } from '../../src/routes/sessions';
+import { agentStartCommand, findDuplicateAgentWorkingDirSession, shellQuote } from '../../src/routes/sessions';
 
 describe('Agent provider registry', () => {
   test('derives provider IDs from the registry', () => {
@@ -56,5 +56,23 @@ describe('Agent provider registry', () => {
     expect(shellQuote('/tmp/plain path')).toBe("'/tmp/plain path'");
     expect(shellQuote("/tmp/it's-here")).toBe("'/tmp/it'\\''s-here'");
     expect(agentStartCommand('codex', "/tmp/it's-here")).toBe("cd '/tmp/it'\\''s-here' && codex");
+  });
+
+  test('detects duplicate working directories only for the same agent', () => {
+    const sessions = [
+      { name: 'claude-repo', agent: 'claude', currentCommand: 'claude', currentPath: '/repo' },
+      { name: 'codex-other', agent: 'codex', currentCommand: 'codex', currentPath: '/other' },
+    ];
+
+    expect(findDuplicateAgentWorkingDirSession(sessions, 'claude', '/repo')?.name).toBe('claude-repo');
+    expect(findDuplicateAgentWorkingDirSession(sessions, 'codex', '/repo')).toBeUndefined();
+  });
+
+  test('uses currentCommand for duplicate detection when agent is missing', () => {
+    const sessions = [
+      { name: 'legacy-codex', currentCommand: 'codex', currentPath: '/repo' },
+    ];
+
+    expect(findDuplicateAgentWorkingDirSession(sessions, 'codex', '/repo')?.name).toBe('legacy-codex');
   });
 });

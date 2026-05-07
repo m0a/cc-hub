@@ -304,6 +304,15 @@ export interface UsageLimits {
   sevenDay: UsageCycleInfo;
 }
 
+// Usage limits derived from Codex rollouts (rate_limits in token_count events).
+// Free plan only includes the 7-day window; paid plans may include both.
+export interface CodexUsageLimits {
+  fiveHour?: UsageCycleInfo;
+  sevenDay?: UsageCycleInfo;
+  planType?: string;
+  capturedAt?: string; // timestamp of the rollout event the limits were read from
+}
+
 // Usage history snapshot for line chart
 export interface UsageSnapshot {
   timestamp: string; // ISO 8601
@@ -350,6 +359,7 @@ export interface DashboardResponse {
   limits: LimitsInfo | null; // Deprecated, kept for compatibility
   usageLimits: UsageLimits | null; // New: from Anthropic API
   usageLimitsStatus?: UsageLimitsStatus; // Error/state info for UI
+  codexUsageLimits?: CodexUsageLimits | null; // From Codex rollouts
   usageHistory: UsageSnapshot[]; // Usage history for line chart
   dailyActivity: DailyActivity[];
   modelUsage: ModelUsage[];

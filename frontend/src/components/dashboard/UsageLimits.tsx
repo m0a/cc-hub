@@ -1,11 +1,17 @@
 import { useTranslation } from 'react-i18next';
-import type { UsageLimits as UsageLimitsType, UsageLimitsStatus, UsageSnapshot } from '../../../../shared/types';
+import type { UsageCycleInfo, UsageLimitsStatus, UsageSnapshot } from '../../../../shared/types';
 import { UsageChart } from './UsageChart';
 
+interface UsageLimitsData {
+  fiveHour?: UsageCycleInfo;
+  sevenDay?: UsageCycleInfo;
+}
+
 interface UsageLimitsProps {
-  data: UsageLimitsType | null;
+  data: UsageLimitsData | null;
   status?: UsageLimitsStatus;
   history: UsageSnapshot[];
+  title?: string;
 }
 
 function formatTimeUntil(iso: string): string {
@@ -67,13 +73,14 @@ function getStatusMessage(
   }
 }
 
-export function UsageLimits({ data, status, history }: UsageLimitsProps) {
+export function UsageLimits({ data, status, history, title }: UsageLimitsProps) {
   const { t } = useTranslation();
+  const heading = title ?? t('dashboard.usageLimits');
 
-  if (!data) {
+  if (!data || (!data.fiveHour && !data.sevenDay)) {
     return (
       <div className="p-3 bg-th-surface rounded-md">
-        <div className="text-sm font-medium text-th-text mb-2">{t('dashboard.usageLimits')}</div>
+        <div className="text-sm font-medium text-th-text mb-2">{heading}</div>
         {status?.errorReason ? (
           <ErrorMessage status={status} />
         ) : (
@@ -86,7 +93,7 @@ export function UsageLimits({ data, status, history }: UsageLimitsProps) {
   return (
     <div className="p-3 bg-th-surface rounded-md">
       <div className="flex items-center justify-between mb-3">
-        <div className="text-sm font-medium text-th-text">{t('dashboard.usageLimits')}</div>
+        <div className="text-sm font-medium text-th-text">{heading}</div>
         {status?.isStale && (
           <div className="text-[10px] text-th-text-muted">{t('dashboard.usageStaleData')}</div>
         )}
@@ -94,25 +101,29 @@ export function UsageLimits({ data, status, history }: UsageLimitsProps) {
 
       {status?.errorReason && <ErrorMessage status={status} />}
 
-      <UsageChart
-        label={t('dashboard.fiveHourCycle')}
-        field="fiveHour"
-        snapshots={history}
-        currentUtilization={data.fiveHour.utilization}
-        resetsAt={data.fiveHour.resetsAt}
-        status={data.fiveHour.status || 'safe'}
-        statusMessage={getStatusMessage(t, data.fiveHour.status, data.fiveHour.timeRemaining, data.fiveHour.estimatedHitTime)}
-      />
+      {data.fiveHour && (
+        <UsageChart
+          label={t('dashboard.fiveHourCycle')}
+          field="fiveHour"
+          snapshots={history}
+          currentUtilization={data.fiveHour.utilization}
+          resetsAt={data.fiveHour.resetsAt}
+          status={data.fiveHour.status || 'safe'}
+          statusMessage={getStatusMessage(t, data.fiveHour.status, data.fiveHour.timeRemaining, data.fiveHour.estimatedHitTime)}
+        />
+      )}
 
-      <UsageChart
-        label={t('dashboard.sevenDayCycle')}
-        field="sevenDay"
-        snapshots={history}
-        currentUtilization={data.sevenDay.utilization}
-        resetsAt={data.sevenDay.resetsAt}
-        status={data.sevenDay.status || 'safe'}
-        statusMessage={getStatusMessage(t, data.sevenDay.status, data.sevenDay.timeRemaining, data.sevenDay.estimatedHitTime)}
-      />
+      {data.sevenDay && (
+        <UsageChart
+          label={t('dashboard.sevenDayCycle')}
+          field="sevenDay"
+          snapshots={history}
+          currentUtilization={data.sevenDay.utilization}
+          resetsAt={data.sevenDay.resetsAt}
+          status={data.sevenDay.status || 'safe'}
+          statusMessage={getStatusMessage(t, data.sevenDay.status, data.sevenDay.timeRemaining, data.sevenDay.estimatedHitTime)}
+        />
+      )}
     </div>
   );
 }

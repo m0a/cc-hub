@@ -82,6 +82,8 @@
   "dashboard": {
     "title": "Dashboard",
     "usageLimits": "Usage Limits",
+    "codexUsageLimits": "Codex Usage Limits",
+    "codexOtherMetricsComingSoon": "Codex daily activity, model usage, and cost estimates are coming soon",
     "resetIn": "Reset in",
     "limitPrediction": "Limit Prediction",
     "dailyStats": "Daily Activity",

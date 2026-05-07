@@ -145,8 +145,12 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       workingDir: s.currentPath,
       pids: panePids,
     });
-    const sessionMetrics = includeCodexInfo && codexThread?.tokensUsed
-      ? { ...metrics, totalTokens: codexThread.tokensUsed }
+    const sessionMetrics = includeCodexInfo && codexThread
+      ? {
+          ...metrics,
+          ...codexThread.tokenUsage,
+          totalTokens: codexThread.tokenUsage?.totalTokens ?? codexThread.tokensUsed,
+        }
       : metrics;
 
     return {

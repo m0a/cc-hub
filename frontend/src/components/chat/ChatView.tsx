@@ -50,17 +50,20 @@ export function ChatView({
 }: ChatViewProps) {
   const { t } = useTranslation();
   const isCodex = agent === 'codex';
+  const isClaude = agent === 'claude';
   const claudeStream = useConversationStream({
     sessionId,
-    enabled: enabled && !isCodex,
+    enabled: enabled && isClaude,
   });
   const codexStream = useCodexConversation({
     threadId: agentSessionId,
     enabled: enabled && isCodex,
   });
-  const messages = isCodex ? codexStream.messages : claudeStream.messages;
-  const isReady = isCodex ? codexStream.isReady : claudeStream.isReady;
-  const ccSessionId = isCodex ? null : claudeStream.ccSessionId;
+  const messages = isCodex ? codexStream.messages : isClaude ? claudeStream.messages : [];
+  // `isReady=true` for unsupported agents so the empty state renders instead
+  // of the loading skeleton (which would never resolve).
+  const isReady = isCodex ? codexStream.isReady : isClaude ? claudeStream.isReady : true;
+  const ccSessionId = isClaude ? claudeStream.ccSessionId : null;
   const echo = useInputEcho(sessionId);
 
   const resolvedTitle = title ?? t('conversation.claude');

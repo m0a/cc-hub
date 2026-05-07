@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.99] - 2026-05-07
+
+### Fixed
+- Codex セッションの resume が Claude セッションとして起動してしまう問題を修正 (#128)
+  - `POST /sessions/:id/resume` と `POST /sessions/history/resume` が `claude -r` 固定だったため、Codex セッションを resume すると claude が起動していた
+  - `AGENT_PROVIDERS` に `resumeCommand` を追加し、`agentResumeCommand(agent, sessionId)` ヘルパー経由で組み立てる構造に統一
+  - active セッションの resume は tmux ペインで検出された agent を採用（リクエストボディでの override も可能）
+  - 履歴からの resume はリクエストボディの `agent` フィールドを参照
+  - フロント (App.tsx / SessionList.tsx) は resume API 呼び出し時に `session.agent` を渡すよう変更
+
+## [0.1.98] - 2026-05-07
+
+### Added
+- Codex (OpenAI) を agent provider として追加 (#127)
+  - セッション作成時に `agent: codex` を指定可能（デフォルトは claude）
+  - セッション一覧/メタデータ行に agent badge を表示（Lost セッションも含む）
+  - `~/.codex/state_5.sqlite` から Codex thread のメタデータ（タイトル、初回プロンプト、git branch）を読み取り表示
+  - rollout ファイル末尾を tail して Codex の context token 使用量を読み取り、Claude と同等のメトリクス表示に対応
+  - 同一ディレクトリで同じ agent が走っているかどうかをチェックする重複判定ロジックを追加
+
 ## [0.1.97] - 2026-05-01
 
 ### Fixed

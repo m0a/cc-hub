@@ -69,18 +69,17 @@ export function UsageChart({ label, field, snapshots, currentUtilization, resets
     const cycleStart = resetTime - cycleDuration;
     const nowRatio = (now - cycleStart) / cycleDuration;
 
+    const relevantSnapshots = snapshots
+      .filter(s => {
+        const ts = new Date(s.timestamp).getTime();
+        return ts >= cycleStart && ts <= now;
+      })
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
     // --- Actual usage points ---
-    // Always start from cycle start at 0%
-    const actualPoints: { x: number; y: number }[] = [
-      { x: ratioToX(0), y: utilToY(0) },
-    ];
-
-    const relevantSnapshots = snapshots.filter(s => {
-      const ts = new Date(s.timestamp).getTime();
-      return ts >= cycleStart && ts <= now;
-    });
-
-    // Add snapshot points — gaps between them become straight lines naturally
+    // Use only real samples so empty/low-history cycles do not render an
+    // artificial vertical spike from the cycle start.
+    const actualPoints: { x: number; y: number }[] = [];
     for (const snap of relevantSnapshots) {
       const ts = new Date(snap.timestamp).getTime();
       const ratio = (ts - cycleStart) / cycleDuration;

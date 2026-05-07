@@ -236,9 +236,13 @@ export class CodexUsageService {
     // Codex stops returning windows once the cycle is exhausted, so the windowed
     // source can be stale by the time we read this. Detect exhaustion from the
     // latest event's credits and override the short cycle status accordingly.
+    // If the cycle reset time has already passed, do not keep the exhausted
+    // override around; the next cycle should be reflected by a fresh event.
     const credits = latestSource.rateLimits.credits;
     const exhausted = !!credits && credits.has_credits === false && credits.unlimited !== true;
-    if (exhausted) {
+    const fiveHourResetAtMs = result.fiveHour ? Date.parse(result.fiveHour.resetsAt) : Number.NaN;
+    const resetExpired = Number.isFinite(fiveHourResetAtMs) && now >= fiveHourResetAtMs;
+    if (exhausted && !resetExpired) {
       result.rateLimitExceeded = true;
       if (result.fiveHour) {
         result.fiveHour = { ...result.fiveHour, utilization: 100, status: 'exceeded' };

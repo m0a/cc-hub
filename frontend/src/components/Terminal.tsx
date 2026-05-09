@@ -7,6 +7,7 @@ import '@xterm/xterm/css/xterm.css';
 import { authFetch } from '../services/api';
 import type { SessionTheme } from '../../../shared/types';
 import { filterMouseTrackingInput, filterMouseTrackingOutput, shouldInterceptKeyEvent } from '../utils/terminal-filters';
+import { bench } from '../utils/bench';
 import {
   getTerminalThemes, isLightMode, LIGHT_ANSI_COLORS,
   DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE,
@@ -893,7 +894,10 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     const cleanup = cm.registerOnData((data) => {
       const str = decoder.decode(data, { stream: true });
       const filtered = filterMouseTrackingOutput(str);
-      if (filtered.length > 0) terminalRef.current?.write(filtered);
+      if (filtered.length > 0) {
+        const t0 = bench.recordWriteStart();
+        terminalRef.current?.write(filtered, () => bench.recordWriteEnd(t0, filtered.length));
+      }
     });
     controlCleanupRef.current = cleanup;
     return () => {

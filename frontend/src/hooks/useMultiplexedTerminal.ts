@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { reportWsLatency } from '../services/latency-store';
 import type { TmuxLayoutNode } from '../../../shared/types';
 import { MUX_BINARY_TYPE } from '../../../shared/types';
+import { bench } from '../utils/bench';
 
 interface UseMultiplexedTerminalOptions {
   sessionId: string;
@@ -195,6 +196,8 @@ function ensureConnection(token?: string | null) {
       const data = view.subarray(idx + 1);
 
       wsOutputCount++;
+      bench.recordFrame(data.length);
+      bench.scanForEndMarker(data);
       cb?.onPaneOutput?.(paneId, data);
       return;
     }

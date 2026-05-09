@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.105] - 2026-05-09
+
+### Added
+- ターミナル遅延の end-to-end 計測用 instrumentation を追加（ssh+termux との比較用、本番動作には影響なし）
+  - `CCHUB_BENCH=1` で起動するとバックエンドが WebSocket 送信ごとにフレームサイズ・送信所要時間・タイムスタンプをログ出力
+  - フロントエンドに `window.__cchub_bench` を公開: `start()` で計測開始、受信フレーム数・xterm.js parse 時間 (P50/P95/Max)・スループットを記録
+  - 受信ストリームに `__BENCH_END__` マーカーが現れると自動で集計レポートを `console.table` 出力
+  - `scripts/prepare-bench-data.sh` で 4 種類のベンチ用データ (`/tmp/bench-{plain,color,jp,redraw}.txt`) を生成
+
 ## [0.1.104] - 2026-05-09
 
 ### Fixed

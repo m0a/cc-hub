@@ -6,6 +6,9 @@ import type { ControlClientMessage, MuxClientMessage, ConversationMessage } from
 import { MUX_BINARY_TYPE } from '../../../shared/types';
 import { buildSessionsList } from './sessions';
 
+const BENCH = !!process.env.CCHUB_BENCH;
+const BENCH_T0 = performance.now();
+
 /** Per-session subscription state for a mux client */
 interface MuxSubscription {
   controlSession: TmuxControlSession;
@@ -242,7 +245,12 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
           sessionIdBuf.copy(frame, 1);
           paneIdBuf.copy(frame, 1 + sessionIdBuf.length);
           data.copy(frame, 1 + sessionIdBuf.length + paneIdBuf.length);
+          const sendT = BENCH ? performance.now() : 0;
           const result = ws.send(frame);
+          if (BENCH) {
+            const sendDur = performance.now() - sendT;
+            console.log(`[bench] tx ${sessionId} ${paneId} ${data.length}b send=${sendDur.toFixed(2)}ms t=${(sendT - BENCH_T0).toFixed(2)}`);
+          }
           if (result === 0) {
             sub.sendFailCount++;
           }

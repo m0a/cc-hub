@@ -661,8 +661,10 @@ function SessionItem({
       ? extSession.paneTitle.replace(/^[✳★●◆]\s*/, '')  // Remove status icons
       : session.name;
 
-  // Show resume button only when Claude is not running and we have a ccSessionId
-  const showResumeButton = !supportsConversationMetadata && extSession.ccSessionId;
+  // Show resume button only when no agent is currently running and we have a
+  // conversation id we can resume from (Claude → ccSessionId, Codex → agentSessionId).
+  const isAgentRunning = !!extSession.agent;
+  const showResumeButton = !isAgentRunning && (extSession.ccSessionId || extSession.agentSessionId);
 
   const handleResume = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1020,12 +1022,20 @@ export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, in
           });
           if (response.ok) {
             const data = await response.json();
-            const checkNewSession = () => {
-              const newSession = sessions.find(s => s.id === data.tmuxSessionId);
-              if (newSession) onSelectSession(newSession);
-            };
-            checkNewSession();
-            setTimeout(checkNewSession, 2000);
+            // Build a session object from the API response + the lost session's metadata
+            // so we can navigate immediately, instead of waiting for the WS push and
+            // searching `sessions` (which is stale inside this closure).
+            onSelectSession({
+              id: data.tmuxSessionId,
+              name: data.tmuxSessionId,
+              createdAt: '',
+              lastAccessedAt: '',
+              state: 'working',
+              currentPath: session.currentPath,
+              agent: data.agent ?? session.agent,
+              theme: session.theme,
+              customTitle: session.customTitle,
+            });
           }
         } else {
           // Lost session without a conversation id: create a fresh session in the same

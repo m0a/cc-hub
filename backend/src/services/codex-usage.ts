@@ -52,18 +52,65 @@ function statusFromUtilization(utilization: number): UsageCycleInfo['status'] {
   return 'safe';
 }
 
+/**
+ * Mirrors AnthropicUsageService.estimateHitTime. Returns a formatted hit time
+ * (HH:MM for short windows, M/D for long windows) when current pace projects
+ * to 100% before the cycle resets — otherwise undefined.
+ *
+ * `cycleHours` is the assumed cycle length used to derive cycle start
+ * (resetTime − cycleHours). Codex uses rolling windows but the chart and
+ * status share this approximation so the message and chart projection agree.
+ */
+function estimateHitTime(
+  utilization: number,
+  resetsAtMs: number,
+  cycleHours: number,
+  now: number,
+): string | undefined {
+  if (utilization <= 0 || utilization >= 100) return undefined;
+  const cycleStartMs = resetsAtMs - cycleHours * 60 * 60 * 1000;
+  const elapsedMs = now - cycleStartMs;
+  if (elapsedMs <= 0) return undefined;
+  const ratePerMs = utilization / elapsedMs;
+  const remaining = 100 - utilization;
+  const msToHit = remaining / ratePerMs;
+  const hitMs = now + msToHit;
+  if (hitMs >= resetsAtMs) return undefined;
+  // Ignore predictions that fall in the last 10% of remaining time — those are
+  // basically "won't hit before reset" with rounding noise.
+  const remainingMs = resetsAtMs - now;
+  if (remainingMs > 0 && msToHit > remainingMs * 0.9) return undefined;
+  const hit = new Date(hitMs);
+  if (cycleHours <= 24) {
+    return `${hit.getHours()}:${hit.getMinutes().toString().padStart(2, '0')}`;
+  }
+  return `${hit.getMonth() + 1}/${hit.getDate()}`;
+}
+
 function buildCycleInfo(window: RateLimitWindow | null | undefined, now: number): UsageCycleInfo | undefined {
   if (!window) return undefined;
   const utilization = numberOrUndefined(window.used_percent);
   const resetsAtSec = numberOrUndefined(window.resets_at);
+  const windowMinutes = numberOrUndefined(window.window_minutes);
   if (utilization === undefined || resetsAtSec === undefined) return undefined;
-  const resetsAt = new Date(resetsAtSec * 1000).toISOString();
-  const timeRemaining = formatDuration(resetsAtSec * 1000 - now);
+  const resetsAtMs = resetsAtSec * 1000;
+  const resetsAt = new Date(resetsAtMs).toISOString();
+  const timeRemaining = formatDuration(resetsAtMs - now);
+  const cycleHours = windowMinutes !== undefined ? windowMinutes / 60 : 0;
+  const estimatedHitTime = cycleHours > 0
+    ? estimateHitTime(utilization, resetsAtMs, cycleHours, now)
+    : undefined;
+  // When current pace projects to 100% before reset, the chart shows the
+  // hit-time marker — the status must say "danger" so the wording matches.
+  const status: UsageCycleInfo['status'] = estimatedHitTime
+    ? 'danger'
+    : statusFromUtilization(utilization);
   return {
     utilization,
     resetsAt,
     timeRemaining,
-    status: statusFromUtilization(utilization),
+    estimatedHitTime,
+    status,
     statusMessage: '',
   };
 }

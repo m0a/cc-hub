@@ -90,9 +90,31 @@ describe('CodexUsageService', () => {
     const svc = new CodexUsageService(sessionsDir);
     const result = svc.computeUsageLimits(Date.UTC(2026, 4, 7, 9, 47, 35));
     expect(result?.fiveHour?.utilization).toBe(80.0);
-    expect(result?.fiveHour?.status).toBe('warning');
+    // 80% used 47m into a 5h cycle projects to 100% well before reset, so the
+    // status should be `danger` (matches the chart's hit-time marker).
+    expect(result?.fiveHour?.status).toBe('danger');
+    expect(result?.fiveHour?.estimatedHitTime).toBeDefined();
     expect(result?.sevenDay?.utilization).toBe(30.0);
     expect(result?.planType).toBe('plus');
+  });
+
+  test('keeps status safe when current pace will reset before hitting the limit', () => {
+    // 1% used 4 hours into a 5h cycle. Pace projects far past reset → safe.
+    const fiveHourReset = Math.floor(Date.UTC(2026, 4, 7, 14, 0, 0) / 1000);
+    placeRollout('2026/05/07', 'rollout-2026-05-07T09-47-05-aaa.jsonl', [
+      makeRolloutLine({
+        rate_limits: {
+          primary: { used_percent: 1.0, window_minutes: 300, resets_at: fiveHourReset },
+          secondary: null,
+          plan_type: 'plus',
+        },
+      }),
+    ]);
+    const svc = new CodexUsageService(sessionsDir);
+    const result = svc.computeUsageLimits(Date.UTC(2026, 4, 7, 13, 0, 0));
+    expect(result?.fiveHour?.utilization).toBe(1.0);
+    expect(result?.fiveHour?.status).toBe('safe');
+    expect(result?.fiveHour?.estimatedHitTime).toBeUndefined();
   });
 
   test('walks back through older rollouts when newest has no rate_limits', () => {

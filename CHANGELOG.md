@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.104] - 2026-05-09
+
+### Fixed
+- Lost セッションの Resume ボタンを押しても新しい tmux セッションへ自動で切り替わらない問題を修正
+  - `useCallback` クロージャ内で古い `sessions` 配列を `find` していたため、resume API で作成された新セッションが見つからず navigation が呼ばれなかった
+  - API レスポンスと lost セッションのメタデータから直接セッションオブジェクトを組み立てて即座に遷移するよう変更
+- Claude セッションでアクティブな Resume バッジ条件が壊れていた回帰を修正
+  - `d4d570d` (Codex MVP) で `!isClaudeRunning` を `!supportsConversationMetadata` に取り違えていたため、Claude では絶対にバッジが出ない状態だった
+  - agent プロセス検出ベースで条件を再構築
+
+### Added
+- Codex 使用量ダッシュボードに limit 到達予測時刻 (`estimatedHitTime`) を追加
+  - Anthropic と同じ計算ロジックで、現在のペースから 100% 到達時刻を予測
+  - 予測がある場合は status を `danger` に格上げし、チャートのマーカーと文言を一致させる
+
 ## [0.1.103] - 2026-05-08
 
 ### Fixed

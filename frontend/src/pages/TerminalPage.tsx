@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, forwardRef, type ReactNode } from 'react';
-import { TerminalComponent, type TerminalRef, type ControlModeConfig } from '../components/Terminal';
+import { type TerminalRef, type ControlModeConfig } from '../components/Terminal';
+import { TerminalSwitcher } from '../components/TerminalSwitcher';
 import { useMultiplexedTerminal } from '../hooks/useMultiplexedTerminal';
 import type { SessionState, SessionTheme, TmuxLayoutNode } from '../../../shared/types';
 import { fireHookNotification } from '../utils/hookNotification';
@@ -304,7 +305,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
       {/* Terminal - full screen. mainOverlay (e.g. ChatView) replaces the
           xterm area while the InputBar inside TerminalComponent remains visible. */}
       <main className="flex-1 relative overflow-hidden min-h-0 select-none">
-        <TerminalComponent
+        <TerminalSwitcher
           ref={ref}
           sessionId={sessionId}
           onError={(err) => setError(err)}

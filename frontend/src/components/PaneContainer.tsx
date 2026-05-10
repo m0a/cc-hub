@@ -1,7 +1,8 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Terminal as TerminalIcon, MessageSquare } from 'lucide-react';
-import { TerminalComponent, type TerminalRef } from './Terminal';
+import { type TerminalRef } from './Terminal';
+import { TerminalSwitcher } from './TerminalSwitcher';
 import { ChatView } from './chat/ChatView';
 
 import { authFetch } from '../services/api';
@@ -502,7 +503,7 @@ function TerminalPane({
         )}
         {sessionId ? (
           <div className={showConversation ? 'hidden' : 'h-full'}>
-            <TerminalComponent
+            <TerminalSwitcher
               key={`${sessionId}-${reloadKey}-${globalReloadKey}`}
               ref={terminalRef}
               sessionId={sessionId}

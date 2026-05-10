@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Sun, Moon, Globe } from 'lucide-react';
+import { Sun, Moon, Globe, FlaskConical } from 'lucide-react';
 import { useDashboard } from '../../hooks/useDashboard';
 import { UsageLimits } from './UsageLimits';
 import { DailyUsageChart } from './DailyUsageChart';
@@ -9,6 +9,7 @@ import { HourlyHeatmap } from './HourlyHeatmap';
 import { NetworkLatency } from './NetworkLatency';
 import { ServerInfo } from './ServerInfo';
 import { useTheme } from '../../hooks/useTheme';
+import { getTerminalEngine, setTerminalEngine } from '../TerminalSwitcher';
 
 // Onboarding localStorage keys
 const ONBOARDING_KEY = 'cchub-onboarding-completed';
@@ -27,6 +28,7 @@ export function Dashboard({ className = '', compact = false }: DashboardProps) {
   const { theme, toggleTheme } = useTheme();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [cacheClearing, setCacheClearing] = useState(false);
+  const [terminalEngine, setTerminalEngineState] = useState(() => getTerminalEngine());
   const [agentTab, setAgentTab] = useState<AgentTab>('claude');
   const codexLimits = data?.codexUsageLimits;
   const codexAvailable = !!codexLimits;
@@ -181,6 +183,25 @@ export function Dashboard({ className = '', compact = false }: DashboardProps) {
           >
             <Globe className="w-3.5 h-3.5" />
             {i18n.language === 'ja' ? 'EN' : 'JA'}
+          </button>
+          <button
+            onClick={() => {
+              const next = terminalEngine === 'wterm' ? 'xterm' : 'wterm';
+              setTerminalEngine(next);
+              setTerminalEngineState(next);
+              window.location.reload();
+            }}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] rounded-md transition-colors ${
+              terminalEngine === 'wterm'
+                ? 'text-purple-200 bg-purple-900/40 hover:bg-purple-900/60'
+                : 'text-zinc-500 hover:text-zinc-300 bg-white/[0.04] hover:bg-white/[0.06]'
+            }`}
+            title={i18n.language === 'ja'
+              ? `ターミナルエンジン: ${terminalEngine}（クリックで切替・リロード）`
+              : `Terminal engine: ${terminalEngine} (click to switch & reload)`}
+          >
+            <FlaskConical className="w-3.5 h-3.5" />
+            <span>{terminalEngine === 'wterm' ? 'wterm (beta)' : 'xterm'}</span>
           </button>
           <button
             onClick={() => setShowResetConfirm(true)}

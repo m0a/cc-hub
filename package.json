@@ -24,5 +24,8 @@
   },
   "devDependencies": {
     "@typescript/native-preview": "^7.0.0-dev.20260421.2"
+  },
+  "dependencies": {
+    "@wterm/ghostty": "0.3.0"
   }
 }

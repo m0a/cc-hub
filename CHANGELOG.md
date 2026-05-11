@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.106] - 2026-05-11
+
+### Fixed
+- スマホで会話ビューを開いた際に「会話を表示できません / セッションのエージェント情報が取得できませんでした」が表示される問題を修正
+  - `App.tsx` の `fetchAndOpenSession()` 内 3 箇所で `OpenSession` を組み立てる際に `agent` と `agentSessionId` フィールドが欠落していた
+  - API は `agent: 'claude'` を返していたが、フロントが受け取った値を捨てていたため `activeSession.agent` が undefined となり ChatView が `missing-agent` エラーを表示
+  - WebSocket が不安定な環境では後追い同期パス（mobile `setOpenSessions` effect）も働かず、エラーが固定化していた
+
 ## [0.1.105] - 2026-05-09
 
 ### Added

@@ -14,7 +14,7 @@ import { Onboarding, useOnboarding } from './components/Onboarding';
 import { useAuth } from './hooks/useAuth';
 import { useSessions } from './hooks/useSessions';
 import { authFetch, isTransientNetworkError } from './services/api';
-import type { AgentProvider, SessionResponse, ExtendedSessionResponse, SessionState, SessionTheme, PaneInfo, IndicatorState } from '../../shared/types';
+import type { AgentProvider, ExtendedSessionResponse, SessionState, SessionTheme, PaneInfo, IndicatorState } from '../../shared/types';
 
 // Loading screen with phase display and timeout detection
 function LoadingScreen({
@@ -454,6 +454,8 @@ export function App() {
                 state: session.state,
                 currentPath: session.currentPath,
                 ccSessionId: session.ccSessionId,
+                agent: session.agent,
+                agentSessionId: session.agentSessionId,
                 currentCommand: session.currentCommand,
                 theme: session.theme,
               });
@@ -478,6 +480,8 @@ export function App() {
               state: mostRecent.state,
               currentPath: mostRecent.currentPath,
               ccSessionId: mostRecent.ccSessionId,
+              agent: mostRecent.agent,
+              agentSessionId: mostRecent.agentSessionId,
               currentCommand: mostRecent.currentCommand,
               theme: mostRecent.theme,
             }]);
@@ -494,13 +498,15 @@ export function App() {
           }
         } else if (allSessions.length > 0) {
           // No saved sessions, open most recent
-          const mostRecent = allSessions[0] as SessionResponse & { currentPath?: string; ccSessionId?: string; currentCommand?: string; theme?: SessionTheme };
+          const mostRecent = allSessions[0];
           setOpenSessions([{
             id: mostRecent.id,
             name: mostRecent.name,
             state: mostRecent.state,
             currentPath: mostRecent.currentPath,
             ccSessionId: mostRecent.ccSessionId,
+            agent: mostRecent.agent,
+            agentSessionId: mostRecent.agentSessionId,
             currentCommand: mostRecent.currentCommand,
             theme: mostRecent.theme,
           }]);

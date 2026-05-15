@@ -86,6 +86,22 @@ interface OpenSession {
   indicatorState?: IndicatorState;
 }
 
+function apiToOpenSession(s: ExtendedSessionResponse): OpenSession {
+  return {
+    id: s.id,
+    name: s.name,
+    state: s.state,
+    currentPath: s.currentPath,
+    ccSessionId: s.ccSessionId,
+    agent: s.agent,
+    agentSessionId: s.agentSessionId,
+    currentCommand: s.currentCommand,
+    theme: s.theme,
+    panes: s.panes,
+    indicatorState: s.indicatorState,
+  };
+}
+
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
 // Confirm dialog for delete
@@ -402,15 +418,7 @@ export function App() {
       });
       if (response.ok) {
         const session: ExtendedSessionResponse = await response.json();
-        return {
-          id: session.id,
-          name: session.name,
-          state: session.state,
-          currentPath: session.currentPath,
-          ccSessionId: session.ccSessionId,
-          currentCommand: session.currentCommand,
-          theme: session.theme,
-        };
+        return apiToOpenSession(session);
       }
     } catch (err) {
       console.error('Failed to create initial session:', err);
@@ -441,78 +449,23 @@ export function App() {
         const savedSessionIds = getSavedOpenSessionIds();
         const lastSessionId = getLastSession();
 
-        if (savedSessionIds.length > 0) {
-          // Restore saved sessions
-          const sessionsToOpen: OpenSession[] = [];
+        const sessionsToOpen = savedSessionIds
+          .map(id => allSessions.find(s => s.id === id))
+          .filter((s): s is ExtendedSessionResponse => !!s)
+          .map(apiToOpenSession);
 
-          for (const id of savedSessionIds) {
-            const session = allSessions.find(s => s.id === id);
-            if (session) {
-              sessionsToOpen.push({
-                id: session.id,
-                name: session.name,
-                state: session.state,
-                currentPath: session.currentPath,
-                ccSessionId: session.ccSessionId,
-                agent: session.agent,
-                agentSessionId: session.agentSessionId,
-                currentCommand: session.currentCommand,
-                theme: session.theme,
-              });
-            }
-          }
-
-          if (sessionsToOpen.length > 0) {
-            setOpenSessions(sessionsToOpen);
-
-            // Set active session: prefer last active, fallback to first open
-            const validIds = sessionsToOpen.map(s => s.id);
-            const activeId = lastSessionId && validIds.includes(lastSessionId)
-              ? lastSessionId
-              : validIds[0];
-            setActiveSessionId(activeId);
-          } else if (allSessions.length > 0) {
-            // No valid saved sessions, open most recent
-            const mostRecent = allSessions[0];
-            setOpenSessions([{
-              id: mostRecent.id,
-              name: mostRecent.name,
-              state: mostRecent.state,
-              currentPath: mostRecent.currentPath,
-              ccSessionId: mostRecent.ccSessionId,
-              agent: mostRecent.agent,
-              agentSessionId: mostRecent.agentSessionId,
-              currentCommand: mostRecent.currentCommand,
-              theme: mostRecent.theme,
-            }]);
-            setActiveSessionId(mostRecent.id);
-          } else {
-            // No sessions at all - create initial session for first-time users
-            const initialSession = await createInitialSession();
-            if (initialSession) {
-              setOpenSessions([initialSession]);
-              setActiveSessionId(initialSession.id);
-            } else {
-              setShowSessionList(true);
-            }
-          }
+        if (sessionsToOpen.length > 0) {
+          setOpenSessions(sessionsToOpen);
+          const validIds = sessionsToOpen.map(s => s.id);
+          const activeId = lastSessionId && validIds.includes(lastSessionId)
+            ? lastSessionId
+            : validIds[0];
+          setActiveSessionId(activeId);
         } else if (allSessions.length > 0) {
-          // No saved sessions, open most recent
-          const mostRecent = allSessions[0];
-          setOpenSessions([{
-            id: mostRecent.id,
-            name: mostRecent.name,
-            state: mostRecent.state,
-            currentPath: mostRecent.currentPath,
-            ccSessionId: mostRecent.ccSessionId,
-            agent: mostRecent.agent,
-            agentSessionId: mostRecent.agentSessionId,
-            currentCommand: mostRecent.currentCommand,
-            theme: mostRecent.theme,
-          }]);
+          const mostRecent = apiToOpenSession(allSessions[0]);
+          setOpenSessions([mostRecent]);
           setActiveSessionId(mostRecent.id);
         } else {
-          // No sessions at all - create initial session for first-time users
           const initialSession = await createInitialSession();
           if (initialSession) {
             setOpenSessions([initialSession]);
@@ -604,16 +557,7 @@ export function App() {
     if (existing) {
       setActiveSessionId(session.id);
     } else {
-      // Add to open sessions
-      setOpenSessions(prev => [...prev, {
-        id: session.id,
-        name: session.name,
-        state: session.state,
-        currentPath: session.currentPath,
-        ccSessionId: session.ccSessionId,
-        currentCommand: session.currentCommand,
-        theme: session.theme,
-      }]);
+      setOpenSessions(prev => [...prev, apiToOpenSession(session)]);
       setActiveSessionId(session.id);
     }
     // Update FileViewer active dir to follow session
@@ -629,15 +573,7 @@ export function App() {
     // Open session without resetting paneId (handleSelectSession sets it to null)
     const existing = openSessions.find(s => s.id === session.id);
     if (!existing) {
-      setOpenSessions(prev => [...prev, {
-        id: session.id,
-        name: session.name,
-        state: session.state,
-        currentPath: session.currentPath,
-        ccSessionId: session.ccSessionId,
-        currentCommand: session.currentCommand,
-        theme: session.theme,
-      }]);
+      setOpenSessions(prev => [...prev, apiToOpenSession(session)]);
     }
     setActiveSessionId(session.id);
     setShowSessionList(false);

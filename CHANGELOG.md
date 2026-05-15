@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.107] - 2026-05-15
+
+### Fixed
+- セッション一覧から別セッションを選んだ際 (`handleSelectSession`) や、ペインを直接選んだ際 (`handleSelectPane`) にも会話ビューで「会話を表示できません」が出る問題を修正
+  - v0.1.106 では `fetchAndOpenSession` の3箇所のみ修正していたが、`OpenSession` を組み立てる経路は他にも `handleSelectSession` / `handleSelectPane` / `createInitialSession` の合計6箇所あり、その3箇所で `agent` / `agentSessionId` が欠落していた
+  - 全ての構築箇所を `apiToOpenSession()` ヘルパーに集約。今後 `OpenSession` にフィールドを追加する際の取りこぼしを防止
+
+### Changed
+- `App.tsx` の `fetchAndOpenSession()` 内のネストされた if/else 階層を早期 return でフラット化、重複していた "create initial session" else ブロックを統一（130行→66行に圧縮）
+
 ## [0.1.106] - 2026-05-11
 
 ### Fixed

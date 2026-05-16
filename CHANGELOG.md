@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.109] - 2026-05-16
+
+### Added
+- Channel C: クライアント xterm.js と tmux 内部状態の drift 検知機構 (dev-only、#147 Phase 1)
+  - `CCHUB_SELF_VERIFY=1` でサーバ起動時に有効化
+  - クライアントが trigger (`resize-done` / `reconnect-done` / `output-idle` / `periodic`) で xterm の可視範囲を server に送信
+  - サーバが `tmux capture-pane -p` と比較し、差分を `/tmp/cchub-drift.log` に JSON Lines 形式で追記
+  - production 環境では完全 no-op、ユーザに影響なし
+  - 後続の state diff sync (#147 Phase 2-) の正しさ検証 oracle として継続利用
+
 ## [0.1.108] - 2026-05-16
 
 ### Fixed

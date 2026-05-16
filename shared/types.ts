@@ -501,17 +501,34 @@ export type ControlServerMessage =
 // Multiplexed WebSocket Types (single WS per client)
 // =============================================================================
 
+// Triggers for client-side self-verification dumps (Channel C, dev-only).
+export type DebugDumpTrigger = 'resize-done' | 'reconnect-done' | 'output-idle' | 'periodic' | 'user';
+
 // Client → Server messages for /ws/mux
 export type MuxClientMessage =
   | { type: 'subscribe'; sessionId: string }
   | { type: 'unsubscribe'; sessionId: string }
   | { type: 'subscribe-conversation'; sessionId: string }
   | { type: 'unsubscribe-conversation'; sessionId: string }
+  // Channel C: client sends its xterm.js buffer snapshot for server-side
+  // comparison against the canonical tmux state. Only used when the server
+  // reports `selfVerifyEnabled: true` in the `subscribed` response.
+  | {
+      type: 'debug-dump';
+      sessionId: string;
+      paneId: string;
+      lines: string[];                // xterm buffer.active rows, rtrim()'d on server
+      cursor: { x: number; y: number };
+      trigger: DebugDumpTrigger;
+      ts: number;
+    }
   | (ControlClientMessage & { sessionId: string });
 
 // Server → Client messages for /ws/mux
 export type MuxServerMessage =
-  | { type: 'subscribed'; sessionId: string }
+  // `selfVerifyEnabled` is true when CCHUB_SELF_VERIFY=1 on the server,
+  // signaling clients to start streaming `debug-dump` messages.
+  | { type: 'subscribed'; sessionId: string; selfVerifyEnabled?: boolean }
   | { type: 'unsubscribed'; sessionId: string }
   | { type: 'sessions-updated'; sessions: SessionResponse[] }
   | { type: 'conversation-subscribed'; sessionId: string; ccSessionId: string | null }

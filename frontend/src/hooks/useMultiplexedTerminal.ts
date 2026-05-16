@@ -56,6 +56,10 @@ let sharedPingInterval: number | null = null;
 let sharedReconnectTimeout: number | null = null;
 let subscribedSession: string | null = null;
 let wsReady = false; // true after server sends 'ready'
+// Channel C: when the server (CCHUB_SELF_VERIFY=1) accepts our subscription,
+// it includes selfVerifyEnabled=true so we know to start streaming debug-dump
+// messages. Stays false on production builds.
+let selfVerifyEnabled = false;
 
 // Conversation subscriptions (multiple sessions can be subscribed at once)
 const subscribedConversations = new Set<string>();
@@ -228,6 +232,10 @@ function ensureConnection(token?: string | null) {
         break;
       }
       case 'subscribed': {
+        if (msg.selfVerifyEnabled === true && !selfVerifyEnabled) {
+          selfVerifyEnabled = true;
+          console.log('[MUX] self-verify enabled by server');
+        }
         if (msgSessionId === currentSession) {
           cb?.setIsConnected?.(true);
           cb?.onConnect?.();
@@ -386,6 +394,37 @@ export function sendTerminalInput(sessionId: string, paneId: string, data: strin
   const base64 = uint8ArrayToBase64(bytes);
   sharedWs.send(JSON.stringify({ type: 'input', sessionId, paneId, data: base64 }));
   dispatchInputEcho(sessionId, paneId, data);
+  return true;
+}
+
+export function isSelfVerifyEnabled(): boolean {
+  return selfVerifyEnabled;
+}
+
+/**
+ * Channel C: send a client-side xterm.js snapshot for server-side drift
+ * detection. No-op unless the server has self-verify enabled (so production
+ * builds incur zero overhead). The caller is responsible for assembling
+ * `lines` from the xterm buffer.
+ */
+export function sendDebugDump(
+  sessionId: string,
+  paneId: string,
+  lines: string[],
+  cursor: { x: number; y: number },
+  trigger: 'resize-done' | 'reconnect-done' | 'output-idle' | 'periodic' | 'user',
+): boolean {
+  if (!selfVerifyEnabled) return false;
+  if (sharedWs?.readyState !== WebSocket.OPEN || !wsReady) return false;
+  sharedWs.send(JSON.stringify({
+    type: 'debug-dump',
+    sessionId,
+    paneId,
+    lines,
+    cursor,
+    trigger,
+    ts: Date.now(),
+  }));
   return true;
 }
 

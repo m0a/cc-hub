@@ -6,9 +6,10 @@ import { Unicode11Addon } from '@xterm/addon-unicode11';
 import '@xterm/xterm/css/xterm.css';
 import { authFetch } from '../services/api';
 import type { SessionTheme } from '../../../shared/types';
-import { filterMouseTrackingInput, filterMouseTrackingOutput, shouldInterceptKeyEvent } from '../utils/terminal-filters';
+import { filterMouseTrackingInput, shouldInterceptKeyEvent } from '../utils/terminal-filters';
 import { bench } from '../utils/bench';
-import { sendDebugDump, isSelfVerifyEnabled } from '../hooks/useMultiplexedTerminal';
+import { sendDebugDump, isSelfVerifyEnabled, type PaneRenderEvent } from '../hooks/useMultiplexedTerminal';
+import { snapshotToVTSequence, diffToVTSequence } from '../utils/snapshot-render';
 import {
   getTerminalThemes, isLightMode, LIGHT_ANSI_COLORS,
   DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE,
@@ -24,11 +25,11 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
 export interface ControlModeConfig {
   paneId: string;
   sendInput: (data: string) => void;
-  registerOnData: (callback: (data: Uint8Array) => void) => () => void;
+  registerOnRender: (callback: (event: PaneRenderEvent) => void) => () => void;
   isConnected: boolean;
   onResize?: (cols: number, rows: number) => void;
   onScroll?: (lines: number) => void;
-  requestContent?: () => void;
+  requestSnapshot?: () => void;
 }
 
 interface TerminalProps {
@@ -160,7 +161,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const isConnected = controlMode?.isConnected ?? false;
   const connect = noopFn;
   const refresh = useCallback(() => {
-    controlModeRef.current?.requestContent?.();
+    controlModeRef.current?.requestSnapshot?.();
   }, []);
 
   useEffect(() => {
@@ -892,14 +893,13 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     }
     prevControlPaneIdRef.current = cm.paneId;
 
-    const decoder = new TextDecoder('utf-8', { fatal: false });
     const term = terminalRef.current;
     if (term) {
+      // Disable any mouse tracking modes the previous tenant of this xterm
+      // may have left enabled; mouse events stay in the browser.
       term.write('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l');
     }
 
-    // Channel C: schedule a debug-dump 300ms after output stops, so we
-    // observe steady-state drift rather than mid-render snapshots.
     let outputIdleTimer: ReturnType<typeof setTimeout> | null = null;
     const scheduleOutputIdleDump = () => {
       if (!isSelfVerifyEnabled()) return;
@@ -907,18 +907,31 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       outputIdleTimer = setTimeout(() => dumpForSelfVerify('output-idle'), 300);
     };
 
-    const cleanup = cm.registerOnData((data) => {
-      const str = decoder.decode(data, { stream: true });
-      const filtered = filterMouseTrackingOutput(str);
-      if (filtered.length > 0) {
+    const cleanup = cm.registerOnRender((event) => {
+      const term = terminalRef.current;
+      if (!term) return;
+      if (event.type === 'snapshot') {
+        const snap = event.snapshot;
+        if (term.cols !== snap.cols || term.rows !== snap.rows) {
+          term.resize(snap.cols, snap.rows);
+        }
+        const vt = snapshotToVTSequence(snap);
         const t0 = bench.recordWriteStart();
-        terminalRef.current?.write(filtered, () => bench.recordWriteEnd(t0, filtered.length));
-        scheduleOutputIdleDump();
+        term.write(vt, () => bench.recordWriteEnd(t0, vt.length));
+      } else {
+        const { vt, size } = diffToVTSequence(event.ops);
+        if (size && (term.cols !== size.cols || term.rows !== size.rows)) {
+          term.resize(size.cols, size.rows);
+        }
+        if (vt.length > 0) {
+          const t0 = bench.recordWriteStart();
+          term.write(vt, () => bench.recordWriteEnd(t0, vt.length));
+        }
       }
+      scheduleOutputIdleDump();
     });
     controlCleanupRef.current = cleanup;
     return () => {
-      decoder.decode(new Uint8Array(0), { stream: false });
       if (outputIdleTimer) clearTimeout(outputIdleTimer);
       cleanup();
       controlCleanupRef.current = null;

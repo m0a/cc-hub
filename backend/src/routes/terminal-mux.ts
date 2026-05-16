@@ -3,12 +3,14 @@ import type { ServerWebSocket } from 'bun';
 import { TmuxService } from '../services/tmux';
 import { getOrCreateControlSession, type TmuxControlSession } from '../services/tmux-control';
 import { ConversationWatcher } from '../services/conversation-watcher';
-import type { ControlClientMessage, MuxClientMessage, ConversationMessage } from '../../../shared/types';
-import { MUX_BINARY_TYPE } from '../../../shared/types';
+import { captureSnapshot, diffSnapshots } from '../services/pane-snapshot';
+import type {
+  ControlClientMessage,
+  MuxClientMessage,
+  ConversationMessage,
+  PaneSnapshot,
+} from '../../../shared/types';
 import { buildSessionsList } from './sessions';
-
-const BENCH = !!process.env.CCHUB_BENCH;
-const BENCH_T0 = performance.now();
 
 // Channel C: client→server self-verification feedback (dev-only).
 // When enabled, clients send their xterm.js buffer snapshot via `debug-dump`
@@ -18,12 +20,25 @@ const SELF_VERIFY = !!process.env.CCHUB_SELF_VERIFY;
 const DRIFT_LOG_PATH = '/tmp/cchub-drift.log';
 const DRIFT_MAX_MISMATCH_SAMPLES = 3;
 
+// State-sync debounce. Wait this long after the last %output for a pane
+// before recapturing canonical state. Shorter = lower latency but more
+// capture-pane overhead.
+const SNAPSHOT_DEBOUNCE_MS = 50;
+
 /** Per-session subscription state for a mux client */
 interface MuxSubscription {
   controlSession: TmuxControlSession;
   cleanupFns: Array<() => void>;
-  initialContentSent: boolean;
-  readyForOutput: boolean;
+  initialized: boolean;          // first resize received & initial snapshots emitted
+  // Last snapshot the server emitted to this client, per pane. Used as the
+  // base for the next diff. Cleared on `request-snapshot` so the next emit
+  // sends a full snapshot.
+  serverSnapshots: Map<string, PaneSnapshot>;
+  // Per-pane snapshot debounce timers.
+  snapshotTimers: Map<string, Timer>;
+  // Pane IDs we've ever sent a snapshot for, so we can recapture them on
+  // resize / zoom even if tmux hasn't pushed a %output since.
+  knownPanes: Set<string>;
   outputSuppressedCount: number;
   sendFailCount: number;
 }
@@ -42,7 +57,6 @@ const tmuxService = new TmuxService();
 const activeMuxConnections = new Set<ServerWebSocket<MuxData>>();
 
 // Zombie detection: if no client ping for 60s, assume connection is dead.
-// Clients send pings every 10s (useMultiplexedTerminal.ts).
 const PING_TIMEOUT_MS = 60_000;
 setInterval(() => {
   const now = Date.now();
@@ -56,10 +70,10 @@ setInterval(() => {
 }, 30_000);
 
 // =============================================================================
-// Sessions push: periodically push session list to connected mux clients
+// Sessions push
 // =============================================================================
 
-const SESSIONS_PUSH_INTERVAL = 5000; // 5 seconds
+const SESSIONS_PUSH_INTERVAL = 5000;
 let sessionsPushTimer: ReturnType<typeof setInterval> | null = null;
 let lastSessionsJson = '';
 
@@ -72,7 +86,6 @@ function startSessionsPush() {
     }
     try {
       const sessions = await buildSessionsList();
-      // Compare without volatile fields (durationMinutes changes every minute)
       const stableJson = JSON.stringify(sessions, (key, value) =>
         key === 'durationMinutes' ? undefined : value
       );
@@ -80,9 +93,7 @@ function startSessionsPush() {
       lastSessionsJson = stableJson;
       const payload = JSON.stringify({ type: 'sessions-updated', sessions });
       for (const ws of activeMuxConnections) {
-        try {
-          ws.send(payload);
-        } catch { /* disconnected */ }
+        try { ws.send(payload); } catch { /* disconnected */ }
       }
     } catch (err) {
       console.warn('[mux] sessions push error:', err);
@@ -98,34 +109,24 @@ function stopSessionsPush() {
   lastSessionsJson = '';
 }
 
-/** Force an immediate sessions push (e.g. after create/delete) */
 export function pushSessionsNow() {
-  lastSessionsJson = ''; // Force change detection
-  // Fire async, don't await
+  lastSessionsJson = '';
   buildSessionsList().then(sessions => {
     const payload = JSON.stringify({ type: 'sessions-updated', sessions });
     for (const ws of activeMuxConnections) {
-      try {
-        ws.send(payload);
-      } catch { /* disconnected */ }
+      try { ws.send(payload); } catch { /* disconnected */ }
     }
   }).catch(() => {});
 }
 
-/** Get number of connected mux clients */
 export function getConnectedClientCount(): number {
   return activeMuxConnections.size;
 }
 
-/** Broadcast a message to all mux clients (used by notify) */
 export function broadcastToMuxClients(msg: Record<string, unknown>) {
   const payload = JSON.stringify(msg);
   for (const ws of activeMuxConnections) {
-    try {
-      ws.send(payload);
-    } catch {
-      // Client may have disconnected
-    }
+    try { ws.send(payload); } catch { /* disconnected */ }
   }
 }
 
@@ -134,7 +135,6 @@ export async function muxOpen(ws: ServerWebSocket<MuxData>) {
   activeMuxConnections.add(ws);
   startSessionsPush();
 
-  // Send initial sessions list immediately so frontend has data before Terminal mounts
   try {
     const sessions = await buildSessionsList();
     ws.send(JSON.stringify({ type: 'sessions-updated', sessions }));
@@ -174,8 +174,6 @@ export async function muxMessage(ws: ServerWebSocket<MuxData>, message: string |
   }
 
   if (msg.type === 'debug-dump') {
-    // Channel C: silently no-op unless self-verify is enabled. Even when
-    // disabled we accept the message format to avoid version mismatch errors.
     if (SELF_VERIFY) {
       const sub = ws.data.subscriptions.get(msg.sessionId);
       if (sub) await handleDebugDump(ws, sub, msg);
@@ -183,7 +181,6 @@ export async function muxMessage(ws: ServerWebSocket<MuxData>, message: string |
     return;
   }
 
-  // All other messages need sessionId
   const sessionId = (msg as { sessionId?: string }).sessionId;
   if (!sessionId) return;
 
@@ -193,7 +190,6 @@ export async function muxMessage(ws: ServerWebSocket<MuxData>, message: string |
     return;
   }
 
-  // Strip sessionId and handle as regular ControlClientMessage
   const { sessionId: _sid, ...controlMsg } = msg as ControlClientMessage & { sessionId: string };
   await handleControlMessage(ws, sub, sessionId, controlMsg as ControlClientMessage);
 }
@@ -203,13 +199,11 @@ export function muxClose(ws: ServerWebSocket<MuxData>, code: number, reason: str
   activeMuxConnections.delete(ws);
   if (activeMuxConnections.size === 0) stopSessionsPush();
 
-  // Clean up all subscriptions
   for (const [sessionId, sub] of ws.data.subscriptions) {
     cleanupSubscription(ws, sessionId, sub);
   }
   ws.data.subscriptions.clear();
 
-  // Clean up conversation watchers
   for (const watcher of ws.data.conversationWatchers.values()) {
     try { watcher.stop(); } catch { /* ignore */ }
   }
@@ -218,17 +212,18 @@ export function muxClose(ws: ServerWebSocket<MuxData>, code: number, reason: str
 
 async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) {
   console.log(`[mux] subscribe: ${sessionId} (current subs: ${ws.data.subscriptions.size})`);
-  // Already subscribed — reset content flags so next resize re-captures
+  // Already subscribed — reset so the next resize re-emits initial snapshots.
   if (ws.data.subscriptions.has(sessionId)) {
     const existing = ws.data.subscriptions.get(sessionId)!;
-    existing.initialContentSent = false;
-    existing.readyForOutput = false;
+    existing.initialized = false;
+    existing.serverSnapshots.clear();
+    for (const t of existing.snapshotTimers.values()) clearTimeout(t);
+    existing.snapshotTimers.clear();
     existing.outputSuppressedCount = 0;
     ws.send(JSON.stringify({ type: 'subscribed', sessionId, selfVerifyEnabled: SELF_VERIFY }));
     return;
   }
 
-  // Check session exists
   const exists = await tmuxService.sessionExists(sessionId);
   if (!exists) {
     ws.send(JSON.stringify({ type: 'error', message: 'Session not found', sessionId }));
@@ -243,39 +238,23 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     const sub: MuxSubscription = {
       controlSession,
       cleanupFns,
-      initialContentSent: false,
-      readyForOutput: false,
+      initialized: false,
+      serverSnapshots: new Map(),
+      snapshotTimers: new Map(),
+      knownPanes: new Set(),
       outputSuppressedCount: 0,
       sendFailCount: 0,
     };
 
-    // Output listener - binary mux frame: [0x02][sessionId\0][paneId\0][raw data]
+    // Output → snapshot debounce trigger. We do not forward the raw bytes;
+    // they are only a signal that tmux has rendered something new.
     cleanupFns.push(
-      controlSession.onOutput((paneId, data) => {
-        if (!sub.readyForOutput) {
+      controlSession.onOutput((paneId, _data) => {
+        if (!sub.initialized) {
           sub.outputSuppressedCount++;
           return;
         }
-        try {
-          const sessionIdBuf = Buffer.from(`${sessionId}\0`);
-          const paneIdBuf = Buffer.from(`${paneId}\0`);
-          const frame = Buffer.allocUnsafe(1 + sessionIdBuf.length + paneIdBuf.length + data.length);
-          frame[0] = MUX_BINARY_TYPE;
-          sessionIdBuf.copy(frame, 1);
-          paneIdBuf.copy(frame, 1 + sessionIdBuf.length);
-          data.copy(frame, 1 + sessionIdBuf.length + paneIdBuf.length);
-          const sendT = BENCH ? performance.now() : 0;
-          const result = ws.send(frame);
-          if (BENCH) {
-            const sendDur = performance.now() - sendT;
-            console.log(`[bench] tx ${sessionId} ${paneId} ${data.length}b send=${sendDur.toFixed(2)}ms t=${(sendT - BENCH_T0).toFixed(2)}`);
-          }
-          if (result === 0) {
-            sub.sendFailCount++;
-          }
-        } catch (err) {
-          console.warn(`[mux] ws.send error for ${sessionId}:`, err);
-        }
+        scheduleSnapshot(ws, sessionId, sub, paneId);
       })
     );
 
@@ -288,18 +267,15 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
       })
     );
 
-    // Exit listener
     cleanupFns.push(
       controlSession.onExit((reason) => {
         try {
           ws.send(JSON.stringify({ type: 'error', message: `Session exited: ${reason}`, sessionId }));
         } catch { /* disconnected */ }
-        // Auto-unsubscribe on exit
         handleUnsubscribe(ws, sessionId);
       })
     );
 
-    // Pane dead listener
     cleanupFns.push(
       controlSession.onPaneDead((paneId) => {
         try {
@@ -308,7 +284,6 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
       })
     );
 
-    // New session listener
     cleanupFns.push(
       controlSession.onNewSession((newSessionId, sessionName) => {
         try {
@@ -319,7 +294,6 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
 
     ws.data.subscriptions.set(sessionId, sub);
 
-    // Send initial layout
     try {
       const layoutOutput = await controlSession.sendCommand(
         `list-windows -F "#{window_layout}"`
@@ -352,17 +326,101 @@ function handleUnsubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) {
 }
 
 function cleanupSubscription(ws: ServerWebSocket<MuxData>, _sessionId: string, sub: MuxSubscription) {
-  for (const fn of sub.cleanupFns) {
-    fn();
-  }
+  for (const fn of sub.cleanupFns) fn();
+  for (const t of sub.snapshotTimers.values()) clearTimeout(t);
+  sub.snapshotTimers.clear();
   sub.controlSession.removeClientDeviceType(ws.data.visitorId);
   sub.controlSession.removeClient();
+}
+
+// =============================================================================
+// State sync: snapshot scheduling and emission
+// =============================================================================
+
+function scheduleSnapshot(
+  ws: ServerWebSocket<MuxData>,
+  sessionId: string,
+  sub: MuxSubscription,
+  paneId: string,
+) {
+  const existing = sub.snapshotTimers.get(paneId);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    sub.snapshotTimers.delete(paneId);
+    void emitSnapshot(ws, sessionId, sub, paneId);
+  }, SNAPSHOT_DEBOUNCE_MS);
+  sub.snapshotTimers.set(paneId, timer);
+}
+
+async function emitSnapshot(
+  ws: ServerWebSocket<MuxData>,
+  sessionId: string,
+  sub: MuxSubscription,
+  paneId: string,
+) {
+  if (sub.controlSession.isDestroyed) return;
+  let snapshot: PaneSnapshot | null;
+  try {
+    snapshot = await captureSnapshot(sub.controlSession, paneId);
+  } catch (err) {
+    console.warn(`[mux] captureSnapshot failed for ${paneId}:`, err);
+    return;
+  }
+  if (!snapshot) return;
+
+  sub.knownPanes.add(paneId);
+
+  const prev = sub.serverSnapshots.get(paneId);
+  if (!prev) {
+    try {
+      ws.send(JSON.stringify({ type: 'state-snapshot', sessionId, snapshot }));
+    } catch { return; }
+    sub.serverSnapshots.set(paneId, snapshot);
+    return;
+  }
+
+  const ops = diffSnapshots(prev, snapshot);
+  if (ops.length === 0) {
+    // No change, but bump seq so client can ack the latest if it wants.
+    sub.serverSnapshots.set(paneId, snapshot);
+    return;
+  }
+
+  try {
+    ws.send(JSON.stringify({
+      type: 'state-diff',
+      sessionId,
+      paneId,
+      base: prev.seq,
+      seq: snapshot.seq,
+      ops,
+    }));
+  } catch { return; }
+  sub.serverSnapshots.set(paneId, snapshot);
+}
+
+async function emitInitialSnapshots(
+  ws: ServerWebSocket<MuxData>,
+  sessionId: string,
+  sub: MuxSubscription,
+) {
+  let panes: Awaited<ReturnType<TmuxControlSession['listPanes']>> = [];
+  try {
+    panes = await sub.controlSession.listPanes();
+  } catch (err) {
+    console.warn(`[mux] listPanes failed for ${sessionId}:`, err);
+    return;
+  }
+  for (const pane of panes) {
+    // Drop any previous snapshot so emitSnapshot sends a fresh full snapshot.
+    sub.serverSnapshots.delete(pane.paneId);
+    await emitSnapshot(ws, sessionId, sub, pane.paneId);
+  }
 }
 
 async function handleSubscribeConversation(ws: ServerWebSocket<MuxData>, sessionId: string) {
   console.log(`[mux] subscribe-conversation: ${sessionId}`);
 
-  // Stop existing watcher for this session, if any
   const existing = ws.data.conversationWatchers.get(sessionId);
   if (existing) {
     try { existing.stop(); } catch { /* ignore */ }
@@ -432,9 +490,6 @@ function handleUnsubscribeConversation(ws: ServerWebSocket<MuxData>, sessionId: 
 // Channel C: self-verification drift detection (dev-only)
 // =============================================================================
 
-/** Right-trim trailing whitespace; we compare canonical text only, so trailing
- *  spaces from tmux's grid padding vs xterm's actual cells must not register
- *  as drift. */
 function rtrim(s: string): string {
   let end = s.length;
   while (end > 0 && (s.charCodeAt(end - 1) === 0x20 || s.charCodeAt(end - 1) === 0x09)) {
@@ -472,8 +527,6 @@ async function handleDebugDump(
   msg: Extract<MuxClientMessage, { type: 'debug-dump' }>,
 ) {
   try {
-    // capture-pane -p (text only, no -e attributes) for fair text comparison.
-    // capturePane() unconditionally includes -e, so issue the command directly.
     const canonicalRaw = await sub.controlSession.sendCommand(`capture-pane -p -t ${msg.paneId}`);
     const canonicalLines = canonicalRaw.split(/\r?\n/);
     const { count, samples } = diffLines(canonicalLines, msg.lines);
@@ -501,12 +554,15 @@ async function handleDebugDump(
       );
     }
 
-    // Always append the record (mismatch=0 entries are useful as denominator).
     await appendFile(DRIFT_LOG_PATH, `${JSON.stringify(record)}\n`, 'utf8');
   } catch (err) {
     console.warn(`[drift] handleDebugDump error for ${msg.paneId}:`, err);
   }
 }
+
+// =============================================================================
+// Control message dispatch
+// =============================================================================
 
 async function handleControlMessage(
   ws: ServerWebSocket<MuxData>,
@@ -521,54 +577,34 @@ async function handleControlMessage(
       case 'input': {
         const data = Buffer.from(msg.data, 'base64');
         await controlSession.sendInput(msg.paneId, data);
+        // Pre-arm a snapshot: sending input usually produces output, but if
+        // the program is silent (e.g. waiting for full line) we still want to
+        // reflect any cursor advance. Re-arming the debounce window guards
+        // against losing the trailing snapshot if onOutput already fired.
+        if (sub.initialized) scheduleSnapshot(ws, sessionId, sub, msg.paneId);
         break;
       }
       case 'resize': {
-        if (!sub.initialContentSent) {
-          sub.initialContentSent = true;
+        if (!sub.initialized) {
           try {
-            // Step 1: Capture scrollback before resize
-            const panesBefore = await controlSession.listPanes();
-            const scrollbackMap = new Map<string, string>();
-            for (const pane of panesBefore) {
-              try {
-                const scrollback = await controlSession.sendCommand(
-                  `capture-pane -e -p -t ${pane.paneId} -S - -E -1`
-                );
-                if (scrollback?.trim()) {
-                  scrollbackMap.set(pane.paneId, scrollback);
-                }
-              } catch { /* pane may not be available */ }
-            }
-
-            // Step 2: Resize
+            // First resize: set tmux size, then emit initial snapshots for
+            // every pane so the client has authoritative state to start from.
             await controlSession.setClientSizeImmediate(msg.cols, msg.rows);
-            await new Promise(resolve => setTimeout(resolve, 200));
-
-            // Step 3: Capture visible area after resize
-            const panes = await controlSession.listPanes();
-            for (const pane of panes) {
-              try {
-                const visible = await controlSession.sendCommand(`capture-pane -e -p -t ${pane.paneId}`);
-                if (visible) {
-                  const scrollback = scrollbackMap.get(pane.paneId);
-                  const fullContent = scrollback ? `${scrollback}\n${visible}` : visible;
-                  const termContent = fullContent.split('\n').join('\r\n');
-                  ws.send(JSON.stringify({
-                    type: 'initial-content',
-                    paneId: pane.paneId,
-                    data: Buffer.from(termContent).toString('base64'),
-                    sessionId,
-                  }));
-                }
-              } catch { /* pane may not be available */ }
-            }
+            // Brief settle window so tmux reflows before we capture.
+            await new Promise(resolve => setTimeout(resolve, 100));
+            sub.initialized = true;
+            await emitInitialSnapshots(ws, sessionId, sub);
           } catch (err) {
             console.error(`[mux] Failed to initialize after resize for ${sessionId}:`, err);
           }
-          sub.readyForOutput = true;
         } else {
           controlSession.setClientSize(msg.cols, msg.rows);
+          // After a resize the next %output will trigger a new snapshot; we
+          // additionally pre-arm one in case nothing redraws (e.g. shell at
+          // an idle prompt that just relaid out to a new width).
+          for (const paneId of sub.knownPanes) {
+            scheduleSnapshot(ws, sessionId, sub, paneId);
+          }
         }
         break;
       }
@@ -599,6 +635,8 @@ async function handleControlMessage(
       }
       case 'scroll': {
         await controlSession.scrollPane(msg.paneId, msg.lines);
+        // Scroll changes which lines are visible, so force a fresh snapshot.
+        if (sub.initialized) scheduleSnapshot(ws, sessionId, sub, msg.paneId);
         break;
       }
       case 'adjust-pane': {
@@ -609,40 +647,15 @@ async function handleControlMessage(
         await controlSession.equalizePanes(msg.direction);
         break;
       }
-      case 'request-content': {
-        try {
-          const content = await controlSession.capturePaneWithScrollback(msg.paneId);
-          if (content) {
-            const termContent = content.split('\n').join('\r\n');
-            ws.send(JSON.stringify({
-              type: 'initial-content',
-              paneId: msg.paneId,
-              data: Buffer.from(termContent).toString('base64'),
-              sessionId,
-            }));
-          }
-        } catch { /* pane may not be available */ }
-        break;
-      }
       case 'zoom-pane': {
-        sub.readyForOutput = false;
         try {
           await controlSession.zoomPane(msg.paneId);
-          await new Promise(resolve => setTimeout(resolve, 200));
-          try {
-            const content = await controlSession.capturePane(msg.paneId);
-            if (content) {
-              const termContent = content.split('\n').join('\r\n');
-              ws.send(JSON.stringify({
-                type: 'initial-content',
-                paneId: msg.paneId,
-                data: Buffer.from(termContent).toString('base64'),
-                sessionId,
-              }));
-            }
-          } catch { /* pane may not be available */ }
-        } finally {
-          sub.readyForOutput = true;
+          await new Promise(resolve => setTimeout(resolve, 100));
+          // Zoom changes pane size; emit a fresh snapshot for the zoomed pane.
+          sub.serverSnapshots.delete(msg.paneId);
+          await emitSnapshot(ws, sessionId, sub, msg.paneId);
+        } catch (err) {
+          console.warn(`[mux] zoom-pane failed for ${msg.paneId}:`, err);
         }
         break;
       }
@@ -657,6 +670,17 @@ async function handleControlMessage(
             sessionId,
           }));
         }
+        break;
+      }
+      case 'state-ack': {
+        // Currently informational only; we use serverSnapshots as the
+        // implicit ack baseline. Kept on the protocol for future use
+        // (e.g. retransmit when the client falls behind).
+        break;
+      }
+      case 'request-snapshot': {
+        sub.serverSnapshots.delete(msg.paneId);
+        await emitSnapshot(ws, sessionId, sub, msg.paneId);
         break;
       }
       case 'ping': {

@@ -4,7 +4,7 @@ import { defineConfig, devices } from '@playwright/test';
 // already running on https://localhost:5173 (started outside playwright).
 export default defineConfig({
   testDir: './tests/e2e',
-  testMatch: ['missing-agent.spec.ts', 'file-viewer-selection.spec.ts', 'self-verify-channel-c.spec.ts'],
+  testMatch: ['missing-agent.spec.ts', 'file-viewer-selection.spec.ts', 'self-verify-channel-c.spec.ts', 'state-sync-visual.spec.ts', 'state-sync-idle-drift.spec.ts'],
   fullyParallel: false,
   retries: 0,
   workers: 1,

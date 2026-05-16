@@ -37,7 +37,6 @@ interface PendingCommand {
   output: string[];
 }
 
-type OutputListener = (data: Buffer) => void;
 type LayoutListener = (layout: TmuxLayoutNode, frontendLayout: ReturnType<typeof toFrontendLayout>) => void;
 type ExitListener = (reason: string) => void;
 type PaneDeadListener = (paneId: string) => void;
@@ -62,7 +61,6 @@ export class TmuxControlSession {
   private readyPromise: Promise<void> | null = null;
 
   // Listeners
-  private outputListeners = new Map<string, Set<OutputListener>>(); // paneId -> listeners
   private globalOutputListeners = new Set<(paneId: string, data: Buffer) => void>();
   private layoutListeners = new Set<LayoutListener>();
   private exitListeners = new Set<ExitListener>();
@@ -313,7 +311,7 @@ export class TmuxControlSession {
     this.outputBytes += rawLine.length;
 
     // Skip processing if no one is listening (grace period, no clients)
-    if (this.outputListeners.size === 0 && this.globalOutputListeners.size === 0) {
+    if (this.globalOutputListeners.size === 0) {
       return;
     }
 
@@ -340,14 +338,6 @@ export class TmuxControlSession {
     // Extract data portion as raw bytes and decode octal escapes
     const rawData = rawLine.subarray(offset);
     const decoded = decodeOctalOutputRaw(rawData);
-
-    // Notify pane-specific listeners
-    const listeners = this.outputListeners.get(paneId);
-    if (listeners) {
-      for (const listener of listeners) {
-        listener(decoded);
-      }
-    }
 
     // Notify global listeners
     for (const listener of this.globalOutputListeners) {
@@ -757,19 +747,6 @@ export class TmuxControlSession {
   // =========================================================================
 
   /**
-   * Register a listener for output from a specific pane.
-   */
-  onPaneOutput(paneId: string, listener: OutputListener): () => void {
-    if (!this.outputListeners.has(paneId)) {
-      this.outputListeners.set(paneId, new Set());
-    }
-    this.outputListeners.get(paneId)!.add(listener);
-    return () => {
-      this.outputListeners.get(paneId)?.delete(listener);
-    };
-  }
-
-  /**
    * Register a listener for output from all panes.
    */
   onOutput(listener: (paneId: string, data: Buffer) => void): () => void {
@@ -928,7 +905,6 @@ export class TmuxControlSession {
     });
 
     // Clear listeners immediately (don't wait for cleanup)
-    this.outputListeners.clear();
     this.globalOutputListeners.clear();
     this.layoutListeners.clear();
     this.exitListeners.clear();

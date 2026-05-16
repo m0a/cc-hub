@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect, useCallback, forwardRef, type ReactNode } from 'react';
 import { TerminalComponent, type TerminalRef, type ControlModeConfig } from '../components/Terminal';
-import { useMultiplexedTerminal } from '../hooks/useMultiplexedTerminal';
+import { useMultiplexedTerminal, type PaneRenderEvent } from '../hooks/useMultiplexedTerminal';
 import type { SessionState, SessionTheme, TmuxLayoutNode } from '../../../shared/types';
 import { fireHookNotification } from '../utils/hookNotification';
-import { filterMouseTrackingOutput } from '../utils/terminal-filters';
 
 interface PaneLeafInfo {
   paneId: string;
@@ -51,12 +50,10 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
   // Derive effective active pane: external takes priority
   const effectiveActivePaneId = externalActivePaneId ?? activePaneId;
 
-  // Per-pane output callbacks
-  const paneCallbacksRef = useRef<Map<string, Set<(data: Uint8Array) => void>>>(new Map());
-  // Buffer for initial content arriving before Terminal mounts
-  const initialContentBufferRef = useRef<Map<string, Uint8Array[]>>(new Map());
-  // Track panes that have received initial-content (from automatic first-resize capture)
-  const contentDeliveredRef = useRef<Set<string>>(new Set());
+  // Per-pane render callbacks
+  const paneCallbacksRef = useRef<Map<string, Set<(event: PaneRenderEvent) => void>>>(new Map());
+  // Last snapshot per pane, replayed when a Terminal mounts late.
+  const lastSnapshotRef = useRef<Map<string, PaneRenderEvent>>(new Map());
 
   const onPanesChangeRef = useRef(onPanesChange);
   onPanesChangeRef.current = onPanesChange;
@@ -69,19 +66,18 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
   const cachedPanesRef = useRef<PaneLeafInfo[]>([]);
   // Tracks whether initial zoom has been done (for multi-pane sessions)
   const initialZoomDoneRef = useRef(false);
-  // Track whether we explicitly requested content (zoom, request-content, first connect).
-  // When true, initial-content clears scrollback (ESC[3J). When false (reconnect),
-  // scrollback is preserved to avoid jarring scroll position jumps.
-  const expectingContentRef = useRef(true);
 
   const controlTerminal = useMultiplexedTerminal({
     sessionId,
     token,
-    onPaneOutput: (paneId, data) => {
+    onPaneRender: (paneId, event) => {
+      if (event.type === 'snapshot') {
+        lastSnapshotRef.current.set(paneId, event);
+      }
       const callbacks = paneCallbacksRef.current.get(paneId);
       if (callbacks) {
         for (const cb of callbacks) {
-          cb(data);
+          cb(event);
         }
       }
     },
@@ -116,57 +112,13 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
         return prev;
       });
     },
-    onInitialContent: (paneId, data) => {
-      const isExpected = expectingContentRef.current;
-      console.log(`[TP] initial-content for ${paneId}: ${data.length} bytes, expected=${isExpected}`);
-      // Track that we've received initial-content for this pane
-      contentDeliveredRef.current.add(paneId);
-
-      // Choose clear sequence based on whether content was explicitly requested.
-      // ESC[2J = clear screen, ESC[3J = clear scrollback, ESC[H = cursor home
-      let clearSeq: Uint8Array;
-      if (isExpected) {
-        // Explicit action (zoom, reload, first connect): full clear including scrollback
-        clearSeq = new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x33, 0x4a, 0x1b, 0x5b, 0x48]);
-        expectingContentRef.current = false;
-      } else {
-        // Implicit (reconnect resize): clear screen only, preserve scrollback
-        // to avoid jarring scroll position jumps during brief disconnects
-        clearSeq = new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x48]);
-      }
-      // Filter mouse tracking sequences from initial content
-      const decoded = new TextDecoder().decode(data);
-      const filtered = filterMouseTrackingOutput(decoded);
-      const filteredBytes = new TextEncoder().encode(filtered);
-
-      const combined = new Uint8Array(clearSeq.length + filteredBytes.length);
-      combined.set(clearSeq);
-      combined.set(filteredBytes, clearSeq.length);
-
-      const callbacks = paneCallbacksRef.current.get(paneId);
-      if (callbacks && callbacks.size > 0) {
-        for (const cb of callbacks) {
-          cb(combined);
-        }
-      } else {
-        // Buffer for replay when Terminal component mounts
-        if (!initialContentBufferRef.current.has(paneId)) {
-          initialContentBufferRef.current.set(paneId, []);
-        }
-        initialContentBufferRef.current.get(paneId)!.push(combined);
-      }
-    },
     onNewSession: onNewSession,
     onConnect: () => {
       setError(null);
       onStateChange?.('idle');
-      // Reset content tracking on new connection
-      contentDeliveredRef.current.clear();
-      // Send client-info to enable mobile pane separation
       controlTerminal.sendClientInfo('mobile');
-      // Request fresh content for all panes on reconnect
       for (const pane of cachedPanesRef.current) {
-        controlTerminal.requestContent(pane.paneId);
+        controlTerminal.requestSnapshot(pane.paneId);
       }
     },
     onHookEvent: fireHookNotification,
@@ -199,49 +151,37 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
     const isMultiPane = cachedPanesRef.current.length > 1;
 
     if (isMultiPane) {
-      // Zoom on first activation or on pane switch
       if (!isZoomedRef.current || isActualSwitch) {
         console.log(`[TP] zoom-pane ${externalActivePaneId} (switch=${isActualSwitch}, wasZoomed=${isZoomedRef.current})`);
         isZoomedRef.current = true;
         initialZoomDoneRef.current = true;
-        expectingContentRef.current = true;
         controlTerminal.zoomPane(externalActivePaneId);
       }
     } else {
       controlTerminal.selectPane(externalActivePaneId);
     }
 
-    // Clear stale buffer on pane switch.
-    // The backend zoom-pane handler captures and sends initial-content,
-    // so we no longer need to request content separately.
     if (isActualSwitch) {
-      initialContentBufferRef.current.delete(externalActivePaneId);
-      contentDeliveredRef.current.delete(externalActivePaneId);
+      lastSnapshotRef.current.delete(externalActivePaneId);
     }
   }, [externalActivePaneId, allPanes, controlTerminal]);
 
-  // Auto-zoom first pane when connecting to multi-pane session without external selection.
-  // When externalActivePaneId is set, that effect handles zoom instead.
   useEffect(() => {
     if (externalActivePaneId || initialZoomDoneRef.current) return;
     if (activePaneId && allPanes.length > 1) {
       console.log(`[TP] auto-zoom ${activePaneId} (${allPanes.length} panes)`);
       initialZoomDoneRef.current = true;
       isZoomedRef.current = true;
-      expectingContentRef.current = true;
       controlTerminal.zoomPane(activePaneId);
     }
   }, [activePaneId, allPanes, externalActivePaneId, controlTerminal]);
 
-  // Connect on mount
   useEffect(() => {
     prevExternalPaneIdRef.current = undefined;
-    contentDeliveredRef.current.clear();
-    initialContentBufferRef.current.clear();
+    lastSnapshotRef.current.clear();
     initialZoomDoneRef.current = false;
     isZoomedRef.current = false;
     cachedPanesRef.current = [];
-    expectingContentRef.current = true; // First connection expects initial-content
     controlTerminal.connect();
     return () => {
       controlTerminal.disconnect();
@@ -256,19 +196,17 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
     sendInput: (data: string) => {
       controlTerminal.sendInput(currentPaneId, data);
     },
-    registerOnData: (callback: (data: Uint8Array) => void) => {
+    registerOnRender: (callback: (event: PaneRenderEvent) => void) => {
       if (!paneCallbacksRef.current.has(currentPaneId)) {
         paneCallbacksRef.current.set(currentPaneId, new Set());
       }
       paneCallbacksRef.current.get(currentPaneId)!.add(callback);
 
-      // Replay buffered initial content
-      const buffered = initialContentBufferRef.current.get(currentPaneId);
-      if (buffered && buffered.length > 0) {
-        for (const chunk of buffered) {
-          callback(chunk);
-        }
-        initialContentBufferRef.current.delete(currentPaneId);
+      const last = lastSnapshotRef.current.get(currentPaneId);
+      if (last) callback(last);
+
+      if (controlTerminal.isConnected) {
+        controlTerminal.requestSnapshot(currentPaneId);
       }
 
       return () => {
@@ -279,9 +217,8 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
     onResize: (cols: number, rows: number) => {
       controlTerminal.resize(cols, rows);
     },
-    requestContent: () => {
-      expectingContentRef.current = true;
-      controlTerminal.requestContent(currentPaneId);
+    requestSnapshot: () => {
+      controlTerminal.requestSnapshot(currentPaneId);
     },
   } : undefined;
 

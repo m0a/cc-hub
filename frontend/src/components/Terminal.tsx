@@ -925,6 +925,11 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     let lastSnapRows = 0;
     let lastAppliedSeq = 0;
     let lastAppliedBaseY = 0;
+    // How many rows we last scrolled the viewport up to hide a trailing
+    // run of blank rows. We unwind this before deciding the next scroll
+    // amount so the offset stays accurate as the TUI's used-height
+    // shifts. 0 means viewport is naturally at the buffer's tail.
+    let lastAutoScrollLines = 0;
     const cleanup = cm.registerOnRender((event) => {
       const term = terminalRef.current;
       if (!term) return;
@@ -955,6 +960,36 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           // grid offset that snap.lines was written to. dumpForSelfVerify
           // anchors to this rather than buf.baseY at dump time.
           lastAppliedBaseY = term.buffer.active.baseY;
+          // Auto-scroll: hide a trailing run of blank rows by nudging
+          // the viewport up by that many rows. This compensates for
+          // TUIs (Claude Code, REPLs after Ctrl+L) that only draw the
+          // upper portion of the pane and leave the bottom black — the
+          // "void" — by surfacing scrollback in that space instead.
+          if (snap.modes.altScreen) return;
+          let trailingBlanks = 0;
+          for (let i = snap.rows - 1; i >= 0 && (snap.lines[i] ?? '') === ''; i--) {
+            trailingBlanks++;
+          }
+          const buf = term.buffer.active;
+          // Cap so the snapshot's cursor row remains on-screen after
+          // scrolling. cursor at row C, scroll up by S → cursor visible
+          // at viewport row C+S. Need C+S ≤ rows-1 so it doesn't fall
+          // below the viewport.
+          const cursorMaxScroll = Math.max(0, term.rows - snap.cursor.y - 1);
+          const wantedScroll = Math.min(trailingBlanks, cursorMaxScroll);
+          // User is considered "at bottom" if viewportY equals baseY
+          // (no auto-scroll active) or matches our previous auto-scroll
+          // offset (we own the current displacement).
+          const userAtBottom = buf.viewportY === buf.baseY
+            || buf.viewportY === buf.baseY - lastAutoScrollLines;
+          const haveScrollback = buf.baseY >= wantedScroll;
+          // Avoid bobbing on per-row jitter from typing/spinners.
+          const delta = Math.abs(wantedScroll - lastAutoScrollLines);
+          if (userAtBottom && haveScrollback && delta >= 3) {
+            if (lastAutoScrollLines > 0) term.scrollLines(lastAutoScrollLines);
+            if (wantedScroll > 0) term.scrollLines(-wantedScroll);
+            lastAutoScrollLines = wantedScroll;
+          }
         });
       } else {
         const { vt, size } = diffToVTSequence(event.ops);

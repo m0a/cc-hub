@@ -98,13 +98,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const refreshRef = useRef<() => void>(() => {});
   const dumpForSelfVerifyRef = useRef<((trigger: 'resize-done' | 'reconnect-done' | 'output-idle' | 'periodic' | 'user') => void) | null>(null);
   const appliedSeqRef = useRef<(() => number) | null>(null);
-  // The rows count of the last snapshot we applied. Channel C dumps need
-  // to send exactly this many rows from the buffer's tail so they line
-  // up with the server's `snap.lines` (which has snap.rows entries).
-  // Falling back to term.rows would over-send when xterm is taller than
-  // the snapshot, surfacing the rows xterm hadn't been overwritten as
-  // false drift.
   const appliedSnapRowsRef = useRef<(() => number) | null>(null);
+  // baseY at the moment the last snapshot finished writing. Channel C
+  // dumps anchor to this rather than buf.baseY-at-dump-time, because a
+  // background snapshot's scrollback delta can advance baseY between
+  // when the visible region was rewritten and when the dump fires.
+  const appliedBaseYRef = useRef<(() => number) | null>(null);
   const closeInputBarRef = useRef<() => void>(() => {});
   const showKeyboardRef = useRef<() => void>(() => {});
   const inputBarRef = useRef<InputBarRef>(null);
@@ -923,11 +922,9 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       outputIdleTimer = setTimeout(() => dumpForSelfVerify('output-idle'), 300);
     };
 
-    let lastSnapCols = 0;
     let lastSnapRows = 0;
-    let lastSnapLines: string[] = [];
-    let lastAutoScrollLines = 0;
     let lastAppliedSeq = 0;
+    let lastAppliedBaseY = 0;
     const cleanup = cm.registerOnRender((event) => {
       const term = terminalRef.current;
       if (!term) return;
@@ -943,48 +940,21 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
             cm.forceResize?.(dims.cols, dims.rows);
           }
         }
-        const geomChanged = sizeChanged
-          || snap.cols !== lastSnapCols
-          || snap.rows !== lastSnapRows;
-        const vt = snapshotToVTSequence(
-          snap,
-          geomChanged ? undefined : lastSnapLines,
-        );
-        lastSnapCols = snap.cols;
+        // No prev — let snapshotToVTSequence rewrite every row.
+        // Skip-unchanged logic was repeatedly producing ghost rows due
+        // to subtle buffer-vs-grid mismatches (scrollback delta moves
+        // baseY, cached prev lags reality, etc.). Honoring snap as
+        // canonical is simpler and matches Channel C drift reality.
+        const vt = snapshotToVTSequence(snap);
         lastSnapRows = snap.rows;
-        lastSnapLines = snap.lines;
         lastAppliedSeq = snap.seq;
         const t0 = bench.recordWriteStart();
         term.write(vt, () => {
           bench.recordWriteEnd(t0, vt.length);
-          // Auto-scroll: when the snapshot has a trailing run of blank
-          // rows (typically because a TUI like Claude Code only draws
-          // the upper portion of the pane), nudge the viewport up by
-          // that many rows so the blank tail moves off-screen and the
-          // pane's scrollback fills the top.
-          let trailingBlanks = 0;
-          for (let i = snap.rows - 1; i >= 0 && (snap.lines[i] ?? '') === ''; i--) {
-            trailingBlanks++;
-          }
-          const buf = term.buffer.active;
-          // Cap so the snapshot's cursor row stays comfortably on-screen.
-          // If the cursor is on row C and we scroll up by S, the cursor
-          // appears at viewport row C+S; we need C+S < rows-1.
-          const cursorMaxScroll = Math.max(0, term.rows - snap.cursor.y - 2);
-          const halfScreen = Math.floor(term.rows / 2);
-          const wantedScroll = Math.min(trailingBlanks, cursorMaxScroll, halfScreen);
-          const userAtBottom = buf.viewportY === buf.baseY
-            || buf.viewportY === buf.baseY - lastAutoScrollLines;
-          const haveScrollback = buf.baseY >= wantedScroll;
-          // Apply only when the change is meaningful (≥ 3 rows). Small
-          // jitter from typing or spinner animations should not cause
-          // the viewport to constantly bob up and down.
-          const delta = Math.abs(wantedScroll - lastAutoScrollLines);
-          if (userAtBottom && haveScrollback && delta >= 3) {
-            if (lastAutoScrollLines > 0) term.scrollLines(lastAutoScrollLines);
-            if (wantedScroll > 0) term.scrollLines(-wantedScroll);
-            lastAutoScrollLines = wantedScroll;
-          }
+          // Capture baseY after the write actually lands; this is the
+          // grid offset that snap.lines was written to. dumpForSelfVerify
+          // anchors to this rather than buf.baseY at dump time.
+          lastAppliedBaseY = term.buffer.active.baseY;
         });
       } else {
         const { vt, size } = diffToVTSequence(event.ops);
@@ -1001,19 +971,9 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           const t0 = bench.recordWriteStart();
           term.write(vt, () => bench.recordWriteEnd(t0, vt.length));
         }
-        const nextLines = lastSnapLines.slice();
-        for (const op of event.ops) {
-          if (op.op === 'line') nextLines[op.row] = op.content;
-        }
-        lastSnapLines = nextLines;
-        // Keep our cached geometry consistent with the diff. Without
-        // updating these on a `size` op, dumpForSelfVerify would dump
-        // the wrong number of rows from the buffer's tail on the next
-        // tick, producing phantom drift.
-        if (size) {
-          lastSnapCols = size.cols;
-          lastSnapRows = size.rows;
-        }
+        // Keep cached rows in sync with the diff's size op; otherwise
+        // dumpForSelfVerify would send the wrong row count.
+        if (size) lastSnapRows = size.rows;
         lastAppliedSeq = event.seq;
       }
       scheduleOutputIdleDump();
@@ -1021,6 +981,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     // Expose for dumpForSelfVerify to read.
     appliedSeqRef.current = () => lastAppliedSeq;
     appliedSnapRowsRef.current = () => lastSnapRows;
+    appliedBaseYRef.current = () => lastAppliedBaseY;
     controlCleanupRef.current = cleanup;
     return () => {
       if (outputIdleTimer) clearTimeout(outputIdleTimer);
@@ -1038,15 +999,14 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     const cm = controlModeRef.current;
     if (!term || !cm || !isSelfVerifyEnabled()) return;
     const buf = term.buffer.active;
-    // The snapshot was written to grid rows 0..snapRows-1 (CSI <r>;1H
-    // is grid-relative, not bottom-anchored). Grid row 0 maps to
-    // buffer index baseY (scrollback offset), so take exactly that
-    // window. Going from the buffer's tail would mix in untouched
-    // rows when xterm is taller than the snap.
+    // Anchor to the baseY captured at write-completion time. Using
+    // buf.baseY here would drift if anything advanced it (background
+    // scrollback push, debounced resize) between snap apply and dump.
     const snapRows = appliedSnapRowsRef.current?.() ?? term.rows;
+    const anchor = appliedBaseYRef.current?.() ?? buf.baseY;
     const lines: string[] = [];
     for (let i = 0; i < snapRows; i++) {
-      lines.push(buf.getLine(buf.baseY + i)?.translateToString(true) ?? '');
+      lines.push(buf.getLine(anchor + i)?.translateToString(true) ?? '');
     }
     sendDebugDump(
       sessionId,

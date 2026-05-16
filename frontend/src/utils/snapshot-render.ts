@@ -13,6 +13,24 @@
 
 import type { DiffOp, PaneSnapshot } from '../../../shared/types';
 
+// Strip CSI (e.g. SGR colors) and OSC (e.g. OSC 8 hyperlinks) escapes
+// before comparing rows. Without this, color-only changes force a
+// rewrite, and comparing snap.lines (ANSI-rich, from capture-pane -e)
+// with xterm's translateToString output (plain text) always mismatches.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escapes by design.
+const CSI_RE = /\x1b\[[\d;?]*[a-zA-Z]/g;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escapes by design.
+const OSC_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+function normalize(s: string): string {
+  // Strip ANSI then rtrim trailing whitespace (grid cells are space-padded).
+  const stripped = s.replace(OSC_RE, '').replace(CSI_RE, '');
+  let end = stripped.length;
+  while (end > 0 && (stripped.charCodeAt(end - 1) === 0x20 || stripped.charCodeAt(end - 1) === 0x09)) {
+    end--;
+  }
+  return stripped.slice(0, end);
+}
+
 /**
  * Build the VT byte sequence that re-renders a full snapshot.
  *
@@ -66,7 +84,13 @@ export function snapshotToVTSequence(
 
   for (let i = 0; i < snapshot.rows; i++) {
     const content = snapshot.lines[i] ?? '';
-    if (prevLines && prevLines[i] === content) continue;
+    // Compare against prev after ANSI stripping so SGR-only changes
+    // don't force a needless rewrite. The caller should pass prevLines
+    // sourced from xterm's actual grid (not a cached snap) so this
+    // accurately reflects what's drawn — otherwise stale grid rows can
+    // be missed when prev and snap agree they're blank but the grid
+    // is actually showing leftover content from a taller frame.
+    if (prevLines && normalize(prevLines[i] ?? '') === normalize(content)) continue;
     s += `\x1b[${i + 1};1H\x1b[2K${content}`;
   }
   s += `\x1b[${snapshot.cursor.y + 1};${snapshot.cursor.x + 1}H`;

@@ -23,10 +23,13 @@ function allocSeq(): number {
 // catch-ups (long disconnect, history-size jump) shouldn't blow the wire.
 const MAX_SCROLLBACK_DELTA = 500;
 
-// On the first snapshot for a pane (no prior history baseline) ship up to
-// this many recent scrollback rows so the client has something to scroll
-// back through immediately after connecting.
-const INITIAL_SCROLLBACK_ROWS = 500;
+// On the first snapshot for a pane (no prior history baseline) ship a
+// small window of recent scrollback rows so the client has something
+// to scroll back through immediately after connecting. Shipping a lot
+// here surfaces a TUI's previous prompt+status footer above the
+// current one when the user scrolls, which looks like duplicate
+// content. Subsequent deltas come from real tmux history growth.
+const INITIAL_SCROLLBACK_ROWS = 50;
 
 /**
  * Capture a snapshot of a pane. Returns null if the pane no longer exists.

@@ -306,6 +306,13 @@ bun run lint            # リント
 - **Frontend**: React 19, Vite, Tailwind CSS v4, xterm.js, react-i18next
 - **Terminal**: tmux制御モード（`tmux -CC`）
 
+## アーキテクチャ
+
+バックエンドサービス・API ルート・フロントエンドコンポーネント・hooks・WebSocket プロトコル・共有型・主要データフローを 1 画面で確認できるインタラクティブなビューアを [`architecture.html`](architecture.html)（データソース: [`architecture.json`](architecture.json)）に同梱しています。
+
+- ブラウザでレンダリングしたい場合は [raw.githack 経由](https://raw.githack.com/m0a/cc-hub/main/architecture.html)。JSON は HTML に埋め込み済みで追加 fetch 不要です。
+- `architecture.json` を編集したら `python3 scripts/build-architecture-html.py` で埋め込みを更新してください。
+
 ## ライセンス
 
 MIT

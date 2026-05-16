@@ -306,6 +306,13 @@ bun run lint            # Lint all packages
 - **Frontend**: React 19, Vite, Tailwind CSS v4, xterm.js, react-i18next
 - **Terminal**: tmux control mode (`tmux -CC`)
 
+## Architecture
+
+An interactive overview of backend services, API routes, frontend components, hooks, WebSocket protocol, shared types and the major data flows lives in [`architecture.html`](architecture.html) (data: [`architecture.json`](architecture.json)).
+
+- Render in your browser via [raw.githack](https://raw.githack.com/m0a/cc-hub/main/architecture.html) — JSON is embedded, no external fetch required.
+- Edit `architecture.json` and run `python3 scripts/build-architecture-html.py` to refresh the embed.
+
 ## License
 
 MIT

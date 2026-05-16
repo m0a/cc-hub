@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>CC Hub Architecture</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #181b24;
+    --surface-2: #1f2330;
+    --border: #2a3040;
+    --text: #e6e9f0;
+    --muted: #8b93a6;
+    --accent: #6ea7ff;
+    --accent-dim: rgba(110, 167, 255, 0.15);
+    --green: #6ed18a;
+    --orange: #ffb86b;
+    --red: #ff7a7a;
+    --purple: #c08bff;
+    --pink: #ff8bcb;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif; font-size: 14px; }
+  a { color: var(--accent); text-decoration: none; }
+  code { font-family: 'JetBrains Mono', Menlo, Monaco, Consolas, monospace; font-size: 0.85em; background: var(--surface-2); padding: 1px 5px; border-radius: 3px; color: var(--text); }
+  header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; background: var(--surface); position: sticky; top: 0; z-index: 10; }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header .version { color: var(--accent); font-family: monospace; font-size: 13px; }
+  header .meta { color: var(--muted); font-size: 12px; margin-left: auto; }
+  header .search { flex: 0 0 280px; max-width: 100%; }
+  header .search input { width: 100%; padding: 8px 12px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
+  header .search input:focus { outline: none; border-color: var(--accent); }
+  nav.tabs { display: flex; gap: 2px; padding: 0 24px; background: var(--surface); border-bottom: 1px solid var(--border); overflow-x: auto; position: sticky; top: 75px; z-index: 9; }
+  nav.tabs button { background: transparent; color: var(--muted); border: none; padding: 12px 16px; cursor: pointer; font-size: 13px; font-weight: 500; border-bottom: 2px solid transparent; white-space: nowrap; }
+  nav.tabs button:hover { color: var(--text); }
+  nav.tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+  nav.tabs .count { display: inline-block; margin-left: 6px; padding: 1px 7px; background: var(--surface-2); color: var(--muted); border-radius: 10px; font-size: 11px; font-weight: 600; }
+  nav.tabs button.active .count { background: var(--accent-dim); color: var(--accent); }
+  main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 8px; }
+  .card-header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .card-header .name { font-weight: 600; color: var(--text); font-size: 14px; }
+  .card-header .file { font-family: monospace; font-size: 12px; color: var(--muted); }
+  .card-header .badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; font-family: monospace; }
+  .badge.GET { background: rgba(110, 209, 138, 0.15); color: var(--green); }
+  .badge.POST { background: rgba(255, 184, 107, 0.15); color: var(--orange); }
+  .badge.PUT { background: rgba(192, 139, 255, 0.15); color: var(--purple); }
+  .badge.DELETE { background: rgba(255, 122, 122, 0.15); color: var(--red); }
+  .badge.WS { background: rgba(110, 167, 255, 0.15); color: var(--accent); }
+  .card .summary { color: var(--muted); line-height: 1.55; font-size: 13px; }
+  .card .deps, .card .hooks-list, .card .parents { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .card .deps span, .card .hooks-list span, .card .parents span { display: inline-block; background: var(--surface-2); color: var(--text); padding: 2px 8px; border-radius: 3px; margin-right: 4px; margin-top: 3px; font-family: monospace; font-size: 11px; cursor: pointer; }
+  .card .deps span:hover, .card .hooks-list span:hover, .card .parents span:hover { background: var(--accent-dim); color: var(--accent); }
+  .card .label { color: var(--muted); margin-right: 6px; }
+  .group-header { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 20px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .group-header:first-child { margin-top: 0; }
+  .overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .overview-grid .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .overview-grid .stat .num { font-size: 28px; font-weight: 700; color: var(--accent); }
+  .overview-grid .stat .label { color: var(--muted); font-size: 12px; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .overview .desc { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 20px; line-height: 1.6; color: var(--text); }
+  .overview .desc h2 { margin: 0 0 8px; font-size: 16px; }
+  .overview .desc .stack { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin-top: 12px; font-size: 13px; }
+  .overview .desc .stack dt { color: var(--muted); font-weight: 600; }
+  .ws-section { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+  .ws-section h3 { margin: 0 0 8px; font-size: 14px; }
+  .ws-section .endpoint { font-family: monospace; color: var(--accent); font-size: 14px; margin-bottom: 8px; }
+  .ws-section .desc { color: var(--muted); line-height: 1.55; margin-bottom: 16px; font-size: 13px; }
+  .ws-section .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 720px) { .ws-section .grid { grid-template-columns: 1fr; } }
+  .ws-section .col h4 { margin: 0 0 8px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .ws-section .col .sub { margin-top: 12px; }
+  .ws-section .col .sub .lbl { font-size: 11px; color: var(--muted); margin-bottom: 4px; font-weight: 600; }
+  .ws-section .tag { display: inline-block; background: var(--surface-2); color: var(--text); padding: 3px 8px; border-radius: 3px; margin: 2px 3px 2px 0; font-family: monospace; font-size: 11px; }
+  .ws-section .intervals { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; font-size: 12px; }
+  .ws-section .intervals dt { color: var(--muted); }
+  .ws-section .intervals dd { margin: 0; font-family: monospace; color: var(--text); }
+  .ws-section .binary { font-family: monospace; background: var(--surface-2); padding: 8px 12px; border-radius: 4px; color: var(--text); font-size: 12px; margin-top: 12px; display: inline-block; }
+  .flow { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; margin-bottom: 12px; }
+  .flow h3 { margin: 0 0 12px; font-size: 14px; color: var(--accent); }
+  .flow ol { margin: 0; padding-left: 0; list-style: none; counter-reset: step; }
+  .flow li { position: relative; padding: 6px 0 6px 32px; counter-increment: step; line-height: 1.45; font-size: 13px; }
+  .flow li::before { content: counter(step); position: absolute; left: 0; top: 5px; width: 22px; height: 22px; background: var(--accent-dim); color: var(--accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+  .flow li:not(:last-child)::after { content: ''; position: absolute; left: 10px; top: 28px; bottom: -6px; width: 2px; background: var(--border); }
+  .empty { color: var(--muted); text-align: center; padding: 40px; font-size: 13px; }
+  .type-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; margin-bottom: 6px; }
+  .type-card .tname { color: var(--accent); font-family: monospace; font-weight: 600; margin-bottom: 4px; }
+  .type-card .tfields { font-family: monospace; font-size: 12px; color: var(--muted); line-height: 1.5; word-break: break-word; }
+  .loading { text-align: center; padding: 60px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>CC Hub Architecture</h1>
+  <span class="version" id="hdr-version">v?.?.?</span>
+  <div class="search"><input type="search" id="q" placeholder="検索 (name, file, description...)"></div>
+  <div class="meta" id="hdr-meta"></div>
+</header>
+<nav class="tabs" id="tabs">
+  <button data-tab="overview" class="active">Overview</button>
+  <button data-tab="backend-services">Backend Services<span class="count" id="cnt-services"></span></button>
+  <button data-tab="backend-routes">API Routes<span class="count" id="cnt-routes"></span></button>
+  <button data-tab="frontend-components">Components<span class="count" id="cnt-components"></span></button>
+  <button data-tab="frontend-hooks">Hooks<span class="count" id="cnt-hooks"></span></button>
+  <button data-tab="websocket">WebSocket</button>
+  <button data-tab="types">Types<span class="count" id="cnt-types"></span></button>
+  <button data-tab="flows">Data Flows<span class="count" id="cnt-flows"></span></button>
+</nav>
+<main>
+  <div id="loading" class="loading">architecture.json を読み込み中…</div>
+  <script type="application/json" id="arch-data">{
+  "name": "CC Hub",
+  "version": "0.1.108",
+  "generated": "2026-05-16",
+  "summary": "Web-based terminal session manager for Claude Code. Runs Claude Code instances in tmux sessions and provides a web UI for remote access from tablets/mobile devices.",
+  "stack": {
+    "backend": "Bun runtime + Hono",
+    "frontend": "React 19 + Vite + Tailwind v4 + xterm.js",
+    "shared": "Zod v4 schemas in shared/types.ts",
+    "transport": "Multiplexed WebSocket /ws/mux + tmux -CC control mode"
+  },
+  "backend": {
+    "services": [
+      {
+        "name": "TmuxControlSession",
+        "file": "backend/src/services/tmux-control.ts",
+        "summary": "tmux -CC (control mode) プロセスを管理するコア。%output / %layout-change / %begin / %end / %error / %exit を処理し、raw byte stream で UTF-8 を保持。client 単位の pane 出力ルーティング、コマンド FIFO キュー、グレースピリオド付きライフサイクル管理を提供",
+        "deps": ["tmux-octal-decoder", "tmux-layout-parser"]
+      },
+      {
+        "name": "TmuxService",
+        "file": "backend/src/services/tmux.ts",
+        "summary": "tmux セッションの CRUD (listSessions / createSession / sessionExists / sendKeys) と pane 情報収集。ps を 1 回バッチ実行して全 TTY の agent 情報を取得",
+        "deps": ["tmux-octal-decoder", "shared/types"]
+      },
+      {
+        "name": "TmuxLayoutParser",
+        "file": "backend/src/services/tmux-layout-parser.ts",
+        "summary": "tmux layout 文字列 (checksum,WxH,X,Y{...}) を TmuxLayoutNode ツリーへ再帰パース",
+        "deps": ["shared/types"]
+      },
+      {
+        "name": "TmuxOctalDecoder",
+        "file": "backend/src/services/tmux-octal-decoder.ts",
+        "summary": "tmux -CC の %output octal エスケープを Buffer (raw bytes) へデコード。send-keys -H 用に入力を hex エンコード",
+        "deps": []
+      },
+      {
+        "name": "ClaudeCodeService",
+        "file": "backend/src/services/claude-code.ts",
+        "summary": "~/.claude/projects/ 配下の .jsonl ファイルから Claude Code の状態 (summary / firstPrompt / waitingToolName / lastRecap / gitBranch) を取得",
+        "deps": []
+      },
+      {
+        "name": "SessionHistoryService",
+        "file": "backend/src/services/session-history.ts",
+        "summary": "~/.claude/projects/ から過去セッション一覧・プロジェクト一覧・会話履歴 (jsonl → ConversationMessage) を提供",
+        "deps": []
+      },
+      {
+        "name": "SessionMetadataService",
+        "file": "backend/src/services/session-metadata.ts",
+        "summary": "session-metadata.json (theme / title / order) と last-known-sessions.json (リブート後復元用) を永続化。旧フォーマット自動マイグレーション付き",
+        "deps": ["utils/storage"]
+      },
+      {
+        "name": "SessionMetricsService",
+        "file": "backend/src/services/session-metrics.ts",
+        "summary": ".jsonl を解析して context token 使用率・累積トークン数、ps を呼び pid ツリーを辿って RSS 使用量を計算",
+        "deps": ["anthropic-models"]
+      },
+      {
+        "name": "SessionsService",
+        "file": "backend/src/services/sessions.ts",
+        "summary": "セッションエンティティの CRUD (ファイルベース永続化、UUID ベース ID 生成)",
+        "deps": ["utils/storage", "shared/types"]
+      },
+      {
+        "name": "PromptHistoryService",
+        "file": "backend/src/services/prompt-history.ts",
+        "summary": "~/.claude/history.jsonl からプロンプト履歴を検索・取得",
+        "deps": []
+      },
+      {
+        "name": "FileService",
+        "file": "backend/src/services/file-service.ts",
+        "summary": "パストラバーサル防止付きセキュアファイル操作 (listDirectory / readFile / getParentPath)。MIME タイプ判定・サイズ制限、メディアはメタデータのみ",
+        "deps": ["shared/types"]
+      },
+      {
+        "name": "FileChangeTracker",
+        "file": "backend/src/services/file-change-tracker.ts",
+        "summary": "Claude Code .jsonl の tool_use (Write/Edit) ブロックを解析してどのファイルが変更されたかを追跡",
+        "deps": ["shared/types"]
+      },
+      {
+        "name": "AnthropicUsageService",
+        "file": "backend/src/services/anthropic-usage.ts",
+        "summary": "Anthropic API (/v1/usage) から 5 時間 / 7 日間の usage 利用率を取得。60 秒キャッシュ、429 時 5 分バックオフ、in-flight request coalescing",
+        "deps": ["anthropic-models", "utils/claude-credentials", "i18n", "cli"]
+      },
+      {
+        "name": "AnthropicModelsService",
+        "file": "backend/src/services/anthropic-models.ts",
+        "summary": "Anthropic /v1/models API から model の max_input_tokens を取得し 24 時間キャッシュ",
+        "deps": ["utils/claude-credentials", "cli"]
+      },
+      {
+        "name": "StatsService",
+        "file": "backend/src/services/stats-service.ts",
+        "summary": "~/.claude/stats-cache.json から dailyActivity / modelUsage / hourlyActivity / CostEstimate を読み取り / 計算",
+        "deps": ["shared/types"]
+      },
+      {
+        "name": "UsageHistoryService",
+        "file": "backend/src/services/usage-history.ts",
+        "summary": "/tmp/cchub-usage-history.json に usage スナップショットを 30 秒スロットリングで記録し、8 日を超えた古いデータを削除",
+        "deps": ["shared/types"]
+      },
+      {
+        "name": "SystemMetricsService",
+        "file": "backend/src/services/system-metrics.ts",
+        "summary": "CPU / メモリ / スワップ / ロードアベレージを 3 秒ごと最大 60 スナップショット履歴で収集",
+        "deps": ["shared/types"]
+      },
+      {
+        "name": "AuthService",
+        "file": "backend/src/services/auth.ts",
+        "summary": "パスワードベース認証と JWT トークン生成。users.json にユーザーを永続化",
+        "deps": ["shared/types"]
+      },
+      {
+        "name": "ConversationWatcher",
+        "file": "backend/src/services/conversation-watcher.ts",
+        "summary": "Claude Code .jsonl ファイルを fs.watch で監視し、新メッセージを増分パースして WebSocket クライアントへ push",
+        "deps": ["session-history", "claude-code", "shared/types"]
+      },
+      {
+        "name": "CodexService",
+        "file": "backend/src/services/codex.ts",
+        "summary": "~/codex/ 配下の SQLite DB (bun:sqlite) から Codex スレッド情報 (title / firstPrompt / tokensUsed / gitBranch / cwd) を取得",
+        "deps": []
+      },
+      {
+        "name": "CodexConversationService",
+        "file": "backend/src/services/codex-conversation.ts",
+        "summary": "Codex の rollout JSONL (event_msg/* イベント列) を解析して Claude 形状の ConversationMessage に変換",
+        "deps": ["shared/types"]
+      },
+      {
+        "name": "CodexUsageService",
+        "file": "backend/src/services/codex-usage.ts",
+        "summary": "Codex の最新 rollout ファイルの token_count / rate_limits イベントから 5 時間 / 7 日 UsageLimits を抽出",
+        "deps": ["shared/types"]
+      }
+    ],
+    "routes": [
+      { "group": "sessions", "method": "GET", "path": "/api/sessions", "file": "backend/src/routes/sessions.ts", "description": "全 tmux セッション一覧。WS push 対応なので HTTP 版はデバッグ/フォールバック用途" },
+      { "group": "sessions", "method": "POST", "path": "/api/sessions", "file": "backend/src/routes/sessions.ts", "description": "tmux セッション新規作成。workingDir / agent / initialPrompt をサポート。重複 workingDir 時 409" },
+      { "group": "sessions", "method": "GET", "path": "/api/sessions/:id", "file": "backend/src/routes/sessions.ts", "description": "単一セッション詳細" },
+      { "group": "sessions", "method": "DELETE", "path": "/api/sessions/:id", "file": "backend/src/routes/sessions.ts", "description": "セッション削除 (tmux kill-session)" },
+      { "group": "sessions", "method": "POST", "path": "/api/sessions/:id/resume", "file": "backend/src/routes/sessions.ts", "description": "claude -r または codex resume でセッション再開" },
+      { "group": "sessions", "method": "POST", "path": "/api/sessions/:id/panes/focus", "file": "backend/src/routes/sessions.ts", "description": "指定 paneId をフォーカス" },
+      { "group": "sessions", "method": "POST", "path": "/api/sessions/:id/panes/close", "file": "backend/src/routes/sessions.ts", "description": "pane 閉鎖 (最後の pane は拒否)" },
+      { "group": "sessions", "method": "POST", "path": "/api/sessions/:id/panes/split", "file": "backend/src/routes/sessions.ts", "description": "pane 分割 (h/v)" },
+      { "group": "sessions", "method": "POST", "path": "/api/sessions/:id/panes/respawn", "file": "backend/src/routes/sessions.ts", "description": "死亡 pane 再起動" },
+      { "group": "sessions", "method": "GET", "path": "/api/sessions/:id/copy-mode", "file": "backend/src/routes/sessions.ts", "description": "tmux copy モードの選択テキスト取得" },
+      { "group": "sessions", "method": "PUT", "path": "/api/sessions/:id/theme", "file": "backend/src/routes/sessions.ts", "description": "セッションカラーテーマ設定" },
+      { "group": "sessions", "method": "PUT", "path": "/api/sessions/:id/title", "file": "backend/src/routes/sessions.ts", "description": "セッションカスタムタイトル設定" },
+      { "group": "sessions", "method": "PUT", "path": "/api/sessions/order", "file": "backend/src/routes/sessions.ts", "description": "セッション表示順序設定" },
+      { "group": "sessions", "method": "GET", "path": "/api/sessions/clipboard", "file": "backend/src/routes/sessions.ts", "description": "クリップボード内容取得" },
+      { "group": "sessions", "method": "GET", "path": "/api/sessions/prompts/search", "file": "backend/src/routes/sessions.ts", "description": "~/.claude/history.jsonl からプロンプト履歴検索" },
+      { "group": "history", "method": "GET", "path": "/api/sessions/history", "file": "backend/src/routes/sessions.ts", "description": "過去 Claude Code セッション一覧 (最近 30 件)" },
+      { "group": "history", "method": "GET", "path": "/api/sessions/history/projects", "file": "backend/src/routes/sessions.ts", "description": "プロジェクト一覧 (高速、ファイル内容読まず)" },
+      { "group": "history", "method": "GET", "path": "/api/sessions/history/projects/:dirName", "file": "backend/src/routes/sessions.ts", "description": "特定プロジェクトのセッション一覧" },
+      { "group": "history", "method": "GET", "path": "/api/sessions/history/search", "file": "backend/src/routes/sessions.ts", "description": "全プロジェクト横断セッション検索" },
+      { "group": "history", "method": "GET", "path": "/api/sessions/history/search/stream", "file": "backend/src/routes/sessions.ts", "description": "ストリーミング検索結果 (SSE)" },
+      { "group": "history", "method": "GET", "path": "/api/sessions/history/:sessionId/conversation", "file": "backend/src/routes/sessions.ts", "description": "セッションの会話履歴 (?agent=codex で Codex ルーティング、?last=N で末尾 N 件)" },
+      { "group": "history", "method": "POST", "path": "/api/sessions/history/metadata", "file": "backend/src/routes/sessions.ts", "description": "複数セッションのメタデータを一括取得 (lazy load 用)" },
+      { "group": "history", "method": "POST", "path": "/api/sessions/history/resume", "file": "backend/src/routes/sessions.ts", "description": "過去セッションを新 tmux セッションとして再開" },
+      { "group": "dashboard", "method": "GET", "path": "/api/dashboard", "file": "backend/src/routes/dashboard.ts", "description": "usageLimits / codexUsageLimits / dailyActivity / modelUsage / systemMetrics / diskUsage / usageHistory を並列取得して DashboardResponse を返す" },
+      { "group": "files", "method": "GET", "path": "/api/files/list", "file": "backend/src/routes/files.ts", "description": "ディレクトリ内容一覧 (path + sessionWorkingDir 必須、パストラバーサル防止)" },
+      { "group": "files", "method": "GET", "path": "/api/files/read", "file": "backend/src/routes/files.ts", "description": "ファイル内容読み取り (1MB 制限デフォルト、メディアはメタデータのみ)" },
+      { "group": "files", "method": "GET", "path": "/api/files/raw", "file": "backend/src/routes/files.ts", "description": "img/video/audio 用インラインストリーム (Range request / 206 対応)" },
+      { "group": "files", "method": "GET", "path": "/api/files/download", "file": "backend/src/routes/files.ts", "description": "ファイルを attachment としてダウンロード" },
+      { "group": "files", "method": "POST", "path": "/api/files/upload", "file": "backend/src/routes/files.ts", "description": "multipart/form-data でファイルアップロード" },
+      { "group": "files", "method": "GET", "path": "/api/files/browse", "file": "backend/src/routes/files.ts", "description": "ディレクトリツリーブラウズ" },
+      { "group": "files", "method": "GET", "path": "/api/files/changes/:sessionWorkingDir", "file": "backend/src/routes/files.ts", "description": "Claude Code .jsonl から変更ファイル一覧" },
+      { "group": "files", "method": "GET", "path": "/api/files/git-changes/:workingDir", "file": "backend/src/routes/files.ts", "description": "git status --porcelain から変更ファイル一覧" },
+      { "group": "files", "method": "GET", "path": "/api/files/git-diff/:workingDir", "file": "backend/src/routes/files.ts", "description": "git diff で特定ファイルの unified diff" },
+      { "group": "files", "method": "GET", "path": "/api/files/images/:filename", "file": "backend/src/routes/files.ts", "description": "会話画像のサーブ" },
+      { "group": "files", "method": "GET", "path": "/api/files/language", "file": "backend/src/routes/files.ts", "description": "ファイル言語検出" },
+      { "group": "files", "method": "POST", "path": "/api/files/mkdir", "file": "backend/src/routes/files.ts", "description": "ディレクトリ作成" },
+      { "group": "misc", "method": "POST", "path": "/api/upload/image", "file": "backend/src/routes/upload.ts", "description": "画像アップロード (PNG / JPEG / GIF / WebP、10MB 上限、/tmp/cchub-images/ に保存)" },
+      { "group": "misc", "method": "POST", "path": "/api/notify", "file": "backend/src/routes/notify.ts", "description": "Claude Code hook イベントを stdin から受け取り IndicatorState 更新 + WebSocket ブロードキャスト + スマート通知メッセージ生成" },
+      { "group": "auth", "method": "POST", "path": "/api/auth/login", "file": "backend/src/routes/auth.ts", "description": "サーバーパスワード照合して JWT トークン発行" },
+      { "group": "auth", "method": "POST", "path": "/api/auth/logout", "file": "backend/src/routes/auth.ts", "description": "ログアウト (ステートレス JWT、クライアント側トークン破棄)" },
+      { "group": "auth", "method": "GET", "path": "/api/auth/me", "file": "backend/src/routes/auth.ts", "description": "現在のユーザー情報" },
+      { "group": "auth", "method": "GET", "path": "/api/auth/required", "file": "backend/src/routes/auth.ts", "description": "認証が必要かどうかの確認" },
+      { "group": "logs", "method": "POST", "path": "/api/logs", "file": "backend/src/routes/logs.ts", "description": "フロントエンド console 出力を受け取り /tmp/cc-hub-browser.log に書き込む" },
+      { "group": "logs", "method": "GET", "path": "/api/logs", "file": "backend/src/routes/logs.ts", "description": "ブラウザログ取得" },
+      { "group": "logs", "method": "DELETE", "path": "/api/logs", "file": "backend/src/routes/logs.ts", "description": "ブラウザログクリア" },
+      { "group": "websocket", "method": "WS", "path": "/ws/mux", "file": "backend/src/routes/terminal-mux.ts", "description": "多重化 WebSocket。subscribe / unsubscribe + セッション別 terminal I/O。5 秒間隔 sessions-updated push、60 秒無応答 zombie 検出" }
+    ]
+  },
+  "frontend": {
+    "components": [
+      { "name": "DesktopLayout", "file": "frontend/src/components/DesktopLayout.tsx", "summary": "デスクトップ / タブレット用メインレイアウト。PaneNode ツリー管理、tmux control mode 統合、キーボードショートカット、FloatingKeyboard / SessionModal / DashboardPanel のオーケストレーション", "hooks": ["useSessions", "useMultiplexedTerminal"], "parents": ["App"] },
+      { "name": "PaneContainer", "file": "frontend/src/components/PaneContainer.tsx", "summary": "PaneNode ツリーを再帰レンダリング。ControlModeContext を通じて tmux 操作 (split / close / zoom / resize) と Terminal / ChatView の表示切替を提供", "hooks": [], "parents": ["DesktopLayout", "TerminalPage"] },
+      { "name": "Terminal", "file": "frontend/src/components/Terminal.tsx", "summary": "xterm.js + WebGL アドオンのターミナル実装。ControlModeConfig から pane I/O を受け、tmux レイアウト由来の setExactSize() でサイズ同期。タッチ選択モード、フォントサイズ調整、デスクトップ自動コピー", "hooks": ["useSelectionMode"], "parents": ["PaneContainer", "TerminalPage"] },
+      { "name": "TerminalPage", "file": "frontend/src/pages/TerminalPage.tsx", "summary": "セッション単位で useMultiplexedTerminal を使い、layout に基づく pane 一覧管理と TerminalComponent への controlConfig 配線を行うページコンポーネント", "hooks": ["useMultiplexedTerminal"], "parents": ["DesktopLayout"] },
+      { "name": "SessionList", "file": "frontend/src/components/SessionList.tsx", "summary": "アクティブセッション一覧 (Active / History / Dashboard タブ)。ドラッグ&ドロップ並び替え、pane 一覧展開、インジケーターステータス表示、テーマ設定", "hooks": ["useSessions"], "parents": ["SessionModal", "DesktopLayout"] },
+      { "name": "SessionModal", "file": "frontend/src/components/SessionModal.tsx", "summary": "Ctrl+B で開くセッション選択モーダル。SessionList をラップして ESC で閉じる", "hooks": [], "parents": ["DesktopLayout"] },
+      { "name": "SessionHistory", "file": "frontend/src/components/SessionHistory.tsx", "summary": "過去セッションをプロジェクト別にグループ表示。会話ビュー表示、セッション再開アクション", "hooks": ["useSessionHistory"], "parents": ["SessionList"] },
+      { "name": "ConversationViewer", "file": "frontend/src/components/ConversationViewer.tsx", "summary": "ConversationMessage を ReactMarkdown + 仮想スクロールでレンダリング。ピンチズーム対応フォントサイズ調整", "hooks": ["useVirtualizer"], "parents": ["ChatView", "SessionHistory"] },
+      { "name": "ChatView", "file": "frontend/src/components/chat/ChatView.tsx", "summary": "ConversationViewer + ChatComposer を組み合わせた会話 UI。Claude (WebSocket) と Codex (ポーリング) を統一的に扱う useAgentConversation を利用", "hooks": ["useAgentConversation", "useInputEcho"], "parents": ["PaneContainer"] },
+      { "name": "ChatComposer", "file": "frontend/src/components/chat/ChatComposer.tsx", "summary": "デスクトップ向け会話入力フォーム。sendTerminalInput 経由で tmux にブラケットペーストとして送信", "hooks": [], "parents": ["ChatView"] },
+      { "name": "FloatingKeyboard", "file": "frontend/src/components/FloatingKeyboard.tsx", "summary": "タブレット向けドラッグ可能フローティングキーボード。最小化・透明化・向き/モード別位置保存", "hooks": [], "parents": ["DesktopLayout"] },
+      { "name": "Keyboard", "file": "frontend/src/components/Keyboard.tsx", "summary": "モバイル向けバーチャルキーボード (長押しシンボル入力)", "hooks": [], "parents": ["FloatingKeyboard", "InputBar"] },
+      { "name": "InputBar", "file": "frontend/src/components/InputBar.tsx", "summary": "モバイル/タブレット向け入力バー (hidden / shortcuts / input モード切替、プロンプト履歴、画像添付)", "hooks": [], "parents": ["Terminal"] },
+      { "name": "DashboardPanel", "file": "frontend/src/components/DashboardPanel.tsx", "summary": "Ctrl+Shift+B で開くサイドパネルラッパー。Dashboard コンポーネントを compact モードで包む", "hooks": [], "parents": ["DesktopLayout"] },
+      { "name": "Dashboard", "file": "frontend/src/components/dashboard/Dashboard.tsx", "summary": "ダッシュボードメインコンテナ。Claude / Codex エージェントタブ切替、UsageLimits / DailyUsageChart / ModelUsageChart / HourlyHeatmap / NetworkLatency / ServerInfo を組み合わせる", "hooks": ["useDashboard", "useTheme"], "parents": ["DashboardPanel"] },
+      { "name": "UsageLimits", "file": "frontend/src/components/dashboard/UsageLimits.tsx", "summary": "5 時間 / 7 日間使用率をプログレスバーと UsageChart で表示。警告状態の色分けと resetsAt 残り時間表示", "hooks": [], "parents": ["Dashboard"] },
+      { "name": "UsageChart", "file": "frontend/src/components/dashboard/UsageChart.tsx", "summary": "UsageSnapshot の時系列折れ線グラフ (SVG 手書き)", "hooks": [], "parents": ["UsageLimits"] },
+      { "name": "DailyUsageChart", "file": "frontend/src/components/dashboard/DailyUsageChart.tsx", "summary": "過去 7 日のメッセージ数 / セッション数棒グラフ", "hooks": [], "parents": ["Dashboard"] },
+      { "name": "ModelUsageChart", "file": "frontend/src/components/dashboard/ModelUsageChart.tsx", "summary": "Opus / Sonnet トークン使用量比較チャート", "hooks": [], "parents": ["Dashboard"] },
+      { "name": "HourlyHeatmap", "file": "frontend/src/components/dashboard/HourlyHeatmap.tsx", "summary": "時間帯別 (0-6 / 6-12 / 12-18 / 18-24) 活動ヒートマップ", "hooks": [], "parents": ["Dashboard"] },
+      { "name": "NetworkLatency", "file": "frontend/src/components/dashboard/NetworkLatency.tsx", "summary": "WebSocket / API レイテンシのリアルタイム表示 (緑 / 黄 / 赤色分け)", "hooks": ["useNetworkLatency"], "parents": ["Dashboard"] },
+      { "name": "ServerInfo", "file": "frontend/src/components/dashboard/ServerInfo.tsx", "summary": "サーバー情報・CPU / メモリ / スワップの SVG ミニチャート・接続クライアント数表示", "hooks": [], "parents": ["Dashboard"] },
+      { "name": "FileViewer", "file": "frontend/src/components/files/FileViewer.tsx", "summary": "ファイルブラウザ + コンテンツビューアのコンテナ。Claude 変更 / Git 変更トグル、ブラウザ履歴ナビ、アップロード / ダウンロード、動画 / 音声再生。v0.1.108 で選択ファイル highlight + スクロール保持を実装", "hooks": ["useFileViewer"], "parents": ["DesktopLayout", "PaneContainer"] },
+      { "name": "FileBrowser", "file": "frontend/src/components/files/FileBrowser.tsx", "summary": "ディレクトリツリーナビゲーション。選択中ファイルを selectedPath prop で受け取り青背景 + 青ボーダーでハイライト", "hooks": [], "parents": ["FileViewer"] },
+      { "name": "CodeViewer", "file": "frontend/src/components/files/CodeViewer.tsx", "summary": "シンタックスハイライト付きコード表示", "hooks": [], "parents": ["FileViewer"] },
+      { "name": "DiffViewer", "file": "frontend/src/components/files/DiffViewer.tsx", "summary": "ファイル変更のサイドバイサイド diff 表示", "hooks": [], "parents": ["FileViewer"] },
+      { "name": "ImageViewer", "file": "frontend/src/components/files/ImageViewer.tsx", "summary": "画像プレビュー + ズーム (/files/raw ストリーミング利用)", "hooks": [], "parents": ["FileViewer"] },
+      { "name": "MarkdownViewer", "file": "frontend/src/components/files/MarkdownViewer.tsx", "summary": "Markdown レンダリング", "hooks": [], "parents": ["FileViewer"] },
+      { "name": "HtmlViewer", "file": "frontend/src/components/files/HtmlViewer.tsx", "summary": "HTML ファイルを iframe でレンダリング", "hooks": [], "parents": ["FileViewer"] },
+      { "name": "PromptComposer", "file": "frontend/src/components/files/PromptComposer.tsx", "summary": "コードビューアで選択した行をプロンプトとしてフォーマットして送信する UI パネル", "hooks": [], "parents": ["FileViewer"] },
+      { "name": "LoginForm", "file": "frontend/src/components/LoginForm.tsx", "summary": "パスワード認証フォーム", "hooks": [], "parents": ["App"] },
+      { "name": "Onboarding", "file": "frontend/src/components/Onboarding.tsx", "summary": "新規ユーザー向け spotlight スタイルウォークスルー (localStorage 完了フラグ管理)", "hooks": [], "parents": ["App"] },
+      { "name": "SelectionOverlay", "file": "frontend/src/components/SelectionOverlay.tsx", "summary": "xterm.js 上にタッチ選択ハンドル + コピーボタンを重ねる SVG オーバーレイ", "hooks": [], "parents": ["Terminal"] }
+    ],
+    "hooks": [
+      { "name": "useMultiplexedTerminal", "file": "frontend/src/hooks/useMultiplexedTerminal.ts", "summary": "/ws/mux へのモジュールレベル singleton WebSocket 管理。subscribe / unsubscribe、入力送信 (base64)、resize / split / close / zoom / scroll / adjustPane / equalizePanes、自動再接続・keepalive ping を提供" },
+      { "name": "useSessions", "file": "frontend/src/hooks/useSessions.ts", "summary": "モジュールレベルキャッシュ (WS sessions-updated で更新) 付きセッション状態管理。hook イベントによる indicatorState 即時更新" },
+      { "name": "useSessionHistory", "file": "frontend/src/hooks/useSessionHistory.ts", "summary": "過去セッション履歴のブラウズ (プロジェクト一覧 → セッション遅延ロード → SSE ストリーム検索)" },
+      { "name": "useDashboard", "file": "frontend/src/hooks/useDashboard.ts", "summary": "/api/dashboard をポーリング (デフォルト 60 秒間隔)" },
+      { "name": "useFileViewer", "file": "frontend/src/hooks/useFileViewer.ts", "summary": "ファイルビューア状態管理 (listDirectory / readFile / getGitDiff 等の API 呼び出しラップ)" },
+      { "name": "useAuth", "file": "frontend/src/hooks/useAuth.ts", "summary": "JWT 認証状態管理 (localStorage cc-hub-token、認証不要モード対応)" },
+      { "name": "useTheme", "file": "frontend/src/hooks/useTheme.ts", "summary": "light / dark テーマの localStorage 永続化と document.documentElement 属性適用" },
+      { "name": "useNetworkLatency", "file": "frontend/src/hooks/useNetworkLatency.ts", "summary": "/health への 30 秒間隔 HTTP ping で API レイテンシ計測、latency-store を useSyncExternalStore で購読" },
+      { "name": "useLineSelection", "file": "frontend/src/hooks/useLineSelection.ts", "summary": "クリックで行範囲選択 (1 回目=start, 2 回目=end)" },
+      { "name": "useSelectionMode", "file": "frontend/src/hooks/useSelectionMode.ts", "summary": "xterm.js 上のタッチ / マウス選択モード管理 (SelectionRange、コピーボタン位置計算)" },
+      { "name": "useConversationStream", "file": "frontend/src/hooks/useConversationStream.ts", "summary": "/ws/mux の conversation-subscribe を通じて Claude 会話をリアルタイム受信" },
+      { "name": "useCodexConversation", "file": "frontend/src/hooks/useCodexConversation.ts", "summary": "Codex セッションの会話を HTTP ポーリング (デフォルト 5 秒) で取得" },
+      { "name": "useAgentConversation", "file": "frontend/src/hooks/useAgentConversation.ts", "summary": "agent 種別 (claude / codex) に応じて useConversationStream / useCodexConversation を切り替える統合 hook" },
+      { "name": "useInputEcho", "file": "frontend/src/hooks/useInputEcho.ts", "summary": "端末への入力文字を 4 秒間エコー表示 (バックスペース / エスケープなど特殊キーをビジュアル化)" }
+    ]
+  },
+  "websocket": {
+    "endpoint": "/ws/mux",
+    "description": "単一の多重化 WebSocket。クライアントは subscribe でセッションごとに購読し、binary フレーム [0x02][sessionId\\0][paneId\\0][data] と JSON 制御メッセージを混在で受信",
+    "client_messages": {
+      "mux_level": ["subscribe", "unsubscribe", "subscribe-conversation", "unsubscribe-conversation"],
+      "per_session": ["input", "resize", "split", "close-pane", "resize-pane", "select-pane", "scroll", "adjust-pane", "equalize-panes", "request-content", "zoom-pane", "respawn-pane", "ping", "client-info"]
+    },
+    "server_messages": {
+      "mux_level": ["subscribed", "unsubscribed", "sessions-updated", "conversation-subscribed", "conversation-unsubscribed", "initial-conversation", "conversation-update"],
+      "per_session": ["output (binary)", "layout", "initial-content", "ready", "pong", "error", "new-session", "pane-dead", "hook-event"]
+    },
+    "binary_format": "[0x02][sessionId\\0][paneId\\0][raw bytes]",
+    "intervals": {
+      "sessions-updated push": "5s",
+      "zombie connection detection": "60s",
+      "keepalive ping (client)": "10s"
+    }
+  },
+  "types": [
+    { "name": "SessionResponse", "fields": "id, name, createdAt, lastAccessedAt, state, currentPath, agent, theme, customTitle" },
+    { "name": "ExtendedSessionResponse", "fields": "extends SessionResponse + indicatorState, ccSessionId, agentSessionId, currentCommand, paneTitle, ccSummary, ccFirstPrompt, ccRecap, waitingToolName, panes, messageCount, gitBranch, durationMinutes, metrics" },
+    { "name": "PaneInfo", "fields": "paneId, currentCommand, currentPath, title, agentName, agentColor, isActive, isDead, indicatorState, pid" },
+    { "name": "TmuxLayoutNode", "fields": "type ('leaf' | 'horizontal' | 'vertical'), width, height, x, y, paneId?, children?" },
+    { "name": "SessionMetrics", "fields": "contextTokens, contextMaxTokens, contextPercent, totalInputTokens, totalCacheCreationTokens, totalCacheReadTokens, totalOutputTokens, totalTokens, memoryRssBytes" },
+    { "name": "DashboardResponse", "fields": "usageLimits, usageLimitsStatus, codexUsageLimits, usageHistory, dailyActivity, modelUsage, costEstimates, hourlyActivity, version, systemMetrics, diskUsage, connectedClients" },
+    { "name": "ConversationMessage", "fields": "role, content, timestamp, thinking, toolUse, toolResult" },
+    { "name": "UsageLimits", "fields": "fiveHour (UsageCycleInfo), sevenDay (UsageCycleInfo)" },
+    { "name": "SessionState", "fields": "'idle' | 'working' | 'waiting_input' | 'waiting_permission' | 'disconnected' | 'lost'" },
+    { "name": "IndicatorState", "fields": "'processing' | 'waiting_input' | 'idle' | 'completed'" },
+    { "name": "AgentProvider", "fields": "'claude' | 'codex'" }
+  ],
+  "data_flows": [
+    {
+      "name": "ターミナル入力",
+      "steps": [
+        "ブラウザ (useMultiplexedTerminal)",
+        "JSON { type:'input', sessionId, paneId, data: base64 }",
+        "/ws/mux (terminal-mux.ts)",
+        "MuxSubscription.controlSession",
+        "TmuxControlSession.sendKeys",
+        "tmux -CC stdin",
+        "tmux pane",
+        "Claude Code プロセス"
+      ]
+    },
+    {
+      "name": "ターミナル出力表示",
+      "steps": [
+        "tmux プロセス",
+        "tmux -CC stdout",
+        "TmuxControlSession (raw buffer)",
+        "%output 行デコード (tmux-octal-decoder)",
+        "OutputListener (paneId 別 callback)",
+        "/ws/mux binary frame [0x02][sessionId\\0][paneId\\0][data]",
+        "ブラウザ WebSocket",
+        "useMultiplexedTerminal.onPaneOutput",
+        "Terminal.tsx xterm.js write"
+      ]
+    },
+    {
+      "name": "レイアウト同期",
+      "steps": [
+        "tmux pane split/resize",
+        "tmux -CC %layout-change",
+        "TmuxControlSession LayoutListener",
+        "parseTmuxLayout (tmux-layout-parser)",
+        "toFrontendLayout",
+        "/ws/mux JSON { type:'layout', sessionId, layout: TmuxLayoutNode }",
+        "useMultiplexedTerminal.onLayoutChange",
+        "DesktopLayout / TerminalPage",
+        "Terminal.setExactSize()"
+      ]
+    },
+    {
+      "name": "Claude Code hook 通知",
+      "steps": [
+        "Claude Code hook 実行",
+        "cchub notify (CLI stdin)",
+        "POST /api/notify",
+        "stateOverrides に IndicatorState 更新",
+        "broadcastToMuxClients { type:'hook-event' }",
+        "ブラウザ useMultiplexedTerminal.onHookEvent",
+        "useSessions.updateCachedSessionsByHookEvent",
+        "React 再レンダリング (インジケーター更新)",
+        "fireHookNotification (OS 通知)"
+      ]
+    },
+    {
+      "name": "会話リアルタイムストリーム",
+      "steps": [
+        "/ws/mux subscribe-conversation",
+        "ConversationWatcher.start(workingDir)",
+        "ClaudeCodeService.getSessionForPath",
+        "fs.watch on .jsonl",
+        "増分パース (SessionHistoryService.getConversation)",
+        "/ws/mux { type:'conversation-update', sessionId, messages }",
+        "ブラウザ useConversationStream",
+        "ConversationViewer 再レンダリング"
+      ]
+    }
+  ]
+}</script>
+  <div id="panels" style="display:none">
+    <section class="panel active overview" data-panel="overview"></section>
+    <section class="panel" data-panel="backend-services"></section>
+    <section class="panel" data-panel="backend-routes"></section>
+    <section class="panel" data-panel="frontend-components"></section>
+    <section class="panel" data-panel="frontend-hooks"></section>
+    <section class="panel" data-panel="websocket"></section>
+    <section class="panel" data-panel="types"></section>
+    <section class="panel" data-panel="flows"></section>
+  </div>
+</main>
+<script>
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+let DATA = null;
+let activeQuery = '';
+
+async function load() {
+  // 1) インライン JSON (cchub HTML viewer のような blob URL / sandbox 環境向け)
+  try {
+    const inlineEl = document.getElementById('arch-data');
+    const inlineRaw = inlineEl ? inlineEl.textContent.trim() : '';
+    // 未埋め込みの場合は中身が空 or プレースホルダーコメントのみなのでスキップ。
+    // 埋め込み済みなら必ず JSON object なので "{" で始まる。
+    if (inlineRaw.startsWith('{')) {
+      DATA = JSON.parse(inlineRaw);
+    }
+  } catch (err) {
+    console.warn('inline JSON parse failed, falling back to fetch:', err);
+  }
+
+  // 2) fetch (http サーバ経由で開いた場合)。インライン取得済みなら背景更新として使う。
+  if (!DATA) {
+    try {
+      const r = await fetch('architecture.json', { cache: 'no-store' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      DATA = await r.json();
+    } catch (err) {
+      $('#loading').innerHTML = `<div style="color:var(--red)">architecture.json を読み込めません: ${esc(err.message)}<br><br>埋め込み JSON も無いため表示できません。<code>build-architecture-html</code> 等で再生成するか、<code>python3 -m http.server</code> で配信してください。</div>`;
+      return;
+    }
+  }
+
+  $('#loading').style.display = 'none';
+  $('#panels').style.display = 'block';
+  render();
+  bindTabs();
+  bindSearch();
+}
+
+function render() {
+  $('#hdr-version').textContent = 'v' + DATA.version;
+  $('#hdr-meta').textContent = 'generated ' + DATA.generated;
+  $('#cnt-services').textContent = DATA.backend.services.length;
+  $('#cnt-routes').textContent = DATA.backend.routes.length;
+  $('#cnt-components').textContent = DATA.frontend.components.length;
+  $('#cnt-hooks').textContent = DATA.frontend.hooks.length;
+  $('#cnt-types').textContent = DATA.types.length;
+  $('#cnt-flows').textContent = DATA.data_flows.length;
+
+  renderOverview();
+  renderServices();
+  renderRoutes();
+  renderComponents();
+  renderHooks();
+  renderWebSocket();
+  renderTypes();
+  renderFlows();
+}
+
+function renderOverview() {
+  const p = $('[data-panel="overview"]');
+  p.innerHTML = `
+    <div class="desc">
+      <h2>${esc(DATA.name)}</h2>
+      <div>${esc(DATA.summary)}</div>
+      <dl class="stack">
+        <dt>Backend</dt><dd>${esc(DATA.stack.backend)}</dd>
+        <dt>Frontend</dt><dd>${esc(DATA.stack.frontend)}</dd>
+        <dt>Shared</dt><dd>${esc(DATA.stack.shared)}</dd>
+        <dt>Transport</dt><dd>${esc(DATA.stack.transport)}</dd>
+      </dl>
+    </div>
+    <div class="overview-grid">
+      ${stat('Backend Services', DATA.backend.services.length)}
+      ${stat('API Routes', DATA.backend.routes.length)}
+      ${stat('Frontend Components', DATA.frontend.components.length)}
+      ${stat('Frontend Hooks', DATA.frontend.hooks.length)}
+      ${stat('Shared Types', DATA.types.length)}
+      ${stat('Documented Data Flows', DATA.data_flows.length)}
+    </div>
+  `;
+}
+
+const stat = (label, num) => `<div class="stat"><div class="num">${num}</div><div class="label">${esc(label)}</div></div>`;
+
+function matches(text, q) {
+  if (!q) return true;
+  return text.toLowerCase().includes(q.toLowerCase());
+}
+
+function svcCard(s, q) {
+  const body = [s.name, s.file, s.summary, ...(s.deps || [])].join(' ');
+  if (!matches(body, q)) return '';
+  return `<div class="card">
+    <div class="card-header">
+      <span class="name">${esc(s.name)}</span>
+      <span class="file">${esc(s.file)}</span>
+    </div>
+    <div class="summary">${esc(s.summary)}</div>
+    ${s.deps && s.deps.length ? `<div class="deps"><span class="label">deps:</span>${s.deps.map(d => `<span data-jump="${esc(d)}">${esc(d)}</span>`).join('')}</div>` : ''}
+  </div>`;
+}
+
+function renderServices() {
+  const p = $('[data-panel="backend-services"]');
+  p.innerHTML = DATA.backend.services.map(s => svcCard(s, activeQuery)).join('') || '<div class="empty">該当なし</div>';
+}
+
+function routeCard(r, q) {
+  const body = [r.method, r.path, r.description, r.file].join(' ');
+  if (!matches(body, q)) return '';
+  return `<div class="card">
+    <div class="card-header">
+      <span class="badge ${esc(r.method)}">${esc(r.method)}</span>
+      <span class="name" style="font-family:monospace">${esc(r.path)}</span>
+      <span class="file">${esc(r.file)}</span>
+    </div>
+    <div class="summary">${esc(r.description)}</div>
+  </div>`;
+}
+
+function renderRoutes() {
+  const p = $('[data-panel="backend-routes"]');
+  const groups = {};
+  for (const r of DATA.backend.routes) {
+    (groups[r.group] = groups[r.group] || []).push(r);
+  }
+  let html = '';
+  for (const [g, list] of Object.entries(groups)) {
+    const inner = list.map(r => routeCard(r, activeQuery)).filter(Boolean).join('');
+    if (!inner) continue;
+    html += `<div class="group-header">${esc(g)}</div>${inner}`;
+  }
+  p.innerHTML = html || '<div class="empty">該当なし</div>';
+}
+
+function compCard(c, q) {
+  const body = [c.name, c.file, c.summary, ...(c.hooks || []), ...(c.parents || [])].join(' ');
+  if (!matches(body, q)) return '';
+  return `<div class="card">
+    <div class="card-header">
+      <span class="name">${esc(c.name)}</span>
+      <span class="file">${esc(c.file)}</span>
+    </div>
+    <div class="summary">${esc(c.summary)}</div>
+    ${c.hooks && c.hooks.length ? `<div class="hooks-list"><span class="label">hooks:</span>${c.hooks.map(h => `<span data-jump="${esc(h)}">${esc(h)}</span>`).join('')}</div>` : ''}
+    ${c.parents && c.parents.length ? `<div class="parents"><span class="label">parents:</span>${c.parents.map(par => `<span data-jump="${esc(par)}">${esc(par)}</span>`).join('')}</div>` : ''}
+  </div>`;
+}
+
+function renderComponents() {
+  const p = $('[data-panel="frontend-components"]');
+  p.innerHTML = DATA.frontend.components.map(c => compCard(c, activeQuery)).filter(Boolean).join('') || '<div class="empty">該当なし</div>';
+}
+
+function hookCard(h, q) {
+  const body = [h.name, h.file, h.summary].join(' ');
+  if (!matches(body, q)) return '';
+  return `<div class="card">
+    <div class="card-header">
+      <span class="name">${esc(h.name)}</span>
+      <span class="file">${esc(h.file)}</span>
+    </div>
+    <div class="summary">${esc(h.summary)}</div>
+  </div>`;
+}
+
+function renderHooks() {
+  const p = $('[data-panel="frontend-hooks"]');
+  p.innerHTML = DATA.frontend.hooks.map(h => hookCard(h, activeQuery)).filter(Boolean).join('') || '<div class="empty">該当なし</div>';
+}
+
+function renderWebSocket() {
+  const p = $('[data-panel="websocket"]');
+  const w = DATA.websocket;
+  p.innerHTML = `
+    <div class="ws-section">
+      <div class="endpoint">${esc(w.endpoint)}</div>
+      <div class="desc">${esc(w.description)}</div>
+      <div class="grid">
+        <div class="col">
+          <h4>Client → Server</h4>
+          <div class="sub"><div class="lbl">Mux level</div>${w.client_messages.mux_level.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>
+          <div class="sub"><div class="lbl">Per session</div>${w.client_messages.per_session.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>
+        </div>
+        <div class="col">
+          <h4>Server → Client</h4>
+          <div class="sub"><div class="lbl">Mux level</div>${w.server_messages.mux_level.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>
+          <div class="sub"><div class="lbl">Per session</div>${w.server_messages.per_session.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>
+        </div>
+      </div>
+      <div style="margin-top:16px">
+        <div class="lbl" style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;font-weight:600">Binary frame format</div>
+        <code class="binary">${esc(w.binary_format)}</code>
+      </div>
+      <dl class="intervals">
+        ${Object.entries(w.intervals).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}
+      </dl>
+    </div>
+  `;
+}
+
+function renderTypes() {
+  const p = $('[data-panel="types"]');
+  p.innerHTML = DATA.types.filter(t => matches(`${t.name} ${t.fields}`, activeQuery)).map(t => `
+    <div class="type-card">
+      <div class="tname">${esc(t.name)}</div>
+      <div class="tfields">${esc(t.fields)}</div>
+    </div>
+  `).join('') || '<div class="empty">該当なし</div>';
+}
+
+function renderFlows() {
+  const p = $('[data-panel="flows"]');
+  p.innerHTML = DATA.data_flows.filter(f => matches(`${f.name} ${f.steps.join(' ')}`, activeQuery)).map(f => `
+    <div class="flow">
+      <h3>${esc(f.name)}</h3>
+      <ol>${f.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
+    </div>
+  `).join('') || '<div class="empty">該当なし</div>';
+}
+
+function bindTabs() {
+  $$('#tabs button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      $$('#tabs button').forEach(b => b.classList.toggle('active', b === btn));
+      const tab = btn.dataset.tab;
+      $$('.panel').forEach(p => p.classList.toggle('active', p.dataset.panel === tab));
+    });
+  });
+  // クリックで型名 / 依存先などにジャンプ
+  document.addEventListener('click', e => {
+    const t = e.target.closest('[data-jump]');
+    if (!t) return;
+    const name = t.dataset.jump;
+    // 検索ボックスに名前を入れて、最も該当しそうなタブに切替
+    $('#q').value = name;
+    onSearch();
+    const tabPriority = [
+      ['backend-services', DATA.backend.services.some(s => s.name === name)],
+      ['frontend-hooks', DATA.frontend.hooks.some(h => h.name === name)],
+      ['frontend-components', DATA.frontend.components.some(c => c.name === name)],
+    ];
+    for (const [tab, hit] of tabPriority) {
+      if (hit) {
+        $(`#tabs button[data-tab="${tab}"]`).click();
+        break;
+      }
+    }
+  });
+}
+
+function onSearch() {
+  activeQuery = $('#q').value.trim();
+  renderServices();
+  renderRoutes();
+  renderComponents();
+  renderHooks();
+  renderTypes();
+  renderFlows();
+}
+
+function bindSearch() {
+  $('#q').addEventListener('input', onSearch);
+}
+
+load();
+</script>
+</body>
+</html>

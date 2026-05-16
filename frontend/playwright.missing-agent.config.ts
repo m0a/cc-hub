@@ -4,7 +4,7 @@ import { defineConfig, devices } from '@playwright/test';
 // already running on https://localhost:5173 (started outside playwright).
 export default defineConfig({
   testDir: './tests/e2e',
-  testMatch: 'missing-agent.spec.ts',
+  testMatch: ['missing-agent.spec.ts', 'file-viewer-selection.spec.ts'],
   fullyParallel: false,
   retries: 0,
   workers: 1,
@@ -19,6 +19,13 @@ export default defineConfig({
       name: 'mobile-chromium',
       use: {
         ...devices['Pixel 5'],
+        ignoreHTTPSErrors: true,
+      },
+    },
+    {
+      name: 'desktop-chromium',
+      use: {
+        ...devices['Desktop Chrome'],
         ignoreHTTPSErrors: true,
       },
     },

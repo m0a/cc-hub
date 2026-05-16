@@ -105,7 +105,6 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
     getChanges,
     getGitChanges,
     getGitDiff,
-    clearSelectedFile,
   } = useFileViewer(sessionWorkingDir);
 
   const [viewMode, setViewMode] = useState<ViewMode>('browser');
@@ -208,11 +207,9 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
     window.history.pushState({ fileViewer: true }, '', window.location.href);
   }, []);
 
-  // Store onClose and clearSelectedFile in refs so popstate listener always sees latest
+  // Store onClose in a ref so the popstate listener always sees the latest.
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
-  const clearSelectedFileRef = useRef(clearSelectedFile);
-  clearSelectedFileRef.current = clearSelectedFile;
 
   // handleBack for in-app button
   const handleBack = useCallback(() => {
@@ -317,9 +314,8 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
         setListMode(prev.listMode);
         setSelectedChange(prev.selectedChange);
         setSelectedGitDiff(prev.selectedGitDiff);
-        if (prev.viewMode !== 'file') {
-          clearSelectedFileRef.current();
-        }
+        // Keep selectedFile around even when returning to browser view so the
+        // FileBrowser can highlight the most recently opened file.
       } else {
         e.stopImmediatePropagation();
         onCloseRef.current();
@@ -535,6 +531,7 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
                   isLoading={isLoading}
                   onSelectFile={handleSelectFile}
                   showHidden={showHidden}
+                  selectedPath={selectedFile?.path}
                 />
               ) : (
                 <ChangesView
@@ -711,7 +708,9 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
 
         {/* Content */}
         <div className="flex-1 overflow-hidden">
-          {viewMode === 'browser' && (
+          {/* Keep FileBrowser mounted across viewMode changes so its scroll
+              position survives switching to a file view and back. */}
+          <div className={viewMode === 'browser' ? 'h-full' : 'hidden'}>
             <FileBrowser
               files={files}
               currentPath={currentPath}
@@ -719,8 +718,9 @@ export function FileViewer({ sessionWorkingDir, onClose, initialPath, onCopyProm
               isLoading={isLoading}
               onSelectFile={handleSelectFile}
               showHidden={showHidden}
+              selectedPath={selectedFile?.path}
             />
-          )}
+          </div>
 
           {viewMode === 'file' && selectedFile && (
             isImageFile(selectedFile.path) ? (

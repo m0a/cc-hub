@@ -1,3 +1,4 @@
+import { appendFile } from 'node:fs/promises';
 import type { ServerWebSocket } from 'bun';
 import { TmuxService } from '../services/tmux';
 import { getOrCreateControlSession, type TmuxControlSession } from '../services/tmux-control';
@@ -8,6 +9,14 @@ import { buildSessionsList } from './sessions';
 
 const BENCH = !!process.env.CCHUB_BENCH;
 const BENCH_T0 = performance.now();
+
+// Channel C: client→server self-verification feedback (dev-only).
+// When enabled, clients send their xterm.js buffer snapshot via `debug-dump`
+// messages; the server compares them against `tmux capture-pane -p` output
+// and logs any drift to /tmp/cchub-drift.log for later analysis.
+const SELF_VERIFY = !!process.env.CCHUB_SELF_VERIFY;
+const DRIFT_LOG_PATH = '/tmp/cchub-drift.log';
+const DRIFT_MAX_MISMATCH_SAMPLES = 3;
 
 /** Per-session subscription state for a mux client */
 interface MuxSubscription {
@@ -164,6 +173,16 @@ export async function muxMessage(ws: ServerWebSocket<MuxData>, message: string |
     return;
   }
 
+  if (msg.type === 'debug-dump') {
+    // Channel C: silently no-op unless self-verify is enabled. Even when
+    // disabled we accept the message format to avoid version mismatch errors.
+    if (SELF_VERIFY) {
+      const sub = ws.data.subscriptions.get(msg.sessionId);
+      if (sub) await handleDebugDump(ws, sub, msg);
+    }
+    return;
+  }
+
   // All other messages need sessionId
   const sessionId = (msg as { sessionId?: string }).sessionId;
   if (!sessionId) return;
@@ -205,7 +224,7 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     existing.initialContentSent = false;
     existing.readyForOutput = false;
     existing.outputSuppressedCount = 0;
-    ws.send(JSON.stringify({ type: 'subscribed', sessionId }));
+    ws.send(JSON.stringify({ type: 'subscribed', sessionId, selfVerifyEnabled: SELF_VERIFY }));
     return;
   }
 
@@ -315,7 +334,7 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
       console.error(`[mux] Failed to send initial layout for ${sessionId}:`, err);
     }
 
-    ws.send(JSON.stringify({ type: 'subscribed', sessionId }));
+    ws.send(JSON.stringify({ type: 'subscribed', sessionId, selfVerifyEnabled: SELF_VERIFY }));
   } catch (error) {
     console.error(`[mux] Failed to subscribe to ${sessionId}:`, error);
     ws.send(JSON.stringify({ type: 'error', message: 'Failed to subscribe', sessionId }));
@@ -407,6 +426,86 @@ function handleUnsubscribeConversation(ws: ServerWebSocket<MuxData>, sessionId: 
   try {
     ws.send(JSON.stringify({ type: 'conversation-unsubscribed', sessionId }));
   } catch { /* disconnected */ }
+}
+
+// =============================================================================
+// Channel C: self-verification drift detection (dev-only)
+// =============================================================================
+
+/** Right-trim trailing whitespace; we compare canonical text only, so trailing
+ *  spaces from tmux's grid padding vs xterm's actual cells must not register
+ *  as drift. */
+function rtrim(s: string): string {
+  let end = s.length;
+  while (end > 0 && (s.charCodeAt(end - 1) === 0x20 || s.charCodeAt(end - 1) === 0x09)) {
+    end--;
+  }
+  return s.slice(0, end);
+}
+
+interface DriftSample {
+  row: number;
+  canonical: string;
+  client: string;
+}
+
+function diffLines(canonical: string[], client: string[]): { count: number; samples: DriftSample[] } {
+  const len = Math.max(canonical.length, client.length);
+  const samples: DriftSample[] = [];
+  let count = 0;
+  for (let i = 0; i < len; i++) {
+    const c = rtrim(canonical[i] ?? '');
+    const x = rtrim(client[i] ?? '');
+    if (c !== x) {
+      count++;
+      if (samples.length < DRIFT_MAX_MISMATCH_SAMPLES) {
+        samples.push({ row: i, canonical: c, client: x });
+      }
+    }
+  }
+  return { count, samples };
+}
+
+async function handleDebugDump(
+  ws: ServerWebSocket<MuxData>,
+  sub: MuxSubscription,
+  msg: Extract<MuxClientMessage, { type: 'debug-dump' }>,
+) {
+  try {
+    // capture-pane -p (text only, no -e attributes) for fair text comparison.
+    // capturePane() unconditionally includes -e, so issue the command directly.
+    const canonicalRaw = await sub.controlSession.sendCommand(`capture-pane -p -t ${msg.paneId}`);
+    const canonicalLines = canonicalRaw.split(/\r?\n/);
+    const { count, samples } = diffLines(canonicalLines, msg.lines);
+
+    const record = {
+      ts: msg.ts,
+      visitorId: ws.data.visitorId,
+      sessionId: msg.sessionId,
+      paneId: msg.paneId,
+      trigger: msg.trigger,
+      clientRows: msg.lines.length,
+      canonicalRows: canonicalLines.length,
+      mismatchCount: count,
+      cursor: msg.cursor,
+      suppressedOutputCount: sub.outputSuppressedCount,
+      sendFailCount: sub.sendFailCount,
+      samples,
+    };
+
+    if (count > 0) {
+      console.warn(
+        `[drift] sess=${msg.sessionId} pane=${msg.paneId} trigger=${msg.trigger} ` +
+        `mismatch=${count}/${Math.max(canonicalLines.length, msg.lines.length)} ` +
+        `suppressed=${sub.outputSuppressedCount}`,
+      );
+    }
+
+    // Always append the record (mismatch=0 entries are useful as denominator).
+    await appendFile(DRIFT_LOG_PATH, `${JSON.stringify(record)}\n`, 'utf8');
+  } catch (err) {
+    console.warn(`[drift] handleDebugDump error for ${msg.paneId}:`, err);
+  }
 }
 
 async function handleControlMessage(

@@ -8,6 +8,7 @@ import { authFetch } from '../services/api';
 import type { SessionTheme } from '../../../shared/types';
 import { filterMouseTrackingInput, filterMouseTrackingOutput, shouldInterceptKeyEvent } from '../utils/terminal-filters';
 import { bench } from '../utils/bench';
+import { sendDebugDump, isSelfVerifyEnabled } from '../hooks/useMultiplexedTerminal';
 import {
   getTerminalThemes, isLightMode, LIGHT_ANSI_COLORS,
   DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE,
@@ -90,6 +91,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const sendRef = useRef<(data: string) => void>(() => {});
   const resizeRef = useRef<(cols: number, rows: number) => void>(() => {});
   const refreshRef = useRef<() => void>(() => {});
+  const dumpForSelfVerifyRef = useRef<((trigger: 'resize-done' | 'reconnect-done' | 'output-idle' | 'periodic' | 'user') => void) | null>(null);
   const closeInputBarRef = useRef<() => void>(() => {});
   const showKeyboardRef = useRef<() => void>(() => {});
   const inputBarRef = useRef<InputBarRef>(null);
@@ -253,6 +255,11 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           term.resize(dims.cols, dims.rows);
         }
         resizeRef.current(dims.cols, dims.rows);
+        // Channel C: capture state ~1s after resize so the server's
+        // capture-pane + initial-content round trip has settled.
+        if (isSelfVerifyEnabled()) {
+          setTimeout(() => dumpForSelfVerifyRef.current?.('resize-done'), 1000);
+        }
       }
     }
   }, []);
@@ -891,22 +898,77 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       term.write('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l');
     }
 
+    // Channel C: schedule a debug-dump 300ms after output stops, so we
+    // observe steady-state drift rather than mid-render snapshots.
+    let outputIdleTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleOutputIdleDump = () => {
+      if (!isSelfVerifyEnabled()) return;
+      if (outputIdleTimer) clearTimeout(outputIdleTimer);
+      outputIdleTimer = setTimeout(() => dumpForSelfVerify('output-idle'), 300);
+    };
+
     const cleanup = cm.registerOnData((data) => {
       const str = decoder.decode(data, { stream: true });
       const filtered = filterMouseTrackingOutput(str);
       if (filtered.length > 0) {
         const t0 = bench.recordWriteStart();
         terminalRef.current?.write(filtered, () => bench.recordWriteEnd(t0, filtered.length));
+        scheduleOutputIdleDump();
       }
     });
     controlCleanupRef.current = cleanup;
     return () => {
       decoder.decode(new Uint8Array(0), { stream: false });
+      if (outputIdleTimer) clearTimeout(outputIdleTimer);
       cleanup();
       controlCleanupRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [!!controlMode, controlMode?.paneId]);
+
+  // Channel C: client→server self-verification trigger orchestration.
+  // No-op unless the server has CCHUB_SELF_VERIFY=1, in which case the
+  // initial subscribed message flips `isSelfVerifyEnabled()` to true.
+  const dumpForSelfVerify = useCallback((trigger: 'resize-done' | 'reconnect-done' | 'output-idle' | 'periodic' | 'user') => {
+    const term = terminalRef.current;
+    const cm = controlModeRef.current;
+    if (!term || !cm || !isSelfVerifyEnabled()) return;
+    const buf = term.buffer.active;
+    // Compare only the currently-visible area against `tmux capture-pane -p`
+    // (which also returns only the visible region). Including scrollback here
+    // would produce huge false-positive mismatch counts.
+    const visibleStart = Math.max(0, buf.length - term.rows);
+    const lines: string[] = [];
+    for (let i = visibleStart; i < buf.length; i++) {
+      lines.push(buf.getLine(i)?.translateToString(true) ?? '');
+    }
+    sendDebugDump(
+      sessionId,
+      cm.paneId,
+      lines,
+      { x: buf.cursorX, y: buf.cursorY },
+      trigger,
+    );
+  }, [sessionId]);
+
+  useEffect(() => { dumpForSelfVerifyRef.current = dumpForSelfVerify; }, [dumpForSelfVerify]);
+
+  // Fire after a fresh (re)connect once everything has settled. isConnected
+  // alone fires too early — the initial-content write hasn't drained — so we
+  // wait one tick + an output-idle window.
+  useEffect(() => {
+    if (!isConnected || !isSelfVerifyEnabled()) return;
+    const t = setTimeout(() => dumpForSelfVerify('reconnect-done'), 500);
+    return () => clearTimeout(t);
+  }, [isConnected, dumpForSelfVerify]);
+
+  // Periodic safety-net dump every 30s while connected, regardless of
+  // recent activity. Catches slow drifts that other triggers miss.
+  useEffect(() => {
+    if (!isConnected || !isSelfVerifyEnabled()) return;
+    const interval = setInterval(() => dumpForSelfVerify('periodic'), 30_000);
+    return () => clearInterval(interval);
+  }, [isConnected, dumpForSelfVerify]);
 
   // Track visual viewport for soft keyboard offset
   useEffect(() => {

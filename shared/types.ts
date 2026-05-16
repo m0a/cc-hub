@@ -495,6 +495,10 @@ export interface PaneSnapshot {
   cols: number;            // pane width (cells) at capture time
   rows: number;            // pane height (cells) at capture time
   lines: string[];         // visible region, each line includes ANSI escapes
+  // Lines pushed into tmux's scrollback since the previous snapshot. The
+  // client writes these into xterm.js so its own scrollback ring buffer is
+  // populated for wheel/touch scroll within the recent history.
+  scrollbackDelta?: string[];
   cursor: PaneCursor;
   modes: PaneModes;
 }
@@ -567,6 +571,10 @@ export type MuxClientMessage =
       cursor: { x: number; y: number };
       trigger: DebugDumpTrigger;
       ts: number;
+      // The snapshot seq the client most recently applied for this pane.
+      // Allows the server to compare against the same snap the client saw
+      // (rather than a newer one), eliminating race-induced false drift.
+      appliedSeq?: number;
     }
   | (ControlClientMessage & { sessionId: string });
 

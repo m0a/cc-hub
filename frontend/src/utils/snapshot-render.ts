@@ -18,19 +18,56 @@ import type { DiffOp, PaneSnapshot } from '../../../shared/types';
  *
  * Sequence:
  *   1. hide cursor (avoid flicker during repaint)
- *   2. enter/exit altscreen
- *   3. clear visible region (scrollback preserved)
- *   4. move to home, write each line (separated by CRLF, no trailing newline)
+ *   2. enter/exit altscreen as appropriate
+ *   3. if not altscreen and snapshot carries scrollbackDelta: park cursor at
+ *      the bottom row and emit each new line with CRLF — each newline at the
+ *      bottom scrolls a row off the top into xterm's scrollback buffer
+ *   4. for each row, cursor to (row,1), clear line, write content
  *   5. move cursor to the snapshot's recorded position, set visibility
+ *
+ * `forceClearAll` controls how blank rows are treated:
+ *   - `true` (use on size changes / first snapshot): rewrite every row,
+ *     blanks included. Ensures stale content from a previous larger
+ *     geometry doesn't survive as "ghost lines".
+ *   - `false` (steady state): skip the trailing run of blank rows so the
+ *     previous snapshot's content is preserved there. This matches the
+ *     byte-stream era's visual where Claude Code's unrepainted region
+ *     stayed populated with the prior frame instead of going black.
  */
-export function snapshotToVTSequence(snapshot: PaneSnapshot): string {
+/**
+ * Build VT bytes for a snapshot.
+ *
+ * `prevLines` — what we previously wrote into xterm for this pane. If
+ *   omitted (e.g. first paint or geometry change), every row is treated
+ *   as changed.
+ *
+ * We always honor the snapshot as canonical: rows that changed are
+ *   rewritten exactly, even when the new content is blank. Skipping
+ *   blank rows leaves stale content drifting in xterm that the user
+ *   sees as "ghost lines". The empty space below the prompt that some
+ *   TUIs leave behind is handled by the caller's auto-scroll trick
+ *   (see Terminal.tsx) rather than by hiding it here.
+ */
+export function snapshotToVTSequence(
+  snapshot: PaneSnapshot,
+  prevLines?: string[],
+): string {
   let s = '';
   s += '\x1b[?25l';
   s += snapshot.modes.altScreen ? '\x1b[?1049h' : '\x1b[?1049l';
-  s += '\x1b[H\x1b[2J';
-  for (let i = 0; i < snapshot.lines.length; i++) {
-    if (i > 0) s += '\r\n';
-    s += snapshot.lines[i];
+
+  const delta = snapshot.scrollbackDelta;
+  if (!snapshot.modes.altScreen && delta && delta.length > 0) {
+    s += `\x1b[${snapshot.rows};1H`;
+    for (const line of delta) {
+      s += `\r\n\x1b[2K${line}`;
+    }
+  }
+
+  for (let i = 0; i < snapshot.rows; i++) {
+    const content = snapshot.lines[i] ?? '';
+    if (prevLines && prevLines[i] === content) continue;
+    s += `\x1b[${i + 1};1H\x1b[2K${content}`;
   }
   s += `\x1b[${snapshot.cursor.y + 1};${snapshot.cursor.x + 1}H`;
   s += snapshot.cursor.visible ? '\x1b[?25h' : '\x1b[?25l';
@@ -60,6 +97,10 @@ export function diffToVTSequence(ops: DiffOp[]): { vt: string; size: { cols: num
         }
         break;
       case 'line':
+        // Apply every line op as-is; a row that went blank really did
+        // go blank in tmux, and pretending otherwise creates ghost
+        // lines. The void-below-prompt UX problem is handled by the
+        // caller's auto-scroll on snapshot apply.
         s += `\x1b[${op.row + 1};1H\x1b[2K${op.content}`;
         break;
       case 'cursor':

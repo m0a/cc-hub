@@ -668,7 +668,6 @@ export class TmuxControlSession {
       clearTimeout(this.resizeTimer);
     }
     this.resizeTimer = setTimeout(async () => {
-      // Skip if dimensions haven't changed
       if (this.lastClientSize
         && this.lastClientSize.cols === cols
         && this.lastClientSize.rows === rows) {
@@ -677,10 +676,13 @@ export class TmuxControlSession {
       this.lastClientSize = { cols, rows };
       try {
         await this.sendCommand(`refresh-client -C ${cols}x${rows}`);
-        // Do NOT send bare `refresh-client` here.
-        // It forces tmux to re-output the entire screen, which interleaves
-        // with application output causing visual corruption.  Programs
-        // redraw on their own via SIGWINCH from the size change.
+        // Intentionally NOT calling `resize-window` here. It re-packs the
+        // pane grid and clears cells the child process hasn't actively
+        // redrawn — which surfaces as a black void at the bottom of the
+        // viewport for TUIs (e.g. Claude Code) that don't repaint the
+        // whole screen on SIGWINCH. `refresh-client -C` alone delivers
+        // SIGWINCH while leaving stale cells in place, matching the
+        // pre-state-sync byte-stream behavior.
       } catch {
         // Ignore resize errors
       }
@@ -692,7 +694,6 @@ export class TmuxControlSession {
    * Used for the first resize after connect so initial content is captured at correct size.
    */
   async setClientSizeImmediate(cols: number, rows: number): Promise<void> {
-    // Cancel any pending debounced resize
     if (this.resizeTimer) {
       clearTimeout(this.resizeTimer);
       this.resizeTimer = null;

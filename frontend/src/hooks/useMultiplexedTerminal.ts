@@ -377,6 +377,7 @@ export function sendDebugDump(
   lines: string[],
   cursor: { x: number; y: number },
   trigger: 'resize-done' | 'reconnect-done' | 'output-idle' | 'periodic' | 'user',
+  appliedSeq?: number,
 ): boolean {
   if (!selfVerifyEnabled) return false;
   if (sharedWs?.readyState !== WebSocket.OPEN || !wsReady) return false;
@@ -388,6 +389,7 @@ export function sendDebugDump(
     cursor,
     trigger,
     ts: Date.now(),
+    appliedSeq,
   }));
   return true;
 }

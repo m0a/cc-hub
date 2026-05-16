@@ -34,6 +34,9 @@ interface MuxSubscription {
   // base for the next diff. Cleared on `request-snapshot` so the next emit
   // sends a full snapshot.
   serverSnapshots: Map<string, PaneSnapshot>;
+  // tmux history-size at the time of the last snapshot, per pane. Used to
+  // compute scrollbackDelta on the next capture.
+  lastHistorySize: Map<string, number>;
   // Per-pane snapshot debounce timers.
   snapshotTimers: Map<string, Timer>;
   // Pane IDs we've ever sent a snapshot for, so we can recapture them on
@@ -217,6 +220,7 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     const existing = ws.data.subscriptions.get(sessionId)!;
     existing.initialized = false;
     existing.serverSnapshots.clear();
+    existing.lastHistorySize.clear();
     for (const t of existing.snapshotTimers.values()) clearTimeout(t);
     existing.snapshotTimers.clear();
     existing.outputSuppressedCount = 0;
@@ -240,6 +244,7 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
       cleanupFns,
       initialized: false,
       serverSnapshots: new Map(),
+      lastHistorySize: new Map(),
       snapshotTimers: new Map(),
       knownPanes: new Set(),
       outputSuppressedCount: 0,
@@ -359,16 +364,22 @@ async function emitSnapshot(
   paneId: string,
 ) {
   if (sub.controlSession.isDestroyed) return;
-  let snapshot: PaneSnapshot | null;
+  let result: { snapshot: PaneSnapshot; historySize: number } | null;
   try {
-    snapshot = await captureSnapshot(sub.controlSession, paneId);
+    result = await captureSnapshot(
+      sub.controlSession,
+      paneId,
+      sub.lastHistorySize.get(paneId),
+    );
   } catch (err) {
     console.warn(`[mux] captureSnapshot failed for ${paneId}:`, err);
     return;
   }
-  if (!snapshot) return;
+  if (!result) return;
+  const { snapshot, historySize } = result;
 
   sub.knownPanes.add(paneId);
+  sub.lastHistorySize.set(paneId, historySize);
 
   const prev = sub.serverSnapshots.get(paneId);
   if (!prev) {
@@ -380,22 +391,33 @@ async function emitSnapshot(
   }
 
   const ops = diffSnapshots(prev, snapshot);
-  if (ops.length === 0) {
-    // No change, but bump seq so client can ack the latest if it wants.
+  const hasScrollback = (snapshot.scrollbackDelta?.length ?? 0) > 0;
+
+  if (ops.length === 0 && !hasScrollback) {
     sub.serverSnapshots.set(paneId, snapshot);
     return;
   }
 
-  try {
-    ws.send(JSON.stringify({
-      type: 'state-diff',
-      sessionId,
-      paneId,
-      base: prev.seq,
-      seq: snapshot.seq,
-      ops,
-    }));
-  } catch { return; }
+  // Scrollback can only be carried on a full snapshot (it must be applied
+  // before the visible region is rewritten). Send a snapshot in that case;
+  // otherwise a regular diff is enough.
+  if (hasScrollback) {
+    console.log(`[mux] state-snapshot pane=${paneId} seq=${snapshot.seq} scrollbackDelta=${snapshot.scrollbackDelta?.length ?? 0} rows=${snapshot.rows}`);
+    try {
+      ws.send(JSON.stringify({ type: 'state-snapshot', sessionId, snapshot }));
+    } catch { return; }
+  } else {
+    try {
+      ws.send(JSON.stringify({
+        type: 'state-diff',
+        sessionId,
+        paneId,
+        base: prev.seq,
+        seq: snapshot.seq,
+        ops,
+      }));
+    } catch { return; }
+  }
   sub.serverSnapshots.set(paneId, snapshot);
 }
 
@@ -412,8 +434,10 @@ async function emitInitialSnapshots(
     return;
   }
   for (const pane of panes) {
-    // Drop any previous snapshot so emitSnapshot sends a fresh full snapshot.
+    // Drop any previous snapshot so emitSnapshot sends a fresh full snapshot;
+    // clear the history baseline too so scrollbackDelta starts empty.
     sub.serverSnapshots.delete(pane.paneId);
+    sub.lastHistorySize.delete(pane.paneId);
     await emitSnapshot(ws, sessionId, sub, pane.paneId);
   }
 }
@@ -498,6 +522,24 @@ function rtrim(s: string): string {
   return s.slice(0, end);
 }
 
+// Strip ANSI escape sequences. Server snapshot lines come from
+// `capture-pane -e` and embed SGR color codes plus OSC 8 hyperlinks,
+// but the client's xterm buffer translateToString() returns plain text.
+// We strip:
+//   CSI: ESC [ ... <letter>      e.g. SGR color, cursor moves
+//   OSC: ESC ] ... (BEL | ST)    e.g. OSC 8 hyperlinks, OSC 52 clipboard
+// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escapes by design.
+const CSI_RE = /\x1b\[[\d;?]*[a-zA-Z]/g;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escapes by design.
+const OSC_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+function stripAnsi(s: string): string {
+  return s.replace(OSC_RE, '').replace(CSI_RE, '');
+}
+
+function normalize(s: string): string {
+  return rtrim(stripAnsi(s));
+}
+
 interface DriftSample {
   row: number;
   canonical: string;
@@ -509,8 +551,8 @@ function diffLines(canonical: string[], client: string[]): { count: number; samp
   const samples: DriftSample[] = [];
   let count = 0;
   for (let i = 0; i < len; i++) {
-    const c = rtrim(canonical[i] ?? '');
-    const x = rtrim(client[i] ?? '');
+    const c = normalize(canonical[i] ?? '');
+    const x = normalize(client[i] ?? '');
     if (c !== x) {
       count++;
       if (samples.length < DRIFT_MAX_MISMATCH_SAMPLES) {
@@ -527,12 +569,21 @@ async function handleDebugDump(
   msg: Extract<MuxClientMessage, { type: 'debug-dump' }>,
 ) {
   try {
-    const canonicalRaw = await sub.controlSession.sendCommand(`capture-pane -p -t ${msg.paneId}`);
-    const canonicalLines = canonicalRaw.split(/\r?\n/);
+    const sentSnap = sub.serverSnapshots.get(msg.paneId);
+    // Skip when we have no snapshot to compare against (early dumps
+    // before initial sync) or when the client's last-applied seq lags
+    // behind what we've since emitted (the snapshot has moved on; a
+    // mismatch here is a race, not a render bug).
+    if (!sentSnap || (msg.appliedSeq && msg.appliedSeq !== sentSnap.seq)) {
+      return;
+    }
+    const canonicalLines = sentSnap.lines;
     const { count, samples } = diffLines(canonicalLines, msg.lines);
 
     const record = {
       ts: msg.ts,
+      sentSeq: sentSnap.seq,
+      appliedSeq: msg.appliedSeq,
       visitorId: ws.data.visitorId,
       sessionId: msg.sessionId,
       paneId: msg.paneId,
@@ -576,11 +627,18 @@ async function handleControlMessage(
     switch (msg.type) {
       case 'input': {
         const data = Buffer.from(msg.data, 'base64');
+        console.log(`[mux] input pane=${msg.paneId} bytes=${data.length} initialized=${sub.initialized}`);
         await controlSession.sendInput(msg.paneId, data);
         // Pre-arm a snapshot: sending input usually produces output, but if
         // the program is silent (e.g. waiting for full line) we still want to
         // reflect any cursor advance. Re-arming the debounce window guards
         // against losing the trailing snapshot if onOutput already fired.
+        if (sub.initialized) scheduleSnapshot(ws, sessionId, sub, msg.paneId);
+        break;
+      }
+      case 'scroll': {
+        console.log(`[mux] scroll pane=${msg.paneId} lines=${msg.lines}`);
+        await controlSession.scrollPane(msg.paneId, msg.lines);
         if (sub.initialized) scheduleSnapshot(ws, sessionId, sub, msg.paneId);
         break;
       }
@@ -631,12 +689,6 @@ async function handleControlMessage(
       }
       case 'select-pane': {
         await controlSession.selectPane(msg.paneId);
-        break;
-      }
-      case 'scroll': {
-        await controlSession.scrollPane(msg.paneId, msg.lines);
-        // Scroll changes which lines are visible, so force a fresh snapshot.
-        if (sub.initialized) scheduleSnapshot(ws, sessionId, sub, msg.paneId);
         break;
       }
       case 'adjust-pane': {

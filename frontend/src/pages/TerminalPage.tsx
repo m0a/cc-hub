@@ -217,6 +217,9 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
     onResize: (cols: number, rows: number) => {
       controlTerminal.resize(cols, rows);
     },
+    forceResize: (cols: number, rows: number) => {
+      controlTerminal.resize(cols, rows);
+    },
     requestSnapshot: () => {
       controlTerminal.requestSnapshot(currentPaneId);
     },

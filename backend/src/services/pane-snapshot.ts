@@ -19,36 +19,47 @@ function allocSeq(): number {
   return nextSeq++;
 }
 
+// Cap how many scrollback rows we ship in a single snapshot. Pathological
+// catch-ups (long disconnect, history-size jump) shouldn't blow the wire.
+const MAX_SCROLLBACK_DELTA = 500;
+
+// On the first snapshot for a pane (no prior history baseline) ship up to
+// this many recent scrollback rows so the client has something to scroll
+// back through immediately after connecting.
+const INITIAL_SCROLLBACK_ROWS = 500;
+
 /**
  * Capture a snapshot of a pane. Returns null if the pane no longer exists.
  *
- * The visible region uses `-e` so ANSI color/attribute escapes are preserved;
- * the client writes them straight into xterm.js without further parsing.
- *
- * `display-message` returns a single line with cursor + mode fields packed in
- * a known order so we only pay for one round-trip.
+ * Captures:
+ *   - visible region (with ANSI escapes preserved via -e)
+ *   - cursor + altscreen via display-message (single round-trip)
+ *   - any new scrollback lines added since `prevHistorySize`, so the client
+ *     can grow its own scrollback ring buffer for wheel/touch scrolling
  */
 export async function captureSnapshot(
   cs: TmuxControlSession,
   paneId: string,
-): Promise<PaneSnapshot | null> {
+  prevHistorySize?: number,
+): Promise<{ snapshot: PaneSnapshot; historySize: number } | null> {
   let metaRaw: string;
   try {
     metaRaw = await cs.sendCommand(
-      `display-message -t ${paneId} -p '#{pane_width},#{pane_height},#{cursor_x},#{cursor_y},#{cursor_flag},#{alternate_on}'`,
+      `display-message -t ${paneId} -p '#{pane_width},#{pane_height},#{cursor_x},#{cursor_y},#{cursor_flag},#{alternate_on},#{history_size}'`,
     );
   } catch {
     return null;
   }
 
   const parts = metaRaw.trim().split(',');
-  if (parts.length < 6) return null;
+  if (parts.length < 7) return null;
   const cols = Number.parseInt(parts[0], 10);
   const rows = Number.parseInt(parts[1], 10);
   const cx = Number.parseInt(parts[2], 10);
   const cy = Number.parseInt(parts[3], 10);
   const cursorVisible = parts[4] === '1';
   const altScreen = parts[5] === '1';
+  const historySize = Number.parseInt(parts[6], 10) || 0;
 
   if (!Number.isFinite(cols) || !Number.isFinite(rows) || cols <= 0 || rows <= 0) {
     return null;
@@ -61,9 +72,6 @@ export async function captureSnapshot(
     return null;
   }
 
-  // tmux capture-pane returns lines separated by \n. The last entry can be an
-  // empty trailing element after a trailing newline; keep all lines so the
-  // client gets exactly `rows` rows (pad if tmux trimmed blanks).
   let lines = linesRaw.split('\n');
   while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
   if (lines.length < rows) {
@@ -73,18 +81,50 @@ export async function captureSnapshot(
     lines = lines.slice(0, rows);
   }
 
+  // Capture scrollback. On the first snapshot for a pane (no baseline) we
+  // ship the most recent INITIAL_SCROLLBACK_ROWS so the client has history
+  // available immediately. On subsequent snapshots we send only the rows
+  // pushed into scrollback since the previous capture (delta).
+  let scrollbackDelta: string[] | undefined;
+  if (!altScreen) {
+    let wanted = 0;
+    if (prevHistorySize === undefined) {
+      wanted = Math.min(historySize, INITIAL_SCROLLBACK_ROWS);
+    } else if (historySize > prevHistorySize) {
+      wanted = Math.min(historySize - prevHistorySize, MAX_SCROLLBACK_DELTA);
+    }
+    if (wanted > 0) {
+      try {
+        // -S -N selects N rows above the visible region (the newest scrollback).
+        // -E -1 stops at the row just above the viewport.
+        const sbRaw = await cs.sendCommand(
+          `capture-pane -e -p -t ${paneId} -S -${wanted} -E -1`,
+        );
+        const sb = sbRaw.split('\n');
+        while (sb.length > 0 && sb[sb.length - 1] === '') sb.pop();
+        if (sb.length > 0) scrollbackDelta = sb;
+      } catch {
+        // Ignore scrollback capture failures — visible state is what matters.
+      }
+    }
+  }
+
   return {
-    paneId,
-    seq: allocSeq(),
-    cols,
-    rows,
-    lines,
-    cursor: {
-      x: Math.max(0, Math.min(cols - 1, cx)),
-      y: Math.max(0, Math.min(rows - 1, cy)),
-      visible: cursorVisible,
+    historySize,
+    snapshot: {
+      paneId,
+      seq: allocSeq(),
+      cols,
+      rows,
+      lines,
+      scrollbackDelta,
+      cursor: {
+        x: Math.max(0, Math.min(cols - 1, cx)),
+        y: Math.max(0, Math.min(rows - 1, cy)),
+        visible: cursorVisible,
+      },
+      modes: { altScreen },
     },
-    modes: { altScreen },
   };
 }
 

@@ -28,6 +28,10 @@ export interface ControlModeConfig {
   registerOnRender: (callback: (event: PaneRenderEvent) => void) => () => void;
   isConnected: boolean;
   onResize?: (cols: number, rows: number) => void;
+  /** Force-send a resize to the backend even if the dedup cache would skip
+   *  it. Used when snapshot.rows != term.rows to break out of a stuck tmux
+   *  pane size (e.g. when an earlier refresh-client -C didn't take effect). */
+  forceResize?: (cols: number, rows: number) => void;
   onScroll?: (lines: number) => void;
   requestSnapshot?: () => void;
 }
@@ -93,6 +97,14 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const resizeRef = useRef<(cols: number, rows: number) => void>(() => {});
   const refreshRef = useRef<() => void>(() => {});
   const dumpForSelfVerifyRef = useRef<((trigger: 'resize-done' | 'reconnect-done' | 'output-idle' | 'periodic' | 'user') => void) | null>(null);
+  const appliedSeqRef = useRef<(() => number) | null>(null);
+  // The rows count of the last snapshot we applied. Channel C dumps need
+  // to send exactly this many rows from the buffer's tail so they line
+  // up with the server's `snap.lines` (which has snap.rows entries).
+  // Falling back to term.rows would over-send when xterm is taller than
+  // the snapshot, surfacing the rows xterm hadn't been overwritten as
+  // false drift.
+  const appliedSnapRowsRef = useRef<(() => number) | null>(null);
   const closeInputBarRef = useRef<() => void>(() => {});
   const showKeyboardRef = useRef<() => void>(() => {});
   const inputBarRef = useRef<InputBarRef>(null);
@@ -397,6 +409,10 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
     setIsInitialized(true);
+    // Dev-only: expose the xterm instance for browser-console debugging.
+    if (import.meta.env.DEV) {
+      (window as unknown as { __cchub_term?: Terminal }).__cchub_term = term;
+    }
     console.log(`[Terminal] Initialized for session ${sessionId}, size: ${term.cols}x${term.rows}`);
 
     // Handle special key combinations
@@ -907,29 +923,104 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       outputIdleTimer = setTimeout(() => dumpForSelfVerify('output-idle'), 300);
     };
 
+    let lastSnapCols = 0;
+    let lastSnapRows = 0;
+    let lastSnapLines: string[] = [];
+    let lastAutoScrollLines = 0;
+    let lastAppliedSeq = 0;
     const cleanup = cm.registerOnRender((event) => {
       const term = terminalRef.current;
       if (!term) return;
       if (event.type === 'snapshot') {
         const snap = event.snapshot;
-        if (term.cols !== snap.cols || term.rows !== snap.rows) {
+        const sizeChanged = term.cols !== snap.cols || term.rows !== snap.rows;
+        if (sizeChanged) {
           term.resize(snap.cols, snap.rows);
+          const fit = fitAddonRef.current;
+          const dims = fit?.proposeDimensions();
+          if (dims && dims.cols > 0 && dims.rows > 0
+            && (dims.cols !== snap.cols || dims.rows !== snap.rows)) {
+            cm.forceResize?.(dims.cols, dims.rows);
+          }
         }
-        const vt = snapshotToVTSequence(snap);
+        const geomChanged = sizeChanged
+          || snap.cols !== lastSnapCols
+          || snap.rows !== lastSnapRows;
+        const vt = snapshotToVTSequence(
+          snap,
+          geomChanged ? undefined : lastSnapLines,
+        );
+        lastSnapCols = snap.cols;
+        lastSnapRows = snap.rows;
+        lastSnapLines = snap.lines;
+        lastAppliedSeq = snap.seq;
         const t0 = bench.recordWriteStart();
-        term.write(vt, () => bench.recordWriteEnd(t0, vt.length));
+        term.write(vt, () => {
+          bench.recordWriteEnd(t0, vt.length);
+          // Auto-scroll: when the snapshot has a trailing run of blank
+          // rows (typically because a TUI like Claude Code only draws
+          // the upper portion of the pane), nudge the viewport up by
+          // that many rows so the blank tail moves off-screen and the
+          // pane's scrollback fills the top.
+          let trailingBlanks = 0;
+          for (let i = snap.rows - 1; i >= 0 && (snap.lines[i] ?? '') === ''; i--) {
+            trailingBlanks++;
+          }
+          const buf = term.buffer.active;
+          // Cap so the snapshot's cursor row stays comfortably on-screen.
+          // If the cursor is on row C and we scroll up by S, the cursor
+          // appears at viewport row C+S; we need C+S < rows-1.
+          const cursorMaxScroll = Math.max(0, term.rows - snap.cursor.y - 2);
+          const halfScreen = Math.floor(term.rows / 2);
+          const wantedScroll = Math.min(trailingBlanks, cursorMaxScroll, halfScreen);
+          const userAtBottom = buf.viewportY === buf.baseY
+            || buf.viewportY === buf.baseY - lastAutoScrollLines;
+          const haveScrollback = buf.baseY >= wantedScroll;
+          // Apply only when the change is meaningful (≥ 3 rows). Small
+          // jitter from typing or spinner animations should not cause
+          // the viewport to constantly bob up and down.
+          const delta = Math.abs(wantedScroll - lastAutoScrollLines);
+          if (userAtBottom && haveScrollback && delta >= 3) {
+            if (lastAutoScrollLines > 0) term.scrollLines(lastAutoScrollLines);
+            if (wantedScroll > 0) term.scrollLines(-wantedScroll);
+            lastAutoScrollLines = wantedScroll;
+          }
+        });
       } else {
         const { vt, size } = diffToVTSequence(event.ops);
         if (size && (term.cols !== size.cols || term.rows !== size.rows)) {
           term.resize(size.cols, size.rows);
+          const fit = fitAddonRef.current;
+          const dims = fit?.proposeDimensions();
+          if (dims && dims.cols > 0 && dims.rows > 0
+            && (dims.cols !== size.cols || dims.rows !== size.rows)) {
+            cm.forceResize?.(dims.cols, dims.rows);
+          }
         }
         if (vt.length > 0) {
           const t0 = bench.recordWriteStart();
           term.write(vt, () => bench.recordWriteEnd(t0, vt.length));
         }
+        const nextLines = lastSnapLines.slice();
+        for (const op of event.ops) {
+          if (op.op === 'line') nextLines[op.row] = op.content;
+        }
+        lastSnapLines = nextLines;
+        // Keep our cached geometry consistent with the diff. Without
+        // updating these on a `size` op, dumpForSelfVerify would dump
+        // the wrong number of rows from the buffer's tail on the next
+        // tick, producing phantom drift.
+        if (size) {
+          lastSnapCols = size.cols;
+          lastSnapRows = size.rows;
+        }
+        lastAppliedSeq = event.seq;
       }
       scheduleOutputIdleDump();
     });
+    // Expose for dumpForSelfVerify to read.
+    appliedSeqRef.current = () => lastAppliedSeq;
+    appliedSnapRowsRef.current = () => lastSnapRows;
     controlCleanupRef.current = cleanup;
     return () => {
       if (outputIdleTimer) clearTimeout(outputIdleTimer);
@@ -947,13 +1038,15 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     const cm = controlModeRef.current;
     if (!term || !cm || !isSelfVerifyEnabled()) return;
     const buf = term.buffer.active;
-    // Compare only the currently-visible area against `tmux capture-pane -p`
-    // (which also returns only the visible region). Including scrollback here
-    // would produce huge false-positive mismatch counts.
-    const visibleStart = Math.max(0, buf.length - term.rows);
+    // The snapshot was written to grid rows 0..snapRows-1 (CSI <r>;1H
+    // is grid-relative, not bottom-anchored). Grid row 0 maps to
+    // buffer index baseY (scrollback offset), so take exactly that
+    // window. Going from the buffer's tail would mix in untouched
+    // rows when xterm is taller than the snap.
+    const snapRows = appliedSnapRowsRef.current?.() ?? term.rows;
     const lines: string[] = [];
-    for (let i = visibleStart; i < buf.length; i++) {
-      lines.push(buf.getLine(i)?.translateToString(true) ?? '');
+    for (let i = 0; i < snapRows; i++) {
+      lines.push(buf.getLine(buf.baseY + i)?.translateToString(true) ?? '');
     }
     sendDebugDump(
       sessionId,
@@ -961,6 +1054,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       lines,
       { x: buf.cursorX, y: buf.cursorY },
       trigger,
+      appliedSeqRef.current?.() ?? 0,
     );
   }, [sessionId]);
 

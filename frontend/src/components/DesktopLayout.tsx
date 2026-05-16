@@ -614,6 +614,14 @@ export function DesktopLayout({
           // tmux refresh-client -C needs the TOTAL window size, not per-pane.
           sendControlResize();
         },
+        forceResize: (cols: number, rows: number) => {
+          if (!controlTerminalRef.current.isConnected) return;
+          // Send the requested geometry without consulting the dedup cache;
+          // this is the escape hatch when tmux's pane size disagrees with
+          // what we last sent (e.g. window-size policy held it stuck).
+          lastSentSizeRef.current = { cols, rows };
+          controlTerminalRef.current.resize(cols, rows);
+        },
         onScroll: (lines: number) => {
           if (controlTerminalRef.current.isConnected) {
             controlTerminalRef.current.scrollPane(paneId, lines);

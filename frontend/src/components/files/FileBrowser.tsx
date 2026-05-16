@@ -12,6 +12,8 @@ interface FileBrowserProps {
   isLoading: boolean;
   onSelectFile: (file: FileInfo) => void;
   showHidden?: boolean;
+  /** Path of the file currently shown in the viewer (highlighted in the tree). */
+  selectedPath?: string;
 }
 
 // File type icons
@@ -70,6 +72,7 @@ interface TreeItemProps {
   onToggleDir: (path: string) => void;
   onSelectFile: (file: FileInfo) => void;
   showHidden: boolean;
+  selectedPath?: string;
 }
 
 function TreeItem({
@@ -81,12 +84,14 @@ function TreeItem({
   onToggleDir,
   onSelectFile,
   showHidden,
+  selectedPath,
 }: TreeItemProps) {
   const isDirectory = file.type === 'directory';
   const isExpanded = expandedDirs.has(file.path);
   const isLoading = loadingDirs.has(file.path);
   const children = dirContents.get(file.path) || [];
   const visibleChildren = showHidden ? children : children.filter(f => !f.isHidden);
+  const isSelected = !isDirectory && selectedPath === file.path;
 
   const handleClick = () => {
     if (isDirectory) {
@@ -100,7 +105,11 @@ function TreeItem({
     <>
       <div
         onClick={handleClick}
-        className="flex items-center gap-2 py-2.5 px-2 hover:bg-th-surface active:bg-th-surface-hover cursor-pointer transition-colors"
+        className={`flex items-center gap-2 py-2.5 px-2 cursor-pointer transition-colors ${
+          isSelected
+            ? 'bg-blue-500/15 text-blue-200 border-l-2 border-blue-400'
+            : 'border-l-2 border-transparent hover:bg-th-surface active:bg-th-surface-hover'
+        }`}
         style={{ paddingLeft: `${depth * 20 + 8}px` }}
       >
         {/* Chevron for directories */}
@@ -142,6 +151,7 @@ function TreeItem({
               onToggleDir={onToggleDir}
               onSelectFile={onSelectFile}
               showHidden={showHidden}
+              selectedPath={selectedPath}
             />
           ))}
         </div>
@@ -157,6 +167,7 @@ export function FileBrowser({
   isLoading,
   onSelectFile,
   showHidden = false,
+  selectedPath,
 }: FileBrowserProps) {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [dirContents, setDirContents] = useState<Map<string, FileInfo[]>>(new Map());
@@ -216,11 +227,17 @@ export function FileBrowser({
   // Get short path for display
   const shortPath = currentPath.replace(/^\/home\/[^/]+\//, '~/');
 
+  // Show the loading placeholder only on the initial directory load (when no
+  // files have arrived yet). Once we have a tree, keep it mounted so reading
+  // a file's contents doesn't unmount the list and reset the user's scroll
+  // position.
+  const showLoadingPlaceholder = isLoading && visibleFiles.length === 0;
+
   return (
     <div className="flex flex-col h-full bg-th-bg text-th-text">
       {/* File tree */}
       <div className="flex-1 overflow-y-auto">
-        {isLoading ? (
+        {showLoadingPlaceholder ? (
           <div className="flex items-center justify-center h-32">
             <div className="text-th-text-muted">読み込み中...</div>
           </div>
@@ -241,6 +258,7 @@ export function FileBrowser({
                 onToggleDir={handleToggleDir}
                 onSelectFile={onSelectFile}
                 showHidden={showHidden}
+                selectedPath={selectedPath}
               />
             ))}
           </div>

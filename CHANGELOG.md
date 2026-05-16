@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.108] - 2026-05-16
+
+### Fixed
+- ファイルビューでファイルを開く / 切替時にファイル一覧のスクロール位置がリセットされる問題を修正
+  - 原因1: `useFileViewer` の `isLoading` フラグが `listDirectory` と `readFile` で共有されており、ファイルを開くと FileBrowser が「読み込み中…」プレースホルダーで置き換わってアンマウントされていた
+  - 原因2: モバイル単一ペインレイアウトでは `viewMode` が `'file'` に切り替わると FileBrowser 自体がアンマウントされていた
+  - 修正: 初回ディレクトリ読み込み時のみプレースホルダー表示、`viewMode` 切替時は display 切替で FileBrowser を常駐させスクロール位置を保持
+- ファイルビューで現在開いているファイルが視覚的に分かるよう、選択中ファイルを青背景＋青ボーダーでハイライト
+  - popstate ハンドラーがブラウザビューに戻る際に `selectedFile` を明示的にクリアしていたため、戻ったタイミングでハイライトが消えていた問題も併せて修正
+
+### Added
+- ファイルビュー回帰テスト (`frontend/tests/e2e/file-viewer-selection.spec.ts`): desktop split layout でのスクロール保持＋選択ハイライト、mobile での browser↔file 往復スクロール保持
+
 ## [0.1.107] - 2026-05-15
 
 ### Fixed

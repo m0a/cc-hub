@@ -371,12 +371,19 @@ export function isSelfVerifyEnabled(): boolean {
  * builds incur zero overhead). The caller is responsible for assembling
  * `lines` from the xterm buffer.
  */
+export type DumpTrigger =
+  | 'resize-done'
+  | 'reconnect-done'
+  | 'output-idle'
+  | 'periodic'
+  | 'user';
+
 export function sendDebugDump(
   sessionId: string,
   paneId: string,
   lines: string[],
   cursor: { x: number; y: number },
-  trigger: 'resize-done' | 'reconnect-done' | 'output-idle' | 'periodic' | 'user',
+  trigger: DumpTrigger,
   appliedSeq?: number,
 ): boolean {
   if (!selfVerifyEnabled) return false;

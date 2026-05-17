@@ -3,7 +3,7 @@ import type { ServerWebSocket } from 'bun';
 import { TmuxService } from '../services/tmux';
 import { getOrCreateControlSession, type TmuxControlSession } from '../services/tmux-control';
 import { ConversationWatcher } from '../services/conversation-watcher';
-import { captureSnapshot, diffSnapshots } from '../services/pane-snapshot';
+import { captureSnapshot, diffSnapshots, stripAnsi } from '../services/pane-snapshot';
 import type {
   ControlClientMessage,
   MuxClientMessage,
@@ -399,16 +399,17 @@ async function emitSnapshot(
   // re-anchors the offset cleanly. Remove with the rest of the Claude TUI
   // workaround when the upstream renders the full pane.
   const linesLenChanged = prev.lines.length !== snapshot.lines.length;
+  // Scrollback can only be carried on a full snapshot (it must be applied
+  // before the visible region is rewritten), and lines-length changes need a
+  // full snapshot so the client can re-anchor the bottom-align offset.
+  const needFullSnapshot = hasScrollback || linesLenChanged;
 
-  if (ops.length === 0 && !hasScrollback && !linesLenChanged) {
+  if (ops.length === 0 && !needFullSnapshot) {
     sub.serverSnapshots.set(paneId, snapshot);
     return;
   }
 
-  // Scrollback can only be carried on a full snapshot (it must be applied
-  // before the visible region is rewritten). Send a snapshot in that case;
-  // otherwise a regular diff is enough.
-  if (hasScrollback || linesLenChanged) {
+  if (needFullSnapshot) {
     console.log(`[mux] state-snapshot pane=${paneId} seq=${snapshot.seq} scrollbackDelta=${snapshot.scrollbackDelta?.length ?? 0} rows=${snapshot.rows}`);
     try {
       ws.send(JSON.stringify({ type: 'state-snapshot', sessionId, snapshot }));
@@ -521,30 +522,11 @@ function handleUnsubscribeConversation(ws: ServerWebSocket<MuxData>, sessionId: 
 // Channel C: self-verification drift detection (dev-only)
 // =============================================================================
 
-function rtrim(s: string): string {
-  let end = s.length;
-  while (end > 0 && (s.charCodeAt(end - 1) === 0x20 || s.charCodeAt(end - 1) === 0x09)) {
-    end--;
-  }
-  return s.slice(0, end);
-}
-
-// Strip ANSI escape sequences. Server snapshot lines come from
-// `capture-pane -e` and embed SGR color codes plus OSC 8 hyperlinks,
-// but the client's xterm buffer translateToString() returns plain text.
-// We strip:
-//   CSI: ESC [ ... <letter>      e.g. SGR color, cursor moves
-//   OSC: ESC ] ... (BEL | ST)    e.g. OSC 8 hyperlinks, OSC 52 clipboard
-// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escapes by design.
-const CSI_RE = /\x1b\[[\d;?]*[a-zA-Z]/g;
-// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escapes by design.
-const OSC_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
-function stripAnsi(s: string): string {
-  return s.replace(OSC_RE, '').replace(CSI_RE, '');
-}
-
+// Server snapshot lines from `capture-pane -e` embed SGR color codes
+// plus OSC 8 hyperlinks, but xterm's translateToString returns plain
+// text — so compare ANSI-stripped, trailing-whitespace-trimmed forms.
 function normalize(s: string): string {
-  return rtrim(stripAnsi(s));
+  return stripAnsi(s).trimEnd();
 }
 
 interface DriftSample {

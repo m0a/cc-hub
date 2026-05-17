@@ -8,8 +8,8 @@ import { authFetch } from '../services/api';
 import type { SessionTheme } from '../../../shared/types';
 import { filterMouseTrackingInput, shouldInterceptKeyEvent } from '../utils/terminal-filters';
 import { bench } from '../utils/bench';
-import { sendDebugDump, isSelfVerifyEnabled, type PaneRenderEvent } from '../hooks/useMultiplexedTerminal';
-import { snapshotToVTSequence, diffToVTSequence } from '../utils/snapshot-render';
+import { sendDebugDump, isSelfVerifyEnabled, type DumpTrigger, type PaneRenderEvent } from '../hooks/useMultiplexedTerminal';
+import { snapshotToVTSequence, diffToVTSequence, bottomAlignOffset } from '../utils/snapshot-render';
 import {
   getTerminalThemes, isLightMode, LIGHT_ANSI_COLORS,
   DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE,
@@ -96,21 +96,20 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const sendRef = useRef<(data: string) => void>(() => {});
   const resizeRef = useRef<(cols: number, rows: number) => void>(() => {});
   const refreshRef = useRef<() => void>(() => {});
-  const dumpForSelfVerifyRef = useRef<((trigger: 'resize-done' | 'reconnect-done' | 'output-idle' | 'periodic' | 'user') => void) | null>(null);
-  const appliedSeqRef = useRef<(() => number) | null>(null);
-  const appliedSnapRowsRef = useRef<(() => number) | null>(null);
-  // TEMPORARY (Claude Code workaround): snap.lines.length at the last
-  // snapshot apply. With bottom-aligned writes, the channel-C dump must
-  // read snap.lines.length rows starting at (baseY + offset), not the full
-  // snap.rows from baseY — otherwise the dump compares xterm grid's
-  // untouched top region against server's bottom-aligned snap and reports
-  // false drift across every row. Remove with the bottom-align workaround.
-  const appliedSnapLinesLenRef = useRef<(() => number) | null>(null);
-  // baseY at the moment the last snapshot finished writing. Channel C
-  // dumps anchor to this rather than buf.baseY-at-dump-time, because a
-  // background snapshot's scrollback delta can advance baseY between
-  // when the visible region was rewritten and when the dump fires.
-  const appliedBaseYRef = useRef<(() => number) | null>(null);
+  const dumpForSelfVerifyRef = useRef<((trigger: DumpTrigger) => void) | null>(null);
+  // State captured at the moment the last snapshot finished writing, exposed
+  // for dumpForSelfVerify. Tracked together because they're all read at the
+  // same time and must reflect the same snapshot apply.
+  //
+  // - `baseY`: scrollback offset at write-complete. Using buf.baseY at dump
+  //   time would drift if a background scrollback push advanced it between
+  //   apply and dump.
+  // - `linesLen` (Claude Code workaround): snap.lines.length at apply.
+  //   Bottom-aligned writes mean the dump must read `linesLen` rows starting
+  //   at `(baseY + snapRows - linesLen)`, not snapRows rows from baseY —
+  //   otherwise the untouched top region produces false drift across every
+  //   row. Remove with the bottom-align workaround.
+  const appliedStateRef = useRef({ seq: 0, snapRows: 0, linesLen: 0, baseY: 0 });
   const closeInputBarRef = useRef<() => void>(() => {});
   const showKeyboardRef = useRef<() => void>(() => {});
   const inputBarRef = useRef<InputBarRef>(null);
@@ -929,73 +928,54 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       outputIdleTimer = setTimeout(() => dumpForSelfVerify('output-idle'), 300);
     };
 
-    let lastSnapRows = 0;
-    let lastSnapLinesLen = 0;
-    let lastAppliedSeq = 0;
-    let lastAppliedBaseY = 0;
     // How many rows we last scrolled the viewport up to hide a trailing
     // run of blank rows. We unwind this before deciding the next scroll
     // amount so the offset stays accurate as the TUI's used-height
     // shifts. 0 means viewport is naturally at the buffer's tail.
     let lastAutoScrollLines = 0;
-    // TEMPORARY (Claude Code workaround): bottom-aligned write offset.
-    // = snap.rows - snap.lines.length at the last snapshot apply. Diff line
-    // ops are indexed within snap.lines, so we add this offset to land on
-    // the correct grid row. Reset on each snapshot since the offset can
-    // change. Remove with the Claude TUI workaround in pane-snapshot.ts.
-    let lastWriteOffset = 0;
+    const applied = appliedStateRef.current;
+    // Apply a snap-driven resize and re-propose container dims if they no
+    // longer match (forces server to re-send the new size).
+    const applyResize = (cols: number, rows: number) => {
+      term.resize(cols, rows);
+      const fit = fitAddonRef.current;
+      const dims = fit?.proposeDimensions();
+      if (dims && dims.cols > 0 && dims.rows > 0
+        && (dims.cols !== cols || dims.rows !== rows)) {
+        cm.forceResize?.(dims.cols, dims.rows);
+      }
+    };
     const cleanup = cm.registerOnRender((event) => {
       const term = terminalRef.current;
       if (!term) return;
       if (event.type === 'snapshot') {
         const snap = event.snapshot;
-        const sizeChanged = term.cols !== snap.cols || term.rows !== snap.rows;
-        if (sizeChanged) {
-          term.resize(snap.cols, snap.rows);
-          const fit = fitAddonRef.current;
-          const dims = fit?.proposeDimensions();
-          if (dims && dims.cols > 0 && dims.rows > 0
-            && (dims.cols !== snap.cols || dims.rows !== snap.rows)) {
-            cm.forceResize?.(dims.cols, dims.rows);
-          }
+        if (term.cols !== snap.cols || term.rows !== snap.rows) {
+          applyResize(snap.cols, snap.rows);
         }
-        // No prev — let snapshotToVTSequence rewrite every row.
-        // Skip-unchanged logic was repeatedly producing ghost rows due
-        // to subtle buffer-vs-grid mismatches (scrollback delta moves
-        // baseY, cached prev lags reality, etc.). Honoring snap as
-        // canonical is simpler and matches Channel C drift reality.
+        // Honor snap as canonical (rewrite every row). Skip-unchanged
+        // logic produced ghost rows due to buffer-vs-grid mismatches
+        // (scrollback delta moves baseY, cached prev lags reality).
         const vt = snapshotToVTSequence(snap);
-        lastSnapRows = snap.rows;
-        lastSnapLinesLen = snap.lines.length;
-        lastAppliedSeq = snap.seq;
-        lastWriteOffset = Math.max(0, snap.rows - snap.lines.length);
+        const offset = bottomAlignOffset(snap.rows, snap.lines.length);
+        applied.snapRows = snap.rows;
+        applied.linesLen = snap.lines.length;
+        applied.seq = snap.seq;
         const t0 = bench.recordWriteStart();
         term.write(vt, () => {
           bench.recordWriteEnd(t0, vt.length);
-          // Capture baseY after the write actually lands; this is the
-          // grid offset that snap.lines was written to. dumpForSelfVerify
-          // anchors to this rather than buf.baseY at dump time.
-          lastAppliedBaseY = term.buffer.active.baseY;
-          // Auto-scroll: hide a trailing run of blank rows by nudging
-          // the viewport up by that many rows. This compensates for
-          // TUIs (Claude Code, REPLs after Ctrl+L) that only draw the
-          // upper portion of the pane and leave the bottom black — the
-          // "void" — by surfacing scrollback in that space instead.
-          if (snap.modes.altScreen) return;
-          let trailingBlanks = 0;
-          for (let i = snap.rows - 1; i >= 0 && (snap.lines[i] ?? '') === ''; i--) {
-            trailingBlanks++;
-          }
+          applied.baseY = term.buffer.active.baseY;
+          // Auto-scroll: hide trailing blank rows by nudging the viewport
+          // up so scrollback fills the bottom instead of a black void.
+          // Reuses the bottom-align offset — when the server has already
+          // trimmed trailing blanks, offset === trailingBlanks count.
+          if (snap.modes.altScreen || offset <= 0) return;
           const buf = term.buffer.active;
-          // Cap so the snapshot's cursor row remains on-screen after
-          // scrolling. cursor at row C, scroll up by S → cursor visible
-          // at viewport row C+S. Need C+S ≤ rows-1 so it doesn't fall
-          // below the viewport.
+          // Cap so the cursor row stays on-screen after scrolling.
           const cursorMaxScroll = Math.max(0, term.rows - snap.cursor.y - 1);
-          const wantedScroll = Math.min(trailingBlanks, cursorMaxScroll);
-          // User is considered "at bottom" if viewportY equals baseY
-          // (no auto-scroll active) or matches our previous auto-scroll
-          // offset (we own the current displacement).
+          const wantedScroll = Math.min(offset, cursorMaxScroll);
+          // User is considered "at bottom" if viewportY matches baseY
+          // (no auto-scroll active) or matches our previous offset.
           const userAtBottom = buf.viewportY === buf.baseY
             || buf.viewportY === buf.baseY - lastAutoScrollLines;
           const haveScrollback = buf.baseY >= wantedScroll;
@@ -1008,34 +988,22 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           }
         });
       } else {
-        const { vt, size } = diffToVTSequence(event.ops, lastWriteOffset);
+        const offset = bottomAlignOffset(applied.snapRows, applied.linesLen);
+        const { vt, size } = diffToVTSequence(event.ops, offset);
         if (size && (term.cols !== size.cols || term.rows !== size.rows)) {
-          term.resize(size.cols, size.rows);
-          const fit = fitAddonRef.current;
-          const dims = fit?.proposeDimensions();
-          if (dims && dims.cols > 0 && dims.rows > 0
-            && (dims.cols !== size.cols || dims.rows !== size.rows)) {
-            cm.forceResize?.(dims.cols, dims.rows);
-          }
+          applyResize(size.cols, size.rows);
         }
         if (vt.length > 0) {
           const t0 = bench.recordWriteStart();
           term.write(vt, () => bench.recordWriteEnd(t0, vt.length));
         }
-        // Keep cached rows in sync with the diff's size op; otherwise
-        // dumpForSelfVerify would send the wrong row count. lastSnapLinesLen
-        // stays — diffs preserve lines.length (server forces a snapshot when
-        // it changes), so the offset/dump-window remains valid.
-        if (size) lastSnapRows = size.rows;
-        lastAppliedSeq = event.seq;
+        // Diff's size op carries the new pane rows; linesLen stays since
+        // the server forces a full snapshot when it changes.
+        if (size) applied.snapRows = size.rows;
+        applied.seq = event.seq;
       }
       scheduleOutputIdleDump();
     });
-    // Expose for dumpForSelfVerify to read.
-    appliedSeqRef.current = () => lastAppliedSeq;
-    appliedSnapRowsRef.current = () => lastSnapRows;
-    appliedSnapLinesLenRef.current = () => lastSnapLinesLen;
-    appliedBaseYRef.current = () => lastAppliedBaseY;
     controlCleanupRef.current = cleanup;
     return () => {
       if (outputIdleTimer) clearTimeout(outputIdleTimer);
@@ -1062,10 +1030,10 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     // grid, not the full snap.rows. Read the same window (anchor + offset
     // .. anchor + offset + linesLen) so the comparison aligns; otherwise
     // every row reports false drift against the untouched grid top.
-    const snapRows = appliedSnapRowsRef.current?.() ?? term.rows;
-    const linesLen = appliedSnapLinesLenRef.current?.() ?? snapRows;
-    const offset = Math.max(0, snapRows - linesLen);
-    const anchor = appliedBaseYRef.current?.() ?? buf.baseY;
+    const applied = appliedStateRef.current;
+    const linesLen = applied.linesLen || term.rows;
+    const offset = bottomAlignOffset(applied.snapRows || term.rows, linesLen);
+    const anchor = applied.baseY || buf.baseY;
     const lines: string[] = [];
     for (let i = 0; i < linesLen; i++) {
       lines.push(buf.getLine(anchor + offset + i)?.translateToString(true) ?? '');
@@ -1076,7 +1044,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       lines,
       { x: buf.cursorX, y: buf.cursorY },
       trigger,
-      appliedSeqRef.current?.() ?? 0,
+      applied.seq,
     );
   }, [sessionId]);
 

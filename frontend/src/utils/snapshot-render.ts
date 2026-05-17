@@ -13,6 +13,15 @@
 
 import type { DiffOp, PaneSnapshot } from '../../../shared/types';
 
+/**
+ * TEMPORARY (Claude Code workaround): grid offset for bottom-aligned writes.
+ * = snap.rows - snap.lines.length. See snapshotToVTSequence for details.
+ * Remove with the rest of the bottom-align workaround.
+ */
+export function bottomAlignOffset(rows: number, linesLen: number): number {
+  return Math.max(0, rows - linesLen);
+}
+
 
 /**
  * Build the VT byte sequence that re-renders a full snapshot.
@@ -75,7 +84,7 @@ export function snapshotToVTSequence(
   // visible there, avoiding the black void the trimmed bottom would
   // otherwise create. Remove once Claude TUI fills the pane fully.
   const linesLen = snapshot.lines.length;
-  const offset = Math.max(0, snapshot.rows - linesLen);
+  const offset = bottomAlignOffset(snapshot.rows, linesLen);
   for (let i = 0; i < linesLen; i++) {
     s += `\x1b[${i + offset + 1};1H\x1b[2K${snapshot.lines[i] ?? ''}`;
   }

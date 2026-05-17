@@ -28,6 +28,15 @@ const MAX_SCROLLBACK_DELTA = 500;
 // immediately. Subsequent deltas come from real tmux history growth.
 const INITIAL_SCROLLBACK_ROWS = 500;
 
+// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escapes by design.
+const ANSI_RE = /\x1b\[[\d;?]*[a-zA-Z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+export function stripAnsi(s: string): string {
+  return s.replace(ANSI_RE, '');
+}
+function isVisuallyBlank(s: string): boolean {
+  return stripAnsi(s).trim() === '';
+}
+
 /**
  * Capture a snapshot of a pane. Returns null if the pane no longer exists.
  *
@@ -78,9 +87,6 @@ export async function captureSnapshot(
   // Claude TUI sometimes pads the unused bottom region with spaces while
   // typing, which `capture-pane` returns as space-only rows. Without this
   // trim those rows survive into snap.lines and re-create the void.
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escapes by design.
-  const ANSI_RE = /\x1b\[[\d;?]*[a-zA-Z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
-  const isVisuallyBlank = (s: string) => s.replace(ANSI_RE, '').trim() === '';
   while (lines.length > 0 && isVisuallyBlank(lines[lines.length - 1])) lines.pop();
   if (lines.length > rows) {
     lines = lines.slice(0, rows);

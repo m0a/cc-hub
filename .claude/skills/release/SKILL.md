@@ -1,6 +1,6 @@
 ---
 name: release
-description: CC Hub のリリース手順を実行する。バージョンバンプ、mainへのpush、GitHub Release作成、CI完了待ち、cchub update を自動化する。「/release」「リリースして」「リリース」「バージョンアップ」「release」などのコマンドで起動する。
+description: CC Hub のリリース手順を実行する。バージョンバンプ、release PR、tag push、GitHub Release確認、CI完了待ち、cchub update を自動化する。「/release」「リリースして」「リリース」「バージョンアップ」「release」などのコマンドで起動する。
 ---
 
 # CC Hub Release
@@ -27,13 +27,23 @@ description: CC Hub のリリース手順を実行する。バージョンバン
    gh pr merge --merge  # 履歴を保ったままマージ（必要なら --squash）
    ```
    マージ完了を確認してから次へ進む（`gh pr view --json state`）
-8. **GitHub Release 作成**:
+8. **tag 作成 & Push**:
    ```bash
+   git fetch origin --prune
+   git merge --ff-only origin/main
+   git tag vX.X.X
+   git push origin vX.X.X
+   ```
+9. **GitHub Release 確認**:
+   tag push により Release workflow が GitHub Release を自動作成する。まず既存 Release を確認し、存在しない場合のみ手動作成する。
+   ```bash
+   gh release view vX.X.X --json url,name,tagName,isDraft,isPrerelease,publishedAt
+   # Release が存在しない場合のみ:
    gh release create vX.X.X --title "vX.X.X" --notes "リリースノート"
    ```
-9. **CI 完了待ち**: `gh run list --limit 3` でワークフロー状況を確認。バイナリビルドは CI が自動で行うため、ローカルでの `bun run build:binary` は **絶対に不要**
-10. **本番更新**: `cchub update` を実行
-11. **ブランチクリーンアップ**: `git fetch origin && git checkout -B work-1 origin/main && git branch -D release/vX.X.X` で作業ブランチを最新の main にリセットし、リリースブランチを削除
+10. **CI 完了待ち**: `gh run list --limit 3` でワークフロー状況を確認。バイナリビルドは CI が自動で行うため、ローカルでの `bun run build:binary` は **絶対に不要**
+11. **本番更新**: `cchub update` を実行
+12. **ブランチクリーンアップ**: 現在の worktree 用ブランチ（例: `work-2`）へ戻し、`git merge --ff-only origin/main` で最新化する。`work-1` など別 worktree のブランチ名を固定しない。
 
 ## Important Rules
 

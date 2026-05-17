@@ -136,7 +136,7 @@
       {
         "name": "captureSnapshot / diffSnapshots",
         "file": "backend/src/services/pane-snapshot.ts",
-        "summary": "tmux capture-pane -e -p を canonical state として PaneSnapshot を生成し、 前回 snap との差分 DiffOp[] を計算。 末尾の visually-blank 行 (ANSI strip 後に空) は trim し、 padding しない (Claude TUI 暫定対応)。 scrollback delta も同梱して client の history を成長させる",
+        "summary": "tmux capture-pane -e -p を canonical state として PaneSnapshot を生成し、 前回 snap との差分 DiffOp[] を計算。 Claude TUI 暫定対応として、 末尾 visually-blank 行を trim した後、 不足分を recent scrollback (capture-pane -S -N -E -1) で prepend pad (= visible 余白を直前履歴で埋める)。 padFill は historySize 単位でキャッシュ (PadFillCache) して毎 tick の tmux round-trip を回避。 初回 snap には INITIAL_SCROLLBACK_ROWS まで scrollback delta も同梱",
         "deps": [
           "shared/types"
         ]
@@ -660,7 +660,7 @@
       {
         "name": "Terminal",
         "file": "frontend/src/components/Terminal.tsx",
-        "summary": "xterm.js + WebGL アドオンのターミナル実装。ControlModeConfig から snapshot / diff イベントを受け、snapshotToVTSequence / diffToVTSequence で VT 列に変換して書き込み。snap.lines は xterm grid の下端揃えで描画 (Claude TUI 暫定対応)。Channel C drift dump を baseY + bottom-align offset から読む。タッチ選択モード、フォントサイズ調整、デスクトップ自動コピー",
+        "summary": "xterm.js + WebGL アドオンのターミナル実装。ControlModeConfig から snapshot / diff イベントを受け、snapshotToVTSequence / diffToVTSequence で VT 列に変換して上端揃え書き込み (snap canonical)。Channel C drift dump は applied.baseY から snap.rows 行を grid 読出し。タッチ選択モード、フォントサイズ調整、デスクトップ自動コピー",
         "hooks": [
           "useSelectionMode"
         ],
@@ -1158,12 +1158,12 @@
         "tmux プロセス (描画変化)",
         "tmux -CC %output トリガで debounce",
         "captureSnapshot: display-message で cursor/size + capture-pane -e -p で visible 領域取得",
-        "末尾の visually-blank 行を trim (Claude TUI 暫定対応)",
-        "前 snap と diffSnapshots で比較 → DiffOp[] (lines.length が変わる場合は full snapshot を強制)",
+        "末尾 visually-blank 行を trim → 不足分を scrollback の最新行で prepend (Claude TUI 暫定対応、 padFill キャッシュ)",
+        "前 snap と diffSnapshots で比較 → DiffOp[]",
         "/ws/mux JSON { type:'state-snapshot' | 'state-diff', sessionId, snapshot | ops }",
         "ブラウザ WebSocket",
         "useMultiplexedTerminal.registerOnRender",
-        "snapshotToVTSequence / diffToVTSequence (bottom-aligned write、offset = rows - lines.length)",
+        "snapshotToVTSequence / diffToVTSequence (top-aligned write、snap が canonical)",
         "Terminal.tsx xterm.js write"
       ]
     },
@@ -1171,7 +1171,7 @@
       "name": "Channel C drift detection (dev only)",
       "steps": [
         "trigger: resize-done / reconnect-done / output-idle (300ms) / periodic (30s)",
-        "Terminal.tsx dumpForSelfVerify: applied.baseY + bottom-align offset から linesLen 行を grid 読出し",
+        "Terminal.tsx dumpForSelfVerify: applied.baseY から snap.rows 行を grid 読出し",
         "/ws/mux JSON { type:'debug-dump', sessionId, paneId, lines, cursor, appliedSeq }",
         "terminal-mux handleDebugDump: sub.serverSnapshots の sentSnap.lines と比較 (ANSI strip + trimEnd で normalize)",
         "mismatch を /tmp/cchub-drift.log に JSON Lines で追記"

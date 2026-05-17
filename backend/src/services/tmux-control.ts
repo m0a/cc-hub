@@ -664,17 +664,16 @@ export class TmuxControlSession {
    * inherit `window-size manual`, so `refresh-client -C` alone updates the
    * client SIGWINCH but leaves the pane stuck at whichever client attached
    * first (typically desktop) — phones would otherwise get content laid out
-   * at desktop dimensions and clipped. `resize-window` was historically
-   * avoided because its grid re-pack cleared cells that TUIs (Claude Code)
-   * leave unrendered, surfacing as a black void; that's now handled by the
-   * client's bottom-aligned snapshot write, so the re-pack is harmless.
+   * at desktop dimensions and clipped.
    */
   private async applyClientSize(cols: number, rows: number): Promise<void> {
     try {
-      await Promise.all([
-        this.sendCommand(`refresh-client -C ${cols}x${rows}`),
-        this.sendCommand(`resize-window -t ${this.sessionId} -x ${cols} -y ${rows}`),
-      ]);
+      // Sequential, not Promise.all: tmux -CC has a single FIFO for command
+      // responses, and overlapping sends corrupt the parsing (the second
+      // command's bytes can interleave with the first command's response
+      // window, producing "unknown command" errors).
+      await this.sendCommand(`refresh-client -C ${cols}x${rows}`);
+      await this.sendCommand(`resize-window -t ${this.sessionId} -x ${cols} -y ${rows}`);
     } catch {
       // Ignore resize errors
     }

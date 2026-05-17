@@ -19,14 +19,12 @@ function allocSeq(): number {
   return nextSeq++;
 }
 
-// Cap how many scrollback rows we ship in a single snapshot. Pathological
-// catch-ups (long disconnect, history-size jump) shouldn't blow the wire.
-const MAX_SCROLLBACK_DELTA = 500;
-
-// On the first snapshot for a pane ship up to this many recent
-// scrollback rows so the client has substantive history available
-// immediately. Subsequent deltas come from real tmux history growth.
-const INITIAL_SCROLLBACK_ROWS = 500;
+// On the first snapshot for a pane, ship up to this many recent scrollback
+// rows in one shot so the client's xterm scrollback has substantive history
+// from the start. tmux history-limit defaults to 10000; cap below that to
+// keep the first-snapshot payload bounded (≈ 400 KB at 200 byte/row with
+// ANSI escapes).
+const INITIAL_SCROLLBACK_ROWS = 2000;
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escapes by design.
 const ANSI_RE = /\x1b\[[\d;?]*[a-zA-Z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
@@ -38,6 +36,28 @@ function isVisuallyBlank(s: string): boolean {
 }
 
 /**
+ * Fetch up to `wanted` rows of scrollback ending just above the visible
+ * region (`-S -wanted -E -1`). Returns trimmed rows or [] on failure.
+ */
+async function captureScrollback(
+  cs: TmuxControlSession,
+  paneId: string,
+  wanted: number,
+): Promise<string[]> {
+  if (wanted <= 0) return [];
+  try {
+    const raw = await cs.sendCommand(
+      `capture-pane -e -p -t ${paneId} -S -${wanted} -E -1`,
+    );
+    const sb = raw.split('\n');
+    while (sb.length > 0 && isVisuallyBlank(sb[sb.length - 1])) sb.pop();
+    return sb;
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Capture a snapshot of a pane. Returns null if the pane no longer exists.
  *
  * Captures:
@@ -46,11 +66,17 @@ function isVisuallyBlank(s: string): boolean {
  *   - any new scrollback lines added since `prevHistorySize`, so the client
  *     can grow its own scrollback ring buffer for wheel/touch scrolling
  */
+export interface PadFillCache {
+  historySize: number;
+  rows: string[];
+}
+
 export async function captureSnapshot(
   cs: TmuxControlSession,
   paneId: string,
   prevHistorySize?: number,
-): Promise<{ snapshot: PaneSnapshot; historySize: number } | null> {
+  prevPadFill?: PadFillCache,
+): Promise<{ snapshot: PaneSnapshot; historySize: number; padFill?: PadFillCache } | null> {
   let metaRaw: string;
   try {
     metaRaw = await cs.sendCommand(
@@ -82,67 +108,52 @@ export async function captureSnapshot(
   }
 
   let lines = linesRaw.split('\n');
-  // Trim trailing rows that are visually blank — including rows that contain
-  // only whitespace or ANSI escapes (background-color repaint, SGR resets).
-  // Claude TUI sometimes pads the unused bottom region with spaces while
-  // typing, which `capture-pane` returns as space-only rows. Without this
-  // trim those rows survive into snap.lines and re-create the void.
+  // Trim trailing rows that are visually blank (whitespace / ANSI escapes
+  // only). tmux's capture-pane already returns at most one trailing newline,
+  // but Claude TUI sometimes paints space-only rows in the unused bottom
+  // region — they would otherwise survive into snap.lines as visible blanks.
   while (lines.length > 0 && isVisuallyBlank(lines[lines.length - 1])) lines.pop();
   if (lines.length > rows) {
     lines = lines.slice(0, rows);
   }
   // TEMPORARY WORKAROUND — Claude Code 固有 (TODO: remove when fixed upstream).
   //
-  // Claude TUI (Claude Code) は input area の下に意図的な余白を残す
-  // レイアウトで、 pane の下半分を描画しない。 tmux の `capture-pane`
-  // は描かれた cell の最終行までしか返さないため、 pane height=52 に
-  // 対して lines.length=37 のような短い snapshot になる。
+  // Claude TUI は pane の下半分を描画せず、 capture-pane も描かれた cell
+  // の最終行までしか返さない。 visible 余白を埋めるため、 不足分を
+  // scrollback の末尾 (= 直前まで visible にいた過去履歴) から取って
+  // snap.lines の先頭に prepend する。
+  //   - 上: scrollback 末尾 (= 古い履歴)
+  //   - 下: TUI 描画 (= 新しい履歴 + input area)
+  // Claude TUI が pane を full に描画するようになれば、 この prepend
+  // と空文字 padding を削除して通常の path に戻せる。
   //
-  // 不足分を空文字で padding して pane height に揃えると、 xterm 側で
-  // 末尾の行が黒い void として焼き付き、 旧 byte-stream 時代には
-  // 見えなかった「下半分が空」 の状態が固定表示されてしまう。
-  //
-  // 対策として padding を行わず、 snap.lines は「描画された範囲のみ」
-  // (= lines.length 行) を送る。 snap.rows は pane height のまま維持し、
-  // client 側で snap.lines を grid の下端揃えで描画する。 grid 上端の
-  // 余白は scrollback / 前 frame で自然に埋まる (= 旧 byte-stream の
-  // 「触らない領域は前のまま」 を再現)。
-  //
-  // Claude TUI が pane を画面下まで使う設計に変わったら、 この
-  // workaround は不要になる。 server の trim と client の下端揃え
-  // 描画 (snapshot-render.ts の bottom-aligned write) を削除して
-  // 通常の「snap.lines === pane height」 path に戻す。
+  // padFill は historySize 単位でキャッシュ可能 (= 同じ historySize なら
+  // scrollback の末尾 N 行は同じ)。 reuse することで毎 snapshot tick の
+  // tmux round-trip を減らす。
+  let padFill: PadFillCache | undefined = prevPadFill;
+  const padNeeded = rows - lines.length;
+  if (padNeeded > 0 && !altScreen && historySize > 0) {
+    if (!padFill || padFill.historySize !== historySize || padFill.rows.length < padNeeded) {
+      const fetched = await captureScrollback(cs, paneId, Math.max(padNeeded, padFill?.rows.length ?? 0));
+      if (fetched.length > 0) padFill = { historySize, rows: fetched };
+    }
+    if (padFill && padFill.rows.length > 0) {
+      lines = [...padFill.rows.slice(-padNeeded), ...lines];
+    }
+  }
+  while (lines.length < rows) lines.push('');
 
-  // Capture scrollback. On the first snapshot for a pane (no baseline) we
-  // ship the most recent INITIAL_SCROLLBACK_ROWS so the client has history
-  // available immediately. On subsequent snapshots we send only the rows
-  // pushed into scrollback since the previous capture (delta).
+  // Initial-only scrollback: ship up to INITIAL_SCROLLBACK_ROWS of the most
+  // recent rows once (on the first snapshot for this pane), nothing after.
   let scrollbackDelta: string[] | undefined;
-  if (!altScreen) {
-    let wanted = 0;
-    if (prevHistorySize === undefined) {
-      wanted = Math.min(historySize, INITIAL_SCROLLBACK_ROWS);
-    } else if (historySize > prevHistorySize) {
-      wanted = Math.min(historySize - prevHistorySize, MAX_SCROLLBACK_DELTA);
-    }
-    if (wanted > 0) {
-      try {
-        // -S -N selects N rows above the visible region (the newest scrollback).
-        // -E -1 stops at the row just above the viewport.
-        const sbRaw = await cs.sendCommand(
-          `capture-pane -e -p -t ${paneId} -S -${wanted} -E -1`,
-        );
-        const sb = sbRaw.split('\n');
-        while (sb.length > 0 && sb[sb.length - 1] === '') sb.pop();
-        if (sb.length > 0) scrollbackDelta = sb;
-      } catch {
-        // Ignore scrollback capture failures — visible state is what matters.
-      }
-    }
+  if (!altScreen && prevHistorySize === undefined && historySize > 0) {
+    const sb = await captureScrollback(cs, paneId, Math.min(historySize, INITIAL_SCROLLBACK_ROWS));
+    if (sb.length > 0) scrollbackDelta = sb;
   }
 
   return {
     historySize,
+    padFill,
     snapshot: {
       paneId,
       seq: allocSeq(),
@@ -152,8 +163,6 @@ export async function captureSnapshot(
       scrollbackDelta,
       cursor: {
         x: Math.max(0, Math.min(cols - 1, cx)),
-        // cursor.y is given relative to the pane's grid (0..rows-1). The client
-        // re-anchors it to the bottom-aligned write position when lines.length < rows.
         y: Math.max(0, Math.min(rows - 1, cy)),
         visible: cursorVisible,
       },

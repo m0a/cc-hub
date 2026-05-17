@@ -945,6 +945,9 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         term.write(vt, () => {
           bench.recordWriteEnd(t0, vt.length);
           applied.baseY = term.buffer.active.baseY;
+          term.scrollToBottom();
+          setScrollIndicator(null);
+          if (scrollIndicatorTimerRef.current) clearTimeout(scrollIndicatorTimerRef.current);
         });
       } else {
         const { vt, size } = diffToVTSequence(event.ops);
@@ -953,7 +956,10 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         }
         if (vt.length > 0) {
           const t0 = bench.recordWriteStart();
-          term.write(vt, () => bench.recordWriteEnd(t0, vt.length));
+          term.write(vt, () => {
+            bench.recordWriteEnd(t0, vt.length);
+            term.scrollToBottom();
+          });
         }
         if (size) applied.snapRows = size.rows;
         applied.seq = event.seq;

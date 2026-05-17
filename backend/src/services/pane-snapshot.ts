@@ -102,6 +102,9 @@ export async function captureSnapshot(
 
   let linesRaw: string;
   try {
+    // capture-pane without -a captures the pane's currently visible screen,
+    // including full-screen TUIs such as htop and Codex. `-a` reads tmux's
+    // alternate buffer explicitly and may return the screen behind the TUI.
     linesRaw = await cs.sendCommand(`capture-pane -e -p -t ${paneId}`);
   } catch {
     return null;

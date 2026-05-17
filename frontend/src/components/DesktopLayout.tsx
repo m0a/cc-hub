@@ -1239,6 +1239,7 @@ export function DesktopLayout({
       <DashboardPanel
         isOpen={showDashboard}
         onClose={() => setShowDashboard(false)}
+        isTablet={isTablet}
       />
 
       {/* Session modal */}
@@ -1246,6 +1247,7 @@ export function DesktopLayout({
         isOpen={showSessionModal}
         onClose={() => setShowSessionModal(false)}
         onSelectSession={handleModalSelectSession}
+        isTablet={isTablet}
       />
 
       {/* File Viewer Modal - per-session instances kept mounted */}

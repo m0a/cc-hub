@@ -263,7 +263,7 @@ Hook → cchub notify (stdin JSON) → POST /api/notify → WebSocket broadcast 
 
 ### セットアップ手順
 
-1. Claude Code は `~/.claude/settings.json` の `hooks` に `cchub notify` を追加する。Codex は `~/.codex/config.toml` または `~/.codex/hooks.json`、必要ならプロジェクト直下の `.codex/` にも同様に追加する:
+1. Claude Code は `~/.claude/settings.json` の `hooks` に `cchub notify` を追加する。Codex は `~/.codex/config.toml` または `~/.codex/hooks.json` に追加する:
 
 ```json
 {

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.114] - 2026-05-17
+
+### Changed
+- デスクトップのセッションモーダル (Ctrl+B) とダッシュボードパネル (Ctrl+Shift+B) を 1.25 倍に拡大し、Mac などの高 DPI モニタでも読みやすく
+  - タブレットには影響なし (`isTablet` 時は zoom 適用なし)
+
 ## [0.1.113] - 2026-05-17
 
 ### Fixed

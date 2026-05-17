@@ -1075,6 +1075,27 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     checkAndExitCopyMode();
   }, [inputMode, sessionId]);
 
+  // Desktop selection mode (activated by mouse long-press) — Enter to copy and
+  // exit, Esc to cancel. Touch devices keep using the SelectionOverlay buttons.
+  useEffect(() => {
+    if (!selection.selectionMode) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        selection.handleCopySelection();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        selection.exitSelectionMode();
+      }
+    };
+    document.addEventListener('keydown', handler, true);
+    return () => document.removeEventListener('keydown', handler, true);
+  }, [selection.selectionMode, selection.handleCopySelection, selection.exitSelectionMode]);
+
   // Show font size indicator
   useEffect(() => {
     if (isInitialized) {

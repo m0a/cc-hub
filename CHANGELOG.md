@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.115] - 2026-05-17
+
+### Added
+- デスクトップの選択モード（マウス長押しで起動）に Enter / Esc キーバインドを追加
+  - Enter: 選択範囲を OS クリップボードにコピー＋モード終了
+  - Esc: コピーせずモード終了
+
 ## [0.1.114] - 2026-05-17
 
 ### Changed

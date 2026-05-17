@@ -354,7 +354,7 @@ function scheduleSnapshot(
   paneId: string,
 ) {
   const existing = sub.snapshotTimers.get(paneId);
-  if (existing) clearTimeout(existing);
+  if (existing) return;
   const timer = setTimeout(() => {
     sub.snapshotTimers.delete(paneId);
     void emitSnapshot(ws, sessionId, sub, paneId);
@@ -406,25 +406,14 @@ async function emitSnapshot(
     return;
   }
 
-  // Scrollback can only be carried on a full snapshot (it must be applied
-  // before the visible region is rewritten).
-  if (hasScrollback) {
-    console.log(`[mux] state-snapshot pane=${paneId} seq=${snapshot.seq} scrollbackDelta=${snapshot.scrollbackDelta?.length ?? 0} rows=${snapshot.rows}`);
-    try {
-      ws.send(JSON.stringify({ type: 'state-snapshot', sessionId, snapshot }));
-    } catch { return; }
-  } else {
-    try {
-      ws.send(JSON.stringify({
-        type: 'state-diff',
-        sessionId,
-        paneId,
-        base: prev.seq,
-        seq: snapshot.seq,
-        ops,
-      }));
-    } catch { return; }
-  }
+  // Send full snapshots for every visible change. Diff application is fragile
+  // when terminal apps redraw partial normal-screen regions while xterm.js has
+  // local scrollback/baseY state; users then see stale content until reload.
+  // A full snapshot is the same recovery path as reload, but applied live.
+  console.log(`[mux] state-snapshot pane=${paneId} seq=${snapshot.seq} scrollbackDelta=${snapshot.scrollbackDelta?.length ?? 0} rows=${snapshot.rows}`);
+  try {
+    ws.send(JSON.stringify({ type: 'state-snapshot', sessionId, snapshot }));
+  } catch { return; }
   sub.serverSnapshots.set(paneId, snapshot);
 }
 

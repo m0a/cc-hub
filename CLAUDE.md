@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Codex and other coding agents should use this file as the single source of repository guidance; `AGENTS.md` only points here.
+
 ## Project Overview
 
 CC Hub is a web-based terminal session manager for Claude Code. It runs Claude Code instances in tmux sessions and provides a web UI for remote access from tablets/mobile devices.

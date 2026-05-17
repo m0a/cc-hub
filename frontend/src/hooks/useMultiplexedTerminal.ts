@@ -1,15 +1,16 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { reportWsLatency } from '../services/latency-store';
-import type { TmuxLayoutNode } from '../../../shared/types';
-import { MUX_BINARY_TYPE } from '../../../shared/types';
-import { bench } from '../utils/bench';
+import type { DiffOp, PaneSnapshot, TmuxLayoutNode } from '../../../shared/types';
+
+export type PaneRenderEvent =
+  | { type: 'snapshot'; snapshot: PaneSnapshot }
+  | { type: 'diff'; base: number; seq: number; ops: DiffOp[] };
 
 interface UseMultiplexedTerminalOptions {
   sessionId: string;
   token?: string | null;
-  onPaneOutput?: (paneId: string, data: Uint8Array) => void;
+  onPaneRender?: (paneId: string, event: PaneRenderEvent) => void;
   onLayoutChange?: (layout: TmuxLayoutNode) => void;
-  onInitialContent?: (paneId: string, data: Uint8Array) => void;
   onNewSession?: (sessionId: string, sessionName: string) => void;
   onPaneDead?: (paneId: string) => void;
   onHookEvent?: (event: string, cwd?: string, sessionId?: string, data?: Record<string, unknown>, message?: string) => void;
@@ -32,7 +33,7 @@ interface UseMultiplexedTerminalReturn {
   adjustPane: (paneId: string, direction: 'L' | 'R' | 'U' | 'D', amount: number) => void;
   equalizePanes: (direction: 'horizontal' | 'vertical') => void;
   sendClientInfo: (deviceType: 'mobile' | 'tablet' | 'desktop') => void;
-  requestContent: (paneId: string) => void;
+  requestSnapshot: (paneId: string) => void;
   zoomPane: (paneId: string) => void;
   respawnPane: (paneId: string) => void;
   deadPanes: Set<string>;
@@ -55,7 +56,7 @@ let sharedWs: WebSocket | null = null;
 let sharedPingInterval: number | null = null;
 let sharedReconnectTimeout: number | null = null;
 let subscribedSession: string | null = null;
-let wsReady = false; // true after server sends 'ready'
+let wsReady = false;
 // Channel C: when the server (CCHUB_SELF_VERIFY=1) accepts our subscription,
 // it includes selfVerifyEnabled=true so we know to start streaming debug-dump
 // messages. Stays false on production builds.
@@ -80,11 +81,9 @@ function flushConversationPending() {
   pendingConversationSubs.clear();
 }
 
-// Current hook instance's callbacks (only one active at a time)
 type MuxCallbacks = {
-  onPaneOutput?: (paneId: string, data: Uint8Array) => void;
+  onPaneRender?: (paneId: string, event: PaneRenderEvent) => void;
   onLayoutChange?: (layout: TmuxLayoutNode) => void;
-  onInitialContent?: (paneId: string, data: Uint8Array) => void;
   onNewSession?: (sessionId: string, sessionName: string) => void;
   onPaneDead?: (paneId: string) => void;
   onHookEvent?: (event: string, cwd?: string, sessionId?: string, data?: Record<string, unknown>, message?: string) => void;
@@ -114,7 +113,6 @@ function sendSessionMessage(msg: Record<string, unknown>) {
 function subscribeToSession(sessionId: string, force = false) {
   if (subscribedSession === sessionId && !force) return;
 
-  // Unsubscribe from previous (only if switching sessions)
   if (subscribedSession && subscribedSession !== sessionId) {
     sendRaw({ type: 'unsubscribe', sessionId: subscribedSession });
   }
@@ -158,7 +156,6 @@ function ensureConnection(token?: string | null) {
   };
 
   let wsMsgCount = 0;
-  let wsOutputCount = 0;
 
   // Track bytes per second for throughput display
   let wsBytesThisSec = 0;
@@ -167,43 +164,11 @@ function ensureConnection(token?: string | null) {
     wsBytesThisSec = 0;
   }, 1000);
 
-  ws.binaryType = 'arraybuffer';
+  // Plain JSON transport only — no binary frames in the state-sync protocol.
   ws.onmessage = (event) => {
     wsMsgCount++;
-    // Count bytes for throughput
-    if (event.data instanceof ArrayBuffer) {
-      wsBytesThisSec += event.data.byteLength;
-    } else if (typeof event.data === 'string') {
+    if (typeof event.data === 'string') {
       wsBytesThisSec += event.data.length;
-    }
-
-    const cb = activeCallbacks;
-    const currentSession = cb?.sessionId;
-
-    // Binary mux frame: [0x02][sessionId\0][paneId\0][raw data]
-    if (event.data instanceof ArrayBuffer) {
-      const view = new Uint8Array(event.data);
-      if (view.length < 5 || view[0] !== MUX_BINARY_TYPE) return;
-
-      let idx = 1;
-      while (idx < view.length && view[idx] !== 0) idx++;
-      if (idx >= view.length) return;
-      const frameSessionId = new TextDecoder().decode(view.subarray(1, idx));
-      idx++;
-
-      if (frameSessionId !== currentSession) return;
-
-      const paneStart = idx;
-      while (idx < view.length && view[idx] !== 0) idx++;
-      if (idx >= view.length) return;
-      const paneId = new TextDecoder().decode(view.subarray(paneStart, idx));
-      const data = view.subarray(idx + 1);
-
-      wsOutputCount++;
-      bench.recordFrame(data.length);
-      bench.scanForEndMarker(data);
-      cb?.onPaneOutput?.(paneId, data);
-      return;
     }
 
     if (typeof event.data !== 'string') return;
@@ -215,16 +180,16 @@ function ensureConnection(token?: string | null) {
       return;
     }
 
+    const cb = activeCallbacks;
+    const currentSession = cb?.sessionId;
     const msgSessionId = msg.sessionId as string | undefined;
 
     switch (msg.type) {
       case 'ready': {
         wsReady = true;
-        // Subscribe to current session (force=true to re-request content on reconnect)
         if (currentSession) {
           subscribeToSession(currentSession, true);
         }
-        // Re-subscribe any conversation streams that were active before reconnect
         for (const sid of subscribedConversations) {
           pendingConversationSubs.add(sid);
         }
@@ -245,28 +210,29 @@ function ensureConnection(token?: string | null) {
       case 'unsubscribed':
         break;
       case 'sessions-updated': {
-        // Dispatch to useSessions via CustomEvent
         window.dispatchEvent(new CustomEvent('cchub-sessions-push', {
           detail: msg.sessions,
         }));
         break;
       }
-      case 'output': {
+      case 'state-snapshot': {
         if (msgSessionId !== currentSession) return;
-        wsOutputCount++;
-        const bytes = base64ToUint8Array(msg.data as string);
-        cb?.onPaneOutput?.(msg.paneId as string, bytes);
+        const snapshot = msg.snapshot as PaneSnapshot;
+        cb?.onPaneRender?.(snapshot.paneId, { type: 'snapshot', snapshot });
+        break;
+      }
+      case 'state-diff': {
+        if (msgSessionId !== currentSession) return;
+        const paneId = msg.paneId as string;
+        const base = msg.base as number;
+        const seq = msg.seq as number;
+        const ops = msg.ops as DiffOp[];
+        cb?.onPaneRender?.(paneId, { type: 'diff', base, seq, ops });
         break;
       }
       case 'layout': {
         if (msgSessionId !== currentSession) return;
         cb?.onLayoutChange?.(msg.layout as TmuxLayoutNode);
-        break;
-      }
-      case 'initial-content': {
-        if (msgSessionId !== currentSession) return;
-        const bytes = base64ToUint8Array(msg.data as string);
-        cb?.onInitialContent?.(msg.paneId as string, bytes);
         break;
       }
       case 'pong': {
@@ -310,7 +276,7 @@ function ensureConnection(token?: string | null) {
   };
 
   ws.onclose = (event) => {
-    console.log(`[MUX] WebSocket closed: code=${event.code} reason=${event.reason} msgs=${wsMsgCount} outputs=${wsOutputCount}`);
+    console.log(`[MUX] WebSocket closed: code=${event.code} reason=${event.reason} msgs=${wsMsgCount}`);
     clearInterval(bytesTimer);
     if (sharedWs !== ws) return;
 
@@ -324,7 +290,6 @@ function ensureConnection(token?: string | null) {
     activeCallbacks?.setIsConnected?.(false);
     activeCallbacks?.onDisconnect?.();
 
-    // Auto-reconnect (unless cleanly closed)
     if (event.code !== 1000) {
       sharedReconnectTimeout = window.setTimeout(() => {
         ensureConnection();
@@ -355,7 +320,7 @@ function registerVisibilityListener() {
 }
 
 // =============================================================================
-// Conversation stream API (shared singleton, multiple subscribers supported)
+// Conversation stream API
 // =============================================================================
 
 export function subscribeConversation(sessionId: string, token?: string | null) {
@@ -365,7 +330,6 @@ export function subscribeConversation(sessionId: string, token?: string | null) 
       sharedWs.send(JSON.stringify({ type: 'subscribe-conversation', sessionId }));
       subscribedConversations.add(sessionId);
     } else {
-      // Already subscribed — re-request initial messages
       sharedWs.send(JSON.stringify({ type: 'subscribe-conversation', sessionId }));
     }
   } else {
@@ -407,12 +371,20 @@ export function isSelfVerifyEnabled(): boolean {
  * builds incur zero overhead). The caller is responsible for assembling
  * `lines` from the xterm buffer.
  */
+export type DumpTrigger =
+  | 'resize-done'
+  | 'reconnect-done'
+  | 'output-idle'
+  | 'periodic'
+  | 'user';
+
 export function sendDebugDump(
   sessionId: string,
   paneId: string,
   lines: string[],
   cursor: { x: number; y: number },
-  trigger: 'resize-done' | 'reconnect-done' | 'output-idle' | 'periodic' | 'user',
+  trigger: DumpTrigger,
+  appliedSeq?: number,
 ): boolean {
   if (!selfVerifyEnabled) return false;
   if (sharedWs?.readyState !== WebSocket.OPEN || !wsReady) return false;
@@ -424,14 +396,11 @@ export function sendDebugDump(
     cursor,
     trigger,
     ts: Date.now(),
+    appliedSeq,
   }));
   return true;
 }
 
-/**
- * Notify listeners that input was sent to a pane. Used by chat views to show a
- * local echo of in-progress typing when the destination terminal is hidden.
- */
 export function dispatchInputEcho(sessionId: string, paneId: string, data: string) {
   window.dispatchEvent(new CustomEvent('cchub-input-echo', {
     detail: { sessionId, paneId, data },
@@ -439,7 +408,7 @@ export function dispatchInputEcho(sessionId: string, paneId: string, data: strin
 }
 
 // =============================================================================
-// React Hook — thin wrapper around the singleton
+// React Hook
 // =============================================================================
 
 export function useMultiplexedTerminal(options: UseMultiplexedTerminalOptions): UseMultiplexedTerminalReturn {
@@ -447,10 +416,8 @@ export function useMultiplexedTerminal(options: UseMultiplexedTerminalOptions): 
   const [isConnected, setIsConnected] = useState(false);
   const [deadPanes, setDeadPanes] = useState<Set<string>>(new Set());
 
-  // Callback refs to avoid stale closures
-  const onPaneOutputRef = useRef(options.onPaneOutput);
+  const onPaneRenderRef = useRef(options.onPaneRender);
   const onLayoutChangeRef = useRef(options.onLayoutChange);
-  const onInitialContentRef = useRef(options.onInitialContent);
   const onNewSessionRef = useRef(options.onNewSession);
   const onPaneDeadRef = useRef(options.onPaneDead);
   const onHookEventRef = useRef(options.onHookEvent);
@@ -458,9 +425,8 @@ export function useMultiplexedTerminal(options: UseMultiplexedTerminalOptions): 
   const onDisconnectRef = useRef(options.onDisconnect);
   const onErrorRef = useRef(options.onError);
 
-  onPaneOutputRef.current = options.onPaneOutput;
+  onPaneRenderRef.current = options.onPaneRender;
   onLayoutChangeRef.current = options.onLayoutChange;
-  onInitialContentRef.current = options.onInitialContent;
   onNewSessionRef.current = options.onNewSession;
   onPaneDeadRef.current = options.onPaneDead;
   onHookEventRef.current = options.onHookEvent;
@@ -468,12 +434,10 @@ export function useMultiplexedTerminal(options: UseMultiplexedTerminalOptions): 
   onDisconnectRef.current = options.onDisconnect;
   onErrorRef.current = options.onError;
 
-  // Register this hook instance as the active callback target
   useEffect(() => {
     activeCallbacks = {
-      onPaneOutput: (p, d) => onPaneOutputRef.current?.(p, d),
+      onPaneRender: (p, e) => onPaneRenderRef.current?.(p, e),
       onLayoutChange: (l) => onLayoutChangeRef.current?.(l),
-      onInitialContent: (p, d) => onInitialContentRef.current?.(p, d),
       onNewSession: (s, n) => onNewSessionRef.current?.(s, n),
       onPaneDead: (p) => onPaneDeadRef.current?.(p),
       onHookEvent: (e, c, s, d, m) => onHookEventRef.current?.(e, c, s, d, m),
@@ -485,9 +449,8 @@ export function useMultiplexedTerminal(options: UseMultiplexedTerminalOptions): 
       sessionId,
       deadPanes,
     };
-  }); // Run every render to keep sessionId/deadPanes current
+  });
 
-  // On sessionId change: switch subscription without reconnecting WS
   useEffect(() => {
     if (sharedWs?.readyState === WebSocket.OPEN && wsReady) {
       subscribeToSession(sessionId);
@@ -497,14 +460,12 @@ export function useMultiplexedTerminal(options: UseMultiplexedTerminalOptions): 
   const connect = useCallback(() => {
     registerVisibilityListener();
     ensureConnection(token);
-    // If WS is already open and ready, subscribe immediately
     if (sharedWs?.readyState === WebSocket.OPEN && wsReady) {
       subscribeToSession(sessionId);
     }
   }, [sessionId, token]);
 
   const disconnect = useCallback(() => {
-    // Don't close the shared WS — just unsubscribe
     if (subscribedSession) {
       sendRaw({ type: 'unsubscribe', sessionId: subscribedSession });
       subscribedSession = null;
@@ -555,8 +516,8 @@ export function useMultiplexedTerminal(options: UseMultiplexedTerminalOptions): 
     sendSessionMessage({ type: 'client-info', deviceType });
   }, []);
 
-  const requestContent = useCallback((paneId: string) => {
-    sendSessionMessage({ type: 'request-content', paneId });
+  const requestSnapshot = useCallback((paneId: string) => {
+    sendSessionMessage({ type: 'request-snapshot', paneId });
   }, []);
 
   const zoomPane = useCallback((paneId: string) => {
@@ -599,20 +560,11 @@ export function useMultiplexedTerminal(options: UseMultiplexedTerminalOptions): 
     adjustPane,
     equalizePanes,
     sendClientInfo,
-    requestContent,
+    requestSnapshot,
     zoomPane,
     respawnPane,
     deadPanes,
   };
-}
-
-function base64ToUint8Array(base64: string): Uint8Array {
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
 }
 
 function uint8ArrayToBase64(bytes: Uint8Array): string {

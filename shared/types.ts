@@ -468,6 +468,47 @@ export interface TmuxLayoutNode {
   children?: TmuxLayoutNode[];
 }
 
+// -----------------------------------------------------------------------------
+// State sync (server-side diff sync, mosh-inspired)
+//
+// The server treats `tmux capture-pane -e -p` as the canonical pane state.
+// On every output debounce window it captures a fresh PaneSnapshot, diffs it
+// against the previous snapshot, and pushes either a full snapshot (initial /
+// recovery) or a list of DiffOps. The client applies them by writing VT
+// sequences into xterm.js; xterm.js is not used to maintain authoritative
+// terminal state, only to render.
+// -----------------------------------------------------------------------------
+
+export interface PaneCursor {
+  x: number;          // 0-based column
+  y: number;          // 0-based row within visible area
+  visible: boolean;
+}
+
+export interface PaneModes {
+  altScreen: boolean;      // alternate screen buffer active (vim, htop, etc.)
+}
+
+export interface PaneSnapshot {
+  paneId: string;
+  seq: number;             // server-assigned, monotonically increasing
+  cols: number;            // pane width (cells) at capture time
+  rows: number;            // pane height (cells) at capture time
+  lines: string[];         // visible region, each line includes ANSI escapes
+  // Lines pushed into tmux's scrollback since the previous snapshot. The
+  // client writes these into xterm.js so its own scrollback ring buffer is
+  // populated for wheel/touch scroll within the recent history.
+  scrollbackDelta?: string[];
+  cursor: PaneCursor;
+  modes: PaneModes;
+}
+
+export type DiffOp =
+  | { op: 'line'; row: number; content: string }
+  | { op: 'cursor'; x: number; y: number; visible: boolean }
+  | { op: 'mode'; name: keyof PaneModes; value: boolean }
+  | { op: 'size'; cols: number; rows: number };
+
 // Client → Server messages
 export type ControlClientMessage =
   | { type: 'input'; paneId: string; data: string } // base64
@@ -481,15 +522,24 @@ export type ControlClientMessage =
   | { type: 'scroll'; paneId: string; lines: number } // positive = up, negative = down
   | { type: 'adjust-pane'; paneId: string; direction: 'L' | 'R' | 'U' | 'D'; amount: number }
   | { type: 'equalize-panes'; direction: 'horizontal' | 'vertical' }
-  | { type: 'request-content'; paneId: string }
   | { type: 'zoom-pane'; paneId: string }
-  | { type: 'respawn-pane'; paneId: string };
+  | { type: 'respawn-pane'; paneId: string }
+  // State sync: ack the highest applied snapshot seq so the server knows what
+  // base its next diff is built from.
+  | { type: 'state-ack'; paneId: string; seq: number }
+  // State sync: request a full snapshot (e.g. when local seq does not match
+  // the server's diff base, or after a forced refresh).
+  | { type: 'request-snapshot'; paneId: string };
 
 // Server → Client messages
 export type ControlServerMessage =
-  | { type: 'output'; paneId: string; data: string } // base64
   | { type: 'layout'; layout: TmuxLayoutNode }
-  | { type: 'initial-content'; paneId: string; data: string } // base64
+  // State sync: full snapshot. Sent on subscribe, after resize, or when the
+  // client requested one. Replaces the previous `initial-content` mechanism.
+  | { type: 'state-snapshot'; snapshot: PaneSnapshot }
+  // State sync: incremental diff from `base` seq to `seq`. Client should
+  // request a full snapshot if its locally held base does not match.
+  | { type: 'state-diff'; paneId: string; base: number; seq: number; ops: DiffOp[] }
   | { type: 'ready' }
   | { type: 'pong'; timestamp: number }
   | { type: 'error'; message: string; paneId?: string }
@@ -521,6 +571,10 @@ export type MuxClientMessage =
       cursor: { x: number; y: number };
       trigger: DebugDumpTrigger;
       ts: number;
+      // The snapshot seq the client most recently applied for this pane.
+      // Allows the server to compare against the same snap the client saw
+      // (rather than a newer one), eliminating race-induced false drift.
+      appliedSeq?: number;
     }
   | (ControlClientMessage & { sessionId: string });
 
@@ -536,8 +590,3 @@ export type MuxServerMessage =
   | { type: 'initial-conversation'; sessionId: string; messages: ConversationMessage[] }
   | { type: 'conversation-update'; sessionId: string; messages: ConversationMessage[] }
   | (ControlServerMessage & { sessionId: string });
-
-// Binary frame format for mux output:
-// [0x02][sessionId\0][paneId\0][raw data]
-// 0x02 = mux output (vs 0x01 = legacy single-session output)
-export const MUX_BINARY_TYPE = 0x02;

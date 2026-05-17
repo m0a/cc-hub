@@ -37,7 +37,6 @@ interface PendingCommand {
   output: string[];
 }
 
-type OutputListener = (data: Buffer) => void;
 type LayoutListener = (layout: TmuxLayoutNode, frontendLayout: ReturnType<typeof toFrontendLayout>) => void;
 type ExitListener = (reason: string) => void;
 type PaneDeadListener = (paneId: string) => void;
@@ -62,7 +61,6 @@ export class TmuxControlSession {
   private readyPromise: Promise<void> | null = null;
 
   // Listeners
-  private outputListeners = new Map<string, Set<OutputListener>>(); // paneId -> listeners
   private globalOutputListeners = new Set<(paneId: string, data: Buffer) => void>();
   private layoutListeners = new Set<LayoutListener>();
   private exitListeners = new Set<ExitListener>();
@@ -313,7 +311,7 @@ export class TmuxControlSession {
     this.outputBytes += rawLine.length;
 
     // Skip processing if no one is listening (grace period, no clients)
-    if (this.outputListeners.size === 0 && this.globalOutputListeners.size === 0) {
+    if (this.globalOutputListeners.size === 0) {
       return;
     }
 
@@ -340,14 +338,6 @@ export class TmuxControlSession {
     // Extract data portion as raw bytes and decode octal escapes
     const rawData = rawLine.subarray(offset);
     const decoded = decodeOctalOutputRaw(rawData);
-
-    // Notify pane-specific listeners
-    const listeners = this.outputListeners.get(paneId);
-    if (listeners) {
-      for (const listener of listeners) {
-        listener(decoded);
-      }
-    }
 
     // Notify global listeners
     for (const listener of this.globalOutputListeners) {
@@ -670,6 +660,27 @@ export class TmuxControlSession {
   }
 
   /**
+   * Send refresh-client + resize-window for the given size. CC Hub sessions
+   * inherit `window-size manual`, so `refresh-client -C` alone updates the
+   * client SIGWINCH but leaves the pane stuck at whichever client attached
+   * first (typically desktop) — phones would otherwise get content laid out
+   * at desktop dimensions and clipped. `resize-window` was historically
+   * avoided because its grid re-pack cleared cells that TUIs (Claude Code)
+   * leave unrendered, surfacing as a black void; that's now handled by the
+   * client's bottom-aligned snapshot write, so the re-pack is harmless.
+   */
+  private async applyClientSize(cols: number, rows: number): Promise<void> {
+    try {
+      await Promise.all([
+        this.sendCommand(`refresh-client -C ${cols}x${rows}`),
+        this.sendCommand(`resize-window -t ${this.sessionId} -x ${cols} -y ${rows}`),
+      ]);
+    } catch {
+      // Ignore resize errors
+    }
+  }
+
+  /**
    * Set the client size (debounced).
    * Skips if dimensions haven't changed to avoid unnecessary tmux redraws.
    */
@@ -677,23 +688,14 @@ export class TmuxControlSession {
     if (this.resizeTimer) {
       clearTimeout(this.resizeTimer);
     }
-    this.resizeTimer = setTimeout(async () => {
-      // Skip if dimensions haven't changed
+    this.resizeTimer = setTimeout(() => {
       if (this.lastClientSize
         && this.lastClientSize.cols === cols
         && this.lastClientSize.rows === rows) {
         return;
       }
       this.lastClientSize = { cols, rows };
-      try {
-        await this.sendCommand(`refresh-client -C ${cols}x${rows}`);
-        // Do NOT send bare `refresh-client` here.
-        // It forces tmux to re-output the entire screen, which interleaves
-        // with application output causing visual corruption.  Programs
-        // redraw on their own via SIGWINCH from the size change.
-      } catch {
-        // Ignore resize errors
-      }
+      void this.applyClientSize(cols, rows);
     }, RESIZE_DEBOUNCE_MS);
   }
 
@@ -702,13 +704,12 @@ export class TmuxControlSession {
    * Used for the first resize after connect so initial content is captured at correct size.
    */
   async setClientSizeImmediate(cols: number, rows: number): Promise<void> {
-    // Cancel any pending debounced resize
     if (this.resizeTimer) {
       clearTimeout(this.resizeTimer);
       this.resizeTimer = null;
     }
     this.lastClientSize = { cols, rows };
-    await this.sendCommand(`refresh-client -C ${cols}x${rows}`);
+    await this.applyClientSize(cols, rows);
   }
 
   /**
@@ -755,19 +756,6 @@ export class TmuxControlSession {
   // =========================================================================
   // Public API - Listeners
   // =========================================================================
-
-  /**
-   * Register a listener for output from a specific pane.
-   */
-  onPaneOutput(paneId: string, listener: OutputListener): () => void {
-    if (!this.outputListeners.has(paneId)) {
-      this.outputListeners.set(paneId, new Set());
-    }
-    this.outputListeners.get(paneId)!.add(listener);
-    return () => {
-      this.outputListeners.get(paneId)?.delete(listener);
-    };
-  }
 
   /**
    * Register a listener for output from all panes.
@@ -928,7 +916,6 @@ export class TmuxControlSession {
     });
 
     // Clear listeners immediately (don't wait for cleanup)
-    this.outputListeners.clear();
     this.globalOutputListeners.clear();
     this.layoutListeners.clear();
     this.exitListeners.clear();

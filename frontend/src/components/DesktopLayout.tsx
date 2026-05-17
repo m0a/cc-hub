@@ -7,11 +7,10 @@ import { SessionModal } from './SessionModal';
 import { DashboardPanel } from './DashboardPanel';
 import { authFetch } from '../services/api';
 import { useSessions, updateCachedSessionsByHookEvent } from '../hooks/useSessions';
-import { useMultiplexedTerminal } from '../hooks/useMultiplexedTerminal';
+import { useMultiplexedTerminal, type PaneRenderEvent } from '../hooks/useMultiplexedTerminal';
 import type { TerminalRef, ControlModeConfig } from './Terminal';
 import type { SessionState, SessionTheme, TmuxLayoutNode } from '../../../shared/types';
 import { fireHookNotification } from '../utils/hookNotification';
-import { filterMouseTrackingOutput } from '../utils/terminal-filters';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const DESKTOP_STATE_KEY = 'cchub-desktop-state';
@@ -361,11 +360,13 @@ export function DesktopLayout({
   const zoomedPaneIdRef = useRef<string | null>(null);
   zoomedPaneIdRef.current = zoomedPaneId;
 
-  // Per-pane output callbacks (paneId -> Set<callbacks>)
-  const paneCallbacksRef = useRef<Map<string, Set<(data: Uint8Array) => void>>>(new Map());
+  // Per-pane render callbacks (paneId -> Set<callbacks>)
+  const paneCallbacksRef = useRef<Map<string, Set<(event: PaneRenderEvent) => void>>>(new Map());
 
-  // Buffer for initial content that arrives before Terminal components mount
-  const initialContentBufferRef = useRef<Map<string, Uint8Array[]>>(new Map());
+  // Last snapshot per pane. Replayed when a Terminal mounts after the snapshot
+  // has already arrived (race during session switch). Diffs are not buffered;
+  // a stale render is corrected by request-snapshot at mount time.
+  const lastSnapshotRef = useRef<Map<string, PaneRenderEvent>>(new Map());
 
   const desktopStateRef = useRef(desktopState);
   desktopStateRef.current = desktopState;
@@ -377,20 +378,23 @@ export function DesktopLayout({
   // While true, sendControlResize is suppressed to avoid sending stale proposed sizes.
   const layoutPendingRef = useRef(false);
 
-  // Track whether we explicitly requested content (zoom, request-content, first connect).
-  // When true, initial-content clears scrollback. When false (reconnect), preserve scrollback.
-  const expectingContentRef = useRef(true);
-
   const controlTerminal = useMultiplexedTerminal({
     sessionId: controlSessionId || '',
-    onPaneOutput: (paneId, data) => {
+    onPaneRender: (paneId, event) => {
+      if (event.type === 'snapshot') {
+        lastSnapshotRef.current.set(paneId, event);
+      }
       const callbacks = paneCallbacksRef.current.get(paneId);
       if (!callbacks || callbacks.size === 0) {
-        console.warn(`[TP] output for ${paneId}: ${data.length} bytes but NO callbacks registered`);
+        if (event.type === 'snapshot') {
+          // Snapshot will be replayed when Terminal mounts. No warning needed.
+          return;
+        }
+        console.warn(`[TP] diff for ${paneId} but NO callbacks registered`);
         return;
       }
       for (const cb of callbacks) {
-        cb(data);
+        cb(event);
       }
     },
     onLayoutChange: (layout) => {
@@ -436,73 +440,26 @@ export function DesktopLayout({
         }, 500);
       }, 50);
     },
-    onInitialContent: (paneId, data) => {
-      const wasExpected = expectingContentRef.current;
-      console.log(`[TP] initial-content for ${paneId}: ${data.length} bytes, expected=${wasExpected}`);
-      expectingContentRef.current = false;
-
-      // Expected (first connect, zoom, explicit request): full clear including scrollback
-      // Unexpected (WS reconnect): clear visible only so user's scroll position is preserved.
-      // Note: the unexpected path can re-introduce scrollback duplicates because the fresh
-      // payload includes both scrollback and visible. The alternative (skip the write entirely)
-      // caused worse symptoms — CC's input prompts that arrived during disconnect were never
-      // rendered, so the user could miss permission/plan/AskUserQuestion prompts.
-      // The duplication is mostly an upstream Claude Code TUI redraw issue
-      // (anthropics/claude-code#49086), so we accept it here in exchange for reliable updates.
-      const clearSeq = wasExpected
-        ? new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x33, 0x4a, 0x1b, 0x5b, 0x48]) // ESC[2J + ESC[3J + ESC[H
-        : new Uint8Array([0x1b, 0x5b, 0x32, 0x4a, 0x1b, 0x5b, 0x48]); // ESC[2J + ESC[H (no scrollback clear)
-
-      // Filter mouse tracking sequences from initial content to prevent
-      // xterm.js from entering mouse mode (which blocks text selection)
-      const decoded = new TextDecoder().decode(data);
-      const filtered = filterMouseTrackingOutput(decoded);
-      const filteredBytes = new TextEncoder().encode(filtered);
-
-      const combined = new Uint8Array(clearSeq.length + filteredBytes.length);
-      combined.set(clearSeq);
-      combined.set(filteredBytes, clearSeq.length);
-
-      const callbacks = paneCallbacksRef.current.get(paneId);
-      if (callbacks && callbacks.size > 0) {
-        for (const cb of callbacks) {
-          cb(combined);
-        }
-        // Only scroll to bottom on expected content (first connect, zoom).
-        // On reconnect, preserve user's scroll position.
-        if (wasExpected) {
-          requestAnimationFrame(() => {
-            terminalRefs.current?.get(paneId)?.scrollToBottom();
-          });
-        }
-      } else {
-        // Buffer for replay when Terminal component mounts and registers callback
-        if (!initialContentBufferRef.current.has(paneId)) {
-          initialContentBufferRef.current.set(paneId, []);
-        }
-        initialContentBufferRef.current.get(paneId)!.push(combined);
-      }
-    },
     onConnect: () => {
       // Send resize with retries for terminal refresh on session switch.
+      // The first resize triggers the backend to emit initial state snapshots.
       const delays = [100, 300, 600, 1000];
       for (const delay of delays) {
         setTimeout(() => sendControlResize(), delay);
       }
-      // Explicitly request content as fallback — resize may be skipped
-      // (layoutPending, tolerance). This is the same fix as pinch-zoom.
-      const requestAllContent = (attempt = 0) => {
+      // Fallback: explicitly request a snapshot per pane in case resize was
+      // skipped (layoutPending, dedup). Snapshots are idempotent.
+      const requestAllSnapshots = (attempt = 0) => {
         const paneIds = [...paneCallbacksRef.current.keys()];
         if (paneIds.length === 0 && attempt < 5) {
-          // Terminal components not yet mounted, retry
-          setTimeout(() => requestAllContent(attempt + 1), 300);
+          setTimeout(() => requestAllSnapshots(attempt + 1), 300);
           return;
         }
         for (const paneId of paneIds) {
-          controlTerminalRef.current.requestContent(paneId);
+          controlTerminalRef.current.requestSnapshot(paneId);
         }
       };
-      setTimeout(() => requestAllContent(), 500);
+      setTimeout(() => requestAllSnapshots(), 500);
     },
     onHookEvent: (event, cwd, sessionId, data, message) => {
       fireHookNotification(event, cwd, sessionId, data, message);
@@ -531,7 +488,7 @@ export function DesktopLayout({
     }
     setControlLayout(null);
     setZoomedPaneId(null);
-    initialContentBufferRef.current.clear();
+    lastSnapshotRef.current.clear();
     paneCallbacksRef.current.clear();
     lastSentSizeRef.current = null;
   }, [controlSessionId]);
@@ -539,7 +496,6 @@ export function DesktopLayout({
   // Connect/disconnect control mode
   useEffect(() => {
     if (controlSessionId) {
-      expectingContentRef.current = true; // First connection expects initial-content
       controlTerminal.connect();
     }
     return () => {
@@ -630,19 +586,22 @@ export function DesktopLayout({
             controlTerminalRef.current.sendInput(paneId, data);
           }
         },
-        registerOnData: (callback: (data: Uint8Array) => void) => {
+        registerOnRender: (callback: (event: PaneRenderEvent) => void) => {
           if (!paneCallbacksRef.current.has(paneId)) {
             paneCallbacksRef.current.set(paneId, new Set());
           }
           paneCallbacksRef.current.get(paneId)!.add(callback);
 
-          // Replay buffered initial content that arrived before this component mounted
-          const buffered = initialContentBufferRef.current.get(paneId);
-          if (buffered) {
-            for (const data of buffered) {
-              callback(data);
-            }
-            initialContentBufferRef.current.delete(paneId);
+          // Replay the last snapshot if one already arrived (race during
+          // session switch / late mount). Diffs are not replayed; the next
+          // capture from the server will resync.
+          const last = lastSnapshotRef.current.get(paneId);
+          if (last) callback(last);
+
+          // Always request a fresh snapshot when a Terminal mounts, in case
+          // it joined after the initial snapshot was sent.
+          if (controlTerminalRef.current.isConnected) {
+            controlTerminalRef.current.requestSnapshot(paneId);
           }
 
           return () => {
@@ -655,15 +614,22 @@ export function DesktopLayout({
           // tmux refresh-client -C needs the TOTAL window size, not per-pane.
           sendControlResize();
         },
+        forceResize: (cols: number, rows: number) => {
+          if (!controlTerminalRef.current.isConnected) return;
+          // Send the requested geometry without consulting the dedup cache;
+          // this is the escape hatch when tmux's pane size disagrees with
+          // what we last sent (e.g. window-size policy held it stuck).
+          lastSentSizeRef.current = { cols, rows };
+          controlTerminalRef.current.resize(cols, rows);
+        },
         onScroll: (lines: number) => {
           if (controlTerminalRef.current.isConnected) {
             controlTerminalRef.current.scrollPane(paneId, lines);
           }
         },
-        requestContent: () => {
+        requestSnapshot: () => {
           if (controlTerminalRef.current.isConnected) {
-            expectingContentRef.current = true;
-            controlTerminalRef.current.requestContent(paneId);
+            controlTerminalRef.current.requestSnapshot(paneId);
           }
         },
       };
@@ -676,27 +642,20 @@ export function DesktopLayout({
     },
     zoomPane: (paneId: string) => {
       console.log(`[zoom] ${paneId} (current=${zoomedPaneId})`);
-      expectingContentRef.current = true;
       const isUnzooming = zoomedPaneId === paneId;
       if (isUnzooming) {
-        // Same pane: toggle off (unzoom)
         setZoomedPaneId(null);
       } else {
-        // Zoom this pane
         setZoomedPaneId(paneId);
       }
-      // Tell tmux to zoom/unzoom too (for consistent pane dimensions)
       controlTerminalRef.current.zoomPane(paneId);
-      // After zoom state change, recalculate resize with delay for re-render
       setTimeout(() => {
         sendControlResize();
-        // When unzooming, request content for all re-mounted panes
         if (isUnzooming) {
-          expectingContentRef.current = true;
           const allPanes = getAllPaneIds(desktopStateRef.current.root);
           for (const pid of allPanes) {
             if (pid !== paneId) {
-              controlTerminalRef.current.requestContent(pid);
+              controlTerminalRef.current.requestSnapshot(pid);
             }
           }
         }
@@ -1067,8 +1026,8 @@ export function DesktopLayout({
     }));
     // Clear stale layout so the new session's layout takes effect
     setControlLayout(null);
-    // Clear buffered content from old session
-    initialContentBufferRef.current.clear();
+    // Clear snapshot cache from old session
+    lastSnapshotRef.current.clear();
     lastSentSizeRef.current = null;
   }, []);
 

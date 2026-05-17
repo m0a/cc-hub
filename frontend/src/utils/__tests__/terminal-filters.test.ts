@@ -1,7 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import {
   filterMouseTrackingInput,
-  filterMouseTrackingOutput,
   shouldInterceptKeyEvent,
 } from '../terminal-filters';
 
@@ -63,73 +62,6 @@ describe('filterMouseTrackingInput', () => {
 
   test('preserves empty string', () => {
     expect(filterMouseTrackingInput('')).toBe('');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// filterMouseTrackingOutput
-// ---------------------------------------------------------------------------
-describe('filterMouseTrackingOutput', () => {
-  test('passes through normal text', () => {
-    expect(filterMouseTrackingOutput('hello')).toBe('hello');
-  });
-
-  test('strips mouse tracking enable \\x1b[?1000h', () => {
-    expect(filterMouseTrackingOutput('\x1b[?1000h')).toBe('');
-  });
-
-  test('strips mouse tracking disable \\x1b[?1000l', () => {
-    expect(filterMouseTrackingOutput('\x1b[?1000l')).toBe('');
-  });
-
-  test('strips button event tracking \\x1b[?1002h', () => {
-    expect(filterMouseTrackingOutput('\x1b[?1002h')).toBe('');
-  });
-
-  test('strips any-event tracking \\x1b[?1003h', () => {
-    expect(filterMouseTrackingOutput('\x1b[?1003h')).toBe('');
-  });
-
-  test('strips UTF-8 mouse mode \\x1b[?1005h', () => {
-    expect(filterMouseTrackingOutput('\x1b[?1005h')).toBe('');
-  });
-
-  test('strips SGR mouse mode \\x1b[?1006h', () => {
-    expect(filterMouseTrackingOutput('\x1b[?1006h')).toBe('');
-  });
-
-  test('strips urxvt mouse mode \\x1b[?1015h', () => {
-    expect(filterMouseTrackingOutput('\x1b[?1015h')).toBe('');
-  });
-
-  test('strips multiple tracking sequences embedded in output', () => {
-    const output = 'prompt$ \x1b[?1000h\x1b[?1006hsome output\x1b[?1000l\x1b[?1006l';
-    expect(filterMouseTrackingOutput(output)).toBe('prompt$ some output');
-  });
-
-  test('preserves other DEC private modes (e.g. alternate screen)', () => {
-    // \x1b[?1049h = alternate screen buffer (should NOT be stripped)
-    const altScreen = '\x1b[?1049h';
-    expect(filterMouseTrackingOutput(altScreen)).toBe(altScreen);
-  });
-
-  test('preserves cursor visibility toggle', () => {
-    // \x1b[?25h = show cursor, \x1b[?25l = hide cursor
-    expect(filterMouseTrackingOutput('\x1b[?25h')).toBe('\x1b[?25h');
-    expect(filterMouseTrackingOutput('\x1b[?25l')).toBe('\x1b[?25l');
-  });
-
-  test('preserves SGR color sequences', () => {
-    const bold = '\x1b[1m';
-    const red = '\x1b[31m';
-    const reset = '\x1b[0m';
-    const input = `${bold}${red}error${reset}`;
-    expect(filterMouseTrackingOutput(input)).toBe(input);
-  });
-
-  test('preserves Japanese text with tracking sequences removed', () => {
-    const output = '\x1b[?1000hこんにちは\x1b[?1000l';
-    expect(filterMouseTrackingOutput(output)).toBe('こんにちは');
   });
 });
 

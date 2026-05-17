@@ -26,20 +26,6 @@ export function filterMouseTrackingInput(data: string): string {
 }
 
 /**
- * Filter mouse tracking enable/disable sequences from terminal OUTPUT data.
- *
- * Applications like Claude Code (ink TUI) and tmux send sequences like
- * \x1b[?1000h to enable mouse tracking. If left in, xterm.js enters mouse
- * tracking mode and clicks generate escape sequences instead of normal
- * text selection behaviour.
- */
-const MOUSE_TRACKING_OUTPUT_RE = new RegExp(`${ESC}\\[\\?(?:1000|1002|1003|1005|1006|1015)[hl]`, 'g');
-
-export function filterMouseTrackingOutput(data: string): string {
-  return data.replace(MOUSE_TRACKING_OUTPUT_RE, '');
-}
-
-/**
  * Determine whether a keyboard event should be intercepted by our custom
  * handler (returning false to xterm's attachCustomKeyEventHandler).
  *

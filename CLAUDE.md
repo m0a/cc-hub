@@ -251,19 +251,19 @@ cchub --version
 - macOS: Install Tailscale via `brew install tailscale` (App Store version lacks CLI)
 - tmux must be installed and accessible
 
-## Claude Code Hook通知連携
+## Claude Code / Codex Hook通知連携
 
-Claude Codeのhookイベント（応答完了、ユーザー入力待ち等）をCC Hub経由でブラウザのOS通知として受け取れる。
+Claude Code と Codex のhookイベント（応答完了、ユーザー入力待ち等）をCC Hub経由でブラウザのOS通知として受け取れる。
 
 ### 仕組み
 
 ```
-Claude Code hook → cchub notify (stdin JSON) → POST /api/notify → WebSocket broadcast → ブラウザ Notification API
+Hook → cchub notify (stdin JSON) → POST /api/notify → WebSocket broadcast → ブラウザ Notification API
 ```
 
 ### セットアップ手順
 
-1. `~/.claude/settings.json` の `hooks` に `cchub notify` を追加する:
+1. Claude Code は `~/.claude/settings.json` の `hooks` に `cchub notify` を追加する。Codex は `~/.codex/config.toml` または `~/.codex/hooks.json` に追加する:
 
 ```json
 {
@@ -279,7 +279,7 @@ Claude Code hook → cchub notify (stdin JSON) → POST /api/notify → WebSocke
 }
 ```
 
-2. `cchub` バイナリにPATHが通っていることを確認（hookはClaude Codeのプロセスから実行される）
+2. `cchub` バイナリにPATHが通っていることを確認（hookはClaude Code / Codex のプロセスから実行される）
 
 3. CC Hubサーバーがデフォルトポート（5923）で起動していること。カスタムポートの場合は `cchub notify -p <port>` を指定
 
@@ -297,7 +297,7 @@ Claude Code hook → cchub notify (stdin JSON) → POST /api/notify → WebSocke
 
 ### 注意事項
 
-- `cchub notify` はstdinからClaude Codeのhook JSON入力を読み取る
+- `cchub notify` はstdinからClaude Code / Codex のhook JSON入力を読み取る
 - `/api/notify` エンドポイントは認証不要（ローカルhookから呼ばれるため）
 - 既存のhookスクリプト（smart-notify.py等）と併用可能（同じイベントに複数hook登録）
 - 複数のWebSocket接続がある場合でもデバウンスにより通知は1回のみ

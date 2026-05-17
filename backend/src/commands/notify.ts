@@ -1,9 +1,9 @@
 /**
- * cchub notify - Claude Code hookイベントをCC Hubサーバーに送信する。
+ * cchub notify - Claude Code / Codex hookイベントをCC Hubサーバーに送信する。
  * stdinからhookのJSON入力を読み取り、CC Hubの /api/notify エンドポイントにPOSTする。
  * デフォルトで本番(5923)とdev(3000)の両方に送信する（失敗は無視）。
  *
- * 使い方（Claude Code hook設定）:
+ * 使い方（hook設定）:
  *   "command": "cchub notify"
  */
 

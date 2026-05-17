@@ -41,20 +41,26 @@ shared/      # Shared types and Zod schemas (types.ts)
 
 ### Backend Services
 
-- **TmuxControlSession** (`services/tmux-control.ts`) - Core service for tmux `-CC` control mode. Manages subprocess lifecycle, processes structured protocol messages (`%output`, `%layout-change`, `%begin`/`%end`/`%error`, `%exit`), handles raw byte streams for UTF-8 preservation, command queuing with FIFO correlation, per-pane output routing, client lifecycle with 30s grace period
-- **TmuxService** (`services/tmux.ts`) - Manages tmux sessions, spawns Claude Code processes, collects all pane info per session, batch agent info extraction
-- **TmuxLayoutParser** (`services/tmux-layout-parser.ts`) - Parses tmux layout strings into `TmuxLayoutNode` tree for frontend rendering
-- **TmuxOctalDecoder** (`services/tmux-octal-decoder.ts`) - Decodes tmux octal-encoded output, raw byte processing for split UTF-8 sequences, hex encoding for `send-keys -H`
+- **TmuxControlSession** (`services/tmux-control.ts`) - Core service for tmux `-CC` control mode. Manages subprocess lifecycle, processes structured protocol messages (`%output`, `%layout-change`, `%begin`/`%end`/`%error`, `%exit`), command queuing with FIFO correlation, client lifecycle with 30s grace period. `setClientSize()` issues `refresh-client -C` and `resize-window` in parallel so panes follow client size even on `window-size manual` sessions
+- **pane-snapshot** (`services/pane-snapshot.ts`) - State-sync transport core. Runs `tmux capture-pane -e -p` as the canonical state, generates `PaneSnapshot`, and diffs against the prior snapshot to emit `DiffOp[]`. Trims visually-blank trailing lines and prepends recent scrollback (`capture-pane -S -N -E -1`) as pad-fill to keep Claude TUI panes from showing a black void. PadFill is cached by `historySize` (PadFillCache) to avoid per-tick tmux round-trips. Initial snapshots bundle scrollback delta up to `INITIAL_SCROLLBACK_ROWS`
+- **TmuxService** (`services/tmux.ts`) - Manages tmux sessions (`listSessions` / `createSession` / `sessionExists` / `sendKeys`), collects pane info, and batches `ps` to extract agent info for all TTYs at once
+- **TmuxLayoutParser** (`services/tmux-layout-parser.ts`) - Parses tmux layout strings (`checksum,WxH,X,Y{...}`) into a `TmuxLayoutNode` tree for frontend rendering
+- **TmuxOctalDecoder** (`services/tmux-octal-decoder.ts`) - Decodes tmux octal-escaped output, hex encoding for `send-keys -H`
 - **ClaudeCodeService** (`services/claude-code.ts`) - Monitors Claude Code state from `.jsonl` files, PTY-based session matching
+- **CodexService** (`services/codex.ts`) - Reads latest Codex thread metadata per working directory from `~/.codex/state_5.sqlite`
+- **CodexConversationService** (`services/codex-conversation.ts`) - Converts `~/.codex/sessions/.../rollout-*.jsonl` to Claude-compatible `ConversationMessage[]` for the conversation viewer
+- **CodexUsageService** (`services/codex-usage.ts`) - Reads `rate_limits` from Codex rollout `token_count` events and exposes Anthropic-style usage charts (limit ETA included)
 - **SessionHistoryService** (`services/session-history.ts`) - Reads past Claude Code session history and conversations
-- **SessionMetadataService** (`services/session-metadata.ts`) - Persists session metadata (theme, title, session order, last known sessions for recovery after reboot)
+- **SessionMetadataService** (`services/session-metadata.ts`) - Persists session metadata (theme, title, session order, last known sessions including `agent` / `agentSessionId` for recovery after reboot)
+- **SessionMetricsService** (`services/session-metrics.ts`) - Computes per-session input-token metrics with model-aware context windows from `anthropic-models`
+- **ConversationWatcherService** (`services/conversation-watcher.ts`) - Watches Claude Code `.jsonl` for incremental conversation updates and pushes new messages to subscribed clients
 - **SessionsService** (`services/sessions.ts`) - Session CRUD operations with file-based persistence
 - **PromptHistoryService** (`services/prompt-history.ts`) - Searches prompt history across sessions
 - **FileService** (`services/file-service.ts`) - Secure file operations with path traversal prevention
 - **FileChangeTracker** (`services/file-change-tracker.ts`) - Parses Claude Code `.jsonl` logs to track file changes
 - **AnthropicUsageService** (`services/anthropic-usage.ts`) - Fetches usage limits from Anthropic API with 60s cache, 5min backoff on 429, in-flight request coalescing
+- **anthropic-models** (`services/anthropic-models.ts`) - Resolves model context-window sizes from the Anthropic models API
 - **StatsService** (`services/stats-service.ts`) - Reads cached statistics from `~/.claude/stats-cache.json`
-- **UsageTrackerService** (`services/usage-tracker.ts`) - Reads limit tracker data
 - **UsageHistoryService** (`services/usage-history.ts`) - Records usage snapshots to `/tmp/cchub-usage-history.json` with 30s throttling
 - **SystemMetricsService** (`services/system-metrics.ts`) - Collects CPU, memory, swap, and load metrics with history tracking (60 snapshots max)
 - **AuthService** (`services/auth.ts`) - Password-based authentication with session tokens
@@ -62,11 +68,12 @@ shared/      # Shared types and Zod schemas (types.ts)
 ### Key API Routes
 
 **Sessions** (`/api/sessions`):
-- `GET /` - List all tmux sessions with Claude Code state and pane info
-- `POST /` - Create new Claude Code session
+- `GET /` - List all tmux sessions with agent state and pane info (Claude / Codex)
+- `POST /` - Create a new session (`agent: 'claude' | 'codex'`, defaults to `claude`)
 - `GET /:id` - Get session details
 - `DELETE /:id` - Close session
-- `POST /:id/resume` - Resume Claude Code session with `claude -r`
+- `POST /:id/resume` - Resume the session with the matching agent (`claude -r` or `codex resume`)
+- `POST /:id/prompt` - Send a prompt string to the session (used by the chat composer)
 - `POST /:id/panes/focus` - Focus a pane (`{ paneId }`)
 - `POST /:id/panes/close` - Close a pane (`{ paneId }`, rejects last pane)
 - `POST /:id/panes/split` - Split a pane (`{ paneId, direction: 'h'|'v' }`)
@@ -105,14 +112,17 @@ shared/      # Shared types and Zod schemas (types.ts)
 **Terminal WebSocket** (`/ws/mux`):
 - Multiplexed WebSocket — single connection serves all sessions
 - Client subscribes/unsubscribes per session via JSON messages
-- Client messages (`MuxClientMessage`): `subscribe`, `unsubscribe`, then per-session: `input`, `resize`, `split`, `close-pane`, `resize-pane`, `select-pane`, `scroll`, `adjust-pane`, `equalize-panes`, `zoom-pane`, `request-content`, `ping`, `client-info`
-- Server messages (`MuxServerMessage`): `subscribed`, `unsubscribed`, `sessions-updated`, then per-session: `output`, `layout`, `initial-content`, `ready`, `pong`, `error`, `new-session`
+- Terminal display uses **state-sync transport** (not raw byte streams). The server treats `tmux capture-pane -e -p` as canonical state, then emits either a full `PaneSnapshot` (initial / recovery) or `DiffOp[]` per output debounce window
+- Client messages (`MuxClientMessage`): `subscribe`, `unsubscribe`, then per-session: `input`, `resize`, `split`, `close-pane`, `resize-pane`, `select-pane`, `scroll`, `adjust-pane`, `equalize-panes`, `zoom-pane`, `request-content`, `ping`, `client-info`, plus dev-only `xterm-grid-snapshot` (Channel C drift report)
+- Server messages (`MuxServerMessage`): `subscribed`, `unsubscribed`, `sessions-updated`, then per-session: `snapshot`, `diff`, `layout`, `ready`, `pong`, `error`, `new-session`
 - Server periodically pushes `sessions-updated` (5s interval) with full session list
+- Channel C (drift detection): with `CCHUB_SELF_VERIFY=1`, the client periodically posts its xterm grid back; the server compares against `capture-pane` and appends differences to `/tmp/cchub-drift.log`. Production builds are no-ops
 
 **Other**:
-- `GET /api/dashboard` - Dashboard data (usage limits, statistics, cost estimates, system metrics, usage history)
+- `GET /api/dashboard` - Dashboard data (Claude + Codex usage limits, statistics, cost estimates, system metrics, usage history)
 - `POST /api/upload/image` - Upload image file
 - `POST /api/notify` - Receive hook events from Claude Code
+- `GET /api/notify/hook-status` - Inspect hook delivery status (debugging)
 - `POST /api/auth` - Login
 - `POST /api/auth/logout` - Logout
 - `GET /api/auth/me` - Get current user
@@ -126,14 +136,20 @@ shared/      # Shared types and Zod schemas (types.ts)
 - **SessionModal.tsx** - Session picker modal (Ctrl+B) with pane count badges and expandable pane list
 
 **Terminal**:
-- **Terminal.tsx** - xterm.js terminal with WebGL rendering, `ControlModeConfig` for tmux size sync (`proposeDimensions()` instead of `fit()`, `setExactSize()` from tmux layout). Supports font size adjustment, desktop text selection with auto-copy, touch selection mode for mobile/tablet
+- **Terminal.tsx** - xterm.js terminal with WebGL rendering, applies state-sync `PaneSnapshot` / `DiffOp[]` from the server (`setExactSize()` from tmux layout, `proposeDimensions()` instead of `fit()`). Supports font size adjustment, desktop text selection with auto-copy, touch selection mode for mobile/tablet
+- **terminal-themes.ts** - xterm color theme definitions used for session color theming
+- **SelectionOverlay.tsx** - Mobile/tablet touch selection overlay with character-cell snapping
+- **InputBar.tsx** - Mobile/tablet input bar that bridges OS IME into the multiplexed terminal stream
 
 **Session Management**:
-- **SessionTabs.tsx** / **SessionTab.tsx** - Tab bar for active sessions
-- **SessionList.tsx** - Full session list with tabs (Active/History/Dashboard), pane list with focus/close/split actions, pinch-to-zoom support
-- **SessionListMini.tsx** - Compact session list view
+- **SessionList.tsx** - Full session list with tabs (Active/History/Dashboard), pane list with focus/close/split actions, agent badges, pinch-to-zoom support
+- **SessionModal.tsx** - Session picker modal (Ctrl+B) with pane count badges and expandable pane list
 - **SessionHistory.tsx** - Past session browser with project grouping
-- **ConversationViewer.tsx** - Markdown-rendered conversation display with image support
+
+**Chat & Conversation** (`components/chat/`):
+- **ChatView.tsx** - Per-session conversation viewer (Claude → WebSocket stream / Codex → HTTP polling)
+- **ChatComposer.tsx** - Prompt input UI for the chat view, routes through `POST /api/sessions/:id/prompt`
+- **ConversationViewer.tsx** - Markdown-rendered conversation display with image support; role labels switch per agent (Codex shows "Codex")
 
 **Keyboard**:
 - **FloatingKeyboard.tsx** - Draggable floating keyboard for tablets, minimizable, saves position per input mode
@@ -150,27 +166,22 @@ shared/      # Shared types and Zod schemas (types.ts)
 - **PromptComposer.tsx** - Prompt text composition interface
 
 **Dashboard** (`components/dashboard/`):
-- **Dashboard.tsx** - Main dashboard container
-- **DashboardPanel.tsx** - Dashboard side panel wrapper (Ctrl+Shift+B)
-- **UsageLimits.tsx** - 5-hour/7-day usage cycle display with progress bars
+- **Dashboard.tsx** - Main dashboard container (top-level `DashboardPanel.tsx` is the Ctrl+Shift+B wrapper)
+- **UsageLimits.tsx** - 5-hour/7-day usage cycle display with progress bars; switches between Claude and Codex agents
 - **DailyUsageChart.tsx** - Message and session count bar charts
 - **ModelUsageChart.tsx** - Opus/Sonnet token usage comparison
-- **CostEstimate.tsx** - API cost calculation
 - **HourlyHeatmap.tsx** - Activity heatmap by hour
-- **LimitWarning.tsx** - Usage limit warnings
 - **UsageChart.tsx** - Usage history line chart with real-time snapshots
 - **NetworkLatency.tsx** - WebSocket latency display
 - **ServerInfo.tsx** - Server information and system details
 
 **Other**:
 - **LoginForm.tsx** - Password authentication form
-- **LanguageSwitcher.tsx** - EN/JA language toggle
 - **Onboarding.tsx** - Spotlight-style walkthrough for new users
-- **PromptSearch.tsx** - Prompt history search interface
 
 ### Frontend Hooks
 
-- **useMultiplexedTerminal.ts** - WebSocket connection to `/ws/mux` for multiplexed terminal I/O. Handles auto-reconnect, keepalive pings, session subscribe/unsubscribe, base64 I/O encoding. Returns `sendInput`, `resize`, `splitPane`, `closePane`, `zoomPane`, `scrollPane`, `adjustPane`, `equalizePanes` etc.
+- **useMultiplexedTerminal.ts** - WebSocket connection to `/ws/mux` for multiplexed terminal I/O. Handles auto-reconnect, keepalive pings, session subscribe/unsubscribe, state-sync `snapshot` / `diff` application. Returns `sendInput`, `resize`, `splitPane`, `closePane`, `zoomPane`, `scrollPane`, `adjustPane`, `equalizePanes` etc.
 - **useSessions.ts** - Active sessions state management
 - **useSessionHistory.ts** - Session history browsing
 - **useDashboard.ts** - Dashboard data fetching
@@ -179,6 +190,11 @@ shared/      # Shared types and Zod schemas (types.ts)
 - **useTheme.ts** - Dark/light theme management
 - **useNetworkLatency.ts** - WebSocket latency tracking
 - **useLineSelection.ts** - Text line selection utilities
+- **useSelectionMode.ts** - Touch selection mode state machine (mobile/tablet)
+- **useInputEcho.ts** - Locally echoes typed input while waiting for the server snapshot/diff to round-trip
+- **useAgentConversation.ts** - Agent-agnostic conversation stream (dispatches to `useConversationStream` for Claude or `useCodexConversation` for Codex)
+- **useConversationStream.ts** - WebSocket-driven incremental conversation feed for Claude
+- **useCodexConversation.ts** - HTTP polling conversation feed for Codex sessions (5s interval)
 
 ### Keyboard Shortcuts (Desktop)
 
@@ -200,17 +216,18 @@ shared/      # Shared types and Zod schemas (types.ts)
 ### Terminal Communication
 
 ```
-Browser <--WebSocket (/ws/mux, JSON+binary)--> Hono Server <--tmux -CC (control mode)--> tmux <--pipe--> Claude Code
+Browser <--WebSocket (/ws/mux, JSON)--> Hono Server <--tmux -CC (control mode) + capture-pane--> tmux <--pipe--> Claude / Codex
 ```
 
 The backend upgrades HTTP to WebSocket at `/ws/mux`. A single multiplexed connection manages multiple session subscriptions. Each subscription creates a `TmuxControlSession` that manages `tmux -CC attach`, parsing structured protocol messages (`%output`, `%layout-change`, `%begin/%end/%error`, `%exit`). Terminal I/O is multiplexed per-pane and per-session using `MuxClientMessage` / `MuxServerMessage` types in `shared/types.ts`.
 
 Key behaviors:
-- **Session push**: Server pushes `sessions-updated` every 5s with full session list (replaces polling)
-- **Layout sync**: `%layout-change` events update all connected clients in real-time
-- **Size management**: Client sends container size, tmux determines pane dimensions, xterm.js uses `setExactSize()` from layout
-- **Initial content**: Deferred until first resize for correct terminal dimensions (`capture-pane -e -p -S -`)
-- **UTF-8**: Raw byte processing to handle split multi-byte sequences across `%output` lines
+- **State-sync transport**: On each output debounce window the server runs `tmux capture-pane -e -p` and emits either a full `PaneSnapshot` or a `DiffOp[]`. `%output` from `tmux -CC` is used only as a trigger — clients render from snapshots/diffs, not raw bytes. See `services/pane-snapshot.ts`.
+- **Scrollback pad-fill**: Short snapshots are prepended with recent scrollback (`capture-pane -S -N -E -1`) so Claude TUI panes never show a black void at the bottom. PadFill is cached per `historySize`.
+- **Session push**: Server pushes `sessions-updated` every 5s with the full session list (replaces polling).
+- **Layout sync**: `%layout-change` events update all connected clients in real-time.
+- **Size management**: Client sends container size; `setClientSize()` issues `refresh-client -C` and `resize-window` in parallel; xterm.js uses `setExactSize()` from the layout.
+- **Drift detection (dev only)**: With `CCHUB_SELF_VERIFY=1`, the client periodically sends its xterm grid back; the server diffs it against `capture-pane` and writes mismatches to `/tmp/cchub-drift.log`.
 
 ## CLI Commands
 
@@ -322,7 +339,7 @@ Uses custom i18n module with embedded translations:
 
 Types are defined in `shared/types.ts` with Zod schemas for validation. Import from `../../../shared/types` in both backend and frontend.
 
-Key types: `ControlClientMessage`, `ControlServerMessage` (per-session terminal I/O), `MuxClientMessage`, `MuxServerMessage` (multiplexed WebSocket protocol), `SessionResponse`, `PaneInfo`, `TmuxLayoutNode`.
+Key types: `MuxClientMessage`, `MuxServerMessage` (multiplexed WebSocket protocol), `PaneSnapshot`, `DiffOp` (state-sync transport), `SessionResponse`, `PaneInfo`, `TmuxLayoutNode`, `AgentProvider`, `ConversationMessage`.
 
 ## Linting
 

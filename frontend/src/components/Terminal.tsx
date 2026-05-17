@@ -99,6 +99,13 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const dumpForSelfVerifyRef = useRef<((trigger: 'resize-done' | 'reconnect-done' | 'output-idle' | 'periodic' | 'user') => void) | null>(null);
   const appliedSeqRef = useRef<(() => number) | null>(null);
   const appliedSnapRowsRef = useRef<(() => number) | null>(null);
+  // TEMPORARY (Claude Code workaround): snap.lines.length at the last
+  // snapshot apply. With bottom-aligned writes, the channel-C dump must
+  // read snap.lines.length rows starting at (baseY + offset), not the full
+  // snap.rows from baseY — otherwise the dump compares xterm grid's
+  // untouched top region against server's bottom-aligned snap and reports
+  // false drift across every row. Remove with the bottom-align workaround.
+  const appliedSnapLinesLenRef = useRef<(() => number) | null>(null);
   // baseY at the moment the last snapshot finished writing. Channel C
   // dumps anchor to this rather than buf.baseY-at-dump-time, because a
   // background snapshot's scrollback delta can advance baseY between
@@ -923,6 +930,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     };
 
     let lastSnapRows = 0;
+    let lastSnapLinesLen = 0;
     let lastAppliedSeq = 0;
     let lastAppliedBaseY = 0;
     // How many rows we last scrolled the viewport up to hide a trailing
@@ -958,6 +966,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         // canonical is simpler and matches Channel C drift reality.
         const vt = snapshotToVTSequence(snap);
         lastSnapRows = snap.rows;
+        lastSnapLinesLen = snap.lines.length;
         lastAppliedSeq = snap.seq;
         lastWriteOffset = Math.max(0, snap.rows - snap.lines.length);
         const t0 = bench.recordWriteStart();
@@ -1014,7 +1023,9 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           term.write(vt, () => bench.recordWriteEnd(t0, vt.length));
         }
         // Keep cached rows in sync with the diff's size op; otherwise
-        // dumpForSelfVerify would send the wrong row count.
+        // dumpForSelfVerify would send the wrong row count. lastSnapLinesLen
+        // stays — diffs preserve lines.length (server forces a snapshot when
+        // it changes), so the offset/dump-window remains valid.
         if (size) lastSnapRows = size.rows;
         lastAppliedSeq = event.seq;
       }
@@ -1023,6 +1034,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     // Expose for dumpForSelfVerify to read.
     appliedSeqRef.current = () => lastAppliedSeq;
     appliedSnapRowsRef.current = () => lastSnapRows;
+    appliedSnapLinesLenRef.current = () => lastSnapLinesLen;
     appliedBaseYRef.current = () => lastAppliedBaseY;
     controlCleanupRef.current = cleanup;
     return () => {
@@ -1044,11 +1056,19 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     // Anchor to the baseY captured at write-completion time. Using
     // buf.baseY here would drift if anything advanced it (background
     // scrollback push, debounced resize) between snap apply and dump.
+    //
+    // TEMPORARY (Claude Code workaround): with bottom-aligned writes, the
+    // server's sentSnap.lines covers only the bottom `linesLen` rows of the
+    // grid, not the full snap.rows. Read the same window (anchor + offset
+    // .. anchor + offset + linesLen) so the comparison aligns; otherwise
+    // every row reports false drift against the untouched grid top.
     const snapRows = appliedSnapRowsRef.current?.() ?? term.rows;
+    const linesLen = appliedSnapLinesLenRef.current?.() ?? snapRows;
+    const offset = Math.max(0, snapRows - linesLen);
     const anchor = appliedBaseYRef.current?.() ?? buf.baseY;
     const lines: string[] = [];
-    for (let i = 0; i < snapRows; i++) {
-      lines.push(buf.getLine(anchor + i)?.translateToString(true) ?? '');
+    for (let i = 0; i < linesLen; i++) {
+      lines.push(buf.getLine(anchor + offset + i)?.translateToString(true) ?? '');
     }
     sendDebugDump(
       sessionId,

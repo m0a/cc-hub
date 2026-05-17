@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.111] - 2026-05-17
+
+### Fixed
+- Claude TUI が pane の下半分を描画しないことによる「黒い void」 を解消 (#152)
+  - server が短い snap.lines を直前の scrollback で先頭埋め (prepend) して visible 全体を情報で満たす
+  - `PadFillCache` を historySize 単位でキャッシュし、 毎 tick の追加 tmux round-trip を回避
+  - 末尾 blank trim を `isVisuallyBlank` で統一 (ANSI escape のみの行も対象)
+
+### Changed
+- state-sync renderer を大幅 simplify (#152)
+  - `bottomAlignOffset` / diff offset / auto-scroll fallback / EXTRA pane inflation を撤回
+  - snap render は top-aligned で全行書き込み (snap canonical)
+  - Channel C dump は `applied.baseY` から `snap.rows` 行を素直に読み出し
+  - 差分: `+115 / -236` の縮減
+
+### Docs
+- アーキテクチャドキュメント (architecture.json / .html) を state-sync 化 + scrollback prepend pad に追従 (#151)
+
 ## [0.1.110] - 2026-05-17
 
 ### Changed

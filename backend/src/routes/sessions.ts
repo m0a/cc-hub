@@ -119,9 +119,18 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       }
     }
 
-    // Indicator state: hook events are the source of truth
-    // Default for running Claude = completed (idle/waiting for user input)
-    const hookResult = ccSession?.sessionId ? getIndicatorOverride(ccSession.sessionId) : null;
+    const includeClaudeInfo = agentSupportsConversationMetadata(s.agent ?? s.currentCommand);
+    const includeCodexInfo = (s.agent ?? s.currentCommand) === 'codex';
+    const conversationSessionId = includeClaudeInfo
+      ? ccSession?.sessionId
+      : includeCodexInfo
+        ? codexThread?.sessionId
+        : undefined;
+
+    // Indicator state: hook events are the source of truth.
+    // Claude defaults to completed (idle/waiting for user input); Codex keeps
+    // tmux/process state unless a hook event has been received.
+    const hookResult = conversationSessionId ? getIndicatorOverride(conversationSessionId) : null;
     const hookState = hookResult?.state ?? null;
     const hookToolName = hookResult?.toolName;
     // When pane title shows ✳ (Claude Code idle marker) but hook says "processing",
@@ -138,8 +147,11 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       durationMinutes = Math.round((Date.now() - modified.getTime()) / 60000);
     }
 
-    const includeClaudeInfo = agentSupportsConversationMetadata(s.agent ?? s.currentCommand);
-    const includeCodexInfo = (s.agent ?? s.currentCommand) === 'codex';
+    const sessionIndicatorState = includeClaudeInfo
+      ? indicatorState
+      : includeCodexInfo
+        ? (hookState ?? undefined)
+        : undefined;
 
     const panePids: (number | undefined)[] = s.panes ? s.panes.map((p: { pid?: number }) => p.pid) : [];
     const metrics = await computeSessionMetrics({
@@ -165,12 +177,12 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       agent: s.agent,
       currentPath: s.currentPath,
       paneTitle: s.paneTitle,
-      waitingToolName: includeClaudeInfo ? effectiveWaitingToolName : undefined,
+      waitingToolName: includeClaudeInfo ? effectiveWaitingToolName : includeCodexInfo ? hookToolName : undefined,
       ccSummary: includeClaudeInfo ? ccSession?.summary : includeCodexInfo ? codexThread?.title : undefined,
       ccFirstPrompt: includeClaudeInfo ? ccSession?.firstPrompt : includeCodexInfo ? codexThread?.firstPrompt : undefined,
       ccRecap: includeClaudeInfo ? ccSession?.lastRecap?.content : undefined,
       ccRecapAt: includeClaudeInfo ? ccSession?.lastRecap?.timestamp : undefined,
-      indicatorState: includeClaudeInfo ? indicatorState : undefined,
+      indicatorState: sessionIndicatorState,
       ccSessionId: includeClaudeInfo ? ccSession?.sessionId : undefined,
       agentSessionId: includeCodexInfo ? codexThread?.sessionId : undefined,
       messageCount: includeClaudeInfo ? ccSession?.messageCount : undefined,
@@ -184,13 +196,20 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
         const ttyName = p.tty?.replace('/dev/', '');
         const agentInfo = ttyName ? agentInfoByTty.get(ttyName) : undefined;
         const paneAgent = ttyName ? processInfo.agentByTty.get(ttyName) : undefined;
+        const sessionAgent = s.agent ?? s.currentCommand;
         const isClaudeOnPane = !p.isDead && !!ttyName && claudeOnPaneTtys.has(ttyName);
+        const isSessionAgentOnPane = !p.isDead && (
+          (paneAgent !== undefined && paneAgent === sessionAgent) ||
+          (paneAgent === undefined && p.command === sessionAgent)
+        );
         let paneIndicator: IndicatorState | undefined;
         if (p.isDead) {
           paneIndicator = 'completed';
         } else if (isClaudeOnPane) {
           // Use session-level indicator for Claude panes (hook/jsonl based)
           paneIndicator = indicatorState === 'completed' ? 'waiting_input' : indicatorState;
+        } else if (includeCodexInfo && isSessionAgentOnPane) {
+          paneIndicator = hookState ?? 'idle';
         } else {
           paneIndicator = 'idle';
         }
@@ -208,7 +227,9 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
           agentColor: agentInfo?.agentColor,
           isActive: p.isActive,
           isDead: p.isDead || undefined,
-          indicatorState: (hookState === 'processing' && p.title?.startsWith('✳')) ? paneIndicator : (hookState ?? paneIndicator),
+          indicatorState: isSessionAgentOnPane
+            ? (hookState === 'processing' && p.title?.startsWith('✳') ? paneIndicator : (hookState ?? paneIndicator))
+            : paneIndicator,
           pid: p.pid,
         };
         return pane;
@@ -441,7 +462,8 @@ sessions.get('/history', async (c) => {
 sessions.get('/history/:sessionId/conversation', async (c) => {
   const sessionId = c.req.param('sessionId');
   const projectDirName = c.req.query('projectDirName');
-  const last = c.req.query('last') ? parseInt(c.req.query('last')!, 10) : undefined;
+  const lastQuery = c.req.query('last');
+  const last = lastQuery ? parseInt(lastQuery, 10) : undefined;
   const agent = c.req.query('agent');
   const messages = agent === 'codex'
     ? await codexConversationService.getConversation(sessionId)

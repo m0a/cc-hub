@@ -37,6 +37,9 @@ interface MuxSubscription {
   // tmux history-size at the time of the last snapshot, per pane. Used to
   // compute scrollbackDelta on the next capture.
   lastHistorySize: Map<string, number>;
+  // Cached scrollback rows used to pad short snapshots (Claude TUI
+  // workaround). Reusable while historySize is unchanged.
+  lastPadFill: Map<string, import('../services/pane-snapshot').PadFillCache>;
   // Per-pane snapshot debounce timers.
   snapshotTimers: Map<string, Timer>;
   // Pane IDs we've ever sent a snapshot for, so we can recapture them on
@@ -221,6 +224,7 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     existing.initialized = false;
     existing.serverSnapshots.clear();
     existing.lastHistorySize.clear();
+    existing.lastPadFill.clear();
     for (const t of existing.snapshotTimers.values()) clearTimeout(t);
     existing.snapshotTimers.clear();
     existing.outputSuppressedCount = 0;
@@ -245,6 +249,7 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
       initialized: false,
       serverSnapshots: new Map(),
       lastHistorySize: new Map(),
+      lastPadFill: new Map(),
       snapshotTimers: new Map(),
       knownPanes: new Set(),
       outputSuppressedCount: 0,
@@ -364,22 +369,25 @@ async function emitSnapshot(
   paneId: string,
 ) {
   if (sub.controlSession.isDestroyed) return;
-  let result: { snapshot: PaneSnapshot; historySize: number } | null;
+  let result: Awaited<ReturnType<typeof captureSnapshot>>;
   try {
     result = await captureSnapshot(
       sub.controlSession,
       paneId,
       sub.lastHistorySize.get(paneId),
+      sub.lastPadFill.get(paneId),
     );
   } catch (err) {
     console.warn(`[mux] captureSnapshot failed for ${paneId}:`, err);
     return;
   }
   if (!result) return;
-  const { snapshot, historySize } = result;
+  const { snapshot, historySize, padFill } = result;
 
   sub.knownPanes.add(paneId);
   sub.lastHistorySize.set(paneId, historySize);
+  if (padFill) sub.lastPadFill.set(paneId, padFill);
+  else sub.lastPadFill.delete(paneId);
 
   const prev = sub.serverSnapshots.get(paneId);
   if (!prev) {
@@ -392,24 +400,15 @@ async function emitSnapshot(
 
   const ops = diffSnapshots(prev, snapshot);
   const hasScrollback = (snapshot.scrollbackDelta?.length ?? 0) > 0;
-  // TEMPORARY (Claude Code workaround): When snapshot.lines.length changes,
-  // the bottom-aligned write offset on the client also changes, and diff line
-  // ops (indexed within snapshot.lines, not the grid) can no longer be
-  // applied consistently. Force a full snapshot in that case so the client
-  // re-anchors the offset cleanly. Remove with the rest of the Claude TUI
-  // workaround when the upstream renders the full pane.
-  const linesLenChanged = prev.lines.length !== snapshot.lines.length;
-  // Scrollback can only be carried on a full snapshot (it must be applied
-  // before the visible region is rewritten), and lines-length changes need a
-  // full snapshot so the client can re-anchor the bottom-align offset.
-  const needFullSnapshot = hasScrollback || linesLenChanged;
 
-  if (ops.length === 0 && !needFullSnapshot) {
+  if (ops.length === 0 && !hasScrollback) {
     sub.serverSnapshots.set(paneId, snapshot);
     return;
   }
 
-  if (needFullSnapshot) {
+  // Scrollback can only be carried on a full snapshot (it must be applied
+  // before the visible region is rewritten).
+  if (hasScrollback) {
     console.log(`[mux] state-snapshot pane=${paneId} seq=${snapshot.seq} scrollbackDelta=${snapshot.scrollbackDelta?.length ?? 0} rows=${snapshot.rows}`);
     try {
       ws.send(JSON.stringify({ type: 'state-snapshot', sessionId, snapshot }));
@@ -446,6 +445,7 @@ async function emitInitialSnapshots(
     // clear the history baseline too so scrollbackDelta starts empty.
     sub.serverSnapshots.delete(pane.paneId);
     sub.lastHistorySize.delete(pane.paneId);
+    sub.lastPadFill.delete(pane.paneId);
     await emitSnapshot(ws, sessionId, sub, pane.paneId);
   }
 }

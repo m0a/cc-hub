@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.116] - 2026-05-18
+
+### Fixed
+- Codex hook イベントが CC Hub のセッション / pane indicator に反映されない問題を修正 (#160)
+  - Codex の `agentSessionId` を hook override のキーとして扱い、`PreToolUse` / `Stop` などの状態を session と pane に反映
+  - `~/.codex/config.toml` / `~/.codex/hooks.json` の `cchub notify` 設定検出に対応
+  - Codex hook 設定はホームディレクトリ側を使い、repo-local な Codex 専用コピーを持たない方針を明文化
+
 ## [0.1.115] - 2026-05-17
 
 ### Added

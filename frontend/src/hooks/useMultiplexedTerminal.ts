@@ -55,8 +55,23 @@ const getAuthToken = (): string | null => {
 let sharedWs: WebSocket | null = null;
 let sharedPingInterval: number | null = null;
 let sharedReconnectTimeout: number | null = null;
+let sharedConnectWatchdog: number | null = null;
+let sharedWsConnectStart = 0;
+let sharedLastPongAt = 0;
 let subscribedSession: string | null = null;
 let wsReady = false;
+
+// Force-close a CONNECTING socket if onopen hasn't fired by this deadline.
+// Mobile networks can leave the TCP handshake in a zombie state — no onopen,
+// no onclose — and the existing `ensureConnection()` would early-return on
+// CONNECTING forever. The watchdog turns the silent hang into an explicit
+// close, letting the onclose reconnect path take over.
+const CONNECT_WATCHDOG_MS = 10_000;
+const PING_INTERVAL_MS = 10_000;
+// Force-close OPEN socket if no pong reply for this long. Catches "silently
+// dead" connections where the OS hasn't yet noticed the TCP is gone (common
+// on mobile when carrier NAT drops the session).
+const PONG_TIMEOUT_MS = 25_000;
 // Channel C: when the server (CCHUB_SELF_VERIFY=1) accepts our subscription,
 // it includes selfVerifyEnabled=true so we know to start streaming debug-dump
 // messages. Stays false on production builds.
@@ -124,13 +139,23 @@ function subscribeToSession(sessionId: string, force = false) {
 }
 
 function ensureConnection(token?: string | null) {
-  if (sharedWs && (sharedWs.readyState === WebSocket.OPEN || sharedWs.readyState === WebSocket.CONNECTING)) {
-    return;
+  if (sharedWs?.readyState === WebSocket.OPEN) return;
+
+  if (sharedWs?.readyState === WebSocket.CONNECTING) {
+    const elapsed = Date.now() - sharedWsConnectStart;
+    if (elapsed < CONNECT_WATCHDOG_MS) return;
+    console.warn(`[MUX] stale CONNECTING (${elapsed}ms); force closing for retry`);
+    try { sharedWs.close(); } catch {}
+    sharedWs = null;
   }
 
   if (sharedReconnectTimeout) {
     clearTimeout(sharedReconnectTimeout);
     sharedReconnectTimeout = null;
+  }
+  if (sharedConnectWatchdog) {
+    clearTimeout(sharedConnectWatchdog);
+    sharedConnectWatchdog = null;
   }
 
   let wsUrl = `${getWsBase()}/ws/mux`;
@@ -142,17 +167,35 @@ function ensureConnection(token?: string | null) {
   const ws = new WebSocket(wsUrl);
   sharedWs = ws;
   wsReady = false;
+  sharedWsConnectStart = Date.now();
+
+  sharedConnectWatchdog = window.setTimeout(() => {
+    if (sharedWs === ws && ws.readyState === WebSocket.CONNECTING) {
+      console.warn('[MUX] connect watchdog timed out; force closing CONNECTING socket');
+      try { ws.close(); } catch {}
+    }
+    sharedConnectWatchdog = null;
+  }, CONNECT_WATCHDOG_MS);
 
   ws.onopen = () => {
     console.log('[MUX] WebSocket opened');
+    if (sharedConnectWatchdog) {
+      clearTimeout(sharedConnectWatchdog);
+      sharedConnectWatchdog = null;
+    }
+    sharedLastPongAt = Date.now();
 
     if (sharedPingInterval) clearInterval(sharedPingInterval);
     sharedPingInterval = window.setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        const sid = activeCallbacks?.sessionId || '';
-        ws.send(JSON.stringify({ type: 'ping', timestamp: Date.now(), sessionId: sid }));
+      if (ws.readyState !== WebSocket.OPEN) return;
+      if (Date.now() - sharedLastPongAt > PONG_TIMEOUT_MS) {
+        console.warn(`[MUX] pong timeout (${Date.now() - sharedLastPongAt}ms); force closing socket`);
+        try { ws.close(); } catch {}
+        return;
       }
-    }, 10_000);
+      const sid = activeCallbacks?.sessionId || '';
+      ws.send(JSON.stringify({ type: 'ping', timestamp: Date.now(), sessionId: sid }));
+    }, PING_INTERVAL_MS);
   };
 
   let wsMsgCount = 0;
@@ -236,6 +279,7 @@ function ensureConnection(token?: string | null) {
         break;
       }
       case 'pong': {
+        sharedLastPongAt = Date.now();
         const rtt = Date.now() - (msg.timestamp as number);
         reportWsLatency(rtt);
         break;
@@ -278,6 +322,10 @@ function ensureConnection(token?: string | null) {
   ws.onclose = (event) => {
     console.log(`[MUX] WebSocket closed: code=${event.code} reason=${event.reason} msgs=${wsMsgCount}`);
     clearInterval(bytesTimer);
+    if (sharedConnectWatchdog) {
+      clearTimeout(sharedConnectWatchdog);
+      sharedConnectWatchdog = null;
+    }
     if (sharedWs !== ws) return;
 
     sharedWs = null;
@@ -315,7 +363,33 @@ function registerVisibilityListener() {
         sharedReconnectTimeout = null;
       }
       ensureConnection();
+      return;
     }
+    // Returning to tab: if CONNECTING is older than a short threshold (3s),
+    // assume the handshake stalled while backgrounded and force a fresh attempt
+    // without waiting the full watchdog window.
+    if (sharedWs.readyState === WebSocket.CONNECTING && Date.now() - sharedWsConnectStart > 3000) {
+      console.warn('[MUX] visibility-change: stale CONNECTING, forcing reconnect');
+      try { sharedWs.close(); } catch {}
+    }
+  });
+
+  // Network status: when the OS reports the network came back, force a fresh
+  // connection check. Without this, a stale OPEN socket left over from a
+  // dropped cellular session can sit unnoticed until the next ping/pong fails.
+  window.addEventListener('online', () => {
+    console.log('[MUX] navigator online; refreshing connection');
+    if (sharedWs?.readyState === WebSocket.CONNECTING || sharedWs?.readyState === WebSocket.OPEN) {
+      try { sharedWs.close(); } catch {}
+    }
+    if (sharedReconnectTimeout) {
+      clearTimeout(sharedReconnectTimeout);
+      sharedReconnectTimeout = null;
+    }
+    ensureConnection();
+  });
+  window.addEventListener('offline', () => {
+    console.log('[MUX] navigator offline');
   });
 }
 

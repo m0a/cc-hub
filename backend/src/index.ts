@@ -364,7 +364,7 @@ export default {
     close(ws: import('bun').ServerWebSocket<MuxData>, code: number, reason: string) {
       if (ws.data?.mux) return muxClose(ws, code, reason);
     },
-    idleTimeout: 120,
+    idleTimeout: 60,
     sendPings: true,
   },
 };

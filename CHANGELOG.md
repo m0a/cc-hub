@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.112] - 2026-05-17
+
+### Fixed
+- ターミナル state-sync が連続出力中に止まって見える問題を修正 (#154)
+  - `%output` トリガの snapshot scheduling を debounce から throttle に変更し、Codex のストリーミング出力や秒表示のように出力が途切れないケースでも定期的に反映
+  - xterm.js の diff 適用ずれを避けるため、可視変更は full `state-snapshot` として配信
+  - full snapshot 適用後に viewport を下端へ戻し、buffer は更新済みなのに古いスクロール位置を見続ける状態を防止
+  - `capture-pane -a` は使わず、`capture-pane -e -p` で現在見えている TUI 画面を取得する方針を明文化
+
+### Docs
+- Codex / 他エージェント向けの `AGENTS.md` を追加し、`CLAUDE.md` と `.claude/skills` / `.claude/commands` を single source として参照する方針に統一 (#154)
+
 ## [0.1.111] - 2026-05-17
 
 ### Fixed

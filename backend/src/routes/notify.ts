@@ -1,9 +1,8 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
 import { broadcastToMuxClients } from './terminal-mux';
 import type { IndicatorState } from '../../../shared/types';
+import { getHookStatus } from '../services/hook-status';
 
 /** transcriptファイルからコンテキストに応じた通知メッセージを生成する */
 async function generateSmartMessage(transcriptPath: string, _event: string): Promise<string | undefined> {
@@ -101,10 +100,10 @@ export function getIndicatorOverride(ccSessionId: string): { state: IndicatorSta
 }
 
 /**
- * Claude Code hook イベントを受信して WebSocket 経由で全クライアントにブロードキャストする。
- * Claude Code の Stop, Notification 等のhookから curl で呼ばれる想定。
+ * Claude Code / Codex hook イベントを受信して WebSocket 経由で全クライアントにブロードキャストする。
+ * Stop, Notification 等の hook から curl で呼ばれる想定。
  *
- * リクエストボディ: Claude Code hook の stdin JSON をそのまま渡す
+ * リクエストボディ: hook の stdin JSON をそのまま渡す
  * {
  *   "hook_event_name": "Stop" | "Notification" | ...,
  *   "session_id": "...",
@@ -158,46 +157,13 @@ notify.post('/', async (c) => {
   }
 });
 
-/**
- * Required hook events for the session list indicator to work end-to-end:
- * - Stop                              → completed
- * - PreToolUse                        → processing (any tool)
- * - UserPromptSubmit                  → processing (right after user submits)
- * - PostToolUse with AskUserQuestion  → waiting_input
- */
-type HookEntry = { matcher?: string; hooks?: Array<{ command?: string }> };
-
-function hasCchubNotify(entries: HookEntry[] | undefined, matcher?: string): boolean {
-  if (!Array.isArray(entries)) return false;
-  for (const entry of entries) {
-    if (matcher !== undefined && entry.matcher !== matcher) continue;
-    for (const hook of entry.hooks || []) {
-      if (hook.command?.includes('cchub notify')) return true;
-    }
-  }
-  return false;
-}
-
-/** Check if cchub notify is configured in ~/.claude/settings.json hooks */
+/** Check if cchub notify is configured in ~/.claude or ~/.codex hooks */
 notify.get('/hook-status', async (c) => {
   try {
-    const settingsPath = join(homedir(), '.claude', 'settings.json');
-    const content = await readFile(settingsPath, 'utf-8');
-    const settings = JSON.parse(content);
-    const hooks = (settings.hooks || {}) as Record<string, HookEntry[]>;
-
-    const events = {
-      stop: hasCchubNotify(hooks.Stop),
-      preToolUse: hasCchubNotify(hooks.PreToolUse),
-      userPromptSubmit: hasCchubNotify(hooks.UserPromptSubmit),
-      askUserQuestion: hasCchubNotify(hooks.PostToolUse, 'AskUserQuestion'),
-    };
-    const missing = Object.entries(events).filter(([, ok]) => !ok).map(([k]) => k);
-    const configured = missing.length === 0;
-
-    return c.json({ configured, events, missing });
+    const status = await getHookStatus();
+    return c.json(status);
   } catch {
-    // settings.json doesn't exist or is invalid
+    // settings / config files don't exist or are invalid
     return c.json({
       configured: false,
       events: { stop: false, preToolUse: false, userPromptSubmit: false, askUserQuestion: false },

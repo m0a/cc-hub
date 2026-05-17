@@ -1,16 +1,16 @@
 /**
- * Claude Code hook イベントを受信した際にOS通知を発火する。
+ * hook イベントを受信した際にOS通知を発火する。
  * PWAではServiceWorkerRegistration.showNotification()を使用。
  * 複数のインスタンスから同時に呼ばれても
  * デバウンスで1回だけ通知する。
  */
 
 const EVENT_MESSAGES: Record<string, string> = {
-  Stop: 'Claudeの応答が完了しました',
-  Notification: 'Claudeがユーザー入力を待っています',
+  Stop: '応答が完了しました',
+  Notification: 'ユーザー入力を待っています',
   SubagentStop: 'サブエージェントが完了しました',
   TaskCompleted: 'タスクが完了しました',
-  PostToolUse: 'Claudeがユーザー入力を待っています',
+  PostToolUse: 'ユーザー入力を待っています',
 };
 
 // デバウンス: 同じイベント+cwdの組み合わせを500ms以内に重複発火しない

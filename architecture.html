@@ -120,17 +120,25 @@
     "backend": "Bun runtime + Hono",
     "frontend": "React 19 + Vite + Tailwind v4 + xterm.js",
     "shared": "Zod v4 schemas in shared/types.ts",
-    "transport": "Multiplexed WebSocket /ws/mux + tmux -CC control mode"
+    "transport": "Multiplexed WebSocket /ws/mux + tmux -CC control mode。ターミナル表示は state-sync (tmux capture-pane を canonical state として snapshot / diff を JSON で配信)"
   },
   "backend": {
     "services": [
       {
         "name": "TmuxControlSession",
         "file": "backend/src/services/tmux-control.ts",
-        "summary": "tmux -CC (control mode) プロセスを管理するコア。%output / %layout-change / %begin / %end / %error / %exit を処理し、raw byte stream で UTF-8 を保持。client 単位の pane 出力ルーティング、コマンド FIFO キュー、グレースピリオド付きライフサイクル管理を提供",
+        "summary": "tmux -CC (control mode) プロセスを管理するコア。%output / %layout-change / %begin / %end / %error / %exit を処理し、raw byte stream で UTF-8 を保持。client 単位の pane 出力ルーティング、コマンド FIFO キュー、グレースピリオド付きライフサイクル管理を提供。setClientSize() は refresh-client -C と resize-window を Promise.all で並列発行し、window-size manual な session でも client サイズに pane を追従させる",
         "deps": [
           "tmux-octal-decoder",
           "tmux-layout-parser"
+        ]
+      },
+      {
+        "name": "captureSnapshot / diffSnapshots",
+        "file": "backend/src/services/pane-snapshot.ts",
+        "summary": "tmux capture-pane -e -p を canonical state として PaneSnapshot を生成し、 前回 snap との差分 DiffOp[] を計算。 Claude TUI 暫定対応として、 末尾 visually-blank 行を trim した後、 不足分を recent scrollback (capture-pane -S -N -E -1) で prepend pad (= visible 余白を直前履歴で埋める)。 padFill は historySize 単位でキャッシュ (PadFillCache) して毎 tick の tmux round-trip を回避。 初回 snap には INITIAL_SCROLLBACK_ROWS まで scrollback delta も同梱",
+        "deps": [
+          "shared/types"
         ]
       },
       {
@@ -652,7 +660,7 @@
       {
         "name": "Terminal",
         "file": "frontend/src/components/Terminal.tsx",
-        "summary": "xterm.js + WebGL アドオンのターミナル実装。ControlModeConfig から pane I/O を受け、tmux レイアウト由来の setExactSize() でサイズ同期。タッチ選択モード、フォントサイズ調整、デスクトップ自動コピー",
+        "summary": "xterm.js + WebGL アドオンのターミナル実装。ControlModeConfig から snapshot / diff イベントを受け、snapshotToVTSequence / diffToVTSequence で VT 列に変換して上端揃え書き込み (snap canonical)。Channel C drift dump は applied.baseY から snap.rows 行を grid 読出し。タッチ選択モード、フォントサイズ調整、デスクトップ自動コピー",
         "hooks": [
           "useSelectionMode"
         ],
@@ -1029,7 +1037,7 @@
   },
   "websocket": {
     "endpoint": "/ws/mux",
-    "description": "単一の多重化 WebSocket。クライアントは subscribe でセッションごとに購読し、binary フレーム [0x02][sessionId\\0][paneId\\0][data] と JSON 制御メッセージを混在で受信",
+    "description": "単一の多重化 WebSocket。クライアントは subscribe でセッションごとに購読し、ターミナル表示は state-snapshot / state-diff (JSON) で配信。 binary フレームは現在使用していない",
     "client_messages": {
       "mux_level": [
         "subscribe",
@@ -1051,7 +1059,8 @@
         "zoom-pane",
         "respawn-pane",
         "ping",
-        "client-info"
+        "client-info",
+        "debug-dump"
       ]
     },
     "server_messages": {
@@ -1065,7 +1074,8 @@
         "conversation-update"
       ],
       "per_session": [
-        "output (binary)",
+        "state-snapshot",
+        "state-diff",
         "layout",
         "initial-content",
         "ready",
@@ -1076,7 +1086,6 @@
         "hook-event"
       ]
     },
-    "binary_format": "[0x02][sessionId\\0][paneId\\0][raw bytes]",
     "intervals": {
       "sessions-updated push": "5s",
       "zombie connection detection": "60s",
@@ -1144,17 +1153,28 @@
       ]
     },
     {
-      "name": "ターミナル出力表示",
+      "name": "ターミナル出力表示 (state-sync)",
       "steps": [
-        "tmux プロセス",
-        "tmux -CC stdout",
-        "TmuxControlSession (raw buffer)",
-        "%output 行デコード (tmux-octal-decoder)",
-        "OutputListener (paneId 別 callback)",
-        "/ws/mux binary frame [0x02][sessionId\\0][paneId\\0][data]",
+        "tmux プロセス (描画変化)",
+        "tmux -CC %output トリガで debounce",
+        "captureSnapshot: display-message で cursor/size + capture-pane -e -p で visible 領域取得",
+        "末尾 visually-blank 行を trim → 不足分を scrollback の最新行で prepend (Claude TUI 暫定対応、 padFill キャッシュ)",
+        "前 snap と diffSnapshots で比較 → DiffOp[]",
+        "/ws/mux JSON { type:'state-snapshot' | 'state-diff', sessionId, snapshot | ops }",
         "ブラウザ WebSocket",
-        "useMultiplexedTerminal.onPaneOutput",
+        "useMultiplexedTerminal.registerOnRender",
+        "snapshotToVTSequence / diffToVTSequence (top-aligned write、snap が canonical)",
         "Terminal.tsx xterm.js write"
+      ]
+    },
+    {
+      "name": "Channel C drift detection (dev only)",
+      "steps": [
+        "trigger: resize-done / reconnect-done / output-idle (300ms) / periodic (30s)",
+        "Terminal.tsx dumpForSelfVerify: applied.baseY から snap.rows 行を grid 読出し",
+        "/ws/mux JSON { type:'debug-dump', sessionId, paneId, lines, cursor, appliedSeq }",
+        "terminal-mux handleDebugDump: sub.serverSnapshots の sentSnap.lines と比較 (ANSI strip + trimEnd で normalize)",
+        "mismatch を /tmp/cchub-drift.log に JSON Lines で追記"
       ]
     },
     {

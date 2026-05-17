@@ -930,6 +930,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     // amount so the offset stays accurate as the TUI's used-height
     // shifts. 0 means viewport is naturally at the buffer's tail.
     let lastAutoScrollLines = 0;
+    // TEMPORARY (Claude Code workaround): bottom-aligned write offset.
+    // = snap.rows - snap.lines.length at the last snapshot apply. Diff line
+    // ops are indexed within snap.lines, so we add this offset to land on
+    // the correct grid row. Reset on each snapshot since the offset can
+    // change. Remove with the Claude TUI workaround in pane-snapshot.ts.
+    let lastWriteOffset = 0;
     const cleanup = cm.registerOnRender((event) => {
       const term = terminalRef.current;
       if (!term) return;
@@ -953,6 +959,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         const vt = snapshotToVTSequence(snap);
         lastSnapRows = snap.rows;
         lastAppliedSeq = snap.seq;
+        lastWriteOffset = Math.max(0, snap.rows - snap.lines.length);
         const t0 = bench.recordWriteStart();
         term.write(vt, () => {
           bench.recordWriteEnd(t0, vt.length);
@@ -992,7 +999,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           }
         });
       } else {
-        const { vt, size } = diffToVTSequence(event.ops);
+        const { vt, size } = diffToVTSequence(event.ops, lastWriteOffset);
         if (size && (term.cols !== size.cols || term.rows !== size.rows)) {
           term.resize(size.cols, size.rows);
           const fit = fitAddonRef.current;

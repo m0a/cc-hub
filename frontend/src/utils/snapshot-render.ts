@@ -13,23 +13,6 @@
 
 import type { DiffOp, PaneSnapshot } from '../../../shared/types';
 
-// Strip CSI (e.g. SGR colors) and OSC (e.g. OSC 8 hyperlinks) escapes
-// before comparing rows. Without this, color-only changes force a
-// rewrite, and comparing snap.lines (ANSI-rich, from capture-pane -e)
-// with xterm's translateToString output (plain text) always mismatches.
-// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escapes by design.
-const CSI_RE = /\x1b\[[\d;?]*[a-zA-Z]/g;
-// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escapes by design.
-const OSC_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
-function normalize(s: string): string {
-  // Strip ANSI then rtrim trailing whitespace (grid cells are space-padded).
-  const stripped = s.replace(OSC_RE, '').replace(CSI_RE, '');
-  let end = stripped.length;
-  while (end > 0 && (stripped.charCodeAt(end - 1) === 0x20 || stripped.charCodeAt(end - 1) === 0x09)) {
-    end--;
-  }
-  return stripped.slice(0, end);
-}
 
 /**
  * Build the VT byte sequence that re-renders a full snapshot.
@@ -68,7 +51,7 @@ function normalize(s: string): string {
  */
 export function snapshotToVTSequence(
   snapshot: PaneSnapshot,
-  prevLines?: string[],
+  _prevLines?: string[],
 ): string {
   let s = '';
   s += '\x1b[?25l';
@@ -82,18 +65,26 @@ export function snapshotToVTSequence(
     }
   }
 
-  for (let i = 0; i < snapshot.rows; i++) {
-    const content = snapshot.lines[i] ?? '';
-    // Compare against prev after ANSI stripping so SGR-only changes
-    // don't force a needless rewrite. The caller should pass prevLines
-    // sourced from xterm's actual grid (not a cached snap) so this
-    // accurately reflects what's drawn — otherwise stale grid rows can
-    // be missed when prev and snap agree they're blank but the grid
-    // is actually showing leftover content from a taller frame.
-    if (prevLines && normalize(prevLines[i] ?? '') === normalize(content)) continue;
-    s += `\x1b[${i + 1};1H\x1b[2K${content}`;
+  // TEMPORARY (Claude Code workaround): snapshot.lines can be shorter than
+  // snapshot.rows because tmux capture-pane trims trailing blank rows that
+  // Claude TUI leaves unrendered. Write the lines bottom-aligned so the
+  // input area / status footer (always the last rendered rows) lands at the
+  // grid's bottom edge — matching the user's expectation of "prompt at the
+  // bottom of the terminal." Rows above the bottom-aligned content are left
+  // untouched so the previous frame (= scrollback / earlier render) remains
+  // visible there, avoiding the black void the trimmed bottom would
+  // otherwise create. Remove once Claude TUI fills the pane fully.
+  const linesLen = snapshot.lines.length;
+  const offset = Math.max(0, snapshot.rows - linesLen);
+  for (let i = 0; i < linesLen; i++) {
+    s += `\x1b[${i + offset + 1};1H\x1b[2K${snapshot.lines[i] ?? ''}`;
   }
-  s += `\x1b[${snapshot.cursor.y + 1};${snapshot.cursor.x + 1}H`;
+  // Cursor: re-anchor to the bottom-aligned write position. If tmux's
+  // cursor.y points into the unrendered void region (cy >= linesLen), pin it
+  // to the last rendered row so the cursor remains visible on-screen.
+  const localCy = Math.min(snapshot.cursor.y, Math.max(0, linesLen - 1));
+  const gridCy = offset + localCy;
+  s += `\x1b[${gridCy + 1};${snapshot.cursor.x + 1}H`;
   s += snapshot.cursor.visible ? '\x1b[?25h' : '\x1b[?25l';
   return s;
 }
@@ -107,7 +98,15 @@ export function snapshotToVTSequence(
  * applies it per cell-attr context. Instead we end with the diff's own
  * cursor op (always present at the end of a meaningful diff from the server).
  */
-export function diffToVTSequence(ops: DiffOp[]): { vt: string; size: { cols: number; rows: number } | null } {
+export function diffToVTSequence(
+  ops: DiffOp[],
+  // TEMPORARY (Claude Code workaround): row offset for bottom-aligned write.
+  // Diff line ops are indexed within snapshot.lines (= pane top-aligned),
+  // but the client renders bottom-aligned, so each row index must be shifted
+  // by `offset = snap.rows - snap.lines.length` to address the correct grid
+  // row. Removed alongside the bottom-aligned write workaround.
+  offset = 0,
+): { vt: string; size: { cols: number; rows: number } | null } {
   let s = '';
   let size: { cols: number; rows: number } | null = null;
   for (const op of ops) {
@@ -121,16 +120,16 @@ export function diffToVTSequence(ops: DiffOp[]): { vt: string; size: { cols: num
         }
         break;
       case 'line':
-        // Apply every line op as-is; a row that went blank really did
-        // go blank in tmux, and pretending otherwise creates ghost
-        // lines. The void-below-prompt UX problem is handled by the
-        // caller's auto-scroll on snapshot apply.
-        s += `\x1b[${op.row + 1};1H\x1b[2K${op.content}`;
+        s += `\x1b[${op.row + offset + 1};1H\x1b[2K${op.content}`;
         break;
-      case 'cursor':
-        s += `\x1b[${op.y + 1};${op.x + 1}H`;
+      case 'cursor': {
+        // Cursor.y is also pane top-aligned; shift by offset to land on the
+        // bottom-aligned grid position.
+        const y = op.y + offset;
+        s += `\x1b[${y + 1};${op.x + 1}H`;
         s += op.visible ? '\x1b[?25h' : '\x1b[?25l';
         break;
+      }
     }
   }
   return { vt: s, size };

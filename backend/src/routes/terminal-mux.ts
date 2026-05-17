@@ -392,8 +392,15 @@ async function emitSnapshot(
 
   const ops = diffSnapshots(prev, snapshot);
   const hasScrollback = (snapshot.scrollbackDelta?.length ?? 0) > 0;
+  // TEMPORARY (Claude Code workaround): When snapshot.lines.length changes,
+  // the bottom-aligned write offset on the client also changes, and diff line
+  // ops (indexed within snapshot.lines, not the grid) can no longer be
+  // applied consistently. Force a full snapshot in that case so the client
+  // re-anchors the offset cleanly. Remove with the rest of the Claude TUI
+  // workaround when the upstream renders the full pane.
+  const linesLenChanged = prev.lines.length !== snapshot.lines.length;
 
-  if (ops.length === 0 && !hasScrollback) {
+  if (ops.length === 0 && !hasScrollback && !linesLenChanged) {
     sub.serverSnapshots.set(paneId, snapshot);
     return;
   }
@@ -401,7 +408,7 @@ async function emitSnapshot(
   // Scrollback can only be carried on a full snapshot (it must be applied
   // before the visible region is rewritten). Send a snapshot in that case;
   // otherwise a regular diff is enough.
-  if (hasScrollback) {
+  if (hasScrollback || linesLenChanged) {
     console.log(`[mux] state-snapshot pane=${paneId} seq=${snapshot.seq} scrollbackDelta=${snapshot.scrollbackDelta?.length ?? 0} rows=${snapshot.rows}`);
     try {
       ws.send(JSON.stringify({ type: 'state-snapshot', sessionId, snapshot }));

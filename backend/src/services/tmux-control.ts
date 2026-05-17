@@ -676,13 +676,18 @@ export class TmuxControlSession {
       this.lastClientSize = { cols, rows };
       try {
         await this.sendCommand(`refresh-client -C ${cols}x${rows}`);
-        // Intentionally NOT calling `resize-window` here. It re-packs the
-        // pane grid and clears cells the child process hasn't actively
-        // redrawn — which surfaces as a black void at the bottom of the
-        // viewport for TUIs (e.g. Claude Code) that don't repaint the
-        // whole screen on SIGWINCH. `refresh-client -C` alone delivers
-        // SIGWINCH while leaving stale cells in place, matching the
-        // pre-state-sync byte-stream behavior.
+        // Force the pane to follow the client size. CC Hub sessions inherit
+        // `window-size manual`, which means client-size changes alone do not
+        // resize the pane — without this the pane stays at the size set by
+        // the first client to attach (often desktop), so phones get content
+        // rendered at desktop dimensions and cut off.
+        //
+        // Earlier this call was avoided because `resize-window` re-packs the
+        // pane grid and clears cells the child hadn't actively redrawn,
+        // surfacing as a black void on TUIs that leave the bottom unrendered
+        // (Claude Code). That void is now handled by the bottom-aligned
+        // snapshot write in snapshot-render.ts, so the re-pack is harmless.
+        await this.sendCommand(`resize-window -t ${this.sessionId} -x ${cols} -y ${rows}`);
       } catch {
         // Ignore resize errors
       }
@@ -700,6 +705,13 @@ export class TmuxControlSession {
     }
     this.lastClientSize = { cols, rows };
     await this.sendCommand(`refresh-client -C ${cols}x${rows}`);
+    // See setClientSize for why resize-window is required despite the void
+    // history.
+    try {
+      await this.sendCommand(`resize-window -t ${this.sessionId} -x ${cols} -y ${rows}`);
+    } catch {
+      // Ignore resize errors
+    }
   }
 
   /**

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.113] - 2026-05-17
+
+### Fixed
+- WebSocket が `CONNECTING` のまま長時間固まり「WebSocket connection error」+「Connecting...」表示で操作不能になる問題を修正
+  - 10秒の接続 watchdog を追加し、`onopen` が発火しなければ強制クローズして既存の再接続経路を起動
+  - `pong` の応答が25秒以上途絶えた OPEN ソケットを silently dead とみなし強制クローズ
+  - `window` の `online` イベントで stale な socket を強制クローズしてから即時再接続
+  - タブ復帰時 (`visibilitychange`) に `CONNECTING` が3秒超なら即座に強制クローズして再試行
+
+### Changed
+- サーバ側 WebSocket の `idleTimeout` を 120 秒から 60 秒に短縮し、死亡セッションの掃除を倍速化
+
 ## [0.1.112] - 2026-05-17
 
 ### Fixed

@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.110] - 2026-05-17
+
+### Changed
+- ターミナル転送方式を byte-stream から tmux canonical state sync に置換 (#149, #147 Phase 2)
+  - `tmux capture-pane -e -p` の出力を canonical state として扱い、snapshot/diff 形式で client に配信
+  - scrollback delta を snapshot に同梱し、 client 側でも履歴をスクロールできるよう拡張
+  - Channel C (drift detection) を新方式に対応 (state-sync 適用後の grid と canonical を比較)
+
+### Fixed
+- Claude TUI で画面下半分が「黒い void」 として固定表示される問題に暫定対応
+  - server: `capture-pane` が trim する trailing blank 行に空文字 padding しない。 ANSI strip 後に空白のみの行も trim 対象に拡張
+  - client: snapshot.lines を xterm grid の下端揃えで描画 (上端の余白は scrollback / 前 frame が見える)
+  - 全て TEMPORARY マーク付き — Claude TUI が pane を画面下まで使う設計に変わったら削除可能
+- モバイルでアクセスしたときに pane が desktop サイズのまま固定される問題を修正
+  - `refresh-client -C` だけでは `window-size manual` の session で pane が resize されないため、 `resize-window` をペアで発行
+  - 両 tmux コマンドを `Promise.all` で並列化し resize latency を半減
+
 ## [0.1.109] - 2026-05-16
 
 ### Added

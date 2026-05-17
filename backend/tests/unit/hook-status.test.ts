@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { parseHookJson, parseHookToml } from '../../src/services/hook-status';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { getHookStatus, parseHookJson, parseHookToml } from '../../src/services/hook-status';
 
 describe('hook status parsing', () => {
   test('detects cchub notify in Claude-style JSON hooks', () => {
@@ -86,5 +89,47 @@ command = "cchub notify"
       userPromptSubmit: false,
       askUserQuestion: true,
     });
+  });
+
+  test('reads repo-local codex hooks status', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cchub-hook-status-'));
+    const codexDir = join(dir, '.codex');
+    const originalCwd = process.cwd();
+
+    try {
+      mkdirSync(codexDir, { recursive: true });
+      writeFileSync(
+        join(codexDir, 'hooks.json'),
+        JSON.stringify({
+          hooks: {
+            Stop: [{ hooks: [{ type: 'command', command: 'cchub notify' }] }],
+            PreToolUse: [{ hooks: [{ type: 'command', command: 'cchub notify' }] }],
+            UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'cchub notify' }] }],
+            PostToolUse: [{ matcher: 'AskUserQuestion', hooks: [{ type: 'command', command: 'cchub notify' }] }],
+          },
+        }),
+      );
+
+      process.chdir(dir);
+      const status = await getHookStatus();
+
+      expect(status.providers.codex.configured).toBe(true);
+      expect(status.providers.codex.events).toEqual({
+        stop: true,
+        preToolUse: true,
+        userPromptSubmit: true,
+        askUserQuestion: true,
+      });
+      expect(status.configured).toBe(true);
+      expect(status.events).toEqual({
+        stop: true,
+        preToolUse: true,
+        userPromptSubmit: true,
+        askUserQuestion: true,
+      });
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

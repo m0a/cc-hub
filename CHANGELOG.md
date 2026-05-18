@@ -2,14 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.121] - 2026-05-18
+## [0.1.122] - 2026-05-18
 
-### Changed
-- ターミナルのスクロールバックを **tmux 単一ソース化** (#170) — フロントエンドの xterm.js scrollback バッファを廃止し、`scrollback: 0` 固定の純粋な描画装置に変更。スクロール時はサーバに `request-viewport { offset }` を送り、tmux から該当範囲を `capture-pane -S/-E` で取得して描画する
-  - 「再接続後に履歴が減る」「タブ間で見える履歴が違う」「出力中スクロール不可」がすべて根本解決
-  - 旧 state-snapshot / state-diff プロトコル、scrollbackDelta、padFill、INITIAL_SCROLLBACK_ROWS、Channel C drift detection (CCHUB_SELF_VERIFY)、debug-dump をすべて削除
-  - 慣性スクロールは保持 — wheel/touch/momentum は `controlMode.scrollBy()` 経由で offset を変えて新 viewport を要求する設計
-  - ネット **481 行削減** (+424 / -905)
+### Reverted
+- v0.1.121 (server-side scrollback) を完全に revert。モバイル端末で xterm.js キャンバスがグレーになりターミナルが描画されない深刻な regression があったため
+  - 機能内容としては v0.1.120 と完全に同等 (revert コミット 2 本のみ)
+  - v0.1.121 の GitHub Release と tag は削除済み。`cchub update` は v0.1.122 を最新として取得する
+  - server-side scrollback 自体は後日、モバイル側の挙動を含めて再検討する
 
 ## [0.1.120] - 2026-05-18
 

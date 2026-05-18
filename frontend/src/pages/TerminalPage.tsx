@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, forwardRef, type ReactNode } from 'react';
 import { TerminalComponent, type TerminalRef, type ControlModeConfig } from '../components/Terminal';
-import { useMultiplexedTerminal } from '../hooks/useMultiplexedTerminal';
-import type { PaneViewport, SessionState, SessionTheme, TmuxLayoutNode } from '../../../shared/types';
+import { useMultiplexedTerminal, type PaneRenderEvent } from '../hooks/useMultiplexedTerminal';
+import type { SessionState, SessionTheme, TmuxLayoutNode } from '../../../shared/types';
 import { fireHookNotification } from '../utils/hookNotification';
 
 interface PaneLeafInfo {
@@ -50,12 +50,10 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
   // Derive effective active pane: external takes priority
   const effectiveActivePaneId = externalActivePaneId ?? activePaneId;
 
-  // Per-pane viewport callbacks
-  const paneCallbacksRef = useRef<Map<string, Set<(viewport: PaneViewport) => void>>>(new Map());
-  // Last viewport per pane, replayed when a Terminal mounts late.
-  const lastViewportRef = useRef<Map<string, PaneViewport>>(new Map());
-  // Current scroll offset per pane (0 = live edge).
-  const paneOffsetRef = useRef<Map<string, number>>(new Map());
+  // Per-pane render callbacks
+  const paneCallbacksRef = useRef<Map<string, Set<(event: PaneRenderEvent) => void>>>(new Map());
+  // Last snapshot per pane, replayed when a Terminal mounts late.
+  const lastSnapshotRef = useRef<Map<string, PaneRenderEvent>>(new Map());
 
   const onPanesChangeRef = useRef(onPanesChange);
   onPanesChangeRef.current = onPanesChange;
@@ -72,13 +70,14 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
   const controlTerminal = useMultiplexedTerminal({
     sessionId,
     token,
-    onPaneViewport: (paneId, viewport) => {
-      lastViewportRef.current.set(paneId, viewport);
-      paneOffsetRef.current.set(paneId, viewport.offset);
+    onPaneRender: (paneId, event) => {
+      if (event.type === 'snapshot') {
+        lastSnapshotRef.current.set(paneId, event);
+      }
       const callbacks = paneCallbacksRef.current.get(paneId);
       if (callbacks) {
         for (const cb of callbacks) {
-          cb(viewport);
+          cb(event);
         }
       }
     },
@@ -119,8 +118,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
       onStateChange?.('idle');
       controlTerminal.sendClientInfo('mobile');
       for (const pane of cachedPanesRef.current) {
-        const offset = paneOffsetRef.current.get(pane.paneId) ?? 0;
-        controlTerminal.requestViewport(pane.paneId, offset);
+        controlTerminal.requestSnapshot(pane.paneId);
       }
     },
     onHookEvent: fireHookNotification,
@@ -164,8 +162,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
     }
 
     if (isActualSwitch) {
-      lastViewportRef.current.delete(externalActivePaneId);
-      paneOffsetRef.current.delete(externalActivePaneId);
+      lastSnapshotRef.current.delete(externalActivePaneId);
     }
   }, [externalActivePaneId, allPanes, controlTerminal]);
 
@@ -181,8 +178,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
 
   useEffect(() => {
     prevExternalPaneIdRef.current = undefined;
-    lastViewportRef.current.clear();
-    paneOffsetRef.current.clear();
+    lastSnapshotRef.current.clear();
     initialZoomDoneRef.current = false;
     isZoomedRef.current = false;
     cachedPanesRef.current = [];
@@ -200,18 +196,17 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
     sendInput: (data: string) => {
       controlTerminal.sendInput(currentPaneId, data);
     },
-    registerOnViewport: (callback: (viewport: PaneViewport) => void) => {
+    registerOnRender: (callback: (event: PaneRenderEvent) => void) => {
       if (!paneCallbacksRef.current.has(currentPaneId)) {
         paneCallbacksRef.current.set(currentPaneId, new Set());
       }
       paneCallbacksRef.current.get(currentPaneId)!.add(callback);
 
-      const last = lastViewportRef.current.get(currentPaneId);
+      const last = lastSnapshotRef.current.get(currentPaneId);
       if (last) callback(last);
 
       if (controlTerminal.isConnected) {
-        const offset = paneOffsetRef.current.get(currentPaneId) ?? 0;
-        controlTerminal.requestViewport(currentPaneId, offset);
+        controlTerminal.requestSnapshot(currentPaneId);
       }
 
       return () => {
@@ -225,25 +220,9 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
     forceResize: (cols: number, rows: number) => {
       controlTerminal.resize(cols, rows);
     },
-    scrollBy: (lines: number) => {
-      // Same sign convention as `term.scrollLines`: positive = toward live
-      // edge (decrease offset), negative = into history (increase offset).
-      if (!controlTerminal.isConnected) return;
-      const cur = paneOffsetRef.current.get(currentPaneId) ?? 0;
-      const history = lastViewportRef.current.get(currentPaneId)?.historySize ?? 0;
-      const next = Math.max(0, Math.min(history, cur - lines));
-      if (next === cur) return;
-      paneOffsetRef.current.set(currentPaneId, next);
-      controlTerminal.requestViewport(currentPaneId, next);
+    requestSnapshot: () => {
+      controlTerminal.requestSnapshot(currentPaneId);
     },
-    refreshViewport: () => {
-      const offset = paneOffsetRef.current.get(currentPaneId) ?? 0;
-      controlTerminal.requestViewport(currentPaneId, offset);
-    },
-    getScrollState: () => ({
-      offset: paneOffsetRef.current.get(currentPaneId) ?? 0,
-      historySize: lastViewportRef.current.get(currentPaneId)?.historySize ?? 0,
-    }),
   } : undefined;
 
   // Expose selectPane via ref (for parent components)

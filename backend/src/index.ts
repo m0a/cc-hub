@@ -53,6 +53,12 @@ app.use('*', logger((message, ...rest) => {
   if (message.includes('GET') && message.includes('/api/sessions') && !message.includes('/api/sessions/')) {
     return;
   }
+  // Skip POST /api/notify hook traffic — fires on every Claude/Codex hook
+  // event (Stop, PreToolUse, PostToolUse, UserPromptSubmit, ...). At ~1/sec
+  // during active sessions the logger middleware itself was ~5% of CPU.
+  if (message.includes('/api/notify') && !message.includes('/api/notify/')) {
+    return;
+  }
   console.log(message, ...rest);
 }));
 app.use('*', cors({

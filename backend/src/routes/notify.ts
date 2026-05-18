@@ -1,19 +1,37 @@
 import { Hono } from 'hono';
-import { readFile } from 'node:fs/promises';
 import { broadcastToMuxClients } from './terminal-mux';
 import type { IndicatorState } from '../../../shared/types';
 import { getHookStatus } from '../services/hook-status';
 
+// Read only the trailing slice of a transcript instead of the whole file.
+// Active Claude sessions produce multi-MB .jsonl transcripts; the previous
+// "readFile + split('\\n')" path showed up at ~16% of CPU in profiling
+// because every hook event re-parsed the entire history.
+// 256 KB is enough to comfortably contain 50 trailing JSONL entries even
+// for entries with large tool_result blocks.
+const TRANSCRIPT_TAIL_BYTES = 256 * 1024;
+
+async function readTrailingLines(path: string, lineCount: number): Promise<string[]> {
+  const file = Bun.file(path);
+  const size = file.size;
+  if (size === 0) return [];
+  const offset = Math.max(0, size - TRANSCRIPT_TAIL_BYTES);
+  const slice = offset === 0 ? file : file.slice(offset);
+  const content = await slice.text();
+  const lines = content.split('\n');
+  // The first line may be a partial JSONL record when we sliced mid-file;
+  // drop it so JSON.parse below doesn't fail on a truncated entry.
+  if (offset > 0) lines.shift();
+  return lines.slice(-lineCount);
+}
+
 /** transcriptファイルからコンテキストに応じた通知メッセージを生成する */
 async function generateSmartMessage(transcriptPath: string, _event: string): Promise<string | undefined> {
   try {
-    const content = await readFile(transcriptPath, 'utf-8');
-    const lines = content.trim().split('\n');
-
-    // 最後の50行を解析（パフォーマンスのため）
-    const recentLines = lines.slice(-50);
+    const recentLines = await readTrailingLines(transcriptPath, 50);
     const entries = [];
     for (const line of recentLines) {
+      if (!line) continue;
       try { entries.push(JSON.parse(line)); } catch {}
     }
 

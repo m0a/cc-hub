@@ -30,7 +30,10 @@ const SNAPSHOT_DEBOUNCE_MS = 50;
 // runs tmux display-message + capture-pane and serializes a full snapshot
 // (~10 KB) to JSON, so removing the upper bound let an actively-redrawing
 // pane consume 150% CPU.
-const SNAPSHOT_MIN_INTERVAL_MS = 100;
+// 200ms = 5/sec/pane. The first post-idle snapshot still fires after the
+// 50ms debounce so typing latency is unaffected; only sustained redraws
+// (spinners, log tails) hit this ceiling.
+const SNAPSHOT_MIN_INTERVAL_MS = 200;
 
 // Verbose per-snapshot logging is gated behind DEBUG_MUX=1. At 10+ emits/sec
 // per pane the journald cost is non-trivial; the [tmux-control] perf summary

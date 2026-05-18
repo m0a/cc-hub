@@ -7,7 +7,8 @@ import { SessionModal } from './SessionModal';
 import { DashboardPanel } from './DashboardPanel';
 import { authFetch } from '../services/api';
 import { useSessions, updateCachedSessionsByHookEvent } from '../hooks/useSessions';
-import { useMultiplexedTerminal, type PaneRenderEvent } from '../hooks/useMultiplexedTerminal';
+import { useMultiplexedTerminal } from '../hooks/useMultiplexedTerminal';
+import type { PaneViewport } from '../../../shared/types';
 import type { TerminalRef, ControlModeConfig } from './Terminal';
 import type { SessionState, SessionTheme, TmuxLayoutNode } from '../../../shared/types';
 import { fireHookNotification } from '../utils/hookNotification';
@@ -360,13 +361,16 @@ export function DesktopLayout({
   const zoomedPaneIdRef = useRef<string | null>(null);
   zoomedPaneIdRef.current = zoomedPaneId;
 
-  // Per-pane render callbacks (paneId -> Set<callbacks>)
-  const paneCallbacksRef = useRef<Map<string, Set<(event: PaneRenderEvent) => void>>>(new Map());
+  // Per-pane viewport callbacks (paneId -> Set<callbacks>).
+  const paneCallbacksRef = useRef<Map<string, Set<(viewport: PaneViewport) => void>>>(new Map());
 
-  // Last snapshot per pane. Replayed when a Terminal mounts after the snapshot
-  // has already arrived (race during session switch). Diffs are not buffered;
-  // a stale render is corrected by request-snapshot at mount time.
-  const lastSnapshotRef = useRef<Map<string, PaneRenderEvent>>(new Map());
+  // Last viewport per pane. Replayed when a Terminal mounts after the
+  // viewport has already arrived (race during session switch / late mount).
+  const lastViewportRef = useRef<Map<string, PaneViewport>>(new Map());
+
+  // Current scroll offset per pane (0 = live edge, N = N rows scrolled up
+  // into history). Updated by Terminal.scrollBy and by viewport responses.
+  const paneOffsetRef = useRef<Map<string, number>>(new Map());
 
   const desktopStateRef = useRef(desktopState);
   desktopStateRef.current = desktopState;
@@ -380,21 +384,18 @@ export function DesktopLayout({
 
   const controlTerminal = useMultiplexedTerminal({
     sessionId: controlSessionId || '',
-    onPaneRender: (paneId, event) => {
-      if (event.type === 'snapshot') {
-        lastSnapshotRef.current.set(paneId, event);
-      }
+    onPaneViewport: (paneId, viewport) => {
+      lastViewportRef.current.set(paneId, viewport);
+      // Server clamps the requested offset to historySize; reflect that
+      // back so subsequent scrollBy / getScrollState see the canonical value.
+      paneOffsetRef.current.set(paneId, viewport.offset);
       const callbacks = paneCallbacksRef.current.get(paneId);
       if (!callbacks || callbacks.size === 0) {
-        if (event.type === 'snapshot') {
-          // Snapshot will be replayed when Terminal mounts. No warning needed.
-          return;
-        }
-        console.warn(`[TP] diff for ${paneId} but NO callbacks registered`);
+        // Viewport will be replayed when the Terminal mounts (see registerOnViewport).
         return;
       }
       for (const cb of callbacks) {
-        cb(event);
+        cb(viewport);
       }
     },
     onLayoutChange: (layout) => {
@@ -447,19 +448,20 @@ export function DesktopLayout({
       for (const delay of delays) {
         setTimeout(() => sendControlResize(), delay);
       }
-      // Fallback: explicitly request a snapshot per pane in case resize was
-      // skipped (layoutPending, dedup). Snapshots are idempotent.
-      const requestAllSnapshots = (attempt = 0) => {
+      // Fallback: explicitly request a viewport per pane in case resize was
+      // skipped (layoutPending, dedup). Viewport fetches are idempotent.
+      const requestAllViewports = (attempt = 0) => {
         const paneIds = [...paneCallbacksRef.current.keys()];
         if (paneIds.length === 0 && attempt < 5) {
-          setTimeout(() => requestAllSnapshots(attempt + 1), 300);
+          setTimeout(() => requestAllViewports(attempt + 1), 300);
           return;
         }
         for (const paneId of paneIds) {
-          controlTerminalRef.current.requestSnapshot(paneId);
+          const offset = paneOffsetRef.current.get(paneId) ?? 0;
+          controlTerminalRef.current.requestViewport(paneId, offset);
         }
       };
-      setTimeout(() => requestAllSnapshots(), 500);
+      setTimeout(() => requestAllViewports(), 500);
     },
     onHookEvent: (event, cwd, sessionId, data, message) => {
       fireHookNotification(event, cwd, sessionId, data, message);
@@ -488,7 +490,8 @@ export function DesktopLayout({
     }
     setControlLayout(null);
     setZoomedPaneId(null);
-    lastSnapshotRef.current.clear();
+    lastViewportRef.current.clear();
+    paneOffsetRef.current.clear();
     paneCallbacksRef.current.clear();
     lastSentSizeRef.current = null;
   }, [controlSessionId]);
@@ -586,22 +589,22 @@ export function DesktopLayout({
             controlTerminalRef.current.sendInput(paneId, data);
           }
         },
-        registerOnRender: (callback: (event: PaneRenderEvent) => void) => {
+        registerOnViewport: (callback: (viewport: PaneViewport) => void) => {
           if (!paneCallbacksRef.current.has(paneId)) {
             paneCallbacksRef.current.set(paneId, new Set());
           }
           paneCallbacksRef.current.get(paneId)!.add(callback);
 
-          // Replay the last snapshot if one already arrived (race during
-          // session switch / late mount). Diffs are not replayed; the next
-          // capture from the server will resync.
-          const last = lastSnapshotRef.current.get(paneId);
+          // Replay the last viewport if one already arrived (race during
+          // session switch / late mount).
+          const last = lastViewportRef.current.get(paneId);
           if (last) callback(last);
 
-          // Always request a fresh snapshot when a Terminal mounts, in case
-          // it joined after the initial snapshot was sent.
+          // Always request a fresh viewport when a Terminal mounts, in case
+          // it joined after the initial viewport was sent.
           if (controlTerminalRef.current.isConnected) {
-            controlTerminalRef.current.requestSnapshot(paneId);
+            const offset = paneOffsetRef.current.get(paneId) ?? 0;
+            controlTerminalRef.current.requestViewport(paneId, offset);
           }
 
           return () => {
@@ -622,16 +625,27 @@ export function DesktopLayout({
           lastSentSizeRef.current = { cols, rows };
           controlTerminalRef.current.resize(cols, rows);
         },
-        onScroll: (lines: number) => {
-          if (controlTerminalRef.current.isConnected) {
-            controlTerminalRef.current.scrollPane(paneId, lines);
-          }
+        scrollBy: (lines: number) => {
+          // Same sign convention as `term.scrollLines`: positive lines =
+          // scroll DOWN toward the live edge (decrease offset), negative
+          // lines = scroll UP into history (increase offset).
+          if (!controlTerminalRef.current.isConnected) return;
+          const cur = paneOffsetRef.current.get(paneId) ?? 0;
+          const history = lastViewportRef.current.get(paneId)?.historySize ?? 0;
+          const next = Math.max(0, Math.min(history, cur - lines));
+          if (next === cur) return;
+          paneOffsetRef.current.set(paneId, next);
+          controlTerminalRef.current.requestViewport(paneId, next);
         },
-        requestSnapshot: () => {
-          if (controlTerminalRef.current.isConnected) {
-            controlTerminalRef.current.requestSnapshot(paneId);
-          }
+        refreshViewport: () => {
+          if (!controlTerminalRef.current.isConnected) return;
+          const offset = paneOffsetRef.current.get(paneId) ?? 0;
+          controlTerminalRef.current.requestViewport(paneId, offset);
         },
+        getScrollState: () => ({
+          offset: paneOffsetRef.current.get(paneId) ?? 0,
+          historySize: lastViewportRef.current.get(paneId)?.historySize ?? 0,
+        }),
       };
     },
     splitPane: (paneId: string, direction: 'h' | 'v') => {
@@ -655,7 +669,8 @@ export function DesktopLayout({
           const allPanes = getAllPaneIds(desktopStateRef.current.root);
           for (const pid of allPanes) {
             if (pid !== paneId) {
-              controlTerminalRef.current.requestSnapshot(pid);
+              const offset = paneOffsetRef.current.get(pid) ?? 0;
+              controlTerminalRef.current.requestViewport(pid, offset);
             }
           }
         }
@@ -1026,8 +1041,9 @@ export function DesktopLayout({
     }));
     // Clear stale layout so the new session's layout takes effect
     setControlLayout(null);
-    // Clear snapshot cache from old session
-    lastSnapshotRef.current.clear();
+    // Clear viewport cache from old session
+    lastViewportRef.current.clear();
+    paneOffsetRef.current.clear();
     lastSentSizeRef.current = null;
   }, []);
 

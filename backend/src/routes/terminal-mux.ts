@@ -27,7 +27,10 @@ const DEBUG_MUX = process.env.DEBUG_MUX === '1' || process.env.DEBUG_MUX === 'tr
 interface MuxSubscription {
   controlSession: TmuxControlSession;
   cleanupFns: Array<() => void>;
-  initialized: boolean;
+  // True once the client has sent at least one `resize` message. The first
+  // resize uses setClientSizeImmediate (synchronous tmux size adoption);
+  // subsequent resizes use the dedup'd path.
+  firstResizeReceived: boolean;
   // Last `offset` the client requested for each pane. 0 means live mode;
   // server pushes fresh viewports unsolicited on %output. >0 means the
   // client is viewing historical scrollback; the server is silent until
@@ -203,15 +206,18 @@ export function muxClose(ws: ServerWebSocket<MuxData>, code: number, reason: str
 
 async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) {
   console.log(`[mux] subscribe: ${sessionId} (current subs: ${ws.data.subscriptions.size})`);
-  // Already subscribed — reset offsets so the next resize re-emits initial viewports.
+  // Already subscribed — reset state so the next resize re-emits initial viewports.
   if (ws.data.subscriptions.has(sessionId)) {
     const existing = ws.data.subscriptions.get(sessionId)!;
-    existing.initialized = false;
+    existing.firstResizeReceived = false;
     existing.liveOffset.clear();
     for (const t of existing.pushTimers.values()) clearTimeout(t);
     existing.pushTimers.clear();
     existing.lastPushAt.clear();
     ws.send(JSON.stringify({ type: 'subscribed', sessionId }));
+    void emitInitialViewports(ws, sessionId, existing).catch((err) => {
+      console.warn(`[mux] re-subscribe viewport emit failed for ${sessionId}:`, err);
+    });
     return;
   }
 
@@ -229,7 +235,7 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     const sub: MuxSubscription = {
       controlSession,
       cleanupFns,
-      initialized: false,
+      firstResizeReceived: false,
       liveOffset: new Map(),
       pushTimers: new Map(),
       lastPushAt: new Map(),
@@ -238,10 +244,11 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
 
     // %output → schedule a push for any pane this subscription is viewing
     // in live mode. Panes the client has scrolled away from (offset>0) are
-    // silent until the client asks for new content.
+    // silent until the client asks for new content. Initial viewports are
+    // emitted at subscribe time (below) so we don't need to gate this on
+    // `sub.initialized`.
     cleanupFns.push(
       controlSession.onOutput((paneId, _data) => {
-        if (!sub.initialized) return;
         if ((sub.liveOffset.get(paneId) ?? 0) !== 0) return;
         schedulePush(ws, sessionId, sub, paneId);
       })
@@ -298,6 +305,18 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     }
 
     ws.send(JSON.stringify({ type: 'subscribed', sessionId }));
+
+    // Eagerly emit an initial viewport for every pane so the client has
+    // content to render even before its first `resize` arrives. Mobile
+    // browsers in particular can mount the Terminal component, register
+    // its viewport callback, and start expecting content before they
+    // measure / send a resize — leaving a blank canvas if we wait.
+    // sub.initialized stays false until a real resize comes in; the
+    // resize handler is responsible for actually setting tmux's pane
+    // size and re-pushing viewports if dimensions change.
+    void emitInitialViewports(ws, sessionId, sub).catch((err) => {
+      console.warn(`[mux] initial viewport emit failed for ${sessionId}:`, err);
+    });
   } catch (error) {
     console.error(`[mux] Failed to subscribe to ${sessionId}:`, error);
     ws.send(JSON.stringify({ type: 'error', message: 'Failed to subscribe', sessionId }));
@@ -473,34 +492,38 @@ async function handleControlMessage(
     switch (msg.type) {
       case 'input': {
         const data = Buffer.from(msg.data, 'base64');
-        console.log(`[mux] input pane=${msg.paneId} bytes=${data.length} initialized=${sub.initialized}`);
+        console.log(`[mux] input pane=${msg.paneId} bytes=${data.length}`);
         await controlSession.sendInput(msg.paneId, data);
         // Pre-arm a push: input usually generates output but a silent program
         // (waiting for full line, etc.) wouldn't, and we still want to refresh
         // cursor position promptly.
-        if (sub.initialized && (sub.liveOffset.get(msg.paneId) ?? 0) === 0) {
+        if ((sub.liveOffset.get(msg.paneId) ?? 0) === 0) {
           schedulePush(ws, sessionId, sub, msg.paneId);
         }
         break;
       }
       case 'resize': {
-        if (!sub.initialized) {
-          try {
+        try {
+          if (!sub.firstResizeReceived) {
+            // First resize: force tmux to adopt the new pane size synchronously
+            // (refresh-client -C + resize-window). Subsequent resizes go through
+            // the dedup'd path.
             await controlSession.setClientSizeImmediate(msg.cols, msg.rows);
-            // Brief settle window so tmux reflows before we capture.
+            sub.firstResizeReceived = true;
+            // Brief settle window so tmux reflows before we capture, then push
+            // viewports at the new size (the ones we emitted at subscribe time
+            // were at whatever size tmux had previously).
             await new Promise(resolve => setTimeout(resolve, 100));
-            sub.initialized = true;
-            await emitInitialViewports(ws, sessionId, sub);
-          } catch (err) {
-            console.error(`[mux] Failed to initialize after resize for ${sessionId}:`, err);
+          } else {
+            controlSession.setClientSize(msg.cols, msg.rows);
           }
-        } else {
-          controlSession.setClientSize(msg.cols, msg.rows);
           for (const paneId of sub.knownPanes) {
             if ((sub.liveOffset.get(paneId) ?? 0) === 0) {
               schedulePush(ws, sessionId, sub, paneId);
             }
           }
+        } catch (err) {
+          console.error(`[mux] resize failed for ${sessionId}:`, err);
         }
         break;
       }

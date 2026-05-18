@@ -134,21 +134,18 @@ export async function captureViewport(
   // altScreen mode (htop, vim, etc.) is left alone — the TUI owns the
   // whole surface there and blanks are intentional.
   //
-  // Also skip padFill at offset=0 when the cursor sits below the last
-  // non-blank row (= a normal shell parking its prompt in the middle
-  // of an otherwise-empty pane). Shifting the cursor would put it on a
-  // padded-in scrollback row, which is visually wrong; preserving the
-  // original layout keeps the cursor where the shell put it.
+  // At offset=0 we must never trim past the cursor row, even if the
+  // rows between content and cursor are blank (= a normal shell parking
+  // its prompt below the last output). Keeping the cursor row in the
+  // kept region means the post-padFill cursor shift lands the cursor on
+  // its original blank line, just pushed down to make room for history.
   let cursorPadShift = 0;
-  const lastNonBlankRow = (() => {
-    for (let i = lines.length - 1; i >= 0; i--) {
-      if (!isVisuallyBlank(lines[i])) return i;
-    }
-    return -1;
-  })();
-  const cursorBelowContent = clampedOffset === 0 && cy > lastNonBlankRow;
-  if (!altScreen && historySize > 0 && !cursorBelowContent) {
-    while (lines.length > 0 && isVisuallyBlank(lines[lines.length - 1])) {
+  if (!altScreen && historySize > 0) {
+    const cursorFloor = clampedOffset === 0 ? cy : -1;
+    while (
+      lines.length > cursorFloor + 1 &&
+      isVisuallyBlank(lines[lines.length - 1])
+    ) {
       lines.pop();
     }
     const padNeeded = rows - lines.length;

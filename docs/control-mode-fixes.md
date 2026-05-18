@@ -102,6 +102,12 @@
 - **修正**: `h-[80vh]` に変更しflex heightを確定、SessionHistoryの内部スクロールを親に委譲
 - **影響ファイル**: `SessionModal.tsx`, `SessionList.tsx`, `SessionHistory.tsx`
 
+### 21. Server-side scrollback への全面切替 (v0.1.123)
+- **問題**: フロントの xterm.js scrollback (5000 行) とバックエンドの `state-snapshot`/`state-diff` 配信が二重で履歴を持ち、CPU を食う上に状態整合が崩れやすかった。Claude Code TUI のように pane 全域を塗らないアプリで上部に "void" が見える問題もあった
+- **修正**: tmux を visible region + scrollback の単一情報源に。xterm.js は `scrollback: 0` の描画専用とし、サーバが `viewport { lines, cursor, modes, historySize, offset }` を push する。inline TUI 用に padFill (末尾空白を cursor 行までトリム → scrollback で穴埋め → cursor 行をシフト) を導入し、Claude TUI でも void が出ない。慣性スクロール / タップで live edge 復帰 / リサイズ ±1 行ノイズ吸収などモバイル安定化を含む
+- **影響ファイル**: `pane-viewport.ts` (新規), `terminal-mux.ts`, `tmux-control.ts`, `Terminal.tsx`, `TerminalPage.tsx`, `DesktopLayout.tsx`, `viewport-render.ts` (新規), `shared/types.ts`
+- **メモ**: 上記 #3 / #8 / #13 / #14 はこの切替で全て superseded されている
+
 ## 既知の問題
 - リサイズ振動: サイドバー開閉時にサイズが変動するのは正常動作（ユーザー操作起因）
 - タッチターゲット: 40pxは44px推奨より少し小さいが、実用的な大きさ

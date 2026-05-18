@@ -481,7 +481,7 @@ export function DesktopLayout({
   // Reset control mode state when session changes (but NOT on initial mount).
   // On initial mount, child Terminal components register callbacks before this
   // parent effect runs (React runs child effects first). Clearing on initial mount
-  // would wipe those callbacks, causing initial-content to be lost.
+  // would wipe those callbacks, causing the first viewport push to be lost.
   const controlSessionInitializedRef = useRef(false);
   useEffect(() => {
     if (!controlSessionInitializedRef.current) {

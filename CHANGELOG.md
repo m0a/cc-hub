@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.125] - 2026-05-19
+
+### Fixed
+- **慢性的な CPU 高負荷 (平均 73〜108%) を解消**: `sessions-push` のホットループで毎周期に全 jsonl の readdir + stat + 内容読み込みが走り、加えて UI セッション切替のたびに `tmux -CC attach` を再 spawn していた問題を修正。平均 CPU を **77.6% → 23.4% (約70%削減)** に低下 (10分間観測)
+  - `tmux-control.ts`: `GRACE_PERIOD_MS` を 5s → 30s に戻す。idle CPU 削減目的で短縮されていたが、結果として UI 切替のたびに `tmux -CC attach` を再 spawn して逆に負荷を増やしていた
+  - `claude-code.ts`: `SESSION_DATA_CACHE_TTL` を 5s → 30s。`sessions-push` 周期 (5s) と同位相で毎回 cache miss していた問題を解消。mtime チェックは内側に残るのでフレッシュさは維持
+  - `claude-code.ts`: `pathResultCache` (TTL 3s) を追加し、`getSessionForPath` / `getRecentSessionsForPath` / `getSessionByTtyStartTime` の readdir + 全 jsonl stat スイープを同一 `sessions-push` tick 内でショートサーキット
+
 ## [0.1.124] - 2026-05-18
 
 ### Fixed

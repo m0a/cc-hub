@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.122] - 2026-05-18
+
+### Reverted
+- v0.1.121 (server-side scrollback) を完全に revert。モバイル端末で xterm.js キャンバスがグレーになりターミナルが描画されない深刻な regression があったため
+  - 機能内容としては v0.1.120 と完全に同等 (revert コミット 2 本のみ)
+  - v0.1.121 の GitHub Release と tag は削除済み。`cchub update` は v0.1.122 を最新として取得する
+  - server-side scrollback 自体は後日、モバイル側の挙動を含めて再検討する
+
 ## [0.1.120] - 2026-05-18
 
 ### Added

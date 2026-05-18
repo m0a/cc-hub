@@ -1,7 +1,7 @@
 {
   "name": "CC Hub",
-  "version": "0.1.115",
-  "generated": "2026-05-17",
+  "version": "0.1.117",
+  "generated": "2026-05-18",
   "summary": "Web-based terminal session manager for Claude Code. Runs Claude Code instances in tmux sessions and provides a web UI for remote access from tablets/mobile devices.",
   "stack": {
     "backend": "Bun runtime + Hono",

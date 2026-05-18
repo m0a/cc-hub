@@ -105,7 +105,7 @@ function findLatestTokenUsageInText(text: string): CodexTokenUsage | undefined {
   const lines = text.split('\n');
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]?.trim();
-    if (!line || !line.includes('"token_count"')) continue;
+    if (!line?.includes('"token_count"')) continue;
     const usage = tokenUsageFromLine(line);
     if (usage) return usage;
   }

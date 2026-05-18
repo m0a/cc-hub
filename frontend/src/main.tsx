@@ -1,9 +1,9 @@
-import { createRoot } from 'react-dom/client';
-import { App } from './App';
-import { initRemoteLogger } from './utils/remoteLogger';
-import { applyUiScale, getStoredUiScale } from './utils/uiScale';
-import './i18n';
-import './index.css';
+import { createRoot } from "react-dom/client";
+import { App } from "./App";
+import { initRemoteLogger } from "./utils/remoteLogger";
+import { applyUiScale, getStoredUiScale } from "./utils/uiScale";
+import "./i18n";
+import "./index.css";
 
 // Apply persisted UI scale before render to avoid flash of unstyled content
 applyUiScale(getStoredUiScale());
@@ -14,34 +14,49 @@ initRemoteLogger();
 // Log app version and device info for debugging
 console.log(`[CC Hub] App loaded - ${new Date().toISOString()}`);
 console.log(`[CC Hub] UA: ${navigator.userAgent}`);
-console.log(`[CC Hub] Screen: ${screen.width}x${screen.height} DPR:${devicePixelRatio}`);
+console.log(
+	`[CC Hub] Screen: ${screen.width}x${screen.height} DPR:${devicePixelRatio}`,
+);
 console.log(`[CC Hub] Viewport: ${window.innerWidth}x${window.innerHeight}`);
-console.log(`[CC Hub] WebGL: ${(() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch { return false; } })()}`);
-console.log(`[CC Hub] SW: ${('serviceWorker' in navigator) ? 'supported' : 'unsupported'}`);
+console.log(
+	`[CC Hub] WebGL: ${(() => {
+		try {
+			const c = document.createElement("canvas");
+			return !!(c.getContext("webgl2") || c.getContext("webgl"));
+		} catch {
+			return false;
+		}
+	})()}`,
+);
+console.log(
+	`[CC Hub] SW: ${"serviceWorker" in navigator ? "supported" : "unsupported"}`,
+);
 
 // Handle visual viewport changes (soft keyboard)
 const updateViewportHeight = () => {
-  const vh = window.visualViewport?.height ?? window.innerHeight;
-  document.documentElement.style.setProperty('--vh', `${vh}px`);
+	const vh = window.visualViewport?.height ?? window.innerHeight;
+	document.documentElement.style.setProperty("--vh", `${vh}px`);
 };
 
 updateViewportHeight();
-window.visualViewport?.addEventListener('resize', updateViewportHeight);
-window.addEventListener('resize', updateViewportHeight);
+window.visualViewport?.addEventListener("resize", updateViewportHeight);
+window.addEventListener("resize", updateViewportHeight);
 
 // Request notification permission for hook event notifications
-if ('Notification' in window && Notification.permission === 'default') {
-  Notification.requestPermission();
+if ("Notification" in window && Notification.permission === "default") {
+	Notification.requestPermission();
 }
 
 // Listen for ServiceWorker log messages
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.addEventListener('message', (event) => {
-    if (event.data?.type === 'sw-log') {
-      console.log(event.data.message);
-    }
-  });
+if ("serviceWorker" in navigator) {
+	navigator.serviceWorker.addEventListener("message", (event) => {
+		if (event.data?.type === "sw-log") {
+			console.log(event.data.message);
+		}
+	});
 }
 
-const root = createRoot(document.getElementById('root')!);
+const rootEl = document.getElementById("root");
+if (!rootEl) throw new Error("#root element not found");
+const root = createRoot(rootEl);
 root.render(<App />);

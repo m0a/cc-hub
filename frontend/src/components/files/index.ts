@@ -1,6 +1,6 @@
-export { FileBrowser } from './FileBrowser';
-export { FileViewer } from './FileViewer';
-export { CodeViewer } from './CodeViewer';
-export { ImageViewer } from './ImageViewer';
-export { DiffViewer } from './DiffViewer';
-export { MarkdownViewer } from './MarkdownViewer';
+export { CodeViewer } from "./CodeViewer";
+export { DiffViewer } from "./DiffViewer";
+export { FileBrowser } from "./FileBrowser";
+export { FileViewer } from "./FileViewer";
+export { ImageViewer } from "./ImageViewer";
+export { MarkdownViewer } from "./MarkdownViewer";

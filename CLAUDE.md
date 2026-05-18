@@ -56,10 +56,16 @@ shared/      # Shared types and Zod schemas (types.ts)
 - **FileService** (`services/file-service.ts`) - Secure file operations with path traversal prevention
 - **FileChangeTracker** (`services/file-change-tracker.ts`) - Parses Claude Code `.jsonl` logs to track file changes
 - **AnthropicUsageService** (`services/anthropic-usage.ts`) - Fetches usage limits from Anthropic API with 60s cache, 5min backoff on 429, in-flight request coalescing
+- **AnthropicModels** (`services/anthropic-models.ts`) - Static metadata for Anthropic models (context size, pricing) used by cost/usage calculations
 - **StatsService** (`services/stats-service.ts`) - Reads cached statistics from `~/.claude/stats-cache.json`
-- **UsageTrackerService** (`services/usage-tracker.ts`) - Reads limit tracker data
 - **UsageHistoryService** (`services/usage-history.ts`) - Records usage snapshots to `/tmp/cchub-usage-history.json` with 30s throttling
 - **SystemMetricsService** (`services/system-metrics.ts`) - Collects CPU, memory, swap, and load metrics with history tracking (60 snapshots max)
+- **SessionMetricsService** (`services/session-metrics.ts`) - Per-session token / cost metrics aggregated from `.jsonl` logs
+- **CodexService** (`services/codex.ts`) - Codex CLI integration: spawns/attaches Codex sessions, watches state files
+- **CodexConversationService** (`services/codex-conversation.ts`) - Reads Codex conversation transcripts and exposes them to the UI
+- **CodexUsageService** (`services/codex-usage.ts`) - Tracks Codex token usage and rate-limit state
+- **ConversationWatcher** (`services/conversation-watcher.ts`) - Watches Claude Code / Codex `.jsonl` files and emits conversation updates to subscribed WebSocket clients
+- **HookStatusService** (`services/hook-status.ts`) - Tracks per-session indicator state driven by Claude Code / Codex hook events (`Stop`, `PreToolUse`, `UserPromptSubmit`, etc.)
 - **AuthService** (`services/auth.ts`) - Password-based authentication with session tokens
 
 ### Key API Routes
@@ -130,16 +136,20 @@ shared/      # Shared types and Zod schemas (types.ts)
 
 **Terminal**:
 - **Terminal.tsx** - xterm.js terminal with WebGL rendering, **`scrollback: 0`** (server-side scrollback). `ControlModeConfig` for tmux size sync (`proposeDimensions()` instead of `fit()`, `setExactSize()` from tmux layout) and viewport delivery (`registerOnViewport`, `scrollBy`, `scrollToLive`). Each new viewport is converted to a VT escape sequence (`viewport-render.ts`) and `term.write()`-ed to refresh the screen. Supports font size adjustment, desktop text selection with auto-copy, touch selection mode for mobile/tablet
+- **SelectionOverlay.tsx** - Touch-selection overlay rendered above the terminal: draggable start/end handles, copy/cancel controls, computed from xterm `_core` cell metrics
 - **viewport-render.ts** (`utils/viewport-render.ts`) - Converts a `PaneViewport` into a VT sequence (`\x1b[?25l` + per-row `\x1b[r;1H\x1b[2K<line>` + cursor restore) that xterm.js can apply with a single `term.write()`
 
 **Session Management**:
-- **SessionTabs.tsx** / **SessionTab.tsx** - Tab bar for active sessions
 - **SessionList.tsx** - Full session list with tabs (Active/History/Dashboard), pane list with focus/close/split actions, pinch-to-zoom support
-- **SessionListMini.tsx** - Compact session list view
 - **SessionHistory.tsx** - Past session browser with project grouping
 - **ConversationViewer.tsx** - Markdown-rendered conversation display with image support
 
-**Keyboard**:
+**Chat** (`components/chat/`):
+- **ChatView.tsx** - Conversation-style view of the current session, replacing the terminal area when "Chat" mode is selected
+- **ChatComposer.tsx** - Multi-line message composer used by ChatView
+
+**Keyboard / Input**:
+- **InputBar.tsx** - Persistent input bar above the terminal with prompt history, slash-command picker, image upload, sendable to the focused pane
 - **FloatingKeyboard.tsx** - Draggable floating keyboard for tablets, minimizable, saves position per input mode
 - **Keyboard.tsx** - Virtual keyboard for mobile with long-press for symbols
 
@@ -159,18 +169,14 @@ shared/      # Shared types and Zod schemas (types.ts)
 - **UsageLimits.tsx** - 5-hour/7-day usage cycle display with progress bars
 - **DailyUsageChart.tsx** - Message and session count bar charts
 - **ModelUsageChart.tsx** - Opus/Sonnet token usage comparison
-- **CostEstimate.tsx** - API cost calculation
 - **HourlyHeatmap.tsx** - Activity heatmap by hour
-- **LimitWarning.tsx** - Usage limit warnings
 - **UsageChart.tsx** - Usage history line chart with real-time snapshots
 - **NetworkLatency.tsx** - WebSocket latency display
 - **ServerInfo.tsx** - Server information and system details
 
 **Other**:
 - **LoginForm.tsx** - Password authentication form
-- **LanguageSwitcher.tsx** - EN/JA language toggle
 - **Onboarding.tsx** - Spotlight-style walkthrough for new users
-- **PromptSearch.tsx** - Prompt history search interface
 
 ### Frontend Hooks
 
@@ -181,8 +187,14 @@ shared/      # Shared types and Zod schemas (types.ts)
 - **useFileViewer.ts** - File viewing state
 - **useAuth.ts** - Authentication state management
 - **useTheme.ts** - Dark/light theme management
+- **useUiScale.ts** - Persists and applies the global UI scale factor
 - **useNetworkLatency.ts** - WebSocket latency tracking
 - **useLineSelection.ts** - Text line selection utilities
+- **useSelectionMode.ts** - Touch-selection state machine for `SelectionOverlay` (start/end cell, drag handles, copy-to-clipboard)
+- **useInputEcho.ts** - Echoes characters typed into the InputBar back into the conversation/chat view while the terminal is hidden
+- **useConversationStream.ts** - Subscribes to `/ws/mux` conversation streams (`subscribe-conversation`) and exposes incremental conversation updates
+- **useAgentConversation.ts** - Unified conversation hook that selects between Claude Code and Codex sources for the active session
+- **useCodexConversation.ts** - Codex-specific conversation loader (transcript + token usage)
 
 ### Keyboard Shortcuts (Desktop)
 

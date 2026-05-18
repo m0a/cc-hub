@@ -1,10 +1,10 @@
-# Codex Support MVP
+# Codex Integration
 
 ## Goal
 
 CC Hub can create, detect, and display tmux sessions that run either Claude Code or OpenAI Codex CLI.
 
-This MVP keeps Claude Code as the default behavior and adds Codex as an additional agent provider.
+Claude Code remains the default agent. Codex is supported as a first-class additional agent provider with detection, session metadata, conversation viewing (`useCodexConversation`), and usage tracking (`CodexUsageService`).
 
 ## Scope
 
@@ -19,12 +19,10 @@ This MVP keeps Claude Code as the default behavior and adds Codex as an addition
 
 ## Out of Scope
 
-- Codex-specific session metadata equivalent to Claude Code recap, token metrics, or session IDs.
 - Generated Codex recaps equivalent to Claude Code recap hooks.
-- Codex prompt/recap parsing.
+- Codex prompt/recap parsing beyond what Codex's own state DB / transcripts provide.
 - Agent filtering or sorting in the session list.
-- Full agent-provider abstraction for adding future CLIs.
-- Full lint cleanup for pre-existing frontend/backend warnings.
+- Full agent-provider abstraction for adding future CLIs beyond Claude + Codex.
 - Broad UI redesign of the session list.
 
 ## Behavior
@@ -86,18 +84,13 @@ Codex session cards use the session name instead of pane title for display, beca
 
 ### Codex Metadata
 
-Codex does not currently expose the same JSONL recap fields that CC Hub reads for Claude Code.
+Codex does not expose the same JSONL recap fields that CC Hub reads for Claude Code. Instead, CC Hub reads:
 
-The MVP reads basic local metadata from `~/.codex/state_5.sqlite`:
+- Local SQLite state at `~/.codex/state_5.sqlite` for: thread ID, title, first user message, token count, git branch, updated time.
+- Codex conversation transcripts via `CodexConversationService` (`backend/src/services/codex-conversation.ts`).
+- Codex token usage / rate limit state via `CodexUsageService` (`backend/src/services/codex-usage.ts`).
 
-- thread ID
-- title
-- first user message
-- token count
-- git branch
-- updated time
-
-This metadata is used to enrich Codex session cards without enabling Claude-only actions such as conversation replay or `claude -r` resume.
+This metadata enriches Codex session cards and feeds the conversation viewer. Claude-only actions such as `claude -r` resume are not available for Codex sessions; resume is handled through Codex's own mechanism when supported.
 
 ## Changed Files
 
@@ -132,7 +125,7 @@ This metadata is used to enrich Codex session cards without enabling Claude-only
 
 ## Agent Registry
 
-The MVP uses a shared agent registry as the source of truth for supported CLI providers.
+A shared agent registry is the source of truth for supported CLI providers.
 
 Current shape:
 
@@ -179,16 +172,10 @@ Completed checks:
 - API confirmed duplicate working directory handling for an existing Codex session.
 - A temporary Codex smoke session was created, detected as Codex, shown in the UI, and deleted.
 
-Known caveat:
-
-- `bun run lint` still fails because of pre-existing lint errors outside this MVP scope.
-- Changed-file Biome lint exits with status `0`, with remaining warnings treated as pre-existing cleanup work.
-
 ## Follow-Up Tasks
 
 1. Add route-level tests for duplicate handling by same agent and working directory.
 2. Add integration coverage for tmux process detection when a real Codex process is running.
 3. Decide whether Claude and Codex should be allowed to share the same working directory at the same time.
 4. Add visible agent badges or filters to the session list if useful.
-5. Investigate whether Codex exposes stable metadata that can be shown alongside Claude Code metadata.
-6. Separate existing lint cleanup into its own task or branch.
+5. Investigate whether Codex exposes additional stable metadata that can be shown alongside Claude Code metadata.

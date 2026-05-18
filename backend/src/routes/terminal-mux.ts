@@ -207,8 +207,8 @@ export function muxClose(ws: ServerWebSocket<MuxData>, code: number, reason: str
 async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) {
   console.log(`[mux] subscribe: ${sessionId} (current subs: ${ws.data.subscriptions.size})`);
   // Already subscribed — reset state so the next resize re-emits initial viewports.
-  if (ws.data.subscriptions.has(sessionId)) {
-    const existing = ws.data.subscriptions.get(sessionId)!;
+  const existing = ws.data.subscriptions.get(sessionId);
+  if (existing) {
     existing.firstResizeReceived = false;
     existing.liveOffset.clear();
     for (const t of existing.pushTimers.values()) clearTimeout(t);

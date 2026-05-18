@@ -16,13 +16,13 @@ const ESC = String.fromCharCode(0x1b);
  * occur. These must be stripped before sending to tmux via `send-keys -H`,
  * since tmux would deliver them as literal bytes to the shell.
  */
-const SGR_MOUSE_RE = new RegExp(`${ESC}\\[<[\\d;]*[Mm]`, 'g');
-const LEGACY_MOUSE_RE = new RegExp(`${ESC}\\[M[\\s\\S]{3}`, 'g');
+const SGR_MOUSE_RE = new RegExp(`${ESC}\\[<[\\d;]*[Mm]`, "g");
+const LEGACY_MOUSE_RE = new RegExp(`${ESC}\\[M[\\s\\S]{3}`, "g");
 
 export function filterMouseTrackingInput(data: string): string {
-  return data
-    .replace(SGR_MOUSE_RE, '')    // SGR mouse reports
-    .replace(LEGACY_MOUSE_RE, '');     // Legacy X10 mouse reports
+	return data
+		.replace(SGR_MOUSE_RE, "") // SGR mouse reports
+		.replace(LEGACY_MOUSE_RE, ""); // Legacy X10 mouse reports
 }
 
 /**
@@ -32,34 +32,37 @@ export function filterMouseTrackingInput(data: string): string {
  * Returns a string describing the action to take, or null if xterm should
  * handle the event normally.
  */
-export type InterceptAction = 'shift-enter' | 'paste' | 'copy' | null;
+export type InterceptAction = "shift-enter" | "paste" | "copy" | null;
 
-export function shouldInterceptKeyEvent(e: {
-  type: string;
-  key: string;
-  ctrlKey: boolean;
-  metaKey: boolean;
-  shiftKey: boolean;
-}, hasSelection?: boolean): InterceptAction {
-  if (e.type !== 'keydown') return null;
+export function shouldInterceptKeyEvent(
+	e: {
+		type: string;
+		key: string;
+		ctrlKey: boolean;
+		metaKey: boolean;
+		shiftKey: boolean;
+	},
+	hasSelection?: boolean,
+): InterceptAction {
+	if (e.type !== "keydown") return null;
 
-  // Shift+Enter → send literal backslash + carriage return
-  if (e.shiftKey && e.key === 'Enter') {
-    return 'shift-enter';
-  }
+	// Shift+Enter → send literal backslash + carriage return
+	if (e.shiftKey && e.key === "Enter") {
+		return "shift-enter";
+	}
 
-  if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
-    const key = e.key.toLowerCase();
-    // Ctrl/Cmd + C with selection → copy (prevent xterm from sending \x03 SIGINT)
-    // Without selection → let xterm handle normally (sends SIGINT)
-    if (key === 'c' && hasSelection) {
-      return 'copy';
-    }
-    // Ctrl/Cmd + V → delegate to DesktopLayout's handlePaste (supports images)
-    if (key === 'v') {
-      return 'paste';
-    }
-  }
+	if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
+		const key = e.key.toLowerCase();
+		// Ctrl/Cmd + C with selection → copy (prevent xterm from sending \x03 SIGINT)
+		// Without selection → let xterm handle normally (sends SIGINT)
+		if (key === "c" && hasSelection) {
+			return "copy";
+		}
+		// Ctrl/Cmd + V → delegate to DesktopLayout's handlePaste (supports images)
+		if (key === "v") {
+			return "paste";
+		}
+	}
 
-  return null;
+	return null;
 }

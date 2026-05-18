@@ -28,8 +28,11 @@ const SEND_KEYS_CHUNK_SIZE = 4096;
 // Debounce for refresh-client -C
 const RESIZE_DEBOUNCE_MS = 50;
 
-// Grace period before destroying session after all clients disconnect
-const GRACE_PERIOD_MS = 5_000; // 5 seconds (was 30s - reduced to minimize idle CPU)
+// Grace period before destroying session after all clients disconnect.
+// Long enough to absorb typical UI session switches without forcing a `tmux -CC`
+// respawn (re-attach + re-ready cost is several hundred ms and triggers a fresh
+// listSessions / dashboard fan-out).
+const GRACE_PERIOD_MS = 30_000;
 
 interface PendingCommand {
   resolve: (output: string) => void;

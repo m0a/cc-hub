@@ -86,9 +86,17 @@ export class ClaudeCodeService {
   private ttySessionCache = new Map<string, { sessionId: string | null; timestamp: number }>();
   private static readonly TTY_SESSION_CACHE_TTL = 10_000; // 10 seconds
 
-  // Cache for session data keyed by file path (avoids re-reading JSONL files)
+  // Cache for session data keyed by file path (avoids re-reading JSONL files).
+  // Longer than the 5s sessions-push interval so back-to-back pushes stay on the
+  // mtime-checked cache instead of re-reading every JSONL each cycle.
   private sessionDataCache = new Map<string, CachedSessionData>();
-  private static readonly SESSION_DATA_CACHE_TTL = 5000; // 5 seconds
+  private static readonly SESSION_DATA_CACHE_TTL = 30_000; // 30 seconds
+
+  // Cache for getSessionForPath / getRecentSessionsForPath / getSessionByTtyStartTime
+  // results keyed by composite cache key. Avoids re-running readdir + stat over
+  // every JSONL on every sessions-push tick.
+  private pathResultCache = new Map<string, { data: unknown; timestamp: number }>();
+  private static readonly PATH_RESULT_CACHE_TTL = 3_000; // 3 seconds
 
   constructor() {
     this.claudeDir = join(homedir(), '.claude', 'projects');
@@ -136,6 +144,16 @@ export class ClaudeCodeService {
    * Used when -r flag is not present
    */
   async getSessionByTtyStartTime(tty: string, workingDir: string): Promise<ClaudeCodeSession | null> {
+    const cacheKey = `tty:${tty}:${workingDir}`;
+    const cached = this.getPathCached<ClaudeCodeSession | null>(cacheKey);
+    if (cached !== undefined) return cached;
+
+    const result = await this.getSessionByTtyStartTimeUncached(tty, workingDir);
+    this.setPathCached(cacheKey, result);
+    return result;
+  }
+
+  private async getSessionByTtyStartTimeUncached(tty: string, workingDir: string): Promise<ClaudeCodeSession | null> {
     try {
       // Get tty name from path (Linux: pts/10, macOS: ttys004)
       const ttyMatch = tty.match(/(pts\/\d+|ttys\d+)$/);
@@ -636,10 +654,32 @@ export class ClaudeCodeService {
     }
   }
 
+  private getPathCached<T>(key: string): T | undefined {
+    const entry = this.pathResultCache.get(key);
+    if (entry && Date.now() - entry.timestamp < ClaudeCodeService.PATH_RESULT_CACHE_TTL) {
+      return entry.data as T;
+    }
+    return undefined;
+  }
+
+  private setPathCached(key: string, data: unknown): void {
+    this.pathResultCache.set(key, { data, timestamp: Date.now() });
+  }
+
   /**
    * Get the latest Claude Code session info for a given working directory
    */
   async getSessionForPath(workingDir: string): Promise<ClaudeCodeSession | null> {
+    const cacheKey = `path:${workingDir}`;
+    const cached = this.getPathCached<ClaudeCodeSession | null>(cacheKey);
+    if (cached !== undefined) return cached;
+
+    const result = await this.getSessionForPathUncached(workingDir);
+    this.setPathCached(cacheKey, result);
+    return result;
+  }
+
+  private async getSessionForPathUncached(workingDir: string): Promise<ClaudeCodeSession | null> {
     try {
       // Try exact path first, then parent directories
       let currentPath = workingDir;
@@ -796,6 +836,16 @@ export class ClaudeCodeService {
    * Used when multiple tmux sessions share the same working directory
    */
   async getRecentSessionsForPath(workingDir: string, count: number): Promise<ClaudeCodeSession[]> {
+    const cacheKey = `recent:${workingDir}:${count}`;
+    const cached = this.getPathCached<ClaudeCodeSession[]>(cacheKey);
+    if (cached !== undefined) return cached;
+
+    const result = await this.getRecentSessionsForPathUncached(workingDir, count);
+    this.setPathCached(cacheKey, result);
+    return result;
+  }
+
+  private async getRecentSessionsForPathUncached(workingDir: string, count: number): Promise<ClaudeCodeSession[]> {
     const sessions: ClaudeCodeSession[] = [];
 
     try {

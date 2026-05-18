@@ -46,3 +46,4 @@ frontend/dev-dist/
 
 # Claude Code user prompt history (local only)
 .claude-user-prompts/
+profiles/

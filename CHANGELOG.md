@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.118] - 2026-05-18
+
+### Changed
+- state-snapshot の per-pane emit cap を 100ms (10/sec) → 200ms (5/sec) に変更 (#164)
+  - v0.1.117 でも cchub CPU が ~127% 残存していたため、レート制限を倍に強化
+  - 初回 (idle 後) snapshot は 50ms debounce のままなのでタイピングレイテンシは不変
+  - 連続再描画 (スピナー / log tail) のみ 5fps に頭打ち
+
 ## [0.1.117] - 2026-05-18
 
 ### Fixed

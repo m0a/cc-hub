@@ -27,6 +27,32 @@ export function stripAnsi(s: string): string {
   return s.replace(ANSI_RE, '');
 }
 
+function isVisuallyBlank(s: string): boolean {
+  return stripAnsi(s).trim() === '';
+}
+
+/**
+ * Fetch up to `wanted` rows of scrollback ending just above the visible
+ * region (`-S -wanted -E -1`). Returns trimmed rows or [] on failure.
+ */
+async function captureScrollback(
+  cs: TmuxControlSession,
+  paneId: string,
+  wanted: number,
+): Promise<string[]> {
+  if (wanted <= 0) return [];
+  try {
+    const raw = await cs.sendCommand(
+      `capture-pane -e -p -t ${paneId} -S -${wanted} -E -1`,
+    );
+    const sb = raw.split('\n');
+    while (sb.length > 0 && isVisuallyBlank(sb[sb.length - 1])) sb.pop();
+    return sb;
+  } catch {
+    return [];
+  }
+}
+
 export interface ViewportRequest {
   offset: number;
 }
@@ -96,6 +122,37 @@ export async function captureViewport(
   if (lines.length > rows) {
     lines = lines.slice(0, rows);
   }
+
+  // Claude TUI (and similar) only paints the rows it actually wrote to;
+  // tmux's capture-pane returns visually-blank entries for the rest. In
+  // live mode this leaves a "void" in the bottom half of the viewport.
+  // Mitigate by trimming the trailing blanks and prepending the most
+  // recent scrollback rows so the user sees actual content where the
+  // TUI left blanks, while the TUI's painted area stays at the bottom
+  // (its natural position).
+  //
+  // This only matters at offset=0 with the normal screen buffer. In
+  // altScreen mode (htop, vim, etc.) the TUI owns the whole surface,
+  // and in scrolled mode we're explicitly showing historical content.
+  let cursorPadShift = 0;
+  if (clampedOffset === 0 && !altScreen && historySize > 0) {
+    while (lines.length > 0 && isVisuallyBlank(lines[lines.length - 1])) {
+      lines.pop();
+    }
+    const padNeeded = rows - lines.length;
+    if (padNeeded > 0) {
+      const fetched = await captureScrollback(cs, paneId, padNeeded);
+      if (fetched.length > 0) {
+        const prepend = fetched.slice(-padNeeded);
+        lines = [...prepend, ...lines];
+        // tmux reports cursor_y relative to the original visible top, but
+        // the prepended scrollback rows now sit above the painted area;
+        // shift cursor down by the number of rows we actually prepended.
+        cursorPadShift = prepend.length;
+      }
+    }
+  }
+
   while (lines.length < rows) {
     lines.push('');
   }
@@ -104,7 +161,7 @@ export async function captureViewport(
   const cursor: PaneCursor = atTail
     ? {
         x: Math.max(0, Math.min(cols - 1, cx)),
-        y: Math.max(0, Math.min(rows - 1, cy)),
+        y: Math.max(0, Math.min(rows - 1, cy + cursorPadShift)),
         visible: cursorVisible,
       }
     : { x: 0, y: 0, visible: false };

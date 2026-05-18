@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { homedir } from 'node:os';
 import { AGENT_PROVIDERS, AGENT_PROVIDER_IDS, CreateSessionSchema, DEFAULT_AGENT_PROVIDER, PaneIdSchema, agentResumeCommand, agentSupportsConversationMetadata, type AgentProvider, type IndicatorState, type PaneInfo, type ExtendedSessionResponse, type SessionState } from '../../../shared/types';
 import { TmuxService } from '../services/tmux';
 import { controlSessions, getOrCreateControlSession } from '../services/tmux-control';
@@ -24,8 +25,14 @@ export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+export function expandHome(value: string): string {
+  if (value === '~') return homedir();
+  if (value.startsWith('~/')) return `${homedir()}${value.slice(1)}`;
+  return value;
+}
+
 export function agentStartCommand(agent: AgentProvider, workingDir: string): string {
-  return `cd ${shellQuote(workingDir)} && ${AGENT_PROVIDERS[agent].command}`;
+  return `cd ${shellQuote(expandHome(workingDir))} && ${AGENT_PROVIDERS[agent].command}`;
 }
 
 export function findDuplicateAgentWorkingDirSession<T extends { agent?: string; currentCommand?: string; currentPath?: string }>(
@@ -543,7 +550,7 @@ sessions.post('/history/resume', async (c) => {
     await tmuxService.createSession(tmuxSessionName);
 
     // Change to project directory and run the agent's resume command
-    const command = `cd ${shellQuote(projectPath)} && ${agentResumeCommand(agent, sessionId)}`;
+    const command = `cd ${shellQuote(expandHome(projectPath))} && ${agentResumeCommand(agent, sessionId)}`;
     const success = await tmuxService.sendKeys(tmuxSessionName, command);
 
     if (!success) {

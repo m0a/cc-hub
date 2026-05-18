@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.120] - 2026-05-18
+
+### Added
+- ダッシュボードに UI 拡大率設定を追加 (80% / 90% / 100% / 115% / 130%)
+  - `<html>` の `font-size` を経由して Tailwind の rem ベース要素 (Dashboard / SessionList / FileViewer / アイコン) を一括スケール
+  - xterm.js は独自フォント設定のためターミナル本文には影響せず、Terminal の Cmd+= / Cmd+- とは独立して制御可能
+  - 設定は `localStorage['cchub-ui-scale']` に永続化、FOUC を防ぐため `main.tsx` で early apply
+
+### Fixed
+- Welcome セッション作成時に `cd '~' && claude` が `cd: no such file or directory: ~` で失敗していた問題を修正
+  - `agentStartCommand` / resume command で `shellQuote` 前に `~` / `~/...` を `homedir()` に展開する `expandHome()` ヘルパーを追加
+
 ## [0.1.119] - 2026-05-18
 
 ### Fixed

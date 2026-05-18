@@ -660,16 +660,21 @@ export class TmuxControlSession {
 
   /**
    * Set the client size (debounced).
-   * Skips if dimensions haven't changed to avoid unnecessary tmux redraws.
+   * Skips if dimensions match the last applied size. Also absorbs ±1-row
+   * "noise" — mobile browsers can have `fit.proposeDimensions()` return
+   * alternating values across rerenders (visualViewport fluctuations,
+   * sub-pixel cell math), and reflowing tmux on every flutter triggers a
+   * feedback loop of layout-change → ResizeObserver → resize.
    */
   setClientSize(cols: number, rows: number): void {
     if (this.resizeTimer) {
       clearTimeout(this.resizeTimer);
     }
     this.resizeTimer = setTimeout(() => {
-      if (this.lastClientSize
-        && this.lastClientSize.cols === cols
-        && this.lastClientSize.rows === rows) {
+      const last = this.lastClientSize;
+      if (last && last.cols === cols && Math.abs(last.rows - rows) <= 1) {
+        // Within the noise envelope (same width, ±1 row); keep the
+        // previously applied size and avoid the layout-change feedback.
         return;
       }
       this.lastClientSize = { cols, rows };

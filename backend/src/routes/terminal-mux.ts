@@ -25,6 +25,18 @@ const DRIFT_MAX_MISMATCH_SAMPLES = 3;
 // capture-pane overhead.
 const SNAPSHOT_DEBOUNCE_MS = 50;
 
+// Hard rate-limit per pane. Even with continuous %output (e.g. TUI spinner
+// redraws), do not emit more than one snapshot per this window. Each emit
+// runs tmux display-message + capture-pane and serializes a full snapshot
+// (~10 KB) to JSON, so removing the upper bound let an actively-redrawing
+// pane consume 150% CPU.
+const SNAPSHOT_MIN_INTERVAL_MS = 100;
+
+// Verbose per-snapshot logging is gated behind DEBUG_MUX=1. At 10+ emits/sec
+// per pane the journald cost is non-trivial; the [tmux-control] perf summary
+// already reports aggregate throughput every 30s.
+const DEBUG_MUX = process.env.DEBUG_MUX === '1' || process.env.DEBUG_MUX === 'true';
+
 /** Per-session subscription state for a mux client */
 interface MuxSubscription {
   controlSession: TmuxControlSession;
@@ -42,6 +54,9 @@ interface MuxSubscription {
   lastPadFill: Map<string, import('../services/pane-snapshot').PadFillCache>;
   // Per-pane snapshot debounce timers.
   snapshotTimers: Map<string, Timer>;
+  // Wall-clock of the last snapshot actually emitted for a pane. Used to
+  // enforce SNAPSHOT_MIN_INTERVAL_MS even under continuous %output.
+  lastSnapshotEmittedAt: Map<string, number>;
   // Pane IDs we've ever sent a snapshot for, so we can recapture them on
   // resize / zoom even if tmux hasn't pushed a %output since.
   knownPanes: Set<string>;
@@ -227,6 +242,7 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     existing.lastPadFill.clear();
     for (const t of existing.snapshotTimers.values()) clearTimeout(t);
     existing.snapshotTimers.clear();
+    existing.lastSnapshotEmittedAt.clear();
     existing.outputSuppressedCount = 0;
     ws.send(JSON.stringify({ type: 'subscribed', sessionId, selfVerifyEnabled: SELF_VERIFY }));
     return;
@@ -251,6 +267,7 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
       lastHistorySize: new Map(),
       lastPadFill: new Map(),
       snapshotTimers: new Map(),
+      lastSnapshotEmittedAt: new Map(),
       knownPanes: new Set(),
       outputSuppressedCount: 0,
       sendFailCount: 0,
@@ -339,6 +356,7 @@ function cleanupSubscription(ws: ServerWebSocket<MuxData>, _sessionId: string, s
   for (const fn of sub.cleanupFns) fn();
   for (const t of sub.snapshotTimers.values()) clearTimeout(t);
   sub.snapshotTimers.clear();
+  sub.lastSnapshotEmittedAt.clear();
   sub.controlSession.removeClientDeviceType(ws.data.visitorId);
   sub.controlSession.removeClient();
 }
@@ -355,10 +373,17 @@ function scheduleSnapshot(
 ) {
   const existing = sub.snapshotTimers.get(paneId);
   if (existing) return;
+  // Debounce burst output (50ms), but never emit faster than 1 per
+  // SNAPSHOT_MIN_INTERVAL_MS regardless of how often %output fires. Under
+  // continuous TUI redraws (spinner, log tail) this caps emit rate at
+  // ~10/sec/pane and is the primary throttle preventing 150% CPU.
+  const lastEmittedAt = sub.lastSnapshotEmittedAt.get(paneId) ?? 0;
+  const sinceLastEmit = Date.now() - lastEmittedAt;
+  const delay = Math.max(SNAPSHOT_DEBOUNCE_MS, SNAPSHOT_MIN_INTERVAL_MS - sinceLastEmit);
   const timer = setTimeout(() => {
     sub.snapshotTimers.delete(paneId);
     void emitSnapshot(ws, sessionId, sub, paneId);
-  }, SNAPSHOT_DEBOUNCE_MS);
+  }, delay);
   sub.snapshotTimers.set(paneId, timer);
 }
 
@@ -395,6 +420,7 @@ async function emitSnapshot(
       ws.send(JSON.stringify({ type: 'state-snapshot', sessionId, snapshot }));
     } catch { return; }
     sub.serverSnapshots.set(paneId, snapshot);
+    sub.lastSnapshotEmittedAt.set(paneId, Date.now());
     return;
   }
 
@@ -410,11 +436,14 @@ async function emitSnapshot(
   // when terminal apps redraw partial normal-screen regions while xterm.js has
   // local scrollback/baseY state; users then see stale content until reload.
   // A full snapshot is the same recovery path as reload, but applied live.
-  console.log(`[mux] state-snapshot pane=${paneId} seq=${snapshot.seq} scrollbackDelta=${snapshot.scrollbackDelta?.length ?? 0} rows=${snapshot.rows}`);
+  if (DEBUG_MUX) {
+    console.log(`[mux] state-snapshot pane=${paneId} seq=${snapshot.seq} scrollbackDelta=${snapshot.scrollbackDelta?.length ?? 0} rows=${snapshot.rows}`);
+  }
   try {
     ws.send(JSON.stringify({ type: 'state-snapshot', sessionId, snapshot }));
   } catch { return; }
   sub.serverSnapshots.set(paneId, snapshot);
+  sub.lastSnapshotEmittedAt.set(paneId, Date.now());
 }
 
 async function emitInitialSnapshots(

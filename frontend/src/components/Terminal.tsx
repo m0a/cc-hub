@@ -933,6 +933,12 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     const cleanup = cm.registerOnRender((event) => {
       const term = terminalRef.current;
       if (!term) return;
+      // Capture scroll position BEFORE writing the new state. If the user
+      // has scrolled up to read history, snapshot writes should not yank
+      // them back to the bottom — only auto-scroll if they were already
+      // pinned to the live edge.
+      const preBuf = term.buffer.active;
+      const wasAtBottom = preBuf.viewportY >= preBuf.baseY;
       if (event.type === 'snapshot') {
         const snap = event.snapshot;
         if (term.cols !== snap.cols || term.rows !== snap.rows) {
@@ -945,9 +951,11 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         term.write(vt, () => {
           bench.recordWriteEnd(t0, vt.length);
           applied.baseY = term.buffer.active.baseY;
-          term.scrollToBottom();
-          setScrollIndicator(null);
-          if (scrollIndicatorTimerRef.current) clearTimeout(scrollIndicatorTimerRef.current);
+          if (wasAtBottom) {
+            term.scrollToBottom();
+            setScrollIndicator(null);
+            if (scrollIndicatorTimerRef.current) clearTimeout(scrollIndicatorTimerRef.current);
+          }
         });
       } else {
         const { vt, size } = diffToVTSequence(event.ops);
@@ -958,7 +966,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           const t0 = bench.recordWriteStart();
           term.write(vt, () => {
             bench.recordWriteEnd(t0, vt.length);
-            term.scrollToBottom();
+            if (wasAtBottom) term.scrollToBottom();
           });
         }
         if (size) applied.snapRows = size.rows;

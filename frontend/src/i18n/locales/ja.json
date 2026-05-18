@@ -233,7 +233,8 @@
   },
   "appearance": {
     "dark": "ダーク",
-    "light": "ライト"
+    "light": "ライト",
+    "uiScale": "UI拡大率"
   },
   "theme": {
     "red": "赤",

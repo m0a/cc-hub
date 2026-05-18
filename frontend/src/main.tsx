@@ -1,8 +1,12 @@
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { initRemoteLogger } from './utils/remoteLogger';
+import { applyUiScale, getStoredUiScale } from './utils/uiScale';
 import './i18n';
 import './index.css';
+
+// Apply persisted UI scale before render to avoid flash of unstyled content
+applyUiScale(getStoredUiScale());
 
 // Initialize remote logging first
 initRemoteLogger();

@@ -7,7 +7,8 @@ import {
   agentSupportsConversationMetadata,
   detectAgentProviderFromArgs,
 } from '../../../shared/types';
-import { agentStartCommand, findDuplicateAgentWorkingDirSession, shellQuote } from '../../src/routes/sessions';
+import { homedir } from 'node:os';
+import { agentStartCommand, expandHome, findDuplicateAgentWorkingDirSession, shellQuote } from '../../src/routes/sessions';
 
 describe('Agent provider registry', () => {
   test('derives provider IDs from the registry', () => {
@@ -57,6 +58,14 @@ describe('Agent provider registry', () => {
     expect(shellQuote('/tmp/plain path')).toBe("'/tmp/plain path'");
     expect(shellQuote("/tmp/it's-here")).toBe("'/tmp/it'\\''s-here'");
     expect(agentStartCommand('codex', "/tmp/it's-here")).toBe("cd '/tmp/it'\\''s-here' && codex");
+  });
+
+  test('expands ~ to the home directory before quoting', () => {
+    expect(expandHome('~')).toBe(homedir());
+    expect(expandHome('~/foo')).toBe(`${homedir()}/foo`);
+    expect(expandHome('/abs/path')).toBe('/abs/path');
+    expect(expandHome('~user/foo')).toBe('~user/foo');
+    expect(agentStartCommand('claude', '~')).toBe(`cd '${homedir()}' && claude`);
   });
 
   test('detects duplicate working directories only for the same agent', () => {

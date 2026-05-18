@@ -9,6 +9,7 @@ import { HourlyHeatmap } from './HourlyHeatmap';
 import { NetworkLatency } from './NetworkLatency';
 import { ServerInfo } from './ServerInfo';
 import { useTheme } from '../../hooks/useTheme';
+import { useUiScale } from '../../hooks/useUiScale';
 
 // Onboarding localStorage keys
 const ONBOARDING_KEY = 'cchub-onboarding-completed';
@@ -25,6 +26,7 @@ export function Dashboard({ className = '', compact = false }: DashboardProps) {
   const { t, i18n } = useTranslation();
   const { data, isLoading, error } = useDashboard(30000);
   const { theme, toggleTheme } = useTheme();
+  const { scale: uiScale, setScale: setUiScale, options: uiScaleOptions } = useUiScale();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [cacheClearing, setCacheClearing] = useState(false);
   const [agentTab, setAgentTab] = useState<AgentTab>('claude');
@@ -195,6 +197,33 @@ export function Dashboard({ className = '', compact = false }: DashboardProps) {
           >
             {cacheClearing ? t('common.loading') : t('dashboard.clearCache')}
           </button>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 max-w-lg">
+          <span className="text-[12px] text-zinc-500">{t('appearance.uiScale')}</span>
+          <div
+            className="inline-flex items-center rounded-md bg-white/[0.04] p-0.5"
+            role="group"
+            aria-label={t('appearance.uiScale')}
+          >
+            {uiScaleOptions.map((opt) => {
+              const isActive = Math.abs(uiScale - opt) < 0.001;
+              return (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => setUiScale(opt)}
+                  aria-pressed={isActive}
+                  className={`px-2.5 py-1 text-[12px] rounded transition-colors ${
+                    isActive
+                      ? 'bg-white/[0.10] text-zinc-200'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  {Math.round(opt * 100)}%
+                </button>
+              );
+            })}
+          </div>
         </div>
         {data?.version && (
           <div className="text-[11px] text-zinc-700 mt-3">

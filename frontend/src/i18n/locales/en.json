@@ -233,7 +233,8 @@
   },
   "appearance": {
     "dark": "Dark",
-    "light": "Light"
+    "light": "Light",
+    "uiScale": "UI Scale"
   },
   "theme": {
     "red": "Red",

@@ -1,15 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { reportWsLatency } from '../services/latency-store';
-import type { DiffOp, PaneSnapshot, TmuxLayoutNode } from '../../../shared/types';
-
-export type PaneRenderEvent =
-  | { type: 'snapshot'; snapshot: PaneSnapshot }
-  | { type: 'diff'; base: number; seq: number; ops: DiffOp[] };
+import type { PaneViewport, TmuxLayoutNode } from '../../../shared/types';
 
 interface UseMultiplexedTerminalOptions {
   sessionId: string;
   token?: string | null;
-  onPaneRender?: (paneId: string, event: PaneRenderEvent) => void;
+  onPaneViewport?: (paneId: string, viewport: PaneViewport) => void;
   onLayoutChange?: (layout: TmuxLayoutNode) => void;
   onNewSession?: (sessionId: string, sessionName: string) => void;
   onPaneDead?: (paneId: string) => void;
@@ -29,11 +25,14 @@ interface UseMultiplexedTerminalReturn {
   closePane: (paneId: string) => void;
   resizePane: (paneId: string, cols: number, rows: number) => void;
   selectPane: (paneId: string) => void;
-  scrollPane: (paneId: string, lines: number) => void;
   adjustPane: (paneId: string, direction: 'L' | 'R' | 'U' | 'D', amount: number) => void;
   equalizePanes: (direction: 'horizontal' | 'vertical') => void;
   sendClientInfo: (deviceType: 'mobile' | 'tablet' | 'desktop') => void;
-  requestSnapshot: (paneId: string) => void;
+  // Ask the server for the viewport `offset` rows above the live edge.
+  // offset=0 == live mode; the server will keep pushing unsolicited
+  // updates whenever output arrives. offset>0 silences unsolicited pushes
+  // until the next request-viewport.
+  requestViewport: (paneId: string, offset: number) => void;
   zoomPane: (paneId: string) => void;
   respawnPane: (paneId: string) => void;
   deadPanes: Set<string>;
@@ -72,10 +71,6 @@ const PING_INTERVAL_MS = 10_000;
 // dead" connections where the OS hasn't yet noticed the TCP is gone (common
 // on mobile when carrier NAT drops the session).
 const PONG_TIMEOUT_MS = 25_000;
-// Channel C: when the server (CCHUB_SELF_VERIFY=1) accepts our subscription,
-// it includes selfVerifyEnabled=true so we know to start streaming debug-dump
-// messages. Stays false on production builds.
-let selfVerifyEnabled = false;
 
 // Conversation subscriptions (multiple sessions can be subscribed at once)
 const subscribedConversations = new Set<string>();
@@ -97,7 +92,7 @@ function flushConversationPending() {
 }
 
 type MuxCallbacks = {
-  onPaneRender?: (paneId: string, event: PaneRenderEvent) => void;
+  onPaneViewport?: (paneId: string, viewport: PaneViewport) => void;
   onLayoutChange?: (layout: TmuxLayoutNode) => void;
   onNewSession?: (sessionId: string, sessionName: string) => void;
   onPaneDead?: (paneId: string) => void;
@@ -240,10 +235,6 @@ function ensureConnection(token?: string | null) {
         break;
       }
       case 'subscribed': {
-        if (msg.selfVerifyEnabled === true && !selfVerifyEnabled) {
-          selfVerifyEnabled = true;
-          console.log('[MUX] self-verify enabled by server');
-        }
         if (msgSessionId === currentSession) {
           cb?.setIsConnected?.(true);
           cb?.onConnect?.();
@@ -258,19 +249,10 @@ function ensureConnection(token?: string | null) {
         }));
         break;
       }
-      case 'state-snapshot': {
+      case 'viewport': {
         if (msgSessionId !== currentSession) return;
-        const snapshot = msg.snapshot as PaneSnapshot;
-        cb?.onPaneRender?.(snapshot.paneId, { type: 'snapshot', snapshot });
-        break;
-      }
-      case 'state-diff': {
-        if (msgSessionId !== currentSession) return;
-        const paneId = msg.paneId as string;
-        const base = msg.base as number;
-        const seq = msg.seq as number;
-        const ops = msg.ops as DiffOp[];
-        cb?.onPaneRender?.(paneId, { type: 'diff', base, seq, ops });
+        const viewport = msg.viewport as PaneViewport;
+        cb?.onPaneViewport?.(viewport.paneId, viewport);
         break;
       }
       case 'layout': {
@@ -435,46 +417,6 @@ export function sendTerminalInput(sessionId: string, paneId: string, data: strin
   return true;
 }
 
-export function isSelfVerifyEnabled(): boolean {
-  return selfVerifyEnabled;
-}
-
-/**
- * Channel C: send a client-side xterm.js snapshot for server-side drift
- * detection. No-op unless the server has self-verify enabled (so production
- * builds incur zero overhead). The caller is responsible for assembling
- * `lines` from the xterm buffer.
- */
-export type DumpTrigger =
-  | 'resize-done'
-  | 'reconnect-done'
-  | 'output-idle'
-  | 'periodic'
-  | 'user';
-
-export function sendDebugDump(
-  sessionId: string,
-  paneId: string,
-  lines: string[],
-  cursor: { x: number; y: number },
-  trigger: DumpTrigger,
-  appliedSeq?: number,
-): boolean {
-  if (!selfVerifyEnabled) return false;
-  if (sharedWs?.readyState !== WebSocket.OPEN || !wsReady) return false;
-  sharedWs.send(JSON.stringify({
-    type: 'debug-dump',
-    sessionId,
-    paneId,
-    lines,
-    cursor,
-    trigger,
-    ts: Date.now(),
-    appliedSeq,
-  }));
-  return true;
-}
-
 export function dispatchInputEcho(sessionId: string, paneId: string, data: string) {
   window.dispatchEvent(new CustomEvent('cchub-input-echo', {
     detail: { sessionId, paneId, data },
@@ -490,7 +432,7 @@ export function useMultiplexedTerminal(options: UseMultiplexedTerminalOptions): 
   const [isConnected, setIsConnected] = useState(false);
   const [deadPanes, setDeadPanes] = useState<Set<string>>(new Set());
 
-  const onPaneRenderRef = useRef(options.onPaneRender);
+  const onPaneViewportRef = useRef(options.onPaneViewport);
   const onLayoutChangeRef = useRef(options.onLayoutChange);
   const onNewSessionRef = useRef(options.onNewSession);
   const onPaneDeadRef = useRef(options.onPaneDead);
@@ -499,7 +441,7 @@ export function useMultiplexedTerminal(options: UseMultiplexedTerminalOptions): 
   const onDisconnectRef = useRef(options.onDisconnect);
   const onErrorRef = useRef(options.onError);
 
-  onPaneRenderRef.current = options.onPaneRender;
+  onPaneViewportRef.current = options.onPaneViewport;
   onLayoutChangeRef.current = options.onLayoutChange;
   onNewSessionRef.current = options.onNewSession;
   onPaneDeadRef.current = options.onPaneDead;
@@ -510,7 +452,7 @@ export function useMultiplexedTerminal(options: UseMultiplexedTerminalOptions): 
 
   useEffect(() => {
     activeCallbacks = {
-      onPaneRender: (p, e) => onPaneRenderRef.current?.(p, e),
+      onPaneViewport: (p, v) => onPaneViewportRef.current?.(p, v),
       onLayoutChange: (l) => onLayoutChangeRef.current?.(l),
       onNewSession: (s, n) => onNewSessionRef.current?.(s, n),
       onPaneDead: (p) => onPaneDeadRef.current?.(p),
@@ -574,10 +516,6 @@ export function useMultiplexedTerminal(options: UseMultiplexedTerminalOptions): 
     sendSessionMessage({ type: 'select-pane', paneId });
   }, []);
 
-  const scrollPane = useCallback((paneId: string, lines: number) => {
-    sendSessionMessage({ type: 'scroll', paneId, lines });
-  }, []);
-
   const adjustPane = useCallback((paneId: string, direction: 'L' | 'R' | 'U' | 'D', amount: number) => {
     sendSessionMessage({ type: 'adjust-pane', paneId, direction, amount });
   }, []);
@@ -590,8 +528,8 @@ export function useMultiplexedTerminal(options: UseMultiplexedTerminalOptions): 
     sendSessionMessage({ type: 'client-info', deviceType });
   }, []);
 
-  const requestSnapshot = useCallback((paneId: string) => {
-    sendSessionMessage({ type: 'request-snapshot', paneId });
+  const requestViewport = useCallback((paneId: string, offset: number) => {
+    sendSessionMessage({ type: 'request-viewport', paneId, offset });
   }, []);
 
   const zoomPane = useCallback((paneId: string) => {
@@ -630,11 +568,10 @@ export function useMultiplexedTerminal(options: UseMultiplexedTerminalOptions): 
     closePane,
     resizePane,
     selectPane,
-    scrollPane,
     adjustPane,
     equalizePanes,
     sendClientInfo,
-    requestSnapshot,
+    requestViewport,
     zoomPane,
     respawnPane,
     deadPanes,

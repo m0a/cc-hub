@@ -1,70 +1,48 @@
-import { appendFile } from 'node:fs/promises';
 import type { ServerWebSocket } from 'bun';
 import { TmuxService } from '../services/tmux';
 import { getOrCreateControlSession, type TmuxControlSession } from '../services/tmux-control';
 import { ConversationWatcher } from '../services/conversation-watcher';
-import { captureSnapshot, diffSnapshots, stripAnsi } from '../services/pane-snapshot';
+import { captureViewport } from '../services/pane-viewport';
 import type {
   ControlClientMessage,
   MuxClientMessage,
   ConversationMessage,
-  PaneSnapshot,
 } from '../../../shared/types';
 import { buildSessionsList } from './sessions';
 
-// Channel C: client→server self-verification feedback (dev-only).
-// When enabled, clients send their xterm.js buffer snapshot via `debug-dump`
-// messages; the server compares them against `tmux capture-pane -p` output
-// and logs any drift to /tmp/cchub-drift.log for later analysis.
-const SELF_VERIFY = !!process.env.CCHUB_SELF_VERIFY;
-const DRIFT_LOG_PATH = '/tmp/cchub-drift.log';
-const DRIFT_MAX_MISMATCH_SAMPLES = 3;
+// Output → push debounce. Wait this long after the last %output for a pane
+// before recapturing. Shorter = lower latency; longer = fewer captures.
+const PUSH_DEBOUNCE_MS = 50;
 
-// State-sync debounce. Wait this long after the last %output for a pane
-// before recapturing canonical state. Shorter = lower latency but more
-// capture-pane overhead.
-const SNAPSHOT_DEBOUNCE_MS = 50;
+// Hard rate limit per pane per subscription. Live-mode clients receive at
+// most one unsolicited viewport push per this window. Each push runs
+// display-message + capture-pane + ~10KB JSON, so removing the cap let a
+// continuously-redrawing pane consume runaway CPU.
+// 200ms = 5/sec/pane.
+const PUSH_MIN_INTERVAL_MS = 200;
 
-// Hard rate-limit per pane. Even with continuous %output (e.g. TUI spinner
-// redraws), do not emit more than one snapshot per this window. Each emit
-// runs tmux display-message + capture-pane and serializes a full snapshot
-// (~10 KB) to JSON, so removing the upper bound let an actively-redrawing
-// pane consume 150% CPU.
-// 200ms = 5/sec/pane. The first post-idle snapshot still fires after the
-// 50ms debounce so typing latency is unaffected; only sustained redraws
-// (spinners, log tails) hit this ceiling.
-const SNAPSHOT_MIN_INTERVAL_MS = 200;
-
-// Verbose per-snapshot logging is gated behind DEBUG_MUX=1. At 10+ emits/sec
-// per pane the journald cost is non-trivial; the [tmux-control] perf summary
-// already reports aggregate throughput every 30s.
 const DEBUG_MUX = process.env.DEBUG_MUX === '1' || process.env.DEBUG_MUX === 'true';
 
 /** Per-session subscription state for a mux client */
 interface MuxSubscription {
   controlSession: TmuxControlSession;
   cleanupFns: Array<() => void>;
-  initialized: boolean;          // first resize received & initial snapshots emitted
-  // Last snapshot the server emitted to this client, per pane. Used as the
-  // base for the next diff. Cleared on `request-snapshot` so the next emit
-  // sends a full snapshot.
-  serverSnapshots: Map<string, PaneSnapshot>;
-  // tmux history-size at the time of the last snapshot, per pane. Used to
-  // compute scrollbackDelta on the next capture.
-  lastHistorySize: Map<string, number>;
-  // Cached scrollback rows used to pad short snapshots (Claude TUI
-  // workaround). Reusable while historySize is unchanged.
-  lastPadFill: Map<string, import('../services/pane-snapshot').PadFillCache>;
-  // Per-pane snapshot debounce timers.
-  snapshotTimers: Map<string, Timer>;
-  // Wall-clock of the last snapshot actually emitted for a pane. Used to
-  // enforce SNAPSHOT_MIN_INTERVAL_MS even under continuous %output.
-  lastSnapshotEmittedAt: Map<string, number>;
-  // Pane IDs we've ever sent a snapshot for, so we can recapture them on
-  // resize / zoom even if tmux hasn't pushed a %output since.
+  // True once the client has sent at least one `resize` message. The first
+  // resize uses setClientSizeImmediate (synchronous tmux size adoption);
+  // subsequent resizes use the dedup'd path.
+  firstResizeReceived: boolean;
+  // Last `offset` the client requested for each pane. 0 means live mode;
+  // server pushes fresh viewports unsolicited on %output. >0 means the
+  // client is viewing historical scrollback; the server is silent until
+  // the client asks for a new offset.
+  liveOffset: Map<string, number>;
+  // Per-pane debounce timers for unsolicited viewport pushes.
+  pushTimers: Map<string, Timer>;
+  // Wall-clock of the last unsolicited push, for PUSH_MIN_INTERVAL_MS.
+  lastPushAt: Map<string, number>;
+  // Pane IDs the subscription has ever touched (request-viewport, push).
+  // Used by resize to re-push known panes after tmux reflows.
   knownPanes: Set<string>;
-  outputSuppressedCount: number;
-  sendFailCount: number;
 }
 
 export interface MuxData {
@@ -197,14 +175,6 @@ export async function muxMessage(ws: ServerWebSocket<MuxData>, message: string |
     return;
   }
 
-  if (msg.type === 'debug-dump') {
-    if (SELF_VERIFY) {
-      const sub = ws.data.subscriptions.get(msg.sessionId);
-      if (sub) await handleDebugDump(ws, sub, msg);
-    }
-    return;
-  }
-
   const sessionId = (msg as { sessionId?: string }).sessionId;
   if (!sessionId) return;
 
@@ -236,18 +206,18 @@ export function muxClose(ws: ServerWebSocket<MuxData>, code: number, reason: str
 
 async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) {
   console.log(`[mux] subscribe: ${sessionId} (current subs: ${ws.data.subscriptions.size})`);
-  // Already subscribed — reset so the next resize re-emits initial snapshots.
+  // Already subscribed — reset state so the next resize re-emits initial viewports.
   if (ws.data.subscriptions.has(sessionId)) {
     const existing = ws.data.subscriptions.get(sessionId)!;
-    existing.initialized = false;
-    existing.serverSnapshots.clear();
-    existing.lastHistorySize.clear();
-    existing.lastPadFill.clear();
-    for (const t of existing.snapshotTimers.values()) clearTimeout(t);
-    existing.snapshotTimers.clear();
-    existing.lastSnapshotEmittedAt.clear();
-    existing.outputSuppressedCount = 0;
-    ws.send(JSON.stringify({ type: 'subscribed', sessionId, selfVerifyEnabled: SELF_VERIFY }));
+    existing.firstResizeReceived = false;
+    existing.liveOffset.clear();
+    for (const t of existing.pushTimers.values()) clearTimeout(t);
+    existing.pushTimers.clear();
+    existing.lastPushAt.clear();
+    ws.send(JSON.stringify({ type: 'subscribed', sessionId }));
+    void emitInitialViewports(ws, sessionId, existing).catch((err) => {
+      console.warn(`[mux] re-subscribe viewport emit failed for ${sessionId}:`, err);
+    });
     return;
   }
 
@@ -265,26 +235,22 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     const sub: MuxSubscription = {
       controlSession,
       cleanupFns,
-      initialized: false,
-      serverSnapshots: new Map(),
-      lastHistorySize: new Map(),
-      lastPadFill: new Map(),
-      snapshotTimers: new Map(),
-      lastSnapshotEmittedAt: new Map(),
+      firstResizeReceived: false,
+      liveOffset: new Map(),
+      pushTimers: new Map(),
+      lastPushAt: new Map(),
       knownPanes: new Set(),
-      outputSuppressedCount: 0,
-      sendFailCount: 0,
     };
 
-    // Output → snapshot debounce trigger. We do not forward the raw bytes;
-    // they are only a signal that tmux has rendered something new.
+    // %output → schedule a push for any pane this subscription is viewing
+    // in live mode. Panes the client has scrolled away from (offset>0) are
+    // silent until the client asks for new content. Initial viewports are
+    // emitted at subscribe time (below) so we don't need to gate this on
+    // `sub.initialized`.
     cleanupFns.push(
       controlSession.onOutput((paneId, _data) => {
-        if (!sub.initialized) {
-          sub.outputSuppressedCount++;
-          return;
-        }
-        scheduleSnapshot(ws, sessionId, sub, paneId);
+        if ((sub.liveOffset.get(paneId) ?? 0) !== 0) return;
+        schedulePush(ws, sessionId, sub, paneId);
       })
     );
 
@@ -338,7 +304,19 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
       console.error(`[mux] Failed to send initial layout for ${sessionId}:`, err);
     }
 
-    ws.send(JSON.stringify({ type: 'subscribed', sessionId, selfVerifyEnabled: SELF_VERIFY }));
+    ws.send(JSON.stringify({ type: 'subscribed', sessionId }));
+
+    // Eagerly emit an initial viewport for every pane so the client has
+    // content to render even before its first `resize` arrives. Mobile
+    // browsers in particular can mount the Terminal component, register
+    // its viewport callback, and start expecting content before they
+    // measure / send a resize — leaving a blank canvas if we wait.
+    // sub.initialized stays false until a real resize comes in; the
+    // resize handler is responsible for actually setting tmux's pane
+    // size and re-pushing viewports if dimensions change.
+    void emitInitialViewports(ws, sessionId, sub).catch((err) => {
+      console.warn(`[mux] initial viewport emit failed for ${sessionId}:`, err);
+    });
   } catch (error) {
     console.error(`[mux] Failed to subscribe to ${sessionId}:`, error);
     ws.send(JSON.stringify({ type: 'error', message: 'Failed to subscribe', sessionId }));
@@ -357,99 +335,62 @@ function handleUnsubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) {
 
 function cleanupSubscription(ws: ServerWebSocket<MuxData>, _sessionId: string, sub: MuxSubscription) {
   for (const fn of sub.cleanupFns) fn();
-  for (const t of sub.snapshotTimers.values()) clearTimeout(t);
-  sub.snapshotTimers.clear();
-  sub.lastSnapshotEmittedAt.clear();
+  for (const t of sub.pushTimers.values()) clearTimeout(t);
+  sub.pushTimers.clear();
+  sub.lastPushAt.clear();
   sub.controlSession.removeClientDeviceType(ws.data.visitorId);
   sub.controlSession.removeClient();
 }
 
 // =============================================================================
-// State sync: snapshot scheduling and emission
+// Viewport push (unsolicited, for live-mode panes)
 // =============================================================================
 
-function scheduleSnapshot(
+function schedulePush(
   ws: ServerWebSocket<MuxData>,
   sessionId: string,
   sub: MuxSubscription,
   paneId: string,
 ) {
-  const existing = sub.snapshotTimers.get(paneId);
-  if (existing) return;
-  // Debounce burst output (50ms), but never emit faster than 1 per
-  // SNAPSHOT_MIN_INTERVAL_MS regardless of how often %output fires. Under
-  // continuous TUI redraws (spinner, log tail) this caps emit rate at
-  // ~10/sec/pane and is the primary throttle preventing 150% CPU.
-  const lastEmittedAt = sub.lastSnapshotEmittedAt.get(paneId) ?? 0;
-  const sinceLastEmit = Date.now() - lastEmittedAt;
-  const delay = Math.max(SNAPSHOT_DEBOUNCE_MS, SNAPSHOT_MIN_INTERVAL_MS - sinceLastEmit);
+  if (sub.pushTimers.has(paneId)) return;
+  const lastAt = sub.lastPushAt.get(paneId) ?? 0;
+  const sinceLast = Date.now() - lastAt;
+  const delay = Math.max(PUSH_DEBOUNCE_MS, PUSH_MIN_INTERVAL_MS - sinceLast);
   const timer = setTimeout(() => {
-    sub.snapshotTimers.delete(paneId);
-    void emitSnapshot(ws, sessionId, sub, paneId);
+    sub.pushTimers.delete(paneId);
+    void pushViewport(ws, sessionId, sub, paneId, 0);
   }, delay);
-  sub.snapshotTimers.set(paneId, timer);
+  sub.pushTimers.set(paneId, timer);
 }
 
-async function emitSnapshot(
+async function pushViewport(
   ws: ServerWebSocket<MuxData>,
   sessionId: string,
   sub: MuxSubscription,
   paneId: string,
+  offset: number,
 ) {
   if (sub.controlSession.isDestroyed) return;
-  let result: Awaited<ReturnType<typeof captureSnapshot>>;
+  let viewport: Awaited<ReturnType<typeof captureViewport>> = null;
   try {
-    result = await captureSnapshot(
-      sub.controlSession,
-      paneId,
-      sub.lastHistorySize.get(paneId),
-      sub.lastPadFill.get(paneId),
-    );
+    viewport = await captureViewport(sub.controlSession, paneId, offset);
   } catch (err) {
-    console.warn(`[mux] captureSnapshot failed for ${paneId}:`, err);
+    console.warn(`[mux] captureViewport failed for ${paneId}:`, err);
     return;
   }
-  if (!result) return;
-  const { snapshot, historySize, padFill } = result;
+  if (!viewport) return;
 
   sub.knownPanes.add(paneId);
-  sub.lastHistorySize.set(paneId, historySize);
-  if (padFill) sub.lastPadFill.set(paneId, padFill);
-  else sub.lastPadFill.delete(paneId);
-
-  const prev = sub.serverSnapshots.get(paneId);
-  if (!prev) {
-    try {
-      ws.send(JSON.stringify({ type: 'state-snapshot', sessionId, snapshot }));
-    } catch { return; }
-    sub.serverSnapshots.set(paneId, snapshot);
-    sub.lastSnapshotEmittedAt.set(paneId, Date.now());
-    return;
-  }
-
-  const ops = diffSnapshots(prev, snapshot);
-  const hasScrollback = (snapshot.scrollbackDelta?.length ?? 0) > 0;
-
-  if (ops.length === 0 && !hasScrollback) {
-    sub.serverSnapshots.set(paneId, snapshot);
-    return;
-  }
-
-  // Send full snapshots for every visible change. Diff application is fragile
-  // when terminal apps redraw partial normal-screen regions while xterm.js has
-  // local scrollback/baseY state; users then see stale content until reload.
-  // A full snapshot is the same recovery path as reload, but applied live.
   if (DEBUG_MUX) {
-    console.log(`[mux] state-snapshot pane=${paneId} seq=${snapshot.seq} scrollbackDelta=${snapshot.scrollbackDelta?.length ?? 0} rows=${snapshot.rows}`);
+    console.log(`[mux] viewport pane=${paneId} offset=${viewport.offset}/${viewport.historySize} rows=${viewport.rows}`);
   }
   try {
-    ws.send(JSON.stringify({ type: 'state-snapshot', sessionId, snapshot }));
+    ws.send(JSON.stringify({ type: 'viewport', sessionId, viewport }));
   } catch { return; }
-  sub.serverSnapshots.set(paneId, snapshot);
-  sub.lastSnapshotEmittedAt.set(paneId, Date.now());
+  sub.lastPushAt.set(paneId, Date.now());
 }
 
-async function emitInitialSnapshots(
+async function emitInitialViewports(
   ws: ServerWebSocket<MuxData>,
   sessionId: string,
   sub: MuxSubscription,
@@ -462,12 +403,8 @@ async function emitInitialSnapshots(
     return;
   }
   for (const pane of panes) {
-    // Drop any previous snapshot so emitSnapshot sends a fresh full snapshot;
-    // clear the history baseline too so scrollbackDelta starts empty.
-    sub.serverSnapshots.delete(pane.paneId);
-    sub.lastHistorySize.delete(pane.paneId);
-    sub.lastPadFill.delete(pane.paneId);
-    await emitSnapshot(ws, sessionId, sub, pane.paneId);
+    sub.liveOffset.set(pane.paneId, 0);
+    await pushViewport(ws, sessionId, sub, pane.paneId, 0);
   }
 }
 
@@ -540,88 +477,6 @@ function handleUnsubscribeConversation(ws: ServerWebSocket<MuxData>, sessionId: 
 }
 
 // =============================================================================
-// Channel C: self-verification drift detection (dev-only)
-// =============================================================================
-
-// Server snapshot lines from `capture-pane -e` embed SGR color codes
-// plus OSC 8 hyperlinks, but xterm's translateToString returns plain
-// text — so compare ANSI-stripped, trailing-whitespace-trimmed forms.
-function normalize(s: string): string {
-  return stripAnsi(s).trimEnd();
-}
-
-interface DriftSample {
-  row: number;
-  canonical: string;
-  client: string;
-}
-
-function diffLines(canonical: string[], client: string[]): { count: number; samples: DriftSample[] } {
-  const len = Math.max(canonical.length, client.length);
-  const samples: DriftSample[] = [];
-  let count = 0;
-  for (let i = 0; i < len; i++) {
-    const c = normalize(canonical[i] ?? '');
-    const x = normalize(client[i] ?? '');
-    if (c !== x) {
-      count++;
-      if (samples.length < DRIFT_MAX_MISMATCH_SAMPLES) {
-        samples.push({ row: i, canonical: c, client: x });
-      }
-    }
-  }
-  return { count, samples };
-}
-
-async function handleDebugDump(
-  ws: ServerWebSocket<MuxData>,
-  sub: MuxSubscription,
-  msg: Extract<MuxClientMessage, { type: 'debug-dump' }>,
-) {
-  try {
-    const sentSnap = sub.serverSnapshots.get(msg.paneId);
-    // Skip when we have no snapshot to compare against (early dumps
-    // before initial sync) or when the client's last-applied seq lags
-    // behind what we've since emitted (the snapshot has moved on; a
-    // mismatch here is a race, not a render bug).
-    if (!sentSnap || (msg.appliedSeq && msg.appliedSeq !== sentSnap.seq)) {
-      return;
-    }
-    const canonicalLines = sentSnap.lines;
-    const { count, samples } = diffLines(canonicalLines, msg.lines);
-
-    const record = {
-      ts: msg.ts,
-      sentSeq: sentSnap.seq,
-      appliedSeq: msg.appliedSeq,
-      visitorId: ws.data.visitorId,
-      sessionId: msg.sessionId,
-      paneId: msg.paneId,
-      trigger: msg.trigger,
-      clientRows: msg.lines.length,
-      canonicalRows: canonicalLines.length,
-      mismatchCount: count,
-      cursor: msg.cursor,
-      suppressedOutputCount: sub.outputSuppressedCount,
-      sendFailCount: sub.sendFailCount,
-      samples,
-    };
-
-    if (count > 0) {
-      console.warn(
-        `[drift] sess=${msg.sessionId} pane=${msg.paneId} trigger=${msg.trigger} ` +
-        `mismatch=${count}/${Math.max(canonicalLines.length, msg.lines.length)} ` +
-        `suppressed=${sub.outputSuppressedCount}`,
-      );
-    }
-
-    await appendFile(DRIFT_LOG_PATH, `${JSON.stringify(record)}\n`, 'utf8');
-  } catch (err) {
-    console.warn(`[drift] handleDebugDump error for ${msg.paneId}:`, err);
-  }
-}
-
-// =============================================================================
 // Control message dispatch
 // =============================================================================
 
@@ -637,42 +492,38 @@ async function handleControlMessage(
     switch (msg.type) {
       case 'input': {
         const data = Buffer.from(msg.data, 'base64');
-        console.log(`[mux] input pane=${msg.paneId} bytes=${data.length} initialized=${sub.initialized}`);
+        console.log(`[mux] input pane=${msg.paneId} bytes=${data.length}`);
         await controlSession.sendInput(msg.paneId, data);
-        // Pre-arm a snapshot: sending input usually produces output, but if
-        // the program is silent (e.g. waiting for full line) we still want to
-        // reflect any cursor advance. Re-arming the debounce window guards
-        // against losing the trailing snapshot if onOutput already fired.
-        if (sub.initialized) scheduleSnapshot(ws, sessionId, sub, msg.paneId);
-        break;
-      }
-      case 'scroll': {
-        console.log(`[mux] scroll pane=${msg.paneId} lines=${msg.lines}`);
-        await controlSession.scrollPane(msg.paneId, msg.lines);
-        if (sub.initialized) scheduleSnapshot(ws, sessionId, sub, msg.paneId);
+        // Pre-arm a push: input usually generates output but a silent program
+        // (waiting for full line, etc.) wouldn't, and we still want to refresh
+        // cursor position promptly.
+        if ((sub.liveOffset.get(msg.paneId) ?? 0) === 0) {
+          schedulePush(ws, sessionId, sub, msg.paneId);
+        }
         break;
       }
       case 'resize': {
-        if (!sub.initialized) {
-          try {
-            // First resize: set tmux size, then emit initial snapshots for
-            // every pane so the client has authoritative state to start from.
+        try {
+          if (!sub.firstResizeReceived) {
+            // First resize: force tmux to adopt the new pane size synchronously
+            // (refresh-client -C + resize-window). Subsequent resizes go through
+            // the dedup'd path.
             await controlSession.setClientSizeImmediate(msg.cols, msg.rows);
-            // Brief settle window so tmux reflows before we capture.
+            sub.firstResizeReceived = true;
+            // Brief settle window so tmux reflows before we capture, then push
+            // viewports at the new size (the ones we emitted at subscribe time
+            // were at whatever size tmux had previously).
             await new Promise(resolve => setTimeout(resolve, 100));
-            sub.initialized = true;
-            await emitInitialSnapshots(ws, sessionId, sub);
-          } catch (err) {
-            console.error(`[mux] Failed to initialize after resize for ${sessionId}:`, err);
+          } else {
+            controlSession.setClientSize(msg.cols, msg.rows);
           }
-        } else {
-          controlSession.setClientSize(msg.cols, msg.rows);
-          // After a resize the next %output will trigger a new snapshot; we
-          // additionally pre-arm one in case nothing redraws (e.g. shell at
-          // an idle prompt that just relaid out to a new width).
           for (const paneId of sub.knownPanes) {
-            scheduleSnapshot(ws, sessionId, sub, paneId);
+            if ((sub.liveOffset.get(paneId) ?? 0) === 0) {
+              schedulePush(ws, sessionId, sub, paneId);
+            }
           }
+        } catch (err) {
+          console.error(`[mux] resize failed for ${sessionId}:`, err);
         }
         break;
       }
@@ -713,9 +564,10 @@ async function handleControlMessage(
         try {
           await controlSession.zoomPane(msg.paneId);
           await new Promise(resolve => setTimeout(resolve, 100));
-          // Zoom changes pane size; emit a fresh snapshot for the zoomed pane.
-          sub.serverSnapshots.delete(msg.paneId);
-          await emitSnapshot(ws, sessionId, sub, msg.paneId);
+          // Zoom changes pane size; emit a fresh viewport in live mode.
+          if ((sub.liveOffset.get(msg.paneId) ?? 0) === 0) {
+            await pushViewport(ws, sessionId, sub, msg.paneId, 0);
+          }
         } catch (err) {
           console.warn(`[mux] zoom-pane failed for ${msg.paneId}:`, err);
         }
@@ -734,15 +586,9 @@ async function handleControlMessage(
         }
         break;
       }
-      case 'state-ack': {
-        // Currently informational only; we use serverSnapshots as the
-        // implicit ack baseline. Kept on the protocol for future use
-        // (e.g. retransmit when the client falls behind).
-        break;
-      }
-      case 'request-snapshot': {
-        sub.serverSnapshots.delete(msg.paneId);
-        await emitSnapshot(ws, sessionId, sub, msg.paneId);
+      case 'request-viewport': {
+        sub.liveOffset.set(msg.paneId, Math.max(0, msg.offset | 0));
+        await pushViewport(ws, sessionId, sub, msg.paneId, msg.offset);
         break;
       }
       case 'ping': {

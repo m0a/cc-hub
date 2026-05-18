@@ -5,11 +5,10 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import '@xterm/xterm/css/xterm.css';
 import { authFetch } from '../services/api';
-import type { SessionTheme } from '../../../shared/types';
+import type { PaneViewport, SessionTheme } from '../../../shared/types';
 import { filterMouseTrackingInput, shouldInterceptKeyEvent } from '../utils/terminal-filters';
 import { bench } from '../utils/bench';
-import { sendDebugDump, isSelfVerifyEnabled, type DumpTrigger, type PaneRenderEvent } from '../hooks/useMultiplexedTerminal';
-import { snapshotToVTSequence, diffToVTSequence } from '../utils/snapshot-render';
+import { viewportToVTSequence } from '../utils/viewport-render';
 import {
   getTerminalThemes, isLightMode, LIGHT_ANSI_COLORS,
   DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE,
@@ -21,19 +20,35 @@ import { InputBar, type InputMode, type InputBarRef } from './InputBar';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
-// Control mode: terminal data comes from control WebSocket instead of useTerminal
+// Control mode: terminal data comes from the multiplexed WebSocket. xterm
+// is the rendering surface only — tmux holds both the visible region and
+// the scrollback, and the client asks for a viewport offset rows above the
+// live edge whenever the user scrolls.
 export interface ControlModeConfig {
   paneId: string;
   sendInput: (data: string) => void;
-  registerOnRender: (callback: (event: PaneRenderEvent) => void) => () => void;
+  /** Subscribe for viewport updates pushed by the server (offset=0 stream)
+   *  or returned in response to scroll. Returns an unsubscribe fn. */
+  registerOnViewport: (callback: (viewport: PaneViewport) => void) => () => void;
   isConnected: boolean;
   onResize?: (cols: number, rows: number) => void;
   /** Force-send a resize to the backend even if the dedup cache would skip
-   *  it. Used when snapshot.rows != term.rows to break out of a stuck tmux
+   *  it. Used when viewport.rows != term.rows to break out of a stuck tmux
    *  pane size (e.g. when an earlier refresh-client -C didn't take effect). */
   forceResize?: (cols: number, rows: number) => void;
-  onScroll?: (lines: number) => void;
-  requestSnapshot?: () => void;
+  /** Adjust the current scroll offset by `lines` (positive = scroll up
+   *  into history, negative = scroll down toward the live edge). The
+   *  control mode is responsible for clamping to [0, historySize] and
+   *  re-requesting the viewport from the server. */
+  scrollBy?: (lines: number) => void;
+  /** Snap the viewport back to the live edge (offset=0). Equivalent to
+   *  the old `term.scrollToBottom()` in the days of frontend scrollback.
+   *  No-op if already at the live edge. */
+  scrollToLive?: () => void;
+  /** Force-refresh the current viewport (e.g. after a re-connect). */
+  refreshViewport?: () => void;
+  /** Snapshot of the current scroll state for indicator UI. */
+  getScrollState?: () => { offset: number; historySize: number };
 }
 
 interface TerminalProps {
@@ -96,12 +111,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const sendRef = useRef<(data: string) => void>(() => {});
   const resizeRef = useRef<(cols: number, rows: number) => void>(() => {});
   const refreshRef = useRef<() => void>(() => {});
-  const dumpForSelfVerifyRef = useRef<((trigger: DumpTrigger) => void) | null>(null);
-  // State captured at the moment the last snapshot finished writing, exposed
-  // for dumpForSelfVerify. `baseY` is the scrollback offset at write-complete;
-  // using buf.baseY at dump time would drift if a background scrollback push
-  // advanced it between apply and dump.
-  const appliedStateRef = useRef({ seq: 0, snapRows: 0, baseY: 0 });
   const closeInputBarRef = useRef<() => void>(() => {});
   const showKeyboardRef = useRef<() => void>(() => {});
   const inputBarRef = useRef<InputBarRef>(null);
@@ -170,7 +179,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
   const isConnected = controlMode?.isConnected ?? false;
   const connect = noopFn;
   const refresh = useCallback(() => {
-    controlModeRef.current?.requestSnapshot?.();
+    controlModeRef.current?.refreshViewport?.();
   }, []);
 
   useEffect(() => {
@@ -265,11 +274,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
           term.resize(dims.cols, dims.rows);
         }
         resizeRef.current(dims.cols, dims.rows);
-        // Channel C: capture state ~1s after resize so the server's
-        // capture-pane + initial-content round trip has settled.
-        if (isSelfVerifyEnabled()) {
-          setTimeout(() => dumpForSelfVerifyRef.current?.('resize-done'), 1000);
-        }
       }
     }
   }, []);
@@ -299,7 +303,10 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       cursorStyle: 'block',
       cursorBlink: false,
       cursorInactiveStyle: 'outline',
-      scrollback: 5000,
+      // Server-side scrollback: tmux is the authoritative store; xterm.js
+      // is a pure render surface for the current viewport. The client
+      // re-requests previous viewports when the user scrolls up.
+      scrollback: 0,
       smoothScrollDuration: 0,
       scrollSensitivity: 3,
       allowProposedApi: true,
@@ -501,19 +508,15 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
     const LONG_PRESS_DURATION = 400;
 
     const scrollTerminal = (lines: number) => {
-      const buf = term.buffer.active;
-      if (buf.baseY > 0) {
-        term.scrollLines(lines);
-      } else if (controlModeRef.current?.onScroll) {
-        controlModeRef.current.onScroll(lines);
-      }
+      // Server-side scrollback: tmux holds the authoritative history; the
+      // control mode adjusts the viewport offset and re-fetches.
+      controlModeRef.current?.scrollBy?.(lines);
     };
 
     const updateScrollIndicator = () => {
-      const buf = term.buffer.active;
-      if (buf.viewportY < buf.baseY) {
-        const pos = buf.baseY - buf.viewportY;
-        setScrollIndicator(`[${pos}/${buf.baseY}]`);
+      const state = controlModeRef.current?.getScrollState?.();
+      if (state && state.offset > 0) {
+        setScrollIndicator(`[${state.offset}/${state.historySize}]`);
         if (scrollIndicatorTimerRef.current) clearTimeout(scrollIndicatorTimerRef.current);
         scrollIndicatorTimerRef.current = window.setTimeout(() => setScrollIndicator(null), 3000);
       } else {
@@ -835,17 +838,7 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       e.preventDefault();
       const lines = Math.ceil(Math.abs(e.deltaY) / 40);
       scrollTerminal(e.deltaY > 0 ? lines : -lines);
-      const buf = term.buffer.active;
-      if (buf.viewportY < buf.baseY) {
-        const scrollback = buf.baseY;
-        const pos = buf.baseY - buf.viewportY;
-        setScrollIndicator(`[${pos}/${scrollback}]`);
-        if (scrollIndicatorTimerRef.current) clearTimeout(scrollIndicatorTimerRef.current);
-        scrollIndicatorTimerRef.current = window.setTimeout(() => setScrollIndicator(null), 3000);
-      } else {
-        setScrollIndicator(null);
-        if (scrollIndicatorTimerRef.current) clearTimeout(scrollIndicatorTimerRef.current);
-      }
+      updateScrollIndicator();
     };
 
     if (container) {
@@ -913,14 +906,6 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
       term.write('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l');
     }
 
-    let outputIdleTimer: ReturnType<typeof setTimeout> | null = null;
-    const scheduleOutputIdleDump = () => {
-      if (!isSelfVerifyEnabled()) return;
-      if (outputIdleTimer) clearTimeout(outputIdleTimer);
-      outputIdleTimer = setTimeout(() => dumpForSelfVerify('output-idle'), 300);
-    };
-
-    const applied = appliedStateRef.current;
     const applyResize = (cols: number, rows: number) => {
       term.resize(cols, rows);
       const fit = fitAddonRef.current;
@@ -930,105 +915,33 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
         cm.forceResize?.(dims.cols, dims.rows);
       }
     };
-    const cleanup = cm.registerOnRender((event) => {
+    const cleanup = cm.registerOnViewport((viewport) => {
       const term = terminalRef.current;
       if (!term) return;
-      // Capture scroll position BEFORE writing the new state. If the user
-      // has scrolled up to read history, snapshot writes should not yank
-      // them back to the bottom — only auto-scroll if they were already
-      // pinned to the live edge.
-      const preBuf = term.buffer.active;
-      const wasAtBottom = preBuf.viewportY >= preBuf.baseY;
-      if (event.type === 'snapshot') {
-        const snap = event.snapshot;
-        if (term.cols !== snap.cols || term.rows !== snap.rows) {
-          applyResize(snap.cols, snap.rows);
-        }
-        const vt = snapshotToVTSequence(snap);
-        applied.snapRows = snap.rows;
-        applied.seq = snap.seq;
-        const t0 = bench.recordWriteStart();
-        term.write(vt, () => {
-          bench.recordWriteEnd(t0, vt.length);
-          applied.baseY = term.buffer.active.baseY;
-          if (wasAtBottom) {
-            term.scrollToBottom();
-            setScrollIndicator(null);
-            if (scrollIndicatorTimerRef.current) clearTimeout(scrollIndicatorTimerRef.current);
-          }
-        });
-      } else {
-        const { vt, size } = diffToVTSequence(event.ops);
-        if (size && (term.cols !== size.cols || term.rows !== size.rows)) {
-          applyResize(size.cols, size.rows);
-        }
-        if (vt.length > 0) {
-          const t0 = bench.recordWriteStart();
-          term.write(vt, () => {
-            bench.recordWriteEnd(t0, vt.length);
-            if (wasAtBottom) term.scrollToBottom();
-          });
-        }
-        if (size) applied.snapRows = size.rows;
-        applied.seq = event.seq;
+      if (term.cols !== viewport.cols || term.rows !== viewport.rows) {
+        applyResize(viewport.cols, viewport.rows);
       }
-      scheduleOutputIdleDump();
+      const vt = viewportToVTSequence(viewport);
+      const t0 = bench.recordWriteStart();
+      term.write(vt, () => {
+        bench.recordWriteEnd(t0, vt.length);
+      });
+      const state = cm.getScrollState?.();
+      if (state && state.offset > 0) {
+        setScrollIndicator(`[${state.offset}/${state.historySize}]`);
+        if (scrollIndicatorTimerRef.current) clearTimeout(scrollIndicatorTimerRef.current);
+        scrollIndicatorTimerRef.current = window.setTimeout(() => setScrollIndicator(null), 3000);
+      } else {
+        setScrollIndicator(null);
+      }
     });
     controlCleanupRef.current = cleanup;
     return () => {
-      if (outputIdleTimer) clearTimeout(outputIdleTimer);
       cleanup();
       controlCleanupRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [!!controlMode, controlMode?.paneId]);
-
-  // Channel C: client→server self-verification trigger orchestration.
-  // No-op unless the server has CCHUB_SELF_VERIFY=1, in which case the
-  // initial subscribed message flips `isSelfVerifyEnabled()` to true.
-  const dumpForSelfVerify = useCallback((trigger: 'resize-done' | 'reconnect-done' | 'output-idle' | 'periodic' | 'user') => {
-    const term = terminalRef.current;
-    const cm = controlModeRef.current;
-    if (!term || !cm || !isSelfVerifyEnabled()) return;
-    const buf = term.buffer.active;
-    // Anchor to the baseY captured at write-completion time. Using
-    // buf.baseY here would drift if anything advanced it (background
-    // scrollback push, debounced resize) between snap apply and dump.
-    const applied = appliedStateRef.current;
-    const snapRows = applied.snapRows || term.rows;
-    const anchor = applied.baseY || buf.baseY;
-    const lines: string[] = [];
-    for (let i = 0; i < snapRows; i++) {
-      lines.push(buf.getLine(anchor + i)?.translateToString(true) ?? '');
-    }
-    sendDebugDump(
-      sessionId,
-      cm.paneId,
-      lines,
-      { x: buf.cursorX, y: buf.cursorY },
-      trigger,
-      applied.seq,
-    );
-  }, [sessionId]);
-
-  useEffect(() => { dumpForSelfVerifyRef.current = dumpForSelfVerify; }, [dumpForSelfVerify]);
-
-  // Fire after a fresh (re)connect once everything has settled. isConnected
-  // alone fires too early — the initial-content write hasn't drained — so we
-  // wait one tick + an output-idle window.
-  useEffect(() => {
-    if (!isConnected || !isSelfVerifyEnabled()) return;
-    const t = setTimeout(() => dumpForSelfVerify('reconnect-done'), 500);
-    return () => clearTimeout(t);
-  }, [isConnected, dumpForSelfVerify]);
-
-  // Periodic safety-net dump every 30s while connected, regardless of
-  // recent activity. Catches slow drifts that other triggers miss.
-  useEffect(() => {
-    if (!isConnected || !isSelfVerifyEnabled()) return;
-    const interval = setInterval(() => dumpForSelfVerify('periodic'), 30_000);
-    return () => clearInterval(interval);
-  }, [isConnected, dumpForSelfVerify]);
 
   // Track visual viewport for soft keyboard offset
   useEffect(() => {
@@ -1160,7 +1073,11 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
   const handleShowKeyboard = useCallback(() => {
     setInputMode('input');
-    terminalRef.current?.scrollToBottom();
+    // Snap back to the live edge when the user taps to interact, matching
+    // the pre-server-side-scrollback behavior. `term.scrollToBottom()` is
+    // a no-op now (xterm scrollback is 0); the actual reset goes through
+    // the control mode's offset.
+    controlModeRef.current?.scrollToLive?.();
     fitTerminal();
   }, [fitTerminal]);
   showKeyboardRef.current = handleShowKeyboard;

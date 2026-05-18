@@ -44,7 +44,10 @@ export function SessionModal({
 	const desktopZoom = isTablet ? undefined : { zoom: 1.25 };
 
 	return (
-		<div className="fixed inset-0 z-50 flex flex-col bg-[#0a0a0a]" style={desktopZoom}>
+		<div
+			className="fixed inset-0 z-50 flex flex-col bg-[#0a0a0a]"
+			style={desktopZoom}
+		>
 			<div className="flex-1 min-h-0 overflow-hidden w-full h-full">
 				<SessionList
 					onSelectSession={handleSelectSession}

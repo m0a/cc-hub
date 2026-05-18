@@ -103,7 +103,7 @@ export class TmuxControlSession {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
       const chunks: Buffer[] = [];
-      proc.stdout!.on('data', (c: Buffer) => chunks.push(c));
+      proc.stdout?.on('data', (c: Buffer) => chunks.push(c));
       await new Promise<void>((resolve) => proc.on('close', () => resolve()));
       const output = Buffer.concat(chunks).toString();
 
@@ -162,7 +162,7 @@ export class TmuxControlSession {
 
       // Read stdout as raw bytes (no StringDecoder) to preserve byte-level
       // fidelity for %output data that may contain split UTF-8 sequences.
-      this.proc.stdout!.on('data', (chunk: Buffer) => {
+      this.proc.stdout?.on('data', (chunk: Buffer) => {
         try {
           this.rawBuffer = Buffer.concat([this.rawBuffer, chunk]);
           this.processBuffer();
@@ -171,7 +171,7 @@ export class TmuxControlSession {
         }
       });
 
-      this.proc.stderr!.on('data', (chunk: Buffer) => {
+      this.proc.stderr?.on('data', (chunk: Buffer) => {
         const msg = chunk.toString().trim();
         if (msg) console.error(`[tmux-control] stderr for ${this.sessionId}: ${msg}`);
       });
@@ -520,7 +520,8 @@ export class TmuxControlSession {
    * Send a raw tmux command and wait for response.
    */
   async sendCommand(command: string): Promise<string> {
-    if (!this.proc || this.destroyed) {
+    const stdin = this.proc?.stdin;
+    if (!stdin || this.destroyed) {
       throw new Error('Control session not active');
     }
 
@@ -529,7 +530,7 @@ export class TmuxControlSession {
       this.pendingQueue.push(pending);
 
       // Write command via stdin pipe
-      this.proc!.stdin!.write(`${command}\n`);
+      stdin.write(`${command}\n`);
 
       // Timeout after 10 seconds
       setTimeout(() => {

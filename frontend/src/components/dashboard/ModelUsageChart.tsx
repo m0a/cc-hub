@@ -1,73 +1,79 @@
-import type { ModelUsage } from '../../../../shared/types';
+import type { ModelUsage } from "../../../../shared/types";
 
 interface ModelUsageChartProps {
-  data: ModelUsage[];
+	data: ModelUsage[];
 }
 
 function formatTokens(tokens: number): string {
-  if (tokens >= 1_000_000_000) {
-    return `${(tokens / 1_000_000_000).toFixed(1)}B`;
-  }
-  if (tokens >= 1_000_000) {
-    return `${(tokens / 1_000_000).toFixed(1)}M`;
-  }
-  if (tokens >= 1_000) {
-    return `${(tokens / 1_000).toFixed(1)}K`;
-  }
-  return tokens.toString();
+	if (tokens >= 1_000_000_000) {
+		return `${(tokens / 1_000_000_000).toFixed(1)}B`;
+	}
+	if (tokens >= 1_000_000) {
+		return `${(tokens / 1_000_000).toFixed(1)}M`;
+	}
+	if (tokens >= 1_000) {
+		return `${(tokens / 1_000).toFixed(1)}K`;
+	}
+	return tokens.toString();
 }
 
 export function ModelUsageChart({ data }: ModelUsageChartProps) {
-  if (data.length === 0) {
-    return (
-      <div className="p-3 bg-th-surface rounded-md">
-        <div className="text-th-text-muted text-xs">No model usage data</div>
-      </div>
-    );
-  }
+	if (data.length === 0) {
+		return (
+			<div className="p-3 bg-th-surface rounded-md">
+				<div className="text-th-text-muted text-xs">No model usage data</div>
+			</div>
+		);
+	}
 
-  const total = data.reduce((sum, m) => sum + m.totalTokensIn + m.totalTokensOut + m.totalCacheRead, 0);
+	const total = data.reduce(
+		(sum, m) => sum + m.totalTokensIn + m.totalTokensOut + m.totalCacheRead,
+		0,
+	);
 
-  const getColor = (model: string): string => {
-    if (model === 'Opus 4.5') return 'bg-fuchsia-500';
-    if (model === 'Opus 4.6') return 'bg-violet-400';
-    if (model === 'Opus 4.7') return 'bg-indigo-500';
-    if (model.startsWith('Opus')) return 'bg-purple-500';
-    if (model.startsWith('Sonnet')) return 'bg-blue-500';
-    return 'bg-gray-500';
-  };
+	const getColor = (model: string): string => {
+		if (model === "Opus 4.5") return "bg-fuchsia-500";
+		if (model === "Opus 4.6") return "bg-violet-400";
+		if (model === "Opus 4.7") return "bg-indigo-500";
+		if (model.startsWith("Opus")) return "bg-purple-500";
+		if (model.startsWith("Sonnet")) return "bg-blue-500";
+		return "bg-gray-500";
+	};
 
-  return (
-    <div className="p-3 bg-th-surface rounded-md">
-      <div className="text-sm font-medium text-th-text mb-2">Model Usage</div>
+	return (
+		<div className="p-3 bg-th-surface rounded-md">
+			<div className="text-sm font-medium text-th-text mb-2">Model Usage</div>
 
-      {/* Bar chart */}
-      <div className="h-4 bg-th-surface-hover rounded-full overflow-hidden flex">
-        {data.map((model) => {
-          const modelTotal = model.totalTokensIn + model.totalTokensOut + model.totalCacheRead;
-          const pct = (modelTotal / total) * 100;
-          if (pct < 1) return null;
-          return (
-            <div
-              key={model.model}
-              className={`${getColor(model.model)} h-full`}
-              style={{ width: `${pct}%` }}
-              title={`${model.model}: ${formatTokens(modelTotal)} tokens`}
-            />
-          );
-        })}
-      </div>
+			{/* Bar chart */}
+			<div className="h-4 bg-th-surface-hover rounded-full overflow-hidden flex">
+				{data.map((model) => {
+					const modelTotal =
+						model.totalTokensIn + model.totalTokensOut + model.totalCacheRead;
+					const pct = (modelTotal / total) * 100;
+					if (pct < 1) return null;
+					return (
+						<div
+							key={model.model}
+							className={`${getColor(model.model)} h-full`}
+							style={{ width: `${pct}%` }}
+							title={`${model.model}: ${formatTokens(modelTotal)} tokens`}
+						/>
+					);
+				})}
+			</div>
 
-      {/* Legend */}
-      <div className="mt-2 flex gap-3 text-xs">
-        {data.map((model) => (
-          <div key={model.model} className="flex items-center gap-1">
-            <div className={`w-2 h-2 rounded-full ${getColor(model.model)}`} />
-            <span className="text-th-text-secondary">{model.model}</span>
-            <span className="text-th-text-muted">{formatTokens(model.totalTokensOut)}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+			{/* Legend */}
+			<div className="mt-2 flex gap-3 text-xs">
+				{data.map((model) => (
+					<div key={model.model} className="flex items-center gap-1">
+						<div className={`w-2 h-2 rounded-full ${getColor(model.model)}`} />
+						<span className="text-th-text-secondary">{model.model}</span>
+						<span className="text-th-text-muted">
+							{formatTokens(model.totalTokensOut)}
+						</span>
+					</div>
+				))}
+			</div>
+		</div>
+	);
 }

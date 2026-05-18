@@ -1,17 +1,25 @@
-import { useMemo, useState, useEffect } from 'react';
-import { Users } from 'lucide-react';
-import type { SystemMetrics, SystemMetricsSnapshot } from '../../../../shared/types';
+import { Users } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import type {
+	SystemMetrics,
+	SystemMetricsSnapshot,
+} from "../../../../shared/types";
 
 function useIsLightMode() {
-  const [light, setLight] = useState(() => document.documentElement.getAttribute('data-theme') === 'light');
-  useEffect(() => {
-    const observer = new MutationObserver(() => {
-      setLight(document.documentElement.getAttribute('data-theme') === 'light');
-    });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    return () => observer.disconnect();
-  }, []);
-  return light;
+	const [light, setLight] = useState(
+		() => document.documentElement.getAttribute("data-theme") === "light",
+	);
+	useEffect(() => {
+		const observer = new MutationObserver(() => {
+			setLight(document.documentElement.getAttribute("data-theme") === "light");
+		});
+		observer.observe(document.documentElement, {
+			attributes: true,
+			attributeFilter: ["data-theme"],
+		});
+		return () => observer.disconnect();
+	}, []);
+	return light;
 }
 
 // ─── Mini SVG chart ───
@@ -22,241 +30,415 @@ const INNER_W = CHART_WIDTH - PADDING.left - PADDING.right;
 const INNER_H = CHART_HEIGHT - PADDING.top - PADDING.bottom;
 
 function valueToY(value: number): number {
-  return PADDING.top + INNER_H - (Math.min(value, 100) / 100) * INNER_H;
+	return PADDING.top + INNER_H - (Math.min(value, 100) / 100) * INNER_H;
 }
 
-function buildPath(snapshots: SystemMetricsSnapshot[], getValue: (s: SystemMetricsSnapshot) => number) {
-  if (snapshots.length === 0) return { linePath: '', areaPath: '' };
-  const minTs = snapshots[0].timestamp;
-  const maxTs = snapshots[snapshots.length - 1].timestamp;
-  const range = maxTs - minTs || 1;
-  const points = snapshots.map(s => ({
-    x: PADDING.left + ((s.timestamp - minTs) / range) * INNER_W,
-    y: valueToY(getValue(s)),
-  }));
-  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-  const baseline = valueToY(0);
-  const areaPath = `${linePath} L${points[points.length - 1].x.toFixed(1)},${baseline.toFixed(1)} L${points[0].x.toFixed(1)},${baseline.toFixed(1)} Z`;
-  return { linePath, areaPath };
+function buildPath(
+	snapshots: SystemMetricsSnapshot[],
+	getValue: (s: SystemMetricsSnapshot) => number,
+) {
+	if (snapshots.length === 0) return { linePath: "", areaPath: "" };
+	const minTs = snapshots[0].timestamp;
+	const maxTs = snapshots[snapshots.length - 1].timestamp;
+	const range = maxTs - minTs || 1;
+	const points = snapshots.map((s) => ({
+		x: PADDING.left + ((s.timestamp - minTs) / range) * INNER_W,
+		y: valueToY(getValue(s)),
+	}));
+	const linePath = points
+		.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
+		.join(" ");
+	const baseline = valueToY(0);
+	const areaPath = `${linePath} L${points[points.length - 1].x.toFixed(1)},${baseline.toFixed(1)} L${points[0].x.toFixed(1)},${baseline.toFixed(1)} Z`;
+	return { linePath, areaPath };
 }
 
-function MiniChart({ snapshots, getValue, lineColor, gradientId, isLight }: {
-  snapshots: SystemMetricsSnapshot[];
-  getValue: (s: SystemMetricsSnapshot) => number;
-  lineColor: string;
-  gradientId: string;
-  isLight: boolean;
+function MiniChart({
+	snapshots,
+	getValue,
+	lineColor,
+	gradientId,
+	isLight,
+}: {
+	snapshots: SystemMetricsSnapshot[];
+	getValue: (s: SystemMetricsSnapshot) => number;
+	lineColor: string;
+	gradientId: string;
+	isLight: boolean;
 }) {
-  const { linePath, areaPath } = useMemo(() => buildPath(snapshots, getValue), [snapshots, getValue]);
-  return (
-    <svg viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} className="w-full" preserveAspectRatio="xMidYMid meet">
-      <defs>
-        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={lineColor} stopOpacity="0.25" />
-          <stop offset="100%" stopColor={lineColor} stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
-      <rect x={PADDING.left} y={PADDING.top} width={INNER_W} height={INNER_H} fill={isLight ? '#ffffff' : '#1f2937'} rx="2" />
-      {[0, 50, 100].map(val => (
-        <g key={val}>
-          <line x1={PADDING.left} y1={valueToY(val)} x2={PADDING.left + INNER_W} y2={valueToY(val)} stroke={isLight ? '#d1d5db' : '#374151'} strokeWidth="0.5" />
-          <text x={PADDING.left - 3} y={valueToY(val) + 3} textAnchor="end" fill="#6b7280" fontSize="7">{val}%</text>
-        </g>
-      ))}
-      {areaPath && <path d={areaPath} fill={`url(#${gradientId})`} />}
-      {linePath && <path d={linePath} fill="none" stroke={lineColor} strokeWidth="1.5" strokeLinejoin="round" />}
-      {snapshots.length > 0 && (() => {
-        const last = snapshots[snapshots.length - 1];
-        const minTs = snapshots[0].timestamp;
-        const range = (last.timestamp - minTs) || 1;
-        const cx = PADDING.left + ((last.timestamp - minTs) / range) * INNER_W;
-        return <circle cx={cx} cy={valueToY(getValue(last))} r="2.5" fill={lineColor} stroke={isLight ? '#fff' : '#111827'} strokeWidth="1" />;
-      })()}
-      {snapshots.length >= 2 && (() => {
-        const fmt = (d: Date) => `${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
-        return (
-          <>
-            <text x={PADDING.left} y={CHART_HEIGHT - 1} textAnchor="start" fill="#6b7280" fontSize="6">{fmt(new Date(snapshots[0].timestamp))}</text>
-            <text x={PADDING.left + INNER_W} y={CHART_HEIGHT - 1} textAnchor="end" fill="#6b7280" fontSize="6">{fmt(new Date(snapshots[snapshots.length - 1].timestamp))}</text>
-          </>
-        );
-      })()}
-    </svg>
-  );
+	const { linePath, areaPath } = useMemo(
+		() => buildPath(snapshots, getValue),
+		[snapshots, getValue],
+	);
+	return (
+		<svg
+			aria-hidden="true"
+			viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+			className="w-full"
+			preserveAspectRatio="xMidYMid meet"
+		>
+			<defs>
+				<linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+					<stop offset="0%" stopColor={lineColor} stopOpacity="0.25" />
+					<stop offset="100%" stopColor={lineColor} stopOpacity="0.02" />
+				</linearGradient>
+			</defs>
+			<rect
+				x={PADDING.left}
+				y={PADDING.top}
+				width={INNER_W}
+				height={INNER_H}
+				fill={isLight ? "#ffffff" : "#1f2937"}
+				rx="2"
+			/>
+			{[0, 50, 100].map((val) => (
+				<g key={val}>
+					<line
+						x1={PADDING.left}
+						y1={valueToY(val)}
+						x2={PADDING.left + INNER_W}
+						y2={valueToY(val)}
+						stroke={isLight ? "#d1d5db" : "#374151"}
+						strokeWidth="0.5"
+					/>
+					<text
+						x={PADDING.left - 3}
+						y={valueToY(val) + 3}
+						textAnchor="end"
+						fill="#6b7280"
+						fontSize="7"
+					>
+						{val}%
+					</text>
+				</g>
+			))}
+			{areaPath && <path d={areaPath} fill={`url(#${gradientId})`} />}
+			{linePath && (
+				<path
+					d={linePath}
+					fill="none"
+					stroke={lineColor}
+					strokeWidth="1.5"
+					strokeLinejoin="round"
+				/>
+			)}
+			{snapshots.length > 0 &&
+				(() => {
+					const last = snapshots[snapshots.length - 1];
+					const minTs = snapshots[0].timestamp;
+					const range = last.timestamp - minTs || 1;
+					const cx =
+						PADDING.left + ((last.timestamp - minTs) / range) * INNER_W;
+					return (
+						<circle
+							cx={cx}
+							cy={valueToY(getValue(last))}
+							r="2.5"
+							fill={lineColor}
+							stroke={isLight ? "#fff" : "#111827"}
+							strokeWidth="1"
+						/>
+					);
+				})()}
+			{snapshots.length >= 2 &&
+				(() => {
+					const fmt = (d: Date) =>
+						`${d.getHours()}:${d.getMinutes().toString().padStart(2, "0")}`;
+					return (
+						<>
+							<text
+								x={PADDING.left}
+								y={CHART_HEIGHT - 1}
+								textAnchor="start"
+								fill="#6b7280"
+								fontSize="6"
+							>
+								{fmt(new Date(snapshots[0].timestamp))}
+							</text>
+							<text
+								x={PADDING.left + INNER_W}
+								y={CHART_HEIGHT - 1}
+								textAnchor="end"
+								fill="#6b7280"
+								fontSize="6"
+							>
+								{fmt(new Date(snapshots[snapshots.length - 1].timestamp))}
+							</text>
+						</>
+					);
+				})()}
+		</svg>
+	);
 }
 
 // ─── Progress bar ───
 function ProgressBar({ percent, color }: { percent: number; color: string }) {
-  return (
-    <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
-      <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(percent, 100)}%` }} />
-    </div>
-  );
+	return (
+		<div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
+			<div
+				className={`h-full rounded-full ${color}`}
+				style={{ width: `${Math.min(percent, 100)}%` }}
+			/>
+		</div>
+	);
 }
 
 // ─── Helpers ───
 function formatBytes(bytes: number): string {
-  if (bytes >= 1e12) return `${(bytes / 1e12).toFixed(1)} TB`;
-  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
-  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
-  return `${(bytes / 1e3).toFixed(0)} KB`;
+	if (bytes >= 1e12) return `${(bytes / 1e12).toFixed(1)} TB`;
+	if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
+	if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
+	return `${(bytes / 1e3).toFixed(0)} KB`;
 }
 
 function formatSpeed(bps: number): string {
-  if (bps >= 1e6) return `${(bps / 1e6).toFixed(1)} MB/s`;
-  if (bps >= 1e3) return `${(bps / 1e3).toFixed(1)} KB/s`;
-  return `${bps.toFixed(0)} B/s`;
+	if (bps >= 1e6) return `${(bps / 1e6).toFixed(1)} MB/s`;
+	if (bps >= 1e3) return `${(bps / 1e3).toFixed(1)} KB/s`;
+	return `${bps.toFixed(0)} B/s`;
 }
 
 // ─── Main component ───
 interface ServerInfoProps {
-  systemMetrics?: SystemMetrics;
-  diskUsage?: { total: number; used: number; available: number; mountpoint: string };
-  connectedClients?: number;
+	systemMetrics?: SystemMetrics;
+	diskUsage?: {
+		total: number;
+		used: number;
+		available: number;
+		mountpoint: string;
+	};
+	connectedClients?: number;
 }
 
 // Throughput history (kept in module scope so it persists across re-renders)
 const MAX_THROUGHPUT_HISTORY = 60;
 const throughputHistory: { timestamp: number; value: number }[] = [];
 
-function buildThroughputPath(data: { timestamp: number; value: number }[], maxVal: number) {
-  if (data.length < 2) return { linePath: '', areaPath: '' };
-  const minTs = data[0].timestamp;
-  const maxTs = data[data.length - 1].timestamp;
-  const range = maxTs - minTs || 1;
-  const cap = maxVal || 1;
-  const points = data.map(d => ({
-    x: PADDING.left + ((d.timestamp - minTs) / range) * INNER_W,
-    y: PADDING.top + INNER_H - (Math.min(d.value, cap) / cap) * INNER_H,
-  }));
-  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-  const baseline = PADDING.top + INNER_H;
-  const areaPath = `${linePath} L${points[points.length - 1].x.toFixed(1)},${baseline.toFixed(1)} L${points[0].x.toFixed(1)},${baseline.toFixed(1)} Z`;
-  return { linePath, areaPath };
+function buildThroughputPath(
+	data: { timestamp: number; value: number }[],
+	maxVal: number,
+) {
+	if (data.length < 2) return { linePath: "", areaPath: "" };
+	const minTs = data[0].timestamp;
+	const maxTs = data[data.length - 1].timestamp;
+	const range = maxTs - minTs || 1;
+	const cap = maxVal || 1;
+	const points = data.map((d) => ({
+		x: PADDING.left + ((d.timestamp - minTs) / range) * INNER_W,
+		y: PADDING.top + INNER_H - (Math.min(d.value, cap) / cap) * INNER_H,
+	}));
+	const linePath = points
+		.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
+		.join(" ");
+	const baseline = PADDING.top + INNER_H;
+	const areaPath = `${linePath} L${points[points.length - 1].x.toFixed(1)},${baseline.toFixed(1)} L${points[0].x.toFixed(1)},${baseline.toFixed(1)} Z`;
+	return { linePath, areaPath };
 }
 
-export function ServerInfo({ systemMetrics, diskUsage, connectedClients }: ServerInfoProps) {
-  const isLight = useIsLightMode();
+export function ServerInfo({
+	systemMetrics,
+	diskUsage,
+	connectedClients,
+}: ServerInfoProps) {
+	const isLight = useIsLightMode();
 
-  const [throughput, setThroughput] = useState(0);
-  const [, forceUpdate] = useState(0);
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const val = (window as any).__cchub_ws_bytes_per_sec || 0;
-      setThroughput(val);
-      throughputHistory.push({ timestamp: Date.now(), value: val });
-      if (throughputHistory.length > MAX_THROUGHPUT_HISTORY) {
-        throughputHistory.splice(0, throughputHistory.length - MAX_THROUGHPUT_HISTORY);
-      }
-      forceUpdate(n => n + 1);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
+	const [throughput, setThroughput] = useState(0);
+	const [, forceUpdate] = useState(0);
+	useEffect(() => {
+		const interval = setInterval(() => {
+			const val = window.__cchub_ws_bytes_per_sec || 0;
+			setThroughput(val);
+			throughputHistory.push({ timestamp: Date.now(), value: val });
+			if (throughputHistory.length > MAX_THROUGHPUT_HISTORY) {
+				throughputHistory.splice(
+					0,
+					throughputHistory.length - MAX_THROUGHPUT_HISTORY,
+				);
+			}
+			forceUpdate((n) => n + 1);
+		}, 1000);
+		return () => clearInterval(interval);
+	}, []);
 
-  const getCpu = useMemo(() => (s: SystemMetricsSnapshot) => s.cpuPercent, []);
-  const getMem = useMemo(() => (s: SystemMetricsSnapshot) => s.memUsedPercent, []);
+	const getCpu = useMemo(() => (s: SystemMetricsSnapshot) => s.cpuPercent, []);
+	const getMem = useMemo(
+		() => (s: SystemMetricsSnapshot) => s.memUsedPercent,
+		[],
+	);
 
-  const cur = systemMetrics?.current;
-  const history = systemMetrics?.history || [];
-  const diskPercent = diskUsage ? Math.round((diskUsage.used / diskUsage.total) * 100) : 0;
-  const swapPercent = cur && cur.swapTotalMB > 0 ? (cur.swapUsedMB / cur.swapTotalMB) * 100 : 0;
+	const cur = systemMetrics?.current;
+	const history = systemMetrics?.history || [];
+	const diskPercent = diskUsage
+		? Math.round((diskUsage.used / diskUsage.total) * 100)
+		: 0;
+	const swapPercent =
+		cur && cur.swapTotalMB > 0 ? (cur.swapUsedMB / cur.swapTotalMB) * 100 : 0;
 
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-[13px] font-semibold text-zinc-300">Server</h3>
-        <div className="flex items-center gap-1.5">
-          <Users className="w-3 h-3 text-teal-400" />
-          <span className="text-[12px] text-teal-400 font-mono tabular-nums">{connectedClients ?? 0}</span>
-        </div>
-      </div>
+	return (
+		<div className="space-y-3">
+			<div className="flex items-center justify-between">
+				<h3 className="text-[13px] font-semibold text-zinc-300">Server</h3>
+				<div className="flex items-center gap-1.5">
+					<Users className="w-3 h-3 text-teal-400" />
+					<span className="text-[12px] text-teal-400 font-mono tabular-nums">
+						{connectedClients ?? 0}
+					</span>
+				</div>
+			</div>
 
-      {/* Charts: CPU, Memory, Throughput */}
-      {cur && (
-        <div className="space-y-2.5">
-          {/* CPU */}
-          <div>
-            <div className="flex items-baseline justify-between mb-0.5">
-              <span className="text-[11px] text-zinc-500">CPU</span>
-              <span className="text-[12px] font-medium text-blue-400 tabular-nums">{cur.cpuPercent.toFixed(1)}%</span>
-            </div>
-            <MiniChart snapshots={history} getValue={getCpu} lineColor="#3b82f6" gradientId="srv-cpu" isLight={isLight} />
-          </div>
+			{/* Charts: CPU, Memory, Throughput */}
+			{cur && (
+				<div className="space-y-2.5">
+					{/* CPU */}
+					<div>
+						<div className="flex items-baseline justify-between mb-0.5">
+							<span className="text-[11px] text-zinc-500">CPU</span>
+							<span className="text-[12px] font-medium text-blue-400 tabular-nums">
+								{cur.cpuPercent.toFixed(1)}%
+							</span>
+						</div>
+						<MiniChart
+							snapshots={history}
+							getValue={getCpu}
+							lineColor="#3b82f6"
+							gradientId="srv-cpu"
+							isLight={isLight}
+						/>
+					</div>
 
-          {/* Memory */}
-          <div>
-            <div className="flex items-baseline justify-between mb-0.5">
-              <span className="text-[11px] text-zinc-500">Memory</span>
-              <span className="text-[12px] font-medium text-purple-400 tabular-nums">
-                {(cur.memUsedMB / 1024).toFixed(1)} / {(cur.memTotalMB / 1024).toFixed(1)} GB
-              </span>
-            </div>
-            <MiniChart snapshots={history} getValue={getMem} lineColor="#a855f7" gradientId="srv-mem" isLight={isLight} />
-          </div>
+					{/* Memory */}
+					<div>
+						<div className="flex items-baseline justify-between mb-0.5">
+							<span className="text-[11px] text-zinc-500">Memory</span>
+							<span className="text-[12px] font-medium text-purple-400 tabular-nums">
+								{(cur.memUsedMB / 1024).toFixed(1)} /{" "}
+								{(cur.memTotalMB / 1024).toFixed(1)} GB
+							</span>
+						</div>
+						<MiniChart
+							snapshots={history}
+							getValue={getMem}
+							lineColor="#a855f7"
+							gradientId="srv-mem"
+							isLight={isLight}
+						/>
+					</div>
 
-          {/* Throughput */}
-          <div>
-            <div className="flex items-baseline justify-between mb-0.5">
-              <span className="text-[11px] text-zinc-500">Throughput</span>
-              <span className="text-[12px] font-medium text-teal-400 tabular-nums">{formatSpeed(throughput)}</span>
-            </div>
-            {throughputHistory.length >= 2 ? (() => {
-              const maxVal = Math.max(...throughputHistory.map(d => d.value), 1024);
-              const { linePath, areaPath } = buildThroughputPath(throughputHistory, maxVal);
-              return (
-                <svg viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} className="w-full" preserveAspectRatio="xMidYMid meet">
-                  <defs>
-                    <linearGradient id="srv-tp" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#14b8a6" stopOpacity="0.25" />
-                      <stop offset="100%" stopColor="#14b8a6" stopOpacity="0.02" />
-                    </linearGradient>
-                  </defs>
-                  <rect x={PADDING.left} y={PADDING.top} width={INNER_W} height={INNER_H} fill={isLight ? '#ffffff' : '#1f2937'} rx="2" />
-                  {areaPath && <path d={areaPath} fill="url(#srv-tp)" />}
-                  {linePath && <path d={linePath} fill="none" stroke="#14b8a6" strokeWidth="1.5" strokeLinejoin="round" />}
-                </svg>
-              );
-            })() : (
-              <div className="h-[17px] flex items-center">
-                <span className="text-[10px] text-zinc-600">Collecting data...</span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+					{/* Throughput */}
+					<div>
+						<div className="flex items-baseline justify-between mb-0.5">
+							<span className="text-[11px] text-zinc-500">Throughput</span>
+							<span className="text-[12px] font-medium text-teal-400 tabular-nums">
+								{formatSpeed(throughput)}
+							</span>
+						</div>
+						{throughputHistory.length >= 2 ? (
+							(() => {
+								const maxVal = Math.max(
+									...throughputHistory.map((d) => d.value),
+									1024,
+								);
+								const { linePath, areaPath } = buildThroughputPath(
+									throughputHistory,
+									maxVal,
+								);
+								return (
+									<svg
+										aria-hidden="true"
+										viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+										className="w-full"
+										preserveAspectRatio="xMidYMid meet"
+									>
+										<defs>
+											<linearGradient id="srv-tp" x1="0" y1="0" x2="0" y2="1">
+												<stop
+													offset="0%"
+													stopColor="#14b8a6"
+													stopOpacity="0.25"
+												/>
+												<stop
+													offset="100%"
+													stopColor="#14b8a6"
+													stopOpacity="0.02"
+												/>
+											</linearGradient>
+										</defs>
+										<rect
+											x={PADDING.left}
+											y={PADDING.top}
+											width={INNER_W}
+											height={INNER_H}
+											fill={isLight ? "#ffffff" : "#1f2937"}
+											rx="2"
+										/>
+										{areaPath && <path d={areaPath} fill="url(#srv-tp)" />}
+										{linePath && (
+											<path
+												d={linePath}
+												fill="none"
+												stroke="#14b8a6"
+												strokeWidth="1.5"
+												strokeLinejoin="round"
+											/>
+										)}
+									</svg>
+								);
+							})()
+						) : (
+							<div className="h-[17px] flex items-center">
+								<span className="text-[10px] text-zinc-600">
+									Collecting data...
+								</span>
+							</div>
+						)}
+					</div>
+				</div>
+			)}
 
-      {/* Bars: Swap + Disk */}
-      <div className="space-y-2 pt-1 border-t border-white/[0.04]">
-        {cur && cur.swapTotalMB > 0 && (
-          <div>
-            <div className="flex items-center justify-between mb-0.5">
-              <span className="text-[11px] text-zinc-500">Swap</span>
-              <span className="text-[11px] text-amber-400 tabular-nums">
-                {(cur.swapUsedMB / 1024).toFixed(1)} / {(cur.swapTotalMB / 1024).toFixed(1)} GB
-              </span>
-            </div>
-            <ProgressBar percent={swapPercent} color="bg-amber-500" />
-          </div>
-        )}
-        {diskUsage && (
-          <div>
-            <div className="flex items-center justify-between mb-0.5">
-              <span className="text-[11px] text-zinc-500">Disk</span>
-              <span className={`text-[11px] tabular-nums ${diskPercent > 90 ? 'text-red-400' : diskPercent > 75 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                {formatBytes(diskUsage.used)} / {formatBytes(diskUsage.total)}
-              </span>
-            </div>
-            <ProgressBar percent={diskPercent} color={diskPercent > 90 ? 'bg-red-500' : diskPercent > 75 ? 'bg-amber-500' : 'bg-emerald-500'} />
-          </div>
-        )}
-      </div>
+			{/* Bars: Swap + Disk */}
+			<div className="space-y-2 pt-1 border-t border-white/[0.04]">
+				{cur && cur.swapTotalMB > 0 && (
+					<div>
+						<div className="flex items-center justify-between mb-0.5">
+							<span className="text-[11px] text-zinc-500">Swap</span>
+							<span className="text-[11px] text-amber-400 tabular-nums">
+								{(cur.swapUsedMB / 1024).toFixed(1)} /{" "}
+								{(cur.swapTotalMB / 1024).toFixed(1)} GB
+							</span>
+						</div>
+						<ProgressBar percent={swapPercent} color="bg-amber-500" />
+					</div>
+				)}
+				{diskUsage && (
+					<div>
+						<div className="flex items-center justify-between mb-0.5">
+							<span className="text-[11px] text-zinc-500">Disk</span>
+							<span
+								className={`text-[11px] tabular-nums ${diskPercent > 90 ? "text-red-400" : diskPercent > 75 ? "text-amber-400" : "text-emerald-400"}`}
+							>
+								{formatBytes(diskUsage.used)} / {formatBytes(diskUsage.total)}
+							</span>
+						</div>
+						<ProgressBar
+							percent={diskPercent}
+							color={
+								diskPercent > 90
+									? "bg-red-500"
+									: diskPercent > 75
+										? "bg-amber-500"
+										: "bg-emerald-500"
+							}
+						/>
+					</div>
+				)}
+			</div>
 
-      {/* Footer: load average */}
-      {systemMetrics?.loadAvg && (
-        <div className="text-[10px] text-th-text-muted">
-          Load: {systemMetrics.loadAvg.map(v => v.toFixed(2)).join(' / ')} ({systemMetrics.cpuCount} cores)
-        </div>
-      )}
-    </div>
-  );
+			{/* Footer: load average */}
+			{systemMetrics?.loadAvg && (
+				<div className="text-[10px] text-th-text-muted">
+					Load: {systemMetrics.loadAvg.map((v) => v.toFixed(2)).join(" / ")} (
+					{systemMetrics.cpuCount} cores)
+				</div>
+			)}
+		</div>
+	);
 }

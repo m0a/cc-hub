@@ -1,1514 +1,1841 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Plus, Folder, ChevronRight, ChevronLeft, Search, X, Play, GripVertical } from 'lucide-react';
-import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core';
-import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import { AGENT_PROVIDER_IDS, AGENT_PROVIDERS, DEFAULT_AGENT_PROVIDER, agentSupportsConversationMetadata, isAgentProvider, type AgentProvider, type SessionResponse, type ExtendedSessionResponse, type IndicatorState, type ConversationMessage, type FileInfo, type SessionTheme } from '../../../shared/types';
-import { useSessions } from '../hooks/useSessions';
-import { formatRelativeTime } from '../utils/format';
+/** biome-ignore-all lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: legacy click-on-div UI; keyboard navigation provided via main shortcuts */
+import { closestCenter, DndContext, type DragEndEvent } from "@dnd-kit/core";
+import {
+	SortableContext,
+	useSortable,
+	verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
+	ChevronLeft,
+	ChevronRight,
+	Folder,
+	GripVertical,
+	Play,
+	Plus,
+	Search,
+	X,
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import {
+	AGENT_PROVIDER_IDS,
+	AGENT_PROVIDERS,
+	type AgentProvider,
+	agentSupportsConversationMetadata,
+	type ConversationMessage,
+	DEFAULT_AGENT_PROVIDER,
+	type ExtendedSessionResponse,
+	type FileInfo,
+	type IndicatorState,
+	isAgentProvider,
+	type SessionResponse,
+	type SessionTheme,
+} from "../../../shared/types";
+import { useSessions } from "../hooks/useSessions";
+import { formatRelativeTime } from "../utils/format";
 
 // Theme color mapping
 const THEME_COLORS: Record<SessionTheme, { border: string; bg: string }> = {
-  red: { border: 'border-red-500', bg: 'bg-red-500' },
-  orange: { border: 'border-orange-500', bg: 'bg-orange-500' },
-  amber: { border: 'border-amber-500', bg: 'bg-amber-500' },
-  green: { border: 'border-green-500', bg: 'bg-green-500' },
-  teal: { border: 'border-teal-500', bg: 'bg-teal-500' },
-  blue: { border: 'border-blue-500', bg: 'bg-blue-500' },
-  indigo: { border: 'border-indigo-500', bg: 'bg-indigo-500' },
-  purple: { border: 'border-purple-500', bg: 'bg-purple-500' },
-  pink: { border: 'border-pink-500', bg: 'bg-pink-500' },
+	red: { border: "border-red-500", bg: "bg-red-500" },
+	orange: { border: "border-orange-500", bg: "bg-orange-500" },
+	amber: { border: "border-amber-500", bg: "bg-amber-500" },
+	green: { border: "border-green-500", bg: "bg-green-500" },
+	teal: { border: "border-teal-500", bg: "bg-teal-500" },
+	blue: { border: "border-blue-500", bg: "bg-blue-500" },
+	indigo: { border: "border-indigo-500", bg: "bg-indigo-500" },
+	purple: { border: "border-purple-500", bg: "bg-purple-500" },
+	pink: { border: "border-pink-500", bg: "bg-pink-500" },
 };
 
-const THEME_OPTIONS: (SessionTheme | null)[] = [null, 'red', 'orange', 'amber', 'green', 'teal', 'blue', 'indigo', 'purple', 'pink'];
+const THEME_OPTIONS: (SessionTheme | null)[] = [
+	null,
+	"red",
+	"orange",
+	"amber",
+	"green",
+	"teal",
+	"blue",
+	"indigo",
+	"purple",
+	"pink",
+];
 
 // Accent color hex values for redesigned card left bar
 const ACCENT_HEX: Record<SessionTheme, string> = {
-  red: '#ef4444', orange: '#f97316', amber: '#f59e0b', green: '#22c55e',
-  teal: '#14b8a6', blue: '#3b82f6', indigo: '#6366f1', purple: '#a855f7', pink: '#ec4899',
+	red: "#ef4444",
+	orange: "#f97316",
+	amber: "#f59e0b",
+	green: "#22c55e",
+	teal: "#14b8a6",
+	blue: "#3b82f6",
+	indigo: "#6366f1",
+	purple: "#a855f7",
+	pink: "#ec4899",
 };
 
-
 function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+	if (bytes < 1024 * 1024 * 1024)
+		return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
+	return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 function formatTokenCount(n: number): string {
-  if (n < 1000) return `${n}`;
-  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k`;
-  return `${(n / 1_000_000).toFixed(1)}M`;
+	if (n < 1000) return `${n}`;
+	if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k`;
+	return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
-import { useSessionHistory } from '../hooks/useSessionHistory';
-import { authFetch } from '../services/api';
-import { SessionHistory } from './SessionHistory';
-import { ConversationViewer } from './ConversationViewer';
+import { useSessionHistory } from "../hooks/useSessionHistory";
+import { authFetch } from "../services/api";
+import { ConversationViewer } from "./ConversationViewer";
+import { SessionHistory } from "./SessionHistory";
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+const API_BASE = import.meta.env.VITE_API_URL || "";
 
 // Directory browser API functions
-async function browseDirectory(path?: string): Promise<{ path: string; files: FileInfo[]; parentPath: string | null }> {
-  const url = path
-    ? `${API_BASE}/api/files/browse?path=${encodeURIComponent(path)}`
-    : `${API_BASE}/api/files/browse`;
-  const response = await authFetch(url);
-  if (!response.ok) {
-    throw new Error('Failed to browse directory');
-  }
-  return response.json();
+async function browseDirectory(
+	path?: string,
+): Promise<{ path: string; files: FileInfo[]; parentPath: string | null }> {
+	const url = path
+		? `${API_BASE}/api/files/browse?path=${encodeURIComponent(path)}`
+		: `${API_BASE}/api/files/browse`;
+	const response = await authFetch(url);
+	if (!response.ok) {
+		throw new Error("Failed to browse directory");
+	}
+	return response.json();
 }
 
-async function createDirectory(path: string): Promise<{ path: string; success: boolean }> {
-  const response = await authFetch(`${API_BASE}/api/files/mkdir`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path }),
-  });
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to create directory');
-  }
-  return response.json();
+async function createDirectory(
+	path: string,
+): Promise<{ path: string; success: boolean }> {
+	const response = await authFetch(`${API_BASE}/api/files/mkdir`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ path }),
+	});
+	if (!response.ok) {
+		const error = await response.json();
+		throw new Error(error.error || "Failed to create directory");
+	}
+	return response.json();
 }
-
-
 
 interface SessionListProps {
-  onSelectSession: (session: SessionResponse) => void;
-  onSelectPane?: (session: SessionResponse, paneId: string) => void;
-  onBack?: () => void;
-  onClose?: () => void;  // Close button in header (used in modal)
-  inline?: boolean;  // true for side panel, false for fullscreen
-  contentScale?: number;  // Scale factor for content (tabs remain fixed)
-  isOnboarding?: boolean;  // Show dummy session for onboarding
+	onSelectSession: (session: SessionResponse) => void;
+	onSelectPane?: (session: SessionResponse, paneId: string) => void;
+	onBack?: () => void;
+	onClose?: () => void; // Close button in header (used in modal)
+	inline?: boolean; // true for side panel, false for fullscreen
+	contentScale?: number; // Scale factor for content (tabs remain fixed)
+	isOnboarding?: boolean; // Show dummy session for onboarding
 }
 
 // Session menu dialog (color change + title edit + delete)
 export function SessionMenuDialog({
-  session,
-  onChangeTheme,
-  onChangeTitle,
-  onDelete,
-  onCancel,
+	session,
+	onChangeTheme,
+	onChangeTitle,
+	onDelete,
+	onCancel,
 }: {
-  session: SessionResponse;
-  onChangeTheme: (theme: SessionTheme | null) => void;
-  onChangeTitle?: (title: string | null) => void;
-  onDelete: () => void;
-  onCancel: () => void;
+	session: SessionResponse;
+	onChangeTheme: (theme: SessionTheme | null) => void;
+	onChangeTitle?: (title: string | null) => void;
+	onDelete: () => void;
+	onCancel: () => void;
 }) {
-  const { t } = useTranslation();
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [titleValue, setTitleValue] = useState(session.customTitle || '');
+	const { t } = useTranslation();
+	const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+	const [titleValue, setTitleValue] = useState(session.customTitle || "");
 
-  if (showDeleteConfirm) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay)] animate-backdrop-in">
-        <div className="bg-th-surface rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl animate-modal-in">
-          <h3 className="text-lg font-bold text-th-text mb-2">{t('session.deleteSession')}</h3>
-          <p className="text-th-text-secondary mb-4">
-            {t('session.deleteConfirm', { name: session.name })}
-          </p>
-          <p className="text-sm text-red-400 mb-6">
-            {t('session.deleteWarning')}
-          </p>
-          <div className="flex gap-3 justify-end">
-            <button
-              onClick={() => setShowDeleteConfirm(false)}
-              className="px-4 py-2 bg-th-surface-active hover:bg-th-surface-active rounded font-medium transition-colors"
-            >
-              {t('common.cancel')}
-            </button>
-            <button
-              onClick={onDelete}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded font-medium transition-colors"
-            >
-              {t('common.delete')}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+	if (showDeleteConfirm) {
+		return (
+			<div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay)] animate-backdrop-in">
+				<div className="bg-th-surface rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl animate-modal-in">
+					<h3 className="text-lg font-bold text-th-text mb-2">
+						{t("session.deleteSession")}
+					</h3>
+					<p className="text-th-text-secondary mb-4">
+						{t("session.deleteConfirm", { name: session.name })}
+					</p>
+					<p className="text-sm text-red-400 mb-6">
+						{t("session.deleteWarning")}
+					</p>
+					<div className="flex gap-3 justify-end">
+						<button
+							type="button"
+							onClick={() => setShowDeleteConfirm(false)}
+							className="px-4 py-2 bg-th-surface-active hover:bg-th-surface-active rounded font-medium transition-colors"
+						>
+							{t("common.cancel")}
+						</button>
+						<button
+							type="button"
+							onClick={onDelete}
+							className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded font-medium transition-colors"
+						>
+							{t("common.delete")}
+						</button>
+					</div>
+				</div>
+			</div>
+		);
+	}
 
-  const getThemeLabel = (theme: SessionTheme | null) => {
-    if (theme === null) return t('common.none');
-    return t(`theme.${theme}`);
-  };
+	const getThemeLabel = (theme: SessionTheme | null) => {
+		if (theme === null) return t("common.none");
+		return t(`theme.${theme}`);
+	};
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay)] animate-backdrop-in" onClick={onCancel}>
-      <div className="bg-th-surface rounded-lg p-4 max-w-sm w-full mx-4 shadow-xl animate-modal-in" onClick={e => e.stopPropagation()}>
-        <h3 className="text-lg font-bold text-th-text mb-3">{session.name}</h3>
+	return (
+		<div
+			className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay)] animate-backdrop-in"
+			onClick={onCancel}
+		>
+			<div
+				className="bg-th-surface rounded-lg p-4 max-w-sm w-full mx-4 shadow-xl animate-modal-in"
+				onClick={(e) => e.stopPropagation()}
+			>
+				<h3 className="text-lg font-bold text-th-text mb-3">{session.name}</h3>
 
-        {/* Color picker */}
-        <div className="mb-4">
-          <p className="text-sm text-th-text-secondary mb-2">{t('session.colorTheme')}</p>
-          <div className="flex flex-wrap gap-2">
-            {THEME_OPTIONS.map((theme) => (
-              <button
-                key={theme ?? 'none'}
-                onClick={() => onChangeTheme(theme)}
-                className={`w-8 h-8 rounded-full border-2 transition-all ${
-                  theme === null
-                    ? 'bg-th-surface-active border-gray-500'
-                    : `${THEME_COLORS[theme].bg} border-transparent`
-                } ${
-                  session.theme === theme || (session.theme === undefined && theme === null)
-                    ? 'ring-2 ring-white ring-offset-2 ring-offset-gray-800'
-                    : 'hover:scale-110'
-                }`}
-                title={getThemeLabel(theme)}
-              />
-            ))}
-          </div>
-        </div>
+				{/* Color picker */}
+				<div className="mb-4">
+					<p className="text-sm text-th-text-secondary mb-2">
+						{t("session.colorTheme")}
+					</p>
+					<div className="flex flex-wrap gap-2">
+						{THEME_OPTIONS.map((theme) => (
+							<button
+								type="button"
+								key={theme ?? "none"}
+								onClick={() => onChangeTheme(theme)}
+								className={`w-8 h-8 rounded-full border-2 transition-all ${
+									theme === null
+										? "bg-th-surface-active border-gray-500"
+										: `${THEME_COLORS[theme].bg} border-transparent`
+								} ${
+									session.theme === theme ||
+									(session.theme === undefined && theme === null)
+										? "ring-2 ring-white ring-offset-2 ring-offset-gray-800"
+										: "hover:scale-110"
+								}`}
+								title={getThemeLabel(theme)}
+							/>
+						))}
+					</div>
+				</div>
 
-        {/* Title edit */}
-        {onChangeTitle && (
-          <div className="mb-4">
-            <p className="text-sm text-th-text-secondary mb-2">{t('session.customTitle')}</p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={titleValue}
-                onChange={e => setTitleValue(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    onChangeTitle(titleValue.trim() || null);
-                  }
-                }}
-                placeholder={t('session.customTitlePlaceholder')}
-                className="flex-1 bg-th-bg border border-th-border rounded px-2 py-1 text-sm text-th-text placeholder-th-text-muted focus:outline-none focus:border-blue-500"
-              />
-              <button
-                onClick={() => onChangeTitle(titleValue.trim() || null)}
-                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium transition-colors"
-              >
-                {t('common.save')}
-              </button>
-            </div>
-          </div>
-        )}
+				{/* Title edit */}
+				{onChangeTitle && (
+					<div className="mb-4">
+						<p className="text-sm text-th-text-secondary mb-2">
+							{t("session.customTitle")}
+						</p>
+						<div className="flex gap-2">
+							<input
+								type="text"
+								value={titleValue}
+								onChange={(e) => setTitleValue(e.target.value)}
+								onKeyDown={(e) => {
+									if (e.key === "Enter") {
+										onChangeTitle(titleValue.trim() || null);
+									}
+								}}
+								placeholder={t("session.customTitlePlaceholder")}
+								className="flex-1 bg-th-bg border border-th-border rounded px-2 py-1 text-sm text-th-text placeholder-th-text-muted focus:outline-none focus:border-blue-500"
+							/>
+							<button
+								type="button"
+								onClick={() => onChangeTitle(titleValue.trim() || null)}
+								className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium transition-colors"
+							>
+								{t("common.save")}
+							</button>
+						</div>
+					</div>
+				)}
 
-        {/* Actions */}
-        <div className="flex gap-3 justify-between pt-3 border-t border-th-border">
-          <button
-            onClick={() => setShowDeleteConfirm(true)}
-            className="px-4 py-2 bg-red-600/30 hover:bg-red-600/50 text-red-400 rounded font-medium transition-colors"
-          >
-            {t('common.delete')}
-          </button>
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 bg-th-surface-active hover:bg-th-surface-active rounded font-medium transition-colors"
-          >
-            {t('common.close')}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+				{/* Actions */}
+				<div className="flex gap-3 justify-between pt-3 border-t border-th-border">
+					<button
+						type="button"
+						onClick={() => setShowDeleteConfirm(true)}
+						className="px-4 py-2 bg-red-600/30 hover:bg-red-600/50 text-red-400 rounded font-medium transition-colors"
+					>
+						{t("common.delete")}
+					</button>
+					<button
+						type="button"
+						onClick={onCancel}
+						className="px-4 py-2 bg-th-surface-active hover:bg-th-surface-active rounded font-medium transition-colors"
+					>
+						{t("common.close")}
+					</button>
+				</div>
+			</div>
+		</div>
+	);
 }
 
 // Create session modal with directory picker
 function CreateSessionModal({
-  onConfirm,
-  onCancel,
-  existingNames,
-  externalError,
+	onConfirm,
+	onCancel,
+	existingNames,
+	externalError,
 }: {
-  onConfirm: (name: string, workingDir?: string, agent?: AgentProvider) => void;
-  onCancel: () => void;
-  existingNames: Set<string>;
-  externalError?: string | null;
+	onConfirm: (name: string, workingDir?: string, agent?: AgentProvider) => void;
+	onCancel: () => void;
+	existingNames: Set<string>;
+	externalError?: string | null;
 }) {
-  const { t } = useTranslation();
-  const [name, setName] = useState('');
-  const [agent, setAgent] = useState<AgentProvider>(DEFAULT_AGENT_PROVIDER);
-  const [nameManuallyEdited, setNameManuallyEdited] = useState(false);
-  const [currentPath, setCurrentPath] = useState<string>('');
-  const [directories, setDirectories] = useState<FileInfo[]>([]);
-  const [parentPath, setParentPath] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [showNewFolderInput, setShowNewFolderInput] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
-  const [creatingFolder, setCreatingFolder] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const newFolderInputRef = useRef<HTMLInputElement>(null);
+	const { t } = useTranslation();
+	const [name, setName] = useState("");
+	const [agent, setAgent] = useState<AgentProvider>(DEFAULT_AGENT_PROVIDER);
+	const [nameManuallyEdited, setNameManuallyEdited] = useState(false);
+	const [currentPath, setCurrentPath] = useState<string>("");
+	const [directories, setDirectories] = useState<FileInfo[]>([]);
+	const [parentPath, setParentPath] = useState<string | null>(null);
+	const [isLoading, setIsLoading] = useState(true);
+	const [error, setError] = useState<string | null>(null);
+	const [showNewFolderInput, setShowNewFolderInput] = useState(false);
+	const [newFolderName, setNewFolderName] = useState("");
+	const [creatingFolder, setCreatingFolder] = useState(false);
+	const inputRef = useRef<HTMLInputElement>(null);
+	const newFolderInputRef = useRef<HTMLInputElement>(null);
 
-  const nameManuallyEditedRef = useRef(nameManuallyEdited);
-  nameManuallyEditedRef.current = nameManuallyEdited;
-  const existingNamesRef = useRef(existingNames);
-  existingNamesRef.current = existingNames;
+	const nameManuallyEditedRef = useRef(nameManuallyEdited);
+	nameManuallyEditedRef.current = nameManuallyEdited;
+	const existingNamesRef = useRef(existingNames);
+	existingNamesRef.current = existingNames;
 
-  const loadDirectory = useCallback(async (path?: string) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await browseDirectory(path);
-      setCurrentPath(result.path);
-      setDirectories(result.files);
-      setParentPath(result.parentPath);
+	const loadDirectory = useCallback(async (path?: string) => {
+		setIsLoading(true);
+		setError(null);
+		try {
+			const result = await browseDirectory(path);
+			setCurrentPath(result.path);
+			setDirectories(result.files);
+			setParentPath(result.parentPath);
 
-      // Auto-suggest session name from directory name (only if not manually edited)
-      if (!nameManuallyEditedRef.current) {
-        const dirName = result.path.split('/').pop() || '';
-        let suggested = dirName;
-        let counter = 1;
-        while (existingNamesRef.current.has(suggested)) {
-          suggested = `${dirName}-${counter++}`;
-        }
-        setName(suggested);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load directory');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+			// Auto-suggest session name from directory name (only if not manually edited)
+			if (!nameManuallyEditedRef.current) {
+				const dirName = result.path.split("/").pop() || "";
+				let suggested = dirName;
+				let counter = 1;
+				while (existingNamesRef.current.has(suggested)) {
+					suggested = `${dirName}-${counter++}`;
+				}
+				setName(suggested);
+			}
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to load directory");
+		} finally {
+			setIsLoading(false);
+		}
+	}, []);
 
-  // Load initial directory
-  useEffect(() => {
-    loadDirectory();
-  }, [loadDirectory]);
+	// Load initial directory
+	useEffect(() => {
+		loadDirectory();
+	}, [loadDirectory]);
 
-  // Focus new folder input when shown
-  useEffect(() => {
-    if (showNewFolderInput) {
-      newFolderInputRef.current?.focus();
-    }
-  }, [showNewFolderInput]);
+	// Focus new folder input when shown
+	useEffect(() => {
+		if (showNewFolderInput) {
+			newFolderInputRef.current?.focus();
+		}
+	}, [showNewFolderInput]);
 
-  const handleDirectoryClick = (dir: FileInfo) => {
-    loadDirectory(dir.path);
-  };
+	const handleDirectoryClick = (dir: FileInfo) => {
+		loadDirectory(dir.path);
+	};
 
-  const handleGoUp = () => {
-    if (parentPath) {
-      loadDirectory(parentPath);
-    }
-  };
+	const handleGoUp = () => {
+		if (parentPath) {
+			loadDirectory(parentPath);
+		}
+	};
 
-  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setName(e.target.value);
-    setNameManuallyEdited(true);
-  };
+	const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+		setName(e.target.value);
+		setNameManuallyEdited(true);
+	};
 
-  const handleSubmit = () => {
-    onConfirm(name, currentPath, agent);
-  };
+	const handleSubmit = () => {
+		onConfirm(name, currentPath, agent);
+	};
 
-  const handleCreateFolder = async () => {
-    if (!newFolderName.trim()) return;
+	const handleCreateFolder = async () => {
+		if (!newFolderName.trim()) return;
 
-    setCreatingFolder(true);
-    setError(null);
-    try {
-      const newPath = `${currentPath}/${newFolderName.trim()}`;
-      await createDirectory(newPath);
-      setShowNewFolderInput(false);
-      setNewFolderName('');
-      // Navigate to the new directory
-      loadDirectory(newPath);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create folder');
-    } finally {
-      setCreatingFolder(false);
-    }
-  };
+		setCreatingFolder(true);
+		setError(null);
+		try {
+			const newPath = `${currentPath}/${newFolderName.trim()}`;
+			await createDirectory(newPath);
+			setShowNewFolderInput(false);
+			setNewFolderName("");
+			// Navigate to the new directory
+			loadDirectory(newPath);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to create folder");
+		} finally {
+			setCreatingFolder(false);
+		}
+	};
 
-  const shortPath = currentPath.replace(/^\/home\/[^/]+/, '~');
+	const shortPath = currentPath.replace(/^\/home\/[^/]+/, "~");
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-4 bg-[var(--color-overlay)] animate-backdrop-in">
-      <div className="bg-th-surface rounded-lg p-4 max-w-md w-full mx-4 shadow-xl max-h-[70vh] flex flex-col animate-modal-in">
-        <h3 className="text-lg font-bold text-th-text mb-3">{t('session.newSession')}</h3>
+	return (
+		<div className="fixed inset-0 z-50 flex items-start justify-center pt-4 bg-[var(--color-overlay)] animate-backdrop-in">
+			<div className="bg-th-surface rounded-lg p-4 max-w-md w-full mx-4 shadow-xl max-h-[70vh] flex flex-col animate-modal-in">
+				<h3 className="text-lg font-bold text-th-text mb-3">
+					{t("session.newSession")}
+				</h3>
 
-        {/* Session name input */}
-        <div className="mb-3">
-          <label className="text-xs text-th-text-secondary mb-1 block">{t('session.sessionName')}</label>
-          <input
-            ref={inputRef}
-            type="text"
-            placeholder={t('session.sessionNamePlaceholder')}
-            value={name}
-            onChange={handleNameChange}
-            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-            className="w-full px-3 py-2 bg-th-bg border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-blue-500 text-sm"
-          />
-        </div>
+				{/* Session name input */}
+				<label className="mb-3 block">
+					<span className="text-xs text-th-text-secondary mb-1 block">
+						{t("session.sessionName")}
+					</span>
+					<input
+						ref={inputRef}
+						type="text"
+						placeholder={t("session.sessionNamePlaceholder")}
+						value={name}
+						onChange={handleNameChange}
+						onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+						className="w-full px-3 py-2 bg-th-bg border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-blue-500 text-sm"
+					/>
+				</label>
 
-        {/* Agent provider */}
-        <div className="mb-3">
-          <div className="text-xs text-th-text-secondary mb-1">{t('session.agent')}</div>
-          <div className="grid grid-cols-2 gap-2">
-            {AGENT_PROVIDER_IDS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setAgent(option)}
-                className={`px-3 py-2 rounded border text-sm font-medium transition-colors ${
-                  agent === option
-                    ? 'border-blue-500 bg-blue-600/20 text-blue-300'
-                    : 'border-th-border bg-th-bg text-th-text-secondary hover:bg-th-surface-active'
-                }`}
-              >
-                {t(AGENT_PROVIDERS[option].labelKey)}
-              </button>
-            ))}
-          </div>
-        </div>
+				{/* Agent provider */}
+				<div className="mb-3">
+					<div className="text-xs text-th-text-secondary mb-1">
+						{t("session.agent")}
+					</div>
+					<div className="grid grid-cols-2 gap-2">
+						{AGENT_PROVIDER_IDS.map((option) => (
+							<button
+								key={option}
+								type="button"
+								onClick={() => setAgent(option)}
+								className={`px-3 py-2 rounded border text-sm font-medium transition-colors ${
+									agent === option
+										? "border-blue-500 bg-blue-600/20 text-blue-300"
+										: "border-th-border bg-th-bg text-th-text-secondary hover:bg-th-surface-active"
+								}`}
+							>
+								{t(AGENT_PROVIDERS[option].labelKey)}
+							</button>
+						))}
+					</div>
+				</div>
 
-        {/* Directory picker */}
-        <div className="flex-1 min-h-0 flex flex-col">
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-xs text-th-text-secondary">{t('session.workingDirectory')}</label>
-            <button
-              onClick={() => setShowNewFolderInput(true)}
-              className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
-              disabled={showNewFolderInput}
-            >
-              <Plus className="w-3 h-3" />
-              {t('session.newFolder')}
-            </button>
-          </div>
+				{/* Directory picker */}
+				<div className="flex-1 min-h-0 flex flex-col">
+					<div className="flex items-center justify-between mb-2">
+						<span className="text-xs text-th-text-secondary">
+							{t("session.workingDirectory")}
+						</span>
+						<button
+							type="button"
+							onClick={() => setShowNewFolderInput(true)}
+							className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+							disabled={showNewFolderInput}
+						>
+							<Plus className="w-3 h-3" />
+							{t("session.newFolder")}
+						</button>
+					</div>
 
-          {/* Current path display */}
-          <div className="text-xs text-th-text-secondary bg-th-bg px-2 py-1.5 rounded mb-2 truncate">
-            {shortPath}
-          </div>
+					{/* Current path display */}
+					<div className="text-xs text-th-text-secondary bg-th-bg px-2 py-1.5 rounded mb-2 truncate">
+						{shortPath}
+					</div>
 
-          {/* New folder input */}
-          {showNewFolderInput && (
-            <div className="flex gap-2 mb-2">
-              <input
-                ref={newFolderInputRef}
-                type="text"
-                placeholder={t('session.folderName')}
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleCreateFolder();
-                  if (e.key === 'Escape') {
-                    setShowNewFolderInput(false);
-                    setNewFolderName('');
-                  }
-                }}
-                className="flex-1 px-2 py-1 bg-th-bg border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-blue-500 text-sm"
-                disabled={creatingFolder}
-              />
-              <button
-                onClick={handleCreateFolder}
-                disabled={creatingFolder || !newFolderName.trim()}
-                className="px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-th-surface-active rounded text-sm transition-colors"
-              >
-                {creatingFolder ? '...' : t('common.create')}
-              </button>
-              <button
-                onClick={() => {
-                  setShowNewFolderInput(false);
-                  setNewFolderName('');
-                }}
-                className="px-2 py-1 bg-th-surface-active hover:bg-th-surface-active rounded text-sm transition-colors"
-              >
-                ×
-              </button>
-            </div>
-          )}
+					{/* New folder input */}
+					{showNewFolderInput && (
+						<div className="flex gap-2 mb-2">
+							<input
+								ref={newFolderInputRef}
+								type="text"
+								placeholder={t("session.folderName")}
+								value={newFolderName}
+								onChange={(e) => setNewFolderName(e.target.value)}
+								onKeyDown={(e) => {
+									if (e.key === "Enter") handleCreateFolder();
+									if (e.key === "Escape") {
+										setShowNewFolderInput(false);
+										setNewFolderName("");
+									}
+								}}
+								className="flex-1 px-2 py-1 bg-th-bg border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-blue-500 text-sm"
+								disabled={creatingFolder}
+							/>
+							<button
+								type="button"
+								onClick={handleCreateFolder}
+								disabled={creatingFolder || !newFolderName.trim()}
+								className="px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-th-surface-active rounded text-sm transition-colors"
+							>
+								{creatingFolder ? "..." : t("common.create")}
+							</button>
+							<button
+								type="button"
+								onClick={() => {
+									setShowNewFolderInput(false);
+									setNewFolderName("");
+								}}
+								className="px-2 py-1 bg-th-surface-active hover:bg-th-surface-active rounded text-sm transition-colors"
+							>
+								×
+							</button>
+						</div>
+					)}
 
-          {/* Error display */}
-          {(error || externalError) && (
-            <div className="text-xs text-red-400 mb-2">{externalError || error}</div>
-          )}
+					{/* Error display */}
+					{(error || externalError) && (
+						<div className="text-xs text-red-400 mb-2">
+							{externalError || error}
+						</div>
+					)}
 
-          {/* Directory list */}
-          <div className="flex-1 overflow-y-auto bg-th-bg rounded border border-th-border">
-            {isLoading ? (
-              <div className="p-4 text-center text-th-text-muted text-sm">{t('common.loading')}</div>
-            ) : (
-              <div className="divide-y divide-gray-800">
-                {/* Parent directory */}
-                {parentPath && (
-                  <button
-                    onClick={handleGoUp}
-                    className="w-full px-3 py-2 text-left hover:bg-th-surface flex items-center gap-2 text-sm"
-                  >
-                    <Folder className="w-4 h-4 text-th-text-secondary" />
-                    <span className="text-th-text-secondary">..</span>
-                  </button>
-                )}
+					{/* Directory list */}
+					<div className="flex-1 overflow-y-auto bg-th-bg rounded border border-th-border">
+						{isLoading ? (
+							<div className="p-4 text-center text-th-text-muted text-sm">
+								{t("common.loading")}
+							</div>
+						) : (
+							<div className="divide-y divide-gray-800">
+								{/* Parent directory */}
+								{parentPath && (
+									<button
+										type="button"
+										onClick={handleGoUp}
+										className="w-full px-3 py-2 text-left hover:bg-th-surface flex items-center gap-2 text-sm"
+									>
+										<Folder className="w-4 h-4 text-th-text-secondary" />
+										<span className="text-th-text-secondary">..</span>
+									</button>
+								)}
 
-                {/* Directories (hide hidden directories) */}
-                {directories.filter(dir => !dir.isHidden).map((dir) => (
-                  <button
-                    key={dir.path}
-                    onClick={() => handleDirectoryClick(dir)}
-                    className="w-full px-3 py-2 text-left hover:bg-th-surface flex items-center gap-2 text-sm"
-                  >
-                    <Folder className="w-4 h-4 text-yellow-500" />
-                    <span className={`truncate ${dir.isHidden ? 'text-th-text-muted' : 'text-th-text'}`}>
-                      {dir.name}
-                    </span>
-                  </button>
-                ))}
+								{/* Directories (hide hidden directories) */}
+								{directories
+									.filter((dir) => !dir.isHidden)
+									.map((dir) => (
+										<button
+											type="button"
+											key={dir.path}
+											onClick={() => handleDirectoryClick(dir)}
+											className="w-full px-3 py-2 text-left hover:bg-th-surface flex items-center gap-2 text-sm"
+										>
+											<Folder className="w-4 h-4 text-yellow-500" />
+											<span
+												className={`truncate ${dir.isHidden ? "text-th-text-muted" : "text-th-text"}`}
+											>
+												{dir.name}
+											</span>
+										</button>
+									))}
 
-                {directories.length === 0 && !parentPath && (
-                  <div className="p-4 text-center text-th-text-muted text-sm">
-                    {t('session.noSubdirectories')}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+								{directories.length === 0 && !parentPath && (
+									<div className="p-4 text-center text-th-text-muted text-sm">
+										{t("session.noSubdirectories")}
+									</div>
+								)}
+							</div>
+						)}
+					</div>
+				</div>
 
-        {/* Action buttons */}
-        <div className="flex gap-3 justify-end mt-3 pt-3 border-t border-th-border">
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 bg-th-surface-active hover:bg-th-surface-active rounded font-medium transition-colors text-sm"
-          >
-            {t('common.cancel')}
-          </button>
-          <button
-            onClick={handleSubmit}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded font-medium transition-colors text-sm"
-          >
-            {t('common.create')}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+				{/* Action buttons */}
+				<div className="flex gap-3 justify-end mt-3 pt-3 border-t border-th-border">
+					<button
+						type="button"
+						onClick={onCancel}
+						className="px-4 py-2 bg-th-surface-active hover:bg-th-surface-active rounded font-medium transition-colors text-sm"
+					>
+						{t("common.cancel")}
+					</button>
+					<button
+						type="button"
+						onClick={handleSubmit}
+						className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded font-medium transition-colors text-sm"
+					>
+						{t("common.create")}
+					</button>
+				</div>
+			</div>
+		</div>
+	);
 }
 
 // Sortable wrapper for SessionItem (drag-to-reorder)
 function SortableSessionItem({
-  session,
-  index,
-  isDraggable,
-  ...sessionItemProps
+	session,
+	index,
+	isDraggable,
+	...sessionItemProps
 }: {
-  session: SessionResponse;
-  index: number;
-  isDraggable: boolean;
-} & Omit<Parameters<typeof SessionItem>[0], 'session'>) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: session.id, disabled: !isDraggable });
+	session: SessionResponse;
+	index: number;
+	isDraggable: boolean;
+} & Omit<Parameters<typeof SessionItem>[0], "session">) {
+	const {
+		attributes,
+		listeners,
+		setNodeRef,
+		transform,
+		transition,
+		isDragging,
+	} = useSortable({ id: session.id, disabled: !isDraggable });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 10 : undefined,
-  };
+	const style = {
+		transform: CSS.Transform.toString(transform),
+		transition,
+		opacity: isDragging ? 0.5 : 1,
+		zIndex: isDragging ? 10 : undefined,
+	};
 
-  return (
-    <div ref={setNodeRef} style={style} data-onboarding={index === 0 ? 'session-item' : undefined}>
-      <div className="flex items-stretch">
-        {isDraggable && (
-          <button
-            className="flex items-center px-1 text-zinc-600 hover:text-zinc-400 touch-none cursor-grab active:cursor-grabbing"
-            {...attributes}
-            {...listeners}
-          >
-            <GripVertical className="w-4 h-4" />
-          </button>
-        )}
-        <div className="flex-1 min-w-0">
-          <SessionItem session={session} {...sessionItemProps} />
-        </div>
-      </div>
-    </div>
-  );
+	return (
+		<div
+			ref={setNodeRef}
+			style={style}
+			data-onboarding={index === 0 ? "session-item" : undefined}
+		>
+			<div className="flex items-stretch">
+				{isDraggable && (
+					<button
+						type="button"
+						className="flex items-center px-1 text-zinc-600 hover:text-zinc-400 touch-none cursor-grab active:cursor-grabbing"
+						{...attributes}
+						{...listeners}
+					>
+						<GripVertical className="w-4 h-4" />
+					</button>
+				)}
+				<div className="flex-1 min-w-0">
+					<SessionItem session={session} {...sessionItemProps} />
+				</div>
+			</div>
+		</div>
+	);
 }
 
 // Session item with long press to show menu
 function SessionItem({
-  session,
-  onSelect,
-  onSelectPane,
-  onShowMenu,
-  onResume,
-  onDelete,
-  onClosePane,
+	session,
+	onSelect,
+	onSelectPane,
+	onShowMenu,
+	onResume,
+	onDelete,
+	onClosePane,
 }: {
-  session: ExtendedSessionResponse;
-  onSelect: (session: ExtendedSessionResponse) => void;
-  onSelectPane?: (session: ExtendedSessionResponse, paneId: string) => void;
-  onShowMenu: (session: ExtendedSessionResponse) => void;
-  onResume?: (sessionId: string, ccSessionId?: string) => void;
-  onDelete?: (sessionId: string) => void;
-  onShowConversation?: (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => void;
-  onPaneAction?: (sessionId: string, action: 'focus' | 'close' | 'split', paneId: string, direction?: 'h' | 'v') => void;
-  onClosePane?: (sessionId: string, paneId: string, name: string) => void;
+	session: ExtendedSessionResponse;
+	onSelect: (session: ExtendedSessionResponse) => void;
+	onSelectPane?: (session: ExtendedSessionResponse, paneId: string) => void;
+	onShowMenu: (session: ExtendedSessionResponse) => void;
+	onResume?: (sessionId: string, ccSessionId?: string) => void;
+	onDelete?: (sessionId: string) => void;
+	onShowConversation?: (
+		ccSessionId: string,
+		title: string,
+		subtitle: string,
+		isActive: boolean,
+	) => void;
+	onPaneAction?: (
+		sessionId: string,
+		action: "focus" | "close" | "split",
+		paneId: string,
+		direction?: "h" | "v",
+	) => void;
+	onClosePane?: (sessionId: string, paneId: string, name: string) => void;
 }) {
-  const { t, i18n } = useTranslation();
-  const longPressTimerRef = useRef<number | null>(null);
-  const longPressFiredRef = useRef(false);
+	const { t, i18n } = useTranslation();
+	const longPressTimerRef = useRef<number | null>(null);
+	const longPressFiredRef = useRef(false);
 
-  const startLongPress = () => {
-    longPressFiredRef.current = false;
-    longPressTimerRef.current = window.setTimeout(() => {
-      longPressFiredRef.current = true;
-      onShowMenu(session);
-    }, 600);
-  };
+	const startLongPress = () => {
+		longPressFiredRef.current = false;
+		longPressTimerRef.current = window.setTimeout(() => {
+			longPressFiredRef.current = true;
+			onShowMenu(session);
+		}, 600);
+	};
 
-  const cancelLongPress = () => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
+	const cancelLongPress = () => {
+		if (longPressTimerRef.current) {
+			clearTimeout(longPressTimerRef.current);
+			longPressTimerRef.current = null;
+		}
+	};
 
-  const handleTouchStart = () => {
-    startLongPress();
-  };
+	const handleTouchStart = () => {
+		startLongPress();
+	};
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    // Only handle left click
-    if (e.button !== 0) return;
-    startLongPress();
-  };
+	const handleMouseDown = (e: React.MouseEvent) => {
+		// Only handle left click
+		if (e.button !== 0) return;
+		startLongPress();
+	};
 
-  const handleContextMenu = (e: React.MouseEvent) => {
-    // Prevent browser context menu on long press
-    e.preventDefault();
-  };
+	const handleContextMenu = (e: React.MouseEvent) => {
+		// Prevent browser context menu on long press
+		e.preventDefault();
+	};
 
-  const handleTouchEnd = () => {
-    cancelLongPress();
-  };
+	const handleTouchEnd = () => {
+		cancelLongPress();
+	};
 
-  const handleMouseUp = () => {
-    cancelLongPress();
-  };
+	const handleMouseUp = () => {
+		cancelLongPress();
+	};
 
-  const handleMouseLeave = () => {
-    // Cancel long press when mouse leaves the element
-    cancelLongPress();
-  };
+	const handleMouseLeave = () => {
+		// Cancel long press when mouse leaves the element
+		cancelLongPress();
+	};
 
-  const handleTouchMove = () => {
-    // Cancel long press when touch moves (scrolling)
-    cancelLongPress();
-  };
+	const handleTouchMove = () => {
+		// Cancel long press when touch moves (scrolling)
+		cancelLongPress();
+	};
 
-  const handleTouchCancel = () => {
-    cancelLongPress();
-    longPressFiredRef.current = false;
-  };
+	const handleTouchCancel = () => {
+		cancelLongPress();
+		longPressFiredRef.current = false;
+	};
 
-  const [panesExpanded, setPanesExpanded] = useState(false);
+	const [panesExpanded, setPanesExpanded] = useState(false);
 
-  const handleClick = () => {
-    if (longPressFiredRef.current) {
-      longPressFiredRef.current = false;
-      return;
-    }
-    longPressFiredRef.current = false;
+	const handleClick = () => {
+		if (longPressFiredRef.current) {
+			longPressFiredRef.current = false;
+			return;
+		}
+		longPressFiredRef.current = false;
 
-    // Multi-pane session: toggle pane list to show per-pane status
-    if (session.panes && session.panes.length > 1) {
-      setPanesExpanded(prev => !prev);
-      return;
-    }
+		// Multi-pane session: toggle pane list to show per-pane status
+		if (session.panes && session.panes.length > 1) {
+			setPanesExpanded((prev) => !prev);
+			return;
+		}
 
-    onSelect(session);
-  };
+		onSelect(session);
+	};
 
-  const extSession = session;
-  const agent = extSession.agent ?? extSession.currentCommand;
-  const supportsConversationMetadata = agentSupportsConversationMetadata(agent);
-  const agentLabel = agent && isAgentProvider(agent) ? t(AGENT_PROVIDERS[agent].labelKey) : undefined;
-  // Derive card-level indicatorState from panes (priority: waiting_input > processing > idle)
-  const cardIndicator: IndicatorState | undefined = (() => {
-    if (extSession.panes && extSession.panes.length > 0) {
-      if (extSession.panes.some(p => p.indicatorState === 'waiting_input')) return 'waiting_input';
-      if (extSession.panes.some(p => p.indicatorState === 'processing')) return 'processing';
-    }
-    // Fallback to session-level indicatorState
-    return extSession.indicatorState;
-  })();
+	const extSession = session;
+	const agent = extSession.agent ?? extSession.currentCommand;
+	const supportsConversationMetadata = agentSupportsConversationMetadata(agent);
+	const agentLabel =
+		agent && isAgentProvider(agent)
+			? t(AGENT_PROVIDERS[agent].labelKey)
+			: undefined;
+	// Derive card-level indicatorState from panes (priority: waiting_input > processing > idle)
+	const cardIndicator: IndicatorState | undefined = (() => {
+		if (extSession.panes && extSession.panes.length > 0) {
+			if (extSession.panes.some((p) => p.indicatorState === "waiting_input"))
+				return "waiting_input";
+			if (extSession.panes.some((p) => p.indicatorState === "processing"))
+				return "processing";
+		}
+		// Fallback to session-level indicatorState
+		return extSession.indicatorState;
+	})();
 
-  // Use indicatorState (not waitingForInput) to determine badge display
-  const isWaiting = cardIndicator === 'waiting_input';
-  const hasWaitingTool = !!extSession.waitingToolName && extSession.waitingToolName !== 'UserInput';
-  const waitingLabel = extSession.waitingToolName === 'AskUserQuestion' ? t('session.waitingQuestion')
-    : extSession.waitingToolName === 'EnterPlanMode' ? t('session.waitingPlan')
-    : extSession.waitingToolName === 'ExitPlanMode' ? t('session.waitingPlan')
-    : extSession.waitingToolName === 'UserInput' ? t('session.waitingInput')
-    : t('session.waitingPermission');
-  const shortPath = extSession.currentPath?.replace(/^\/home\/[^/]+\//, '~/') || '';
+	// Use indicatorState (not waitingForInput) to determine badge display
+	const isWaiting = cardIndicator === "waiting_input";
+	const hasWaitingTool =
+		!!extSession.waitingToolName && extSession.waitingToolName !== "UserInput";
+	const waitingLabel =
+		extSession.waitingToolName === "AskUserQuestion"
+			? t("session.waitingQuestion")
+			: extSession.waitingToolName === "EnterPlanMode"
+				? t("session.waitingPlan")
+				: extSession.waitingToolName === "ExitPlanMode"
+					? t("session.waitingPlan")
+					: extSession.waitingToolName === "UserInput"
+						? t("session.waitingInput")
+						: t("session.waitingPermission");
+	const shortPath =
+		extSession.currentPath?.replace(/^\/home\/[^/]+\//, "~/") || "";
 
-  // Use customTitle if set, then pane title if cc is running and title exists, otherwise use session name
-  const displayTitle = session.customTitle
-    ? session.customTitle
-    : supportsConversationMetadata && extSession.paneTitle
-      ? extSession.paneTitle.replace(/^[✳★●◆]\s*/, '')  // Remove status icons
-      : session.name;
+	// Use customTitle if set, then pane title if cc is running and title exists, otherwise use session name
+	const displayTitle = session.customTitle
+		? session.customTitle
+		: supportsConversationMetadata && extSession.paneTitle
+			? extSession.paneTitle.replace(/^[✳★●◆]\s*/, "") // Remove status icons
+			: session.name;
 
-  // Show resume button only when no agent is currently running and we have a
-  // conversation id we can resume from (Claude → ccSessionId, Codex → agentSessionId).
-  const isAgentRunning = !!extSession.agent;
-  const showResumeButton = !isAgentRunning && (extSession.ccSessionId || extSession.agentSessionId);
+	// Show resume button only when no agent is currently running and we have a
+	// conversation id we can resume from (Claude → ccSessionId, Codex → agentSessionId).
+	const isAgentRunning = !!extSession.agent;
+	const showResumeButton =
+		!isAgentRunning && (extSession.ccSessionId || extSession.agentSessionId);
 
-  const handleResume = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onResume?.(session.id, extSession.ccSessionId);
-  };
+	const handleResume = (e: React.MouseEvent) => {
+		e.stopPropagation();
+		onResume?.(session.id, extSession.ccSessionId);
+	};
 
-  // Show long-press hint only for first few visits
-  const hintKey = 'cchub-longpress-hint-seen';
-  const hintSeen = typeof localStorage !== 'undefined' && localStorage.getItem(hintKey);
-  if (!hintSeen && typeof localStorage !== 'undefined') {
-    localStorage.setItem(hintKey, '1');
-  }
+	// Show long-press hint only for first few visits
+	const hintKey = "cchub-longpress-hint-seen";
+	const hintSeen =
+		typeof localStorage !== "undefined" && localStorage.getItem(hintKey);
+	if (!hintSeen && typeof localStorage !== "undefined") {
+		localStorage.setItem(hintKey, "1");
+	}
 
-  const isLost = session.state === 'lost';
-  const isLive = !isLost && (cardIndicator === 'processing' || cardIndicator === 'waiting_input');
-  const accentColor = session.theme ? ACCENT_HEX[session.theme] : undefined;
+	const isLost = session.state === "lost";
+	const isLive =
+		!isLost &&
+		(cardIndicator === "processing" || cardIndicator === "waiting_input");
+	const accentColor = session.theme ? ACCENT_HEX[session.theme] : undefined;
 
-  // Lost session: show recreate UI
-  if (isLost) {
-    return (
-      <div className="group relative rounded-lg transition-all duration-200 select-none opacity-50 hover:opacity-70">
-        {accentColor && (
-          <div className="absolute left-0 top-3 bottom-3 w-[3px] rounded-full" style={{ backgroundColor: accentColor }} />
-        )}
-        <div className={`px-4 py-3 ${accentColor ? 'pl-5' : ''}`}>
-          <div className="flex items-center gap-2 mb-1">
-            <h3 className="text-[15px] font-medium truncate flex-1 tracking-[-0.01em] text-zinc-500">
-              {displayTitle}
-            </h3>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-zinc-500/15 text-zinc-500">
-              {t('session.lost', 'Lost')}
-            </span>
-          </div>
-          {shortPath && (
-            <p className="text-[12px] text-zinc-600 truncate mb-1.5">{shortPath}</p>
-          )}
-          {agentLabel && (
-            <div className="mb-2 flex items-center gap-2 text-[11px] text-zinc-500">
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full font-medium bg-zinc-500/15 text-zinc-500">
-                {agentLabel}
-              </span>
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => onResume?.(session.id, extSession.ccSessionId)}
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] font-medium bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition-colors"
-            >
-              <Play className="w-3 h-3" />
-              {t('session.resume', 'Resume')}
-            </button>
-            <button
-              onClick={() => onDelete?.(session.id)}
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] font-medium bg-zinc-600/20 text-zinc-400 hover:bg-red-600/20 hover:text-red-400 transition-colors"
-            >
-              <X className="w-3 h-3" />
-              {t('common.delete', 'Delete')}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+	// Lost session: show recreate UI
+	if (isLost) {
+		return (
+			<div className="group relative rounded-lg transition-all duration-200 select-none opacity-50 hover:opacity-70">
+				{accentColor && (
+					<div
+						className="absolute left-0 top-3 bottom-3 w-[3px] rounded-full"
+						style={{ backgroundColor: accentColor }}
+					/>
+				)}
+				<div className={`px-4 py-3 ${accentColor ? "pl-5" : ""}`}>
+					<div className="flex items-center gap-2 mb-1">
+						<h3 className="text-[15px] font-medium truncate flex-1 tracking-[-0.01em] text-zinc-500">
+							{displayTitle}
+						</h3>
+						<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-zinc-500/15 text-zinc-500">
+							{t("session.lost", "Lost")}
+						</span>
+					</div>
+					{shortPath && (
+						<p className="text-[12px] text-zinc-600 truncate mb-1.5">
+							{shortPath}
+						</p>
+					)}
+					{agentLabel && (
+						<div className="mb-2 flex items-center gap-2 text-[11px] text-zinc-500">
+							<span className="inline-flex items-center px-2 py-0.5 rounded-full font-medium bg-zinc-500/15 text-zinc-500">
+								{agentLabel}
+							</span>
+						</div>
+					)}
+					<div className="flex items-center gap-2">
+						<button
+							type="button"
+							onClick={() => onResume?.(session.id, extSession.ccSessionId)}
+							className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] font-medium bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition-colors"
+						>
+							<Play className="w-3 h-3" />
+							{t("session.resume", "Resume")}
+						</button>
+						<button
+							type="button"
+							onClick={() => onDelete?.(session.id)}
+							className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] font-medium bg-zinc-600/20 text-zinc-400 hover:bg-red-600/20 hover:text-red-400 transition-colors"
+						>
+							<X className="w-3 h-3" />
+							{t("common.delete", "Delete")}
+						</button>
+					</div>
+				</div>
+			</div>
+		);
+	}
 
-  return (
-    <div
-      onClick={handleClick}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onTouchCancel={handleTouchCancel}
-      onMouseDown={handleMouseDown}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseLeave}
-      onContextMenu={handleContextMenu}
-      style={{ touchAction: 'pan-y', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
-      className="group relative rounded-lg transition-all duration-200 cursor-pointer select-none hover:bg-white/[0.04] active:bg-white/[0.06]"
-    >
-      {/* Accent bar */}
-      {accentColor && (
-        <div
-          className="absolute left-0 top-3 bottom-3 w-[3px] rounded-full"
-          style={{ backgroundColor: accentColor }}
-        />
-      )}
+	return (
+		<div
+			onClick={handleClick}
+			onTouchStart={handleTouchStart}
+			onTouchMove={handleTouchMove}
+			onTouchEnd={handleTouchEnd}
+			onTouchCancel={handleTouchCancel}
+			onMouseDown={handleMouseDown}
+			onMouseUp={handleMouseUp}
+			onMouseLeave={handleMouseLeave}
+			onContextMenu={handleContextMenu}
+			style={{
+				touchAction: "pan-y",
+				WebkitTouchCallout: "none",
+				WebkitUserSelect: "none",
+			}}
+			className="group relative rounded-lg transition-all duration-200 cursor-pointer select-none hover:bg-white/[0.04] active:bg-white/[0.06]"
+		>
+			{/* Accent bar */}
+			{accentColor && (
+				<div
+					className="absolute left-0 top-3 bottom-3 w-[3px] rounded-full"
+					style={{ backgroundColor: accentColor }}
+				/>
+			)}
 
-      <div className={`px-4 py-3 ${accentColor ? 'pl-5' : ''}`}>
-        {/* Top row: title + path + status badges */}
-        <div className="flex items-baseline gap-2 mb-1 min-w-0">
-          <h3 className={`text-[15px] font-medium truncate shrink-0 max-w-[55%] tracking-[-0.01em] ${
-            isLive ? 'text-white' : supportsConversationMetadata ? 'text-zinc-300' : 'text-zinc-400'
-          }`}>
-            {displayTitle}
-          </h3>
-          {shortPath && (
-            <span className="text-[12px] text-zinc-500 truncate font-mono flex-1 min-w-0">
-              {shortPath}
-            </span>
-          )}
+			<div className={`px-4 py-3 ${accentColor ? "pl-5" : ""}`}>
+				{/* Top row: title + path + status badges */}
+				<div className="flex items-baseline gap-2 mb-1 min-w-0">
+					<h3
+						className={`text-[15px] font-medium truncate shrink-0 max-w-[55%] tracking-[-0.01em] ${
+							isLive
+								? "text-white"
+								: supportsConversationMetadata
+									? "text-zinc-300"
+									: "text-zinc-400"
+						}`}
+					>
+						{displayTitle}
+					</h3>
+					{shortPath && (
+						<span className="text-[12px] text-zinc-500 truncate font-mono flex-1 min-w-0">
+							{shortPath}
+						</span>
+					)}
 
-          {/* Status badge - pill style */}
-          {isWaiting && hasWaitingTool ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/15 text-amber-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-              {waitingLabel}
-            </span>
-          ) : cardIndicator === 'processing' ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/15 text-blue-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-              {t('session.processing')}
-            </span>
-          ) : showResumeButton ? (
-            <button
-              onClick={handleResume}
-              onMouseDown={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
-            >
-              <Play className="w-3 h-3" />
-              {t('session.resume')}
-            </button>
-          ) : null}
+					{/* Status badge - pill style */}
+					{isWaiting && hasWaitingTool ? (
+						<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/15 text-amber-400">
+							<span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+							{waitingLabel}
+						</span>
+					) : cardIndicator === "processing" ? (
+						<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/15 text-blue-400">
+							<span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+							{t("session.processing")}
+						</span>
+					) : showResumeButton ? (
+						<button
+							type="button"
+							onClick={handleResume}
+							onMouseDown={(e) => e.stopPropagation()}
+							onTouchStart={(e) => e.stopPropagation()}
+							className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+						>
+							<Play className="w-3 h-3" />
+							{t("session.resume")}
+						</button>
+					) : null}
 
-          {/* Secondary badge: pane count (only if > 1) */}
-          {extSession.panes && extSession.panes.length > 1 && (() => {
-            const deadCount = extSession.panes.filter(p => p.isDead).length;
-            return (
-              <span className={`text-[11px] px-2 py-0.5 rounded-full shrink-0 ${
-                deadCount > 0
-                  ? 'text-red-400 bg-red-500/15'
-                  : 'text-cyan-400 bg-cyan-500/15'
-              }`}>
-                {deadCount > 0
-                  ? `${extSession.panes.length} (${deadCount} ${t('pane.dead')})`
-                  : `${extSession.panes.length} panes`}
-              </span>
-            );
-          })()}
-        </div>
+					{/* Secondary badge: pane count (only if > 1) */}
+					{extSession.panes &&
+						extSession.panes.length > 1 &&
+						(() => {
+							const deadCount = extSession.panes.filter((p) => p.isDead).length;
+							return (
+								<span
+									className={`text-[11px] px-2 py-0.5 rounded-full shrink-0 ${
+										deadCount > 0
+											? "text-red-400 bg-red-500/15"
+											: "text-cyan-400 bg-cyan-500/15"
+									}`}
+								>
+									{deadCount > 0
+										? `${extSession.panes.length} (${deadCount} ${t("pane.dead")})`
+										: `${extSession.panes.length} panes`}
+								</span>
+							);
+						})()}
+				</div>
 
-        {/* Auto recap (away_summary) — timestamp shown inline at the tail */}
-        {extSession.ccRecap && (
-          <p className="mt-1 text-[12px] text-amber-200 leading-relaxed line-clamp-3">
-            {extSession.ccRecap}
-            {extSession.ccRecapAt && (
-              <span className="ml-2 text-[10px] text-zinc-500">
-                {formatRelativeTime(extSession.ccRecapAt, t, i18n.language)}
-              </span>
-            )}
-          </p>
-        )}
+				{/* Auto recap (away_summary) — timestamp shown inline at the tail */}
+				{extSession.ccRecap && (
+					<p className="mt-1 text-[12px] text-amber-200 leading-relaxed line-clamp-3">
+						{extSession.ccRecap}
+						{extSession.ccRecapAt && (
+							<span className="ml-2 text-[10px] text-zinc-500">
+								{formatRelativeTime(extSession.ccRecapAt, t, i18n.language)}
+							</span>
+						)}
+					</p>
+				)}
 
-        {/* Last prompt / summary — hide when recap is present (recap already covers it) */}
-        {!extSession.ccRecap && (extSession.ccSummary || extSession.ccFirstPrompt) && (
-          <p className="mt-1.5 text-[12px] text-zinc-600 leading-relaxed line-clamp-2">
-            {extSession.ccSummary || extSession.ccFirstPrompt}
-          </p>
-        )}
+				{/* Last prompt / summary — hide when recap is present (recap already covers it) */}
+				{!extSession.ccRecap &&
+					(extSession.ccSummary || extSession.ccFirstPrompt) && (
+						<p className="mt-1.5 text-[12px] text-zinc-600 leading-relaxed line-clamp-2">
+							{extSession.ccSummary || extSession.ccFirstPrompt}
+						</p>
+					)}
 
-        {/* Metadata row: agent / context / memory / tokens */}
-        {(agentLabel || extSession.metrics) && (
-          <div className="mt-1.5 flex items-center gap-3 flex-wrap text-[11px] text-zinc-500">
-            {agentLabel && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full font-medium bg-zinc-500/15 text-zinc-400">
-                {agentLabel}
-              </span>
-            )}
-            {typeof extSession.metrics?.contextPercent === 'number' && (
-              <div className="inline-flex items-center gap-1.5" title={`${formatTokenCount(extSession.metrics.contextTokens ?? 0)} / ${formatTokenCount(extSession.metrics.contextMaxTokens ?? 0)}`}>
-                <span className="text-zinc-600">ctx</span>
-                <div className="w-14 h-1 bg-white/10 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full transition-all ${
-                      extSession.metrics.contextPercent >= 80 ? 'bg-red-500' :
-                      extSession.metrics.contextPercent >= 60 ? 'bg-amber-500' :
-                      'bg-emerald-500'
-                    }`}
-                    style={{ width: `${Math.max(2, extSession.metrics.contextPercent)}%` }}
-                  />
-                </div>
-                <span className="font-mono tabular-nums">{extSession.metrics.contextPercent.toFixed(1)}%</span>
-              </div>
-            )}
-            {typeof extSession.metrics?.memoryRssBytes === 'number' && extSession.metrics.memoryRssBytes > 0 && (
-              <span className="font-mono tabular-nums" title={`${extSession.metrics.memoryRssBytes} bytes`}>
-                <span className="text-zinc-600">mem</span> {formatBytes(extSession.metrics.memoryRssBytes)}
-              </span>
-            )}
-            {typeof extSession.metrics?.totalTokens === 'number' && extSession.metrics.totalTokens > 0 && (
-              <span className="font-mono tabular-nums" title={`input + cache_creation + output (excludes cache_read)\n\nin: ${extSession.metrics.totalInputTokens?.toLocaleString() ?? 0}\ncache create: ${extSession.metrics.totalCacheCreationTokens?.toLocaleString() ?? 0}\ncache read: ${extSession.metrics.totalCacheReadTokens?.toLocaleString() ?? 0}\nout: ${extSession.metrics.totalOutputTokens?.toLocaleString() ?? 0}`}>
-                <span className="text-zinc-600">used</span> {formatTokenCount(extSession.metrics.totalTokens)}
-              </span>
-            )}
-          </div>
-        )}
+				{/* Metadata row: agent / context / memory / tokens */}
+				{(agentLabel || extSession.metrics) && (
+					<div className="mt-1.5 flex items-center gap-3 flex-wrap text-[11px] text-zinc-500">
+						{agentLabel && (
+							<span className="inline-flex items-center px-2 py-0.5 rounded-full font-medium bg-zinc-500/15 text-zinc-400">
+								{agentLabel}
+							</span>
+						)}
+						{typeof extSession.metrics?.contextPercent === "number" && (
+							<div
+								className="inline-flex items-center gap-1.5"
+								title={`${formatTokenCount(extSession.metrics.contextTokens ?? 0)} / ${formatTokenCount(extSession.metrics.contextMaxTokens ?? 0)}`}
+							>
+								<span className="text-zinc-600">ctx</span>
+								<div className="w-14 h-1 bg-white/10 rounded-full overflow-hidden">
+									<div
+										className={`h-full transition-all ${
+											extSession.metrics.contextPercent >= 80
+												? "bg-red-500"
+												: extSession.metrics.contextPercent >= 60
+													? "bg-amber-500"
+													: "bg-emerald-500"
+										}`}
+										style={{
+											width: `${Math.max(2, extSession.metrics.contextPercent)}%`,
+										}}
+									/>
+								</div>
+								<span className="font-mono tabular-nums">
+									{extSession.metrics.contextPercent.toFixed(1)}%
+								</span>
+							</div>
+						)}
+						{typeof extSession.metrics?.memoryRssBytes === "number" &&
+							extSession.metrics.memoryRssBytes > 0 && (
+								<span
+									className="font-mono tabular-nums"
+									title={`${extSession.metrics.memoryRssBytes} bytes`}
+								>
+									<span className="text-zinc-600">mem</span>{" "}
+									{formatBytes(extSession.metrics.memoryRssBytes)}
+								</span>
+							)}
+						{typeof extSession.metrics?.totalTokens === "number" &&
+							extSession.metrics.totalTokens > 0 && (
+								<span
+									className="font-mono tabular-nums"
+									title={`input + cache_creation + output (excludes cache_read)\n\nin: ${extSession.metrics.totalInputTokens?.toLocaleString() ?? 0}\ncache create: ${extSession.metrics.totalCacheCreationTokens?.toLocaleString() ?? 0}\ncache read: ${extSession.metrics.totalCacheReadTokens?.toLocaleString() ?? 0}\nout: ${extSession.metrics.totalOutputTokens?.toLocaleString() ?? 0}`}
+								>
+									<span className="text-zinc-600">used</span>{" "}
+									{formatTokenCount(extSession.metrics.totalTokens)}
+								</span>
+							)}
+					</div>
+				)}
 
-        {!hintSeen && (
-          <div className="text-[11px] text-zinc-700 mt-1">
-            {t('session.longPressHint')}
-          </div>
-        )}
-      </div>
+				{!hintSeen && (
+					<div className="text-[11px] text-zinc-700 mt-1">
+						{t("session.longPressHint")}
+					</div>
+				)}
+			</div>
 
-      {/* Pane list (expandable, shows per-pane status indicators) */}
-      {panesExpanded && extSession.panes && extSession.panes.length > 1 && (
-        <div
-          className="mx-4 mb-3 pt-2 border-t border-white/[0.06] space-y-1"
-          onClick={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-        >
-          {extSession.panes.map((pane) => {
-            const cmd = pane.currentCommand || 'shell';
-            const isAgentPane = isAgentProvider(cmd) || !!pane.agentName;
-            const paneTitle = pane.title?.replace(/^[✳★●◆⠂⠈⠐⠠⠄⠁✻✽⏳]\s*/, '').trim();
-            const displayName = pane.agentName || paneTitle || cmd;
-            const agentColorMap: Record<string, string> = {
-              red: 'text-red-300', orange: 'text-orange-300', amber: 'text-amber-300',
-              green: 'text-green-300', teal: 'text-teal-300', blue: 'text-blue-300',
-              cyan: 'text-cyan-300', indigo: 'text-indigo-300', purple: 'text-purple-300',
-              pink: 'text-pink-300',
-            };
-            const nameColor = pane.agentColor && agentColorMap[pane.agentColor]
-              ? agentColorMap[pane.agentColor]
-              : isAgentPane ? 'text-green-300' : 'text-zinc-300';
-            const paneIndicator = pane.indicatorState;
-            const paneDotClass = pane.isDead
-              ? 'bg-red-400'
-              : paneIndicator === 'processing'
-                ? 'bg-blue-400'
-                : paneIndicator === 'waiting_input'
-                  ? 'bg-yellow-400 animate-pulse'
-                  : 'bg-zinc-600';
-            const paneBgClass = pane.isDead
-              ? 'bg-red-900/20 hover:bg-red-900/30'
-              : isAgentPane
-                ? 'hover:bg-white/[0.04]'
-                : 'hover:bg-white/[0.04]';
+			{/* Pane list (expandable, shows per-pane status indicators) */}
+			{panesExpanded && extSession.panes && extSession.panes.length > 1 && (
+				<div
+					className="mx-4 mb-3 pt-2 border-t border-white/[0.06] space-y-1"
+					onClick={(e) => e.stopPropagation()}
+					onMouseDown={(e) => e.stopPropagation()}
+					onTouchStart={(e) => e.stopPropagation()}
+				>
+					{extSession.panes.map((pane) => {
+						const cmd = pane.currentCommand || "shell";
+						const isAgentPane = isAgentProvider(cmd) || !!pane.agentName;
+						const paneTitle = pane.title
+							?.replace(/^[✳★●◆⠂⠈⠐⠠⠄⠁✻✽⏳]\s*/, "")
+							.trim();
+						const displayName = pane.agentName || paneTitle || cmd;
+						const agentColorMap: Record<string, string> = {
+							red: "text-red-300",
+							orange: "text-orange-300",
+							amber: "text-amber-300",
+							green: "text-green-300",
+							teal: "text-teal-300",
+							blue: "text-blue-300",
+							cyan: "text-cyan-300",
+							indigo: "text-indigo-300",
+							purple: "text-purple-300",
+							pink: "text-pink-300",
+						};
+						const nameColor =
+							pane.agentColor && agentColorMap[pane.agentColor]
+								? agentColorMap[pane.agentColor]
+								: isAgentPane
+									? "text-green-300"
+									: "text-zinc-300";
+						const paneIndicator = pane.indicatorState;
+						const paneDotClass = pane.isDead
+							? "bg-red-400"
+							: paneIndicator === "processing"
+								? "bg-blue-400"
+								: paneIndicator === "waiting_input"
+									? "bg-yellow-400 animate-pulse"
+									: "bg-zinc-600";
+						const paneBgClass = pane.isDead
+							? "bg-red-900/20 hover:bg-red-900/30"
+							: isAgentPane
+								? "hover:bg-white/[0.04]"
+								: "hover:bg-white/[0.04]";
 
-            let paneTimer: number | null = null;
-            let paneLongPressed = false;
-            return (
-              <button
-                key={pane.paneId}
-                onClick={() => {
-                  if (paneLongPressed) { paneLongPressed = false; return; }
-                  if (onSelectPane) {
-                    onSelectPane(session, pane.paneId);
-                  } else {
-                    onSelect(session);
-                  }
-                }}
-                onTouchStart={() => {
-                  paneLongPressed = false;
-                  paneTimer = window.setTimeout(() => {
-                    paneTimer = null;
-                    paneLongPressed = true;
-                    onClosePane?.(session.id, pane.paneId, displayName);
-                  }, 600);
-                }}
-                onTouchEnd={() => { if (paneTimer) { clearTimeout(paneTimer); paneTimer = null; } }}
-                onTouchMove={() => { if (paneTimer) { clearTimeout(paneTimer); paneTimer = null; } }}
-                onContextMenu={(e) => e.preventDefault()}
-                className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${paneBgClass}`}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${paneDotClass}`} />
-                <span className={`text-[13px] font-medium truncate ${nameColor}`}>
-                  {displayName}
-                </span>
-                {pane.agentName && paneTitle && (
-                  <span className="text-zinc-600 text-[11px] truncate flex-1">{paneTitle}</span>
-                )}
-                {!pane.agentName && !paneTitle && (
-                  <span className="flex-1" />
-                )}
-                {pane.isDead ? (
-                  <span className="text-[10px] text-red-400 bg-red-500/15 px-1.5 py-0.5 rounded-full shrink-0">{t('pane.dead')}</span>
-                ) : paneIndicator === 'processing' ? (
-                  <span className="text-[10px] text-blue-400 bg-blue-500/15 px-1.5 py-0.5 rounded-full shrink-0">{t('session.processing')}</span>
-                ) : null}
-                {pane.isActive && !pane.isDead && (
-                  <span className="text-[10px] text-cyan-400 bg-cyan-500/15 px-1.5 py-0.5 rounded-full shrink-0">active</span>
-                )}
-                <ChevronRight className="w-3.5 h-3.5 text-zinc-700 shrink-0" />
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
+						let paneTimer: number | null = null;
+						let paneLongPressed = false;
+						return (
+							<button
+								type="button"
+								key={pane.paneId}
+								onClick={() => {
+									if (paneLongPressed) {
+										paneLongPressed = false;
+										return;
+									}
+									if (onSelectPane) {
+										onSelectPane(session, pane.paneId);
+									} else {
+										onSelect(session);
+									}
+								}}
+								onTouchStart={() => {
+									paneLongPressed = false;
+									paneTimer = window.setTimeout(() => {
+										paneTimer = null;
+										paneLongPressed = true;
+										onClosePane?.(session.id, pane.paneId, displayName);
+									}, 600);
+								}}
+								onTouchEnd={() => {
+									if (paneTimer) {
+										clearTimeout(paneTimer);
+										paneTimer = null;
+									}
+								}}
+								onTouchMove={() => {
+									if (paneTimer) {
+										clearTimeout(paneTimer);
+										paneTimer = null;
+									}
+								}}
+								onContextMenu={(e) => e.preventDefault()}
+								className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${paneBgClass}`}
+							>
+								<span
+									className={`w-1.5 h-1.5 rounded-full shrink-0 ${paneDotClass}`}
+								/>
+								<span
+									className={`text-[13px] font-medium truncate ${nameColor}`}
+								>
+									{displayName}
+								</span>
+								{pane.agentName && paneTitle && (
+									<span className="text-zinc-600 text-[11px] truncate flex-1">
+										{paneTitle}
+									</span>
+								)}
+								{!pane.agentName && !paneTitle && <span className="flex-1" />}
+								{pane.isDead ? (
+									<span className="text-[10px] text-red-400 bg-red-500/15 px-1.5 py-0.5 rounded-full shrink-0">
+										{t("pane.dead")}
+									</span>
+								) : paneIndicator === "processing" ? (
+									<span className="text-[10px] text-blue-400 bg-blue-500/15 px-1.5 py-0.5 rounded-full shrink-0">
+										{t("session.processing")}
+									</span>
+								) : null}
+								{pane.isActive && !pane.isDead && (
+									<span className="text-[10px] text-cyan-400 bg-cyan-500/15 px-1.5 py-0.5 rounded-full shrink-0">
+										active
+									</span>
+								)}
+								<ChevronRight className="w-3.5 h-3.5 text-zinc-700 shrink-0" />
+							</button>
+						);
+					})}
+				</div>
+			)}
+		</div>
+	);
 }
 
-export function SessionList({ onSelectSession, onSelectPane, onBack, onClose, inline = false, contentScale, isOnboarding = false }: SessionListProps) {
-  const { t } = useTranslation();
-  const {
-    sessions,
-    isLoading,
-    error,
-    createSession,
-    deleteSession,
-    updateSessionTheme,
-  } = useSessions();
-  const { fetchConversation } = useSessionHistory();
+export function SessionList({
+	onSelectSession,
+	onSelectPane,
+	onBack,
+	onClose,
+	inline = false,
+	contentScale,
+	isOnboarding = false,
+}: SessionListProps) {
+	const { t } = useTranslation();
+	const {
+		sessions,
+		isLoading,
+		error,
+		createSession,
+		deleteSession,
+		updateSessionTheme,
+	} = useSessions();
+	const { fetchConversation } = useSessionHistory();
 
-  const [sessionForMenu, setSessionForMenu] = useState<SessionResponse | null>(null);
-  const [paneToClose, setPaneToClose] = useState<{ sessionId: string; paneId: string; name: string } | null>(null);
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'sessions' | 'history'>('sessions');
-  const [showSearch, setShowSearch] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [hookConfigured, setHookConfigured] = useState<boolean | null>(null);
-  const [hookBannerDismissed, setHookBannerDismissed] = useState(() =>
-    typeof localStorage !== 'undefined' && localStorage.getItem('cchub-hook-banner-dismissed') === '1'
-  );
+	const [sessionForMenu, setSessionForMenu] = useState<SessionResponse | null>(
+		null,
+	);
+	const [paneToClose, setPaneToClose] = useState<{
+		sessionId: string;
+		paneId: string;
+		name: string;
+	} | null>(null);
+	const [showCreateModal, setShowCreateModal] = useState(false);
+	const [activeTab, setActiveTab] = useState<"sessions" | "history">(
+		"sessions",
+	);
+	const [showSearch, setShowSearch] = useState(false);
+	const [searchQuery, setSearchQuery] = useState("");
+	const [hookConfigured, setHookConfigured] = useState<boolean | null>(null);
+	const [hookBannerDismissed, setHookBannerDismissed] = useState(
+		() =>
+			typeof localStorage !== "undefined" &&
+			localStorage.getItem("cchub-hook-banner-dismissed") === "1",
+	);
 
-  // Conversation viewer state
-  const [viewingConversation, setViewingConversation] = useState<{
-    sessionId: string;
-    title: string;
-    subtitle: string;
-    isActive: boolean;
-  } | null>(null);
-  const [conversation, setConversation] = useState<ConversationMessage[]>([]);
-  const [loadingConversation, setLoadingConversation] = useState(false);
+	// Conversation viewer state
+	const [viewingConversation, setViewingConversation] = useState<{
+		sessionId: string;
+		title: string;
+		subtitle: string;
+		isActive: boolean;
+	} | null>(null);
+	const [conversation, setConversation] = useState<ConversationMessage[]>([]);
+	const [loadingConversation, setLoadingConversation] = useState(false);
 
-  // Check hook configuration status
-  useEffect(() => {
-    if (hookBannerDismissed) return;
-    authFetch(`${API_BASE}/api/notify/hook-status`)
-      .then(r => r.json())
-      .then(data => setHookConfigured(data.configured))
-      .catch(() => {});
-  }, [hookBannerDismissed]);
+	// Check hook configuration status
+	useEffect(() => {
+		if (hookBannerDismissed) return;
+		authFetch(`${API_BASE}/api/notify/hook-status`)
+			.then((r) => r.json())
+			.then((data) => setHookConfigured(data.configured))
+			.catch(() => {});
+	}, [hookBannerDismissed]);
 
-  // Resume an agent session, preserving the original agent (claude / codex / ...)
-  const handleResume = useCallback(async (sessionId: string, ccSessionId?: string) => {
-    try {
-      const session = sessions.find(s => s.id === sessionId);
-      const isLost = session?.state === 'lost';
-      // Per-agent conversation id: Claude → ccSessionId, Codex → agentSessionId.
-      // Pick the one matching the session's agent so we don't accidentally
-      // hand a Codex thread id to `claude -r` (or vice versa).
-      const conversationId = session?.agent === 'codex'
-        ? session.agentSessionId
-        : (ccSessionId ?? session?.ccSessionId);
+	// Resume an agent session, preserving the original agent (claude / codex / ...)
+	const handleResume = useCallback(
+		async (sessionId: string, ccSessionId?: string) => {
+			try {
+				const session = sessions.find((s) => s.id === sessionId);
+				const isLost = session?.state === "lost";
+				// Per-agent conversation id: Claude → ccSessionId, Codex → agentSessionId.
+				// Pick the one matching the session's agent so we don't accidentally
+				// hand a Codex thread id to `claude -r` (or vice versa).
+				const conversationId =
+					session?.agent === "codex"
+						? session.agentSessionId
+						: (ccSessionId ?? session?.ccSessionId);
 
-      if (isLost && session?.currentPath) {
-        if (conversationId) {
-          // Lost session with a known conversation id: resume via history API
-          const response = await authFetch(`${API_BASE}/api/sessions/history/resume`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: conversationId, projectPath: session.currentPath, agent: session.agent }),
-          });
-          if (response.ok) {
-            const data = await response.json();
-            // Build a session object from the API response + the lost session's metadata
-            // so we can navigate immediately, instead of waiting for the WS push and
-            // searching `sessions` (which is stale inside this closure).
-            onSelectSession({
-              id: data.tmuxSessionId,
-              name: data.tmuxSessionId,
-              createdAt: '',
-              lastAccessedAt: '',
-              state: 'working',
-              currentPath: session.currentPath,
-              agent: data.agent ?? session.agent,
-              theme: session.theme,
-              customTitle: session.customTitle,
-            });
-          }
-        } else {
-          // Lost session without a conversation id: create a fresh session in the same
-          // directory using the original agent so a Codex session doesn't come back as Claude.
-          const newSession = await createSession(session.name, session.currentPath, session.agent);
-          if (newSession) onSelectSession(newSession);
-        }
-      } else {
-        // Active session: resume the agent in the existing tmux session
-        const response = await authFetch(`${API_BASE}/api/sessions/${sessionId}/resume`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ccSessionId: conversationId, agent: session?.agent }),
-        });
-        if (response.ok && session) {
-          onSelectSession(session);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to resume session:', err);
-    }
-  }, [sessions, onSelectSession, createSession]);
+				if (isLost && session?.currentPath) {
+					if (conversationId) {
+						// Lost session with a known conversation id: resume via history API
+						const response = await authFetch(
+							`${API_BASE}/api/sessions/history/resume`,
+							{
+								method: "POST",
+								headers: { "Content-Type": "application/json" },
+								body: JSON.stringify({
+									sessionId: conversationId,
+									projectPath: session.currentPath,
+									agent: session.agent,
+								}),
+							},
+						);
+						if (response.ok) {
+							const data = await response.json();
+							// Build a session object from the API response + the lost session's metadata
+							// so we can navigate immediately, instead of waiting for the WS push and
+							// searching `sessions` (which is stale inside this closure).
+							onSelectSession({
+								id: data.tmuxSessionId,
+								name: data.tmuxSessionId,
+								createdAt: "",
+								lastAccessedAt: "",
+								state: "working",
+								currentPath: session.currentPath,
+								agent: data.agent ?? session.agent,
+								theme: session.theme,
+								customTitle: session.customTitle,
+							});
+						}
+					} else {
+						// Lost session without a conversation id: create a fresh session in the same
+						// directory using the original agent so a Codex session doesn't come back as Claude.
+						const newSession = await createSession(
+							session.name,
+							session.currentPath,
+							session.agent,
+						);
+						if (newSession) onSelectSession(newSession);
+					}
+				} else {
+					// Active session: resume the agent in the existing tmux session
+					const response = await authFetch(
+						`${API_BASE}/api/sessions/${sessionId}/resume`,
+						{
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({
+								ccSessionId: conversationId,
+								agent: session?.agent,
+							}),
+						},
+					);
+					if (response.ok && session) {
+						onSelectSession(session);
+					}
+				}
+			} catch (err) {
+				console.error("Failed to resume session:", err);
+			}
+		},
+		[sessions, onSelectSession, createSession],
+	);
 
-  // Show conversation for an active session
-  const handleShowConversation = useCallback(async (ccSessionId: string, title: string, subtitle: string, isActive: boolean) => {
-    setViewingConversation({ sessionId: ccSessionId, title, subtitle, isActive });
-    setLoadingConversation(true);
-    setConversation([]);
-    try {
-      const messages = await fetchConversation(ccSessionId);
-      setConversation(messages);
-    } finally {
-      setLoadingConversation(false);
-    }
-  }, [fetchConversation]);
+	// Show conversation for an active session
+	const handleShowConversation = useCallback(
+		async (
+			ccSessionId: string,
+			title: string,
+			subtitle: string,
+			isActive: boolean,
+		) => {
+			setViewingConversation({
+				sessionId: ccSessionId,
+				title,
+				subtitle,
+				isActive,
+			});
+			setLoadingConversation(true);
+			setConversation([]);
+			try {
+				const messages = await fetchConversation(ccSessionId);
+				setConversation(messages);
+			} finally {
+				setLoadingConversation(false);
+			}
+		},
+		[fetchConversation],
+	);
 
-  // Refresh conversation (for auto-refresh)
-  const handleRefreshConversation = useCallback(async () => {
-    if (!viewingConversation) return;
-    try {
-      const messages = await fetchConversation(viewingConversation.sessionId);
-      setConversation(messages);
-    } catch (err) {
-      console.error('Failed to refresh conversation:', err);
-    }
-  }, [viewingConversation, fetchConversation]);
+	// Refresh conversation (for auto-refresh)
+	const handleRefreshConversation = useCallback(async () => {
+		if (!viewingConversation) return;
+		try {
+			const messages = await fetchConversation(viewingConversation.sessionId);
+			setConversation(messages);
+		} catch (err) {
+			console.error("Failed to refresh conversation:", err);
+		}
+	}, [viewingConversation, fetchConversation]);
 
-  // Pane operations
-  const handlePaneAction = useCallback(async (sessionId: string, action: 'focus' | 'close' | 'split', paneId: string, direction?: 'h' | 'v') => {
-    try {
-      const endpoint = action === 'split'
-        ? `${API_BASE}/api/sessions/${sessionId}/panes/split`
-        : `${API_BASE}/api/sessions/${sessionId}/panes/${action}`;
-      const body = action === 'split'
-        ? { paneId, direction }
-        : { paneId };
-      const response = await authFetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!response.ok) {
-        console.error(`Pane ${action} failed: ${response.status}`);
-      }
-    } catch (err) {
-      console.error(`Pane ${action} failed:`, err);
-    }
-  }, []);
+	// Pane operations
+	const handlePaneAction = useCallback(
+		async (
+			sessionId: string,
+			action: "focus" | "close" | "split",
+			paneId: string,
+			direction?: "h" | "v",
+		) => {
+			try {
+				const endpoint =
+					action === "split"
+						? `${API_BASE}/api/sessions/${sessionId}/panes/split`
+						: `${API_BASE}/api/sessions/${sessionId}/panes/${action}`;
+				const body = action === "split" ? { paneId, direction } : { paneId };
+				const response = await authFetch(endpoint, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(body),
+				});
+				if (!response.ok) {
+					console.error(`Pane ${action} failed: ${response.status}`);
+				}
+			} catch (err) {
+				console.error(`Pane ${action} failed:`, err);
+			}
+		},
+		[],
+	);
 
-  // Drag-to-reorder handler
-  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
+	// Drag-to-reorder handler
+	const handleDragEnd = useCallback(
+		async (event: DragEndEvent) => {
+			const { active, over } = event;
+			if (!over || active.id === over.id) return;
 
-    const oldIndex = sessions.findIndex(s => s.id === active.id);
-    const newIndex = sessions.findIndex(s => s.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
+			const oldIndex = sessions.findIndex((s) => s.id === active.id);
+			const newIndex = sessions.findIndex((s) => s.id === over.id);
+			if (oldIndex === -1 || newIndex === -1) return;
 
-    // Compute new order
-    const newOrder = sessions.map(s => s.id);
-    const [moved] = newOrder.splice(oldIndex, 1);
-    newOrder.splice(newIndex, 0, moved);
+			// Compute new order
+			const newOrder = sessions.map((s) => s.id);
+			const [moved] = newOrder.splice(oldIndex, 1);
+			newOrder.splice(newIndex, 0, moved);
 
-    // Save to backend
-    try {
-      await authFetch(`${API_BASE}/api/sessions/order`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order: newOrder }),
-      });
-    } catch (err) {
-      console.error('Failed to save session order:', err);
-    }
-  }, [sessions]);
+			// Save to backend
+			try {
+				await authFetch(`${API_BASE}/api/sessions/order`, {
+					method: "PUT",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ order: newOrder }),
+				});
+			} catch (err) {
+				console.error("Failed to save session order:", err);
+			}
+		},
+		[sessions],
+	);
 
-  const [createError, setCreateError] = useState<string | null>(null);
+	const [createError, setCreateError] = useState<string | null>(null);
 
-  const handleCreateSession = async (name: string, workingDir?: string, agent?: AgentProvider) => {
-    setCreateError(null);
-    try {
-      const session = await createSession(name || undefined, workingDir, agent);
-      if (session) {
-        setShowCreateModal(false);
-        onSelectSession(session);
-      }
-    } catch (err) {
-      const error = err as Error & { data?: { error?: string; existingSession?: string } };
-      if (error.data?.error === 'duplicate_working_dir') {
-        setCreateError(t('session.duplicateWorkingDir', { name: error.data.existingSession || '' }));
-      } else {
-        setCreateError(error.message || t('common.error'));
-      }
-    }
-  };
+	const handleCreateSession = async (
+		name: string,
+		workingDir?: string,
+		agent?: AgentProvider,
+	) => {
+		setCreateError(null);
+		try {
+			const session = await createSession(name || undefined, workingDir, agent);
+			if (session) {
+				setShowCreateModal(false);
+				onSelectSession(session);
+			}
+		} catch (err) {
+			const error = err as Error & {
+				data?: { error?: string; existingSession?: string };
+			};
+			if (error.data?.error === "duplicate_working_dir") {
+				setCreateError(
+					t("session.duplicateWorkingDir", {
+						name: error.data.existingSession || "",
+					}),
+				);
+			} else {
+				setCreateError(error.message || t("common.error"));
+			}
+		}
+	};
 
-  const handleMenuDelete = async () => {
-    if (sessionForMenu) {
-      await deleteSession(sessionForMenu.id);
-      setSessionForMenu(null);
-    }
-  };
+	const handleMenuDelete = async () => {
+		if (sessionForMenu) {
+			await deleteSession(sessionForMenu.id);
+			setSessionForMenu(null);
+		}
+	};
 
-  const handleMenuChangeTheme = async (theme: SessionTheme | null) => {
-    if (sessionForMenu) {
-      await updateSessionTheme(sessionForMenu.id, theme);
-      setSessionForMenu(null);
-    }
-  };
+	const handleMenuChangeTheme = async (theme: SessionTheme | null) => {
+		if (sessionForMenu) {
+			await updateSessionTheme(sessionForMenu.id, theme);
+			setSessionForMenu(null);
+		}
+	};
 
-  const handleMenuChangeTitle = async (title: string | null) => {
-    if (sessionForMenu) {
-      try {
-        await authFetch(`${API_BASE}/api/sessions/${sessionForMenu.id}/title`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title }),
-        });
-        setSessionForMenu(null);
-      } catch (err) {
-        console.error('Failed to update title:', err);
-      }
-    }
-  };
+	const handleMenuChangeTitle = async (title: string | null) => {
+		if (sessionForMenu) {
+			try {
+				await authFetch(`${API_BASE}/api/sessions/${sessionForMenu.id}/title`, {
+					method: "PUT",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ title }),
+				});
+				setSessionForMenu(null);
+			} catch (err) {
+				console.error("Failed to update title:", err);
+			}
+		}
+	};
 
-  const handleMenuClose = () => {
-    setSessionForMenu(null);
-  };
+	const handleMenuClose = () => {
+		setSessionForMenu(null);
+	};
 
-  const handleShowMenu = (session: SessionResponse) => {
-    setSessionForMenu(session);
-  };
+	const handleShowMenu = (session: SessionResponse) => {
+		setSessionForMenu(session);
+	};
 
-  // Don't show loading screen during onboarding (need to show UI elements)
-  if (isLoading && sessions.length === 0 && !isOnboarding) {
-    return (
-      <div className={`flex items-center justify-center bg-[#0a0a0a] ${inline ? 'h-full' : 'h-screen'}`}>
-        <div className="text-zinc-500">{t('common.loading')}</div>
-      </div>
-    );
-  }
+	// Don't show loading screen during onboarding (need to show UI elements)
+	if (isLoading && sessions.length === 0 && !isOnboarding) {
+		return (
+			<div
+				className={`flex items-center justify-center bg-[#0a0a0a] ${inline ? "h-full" : "h-screen"}`}
+			>
+				<div className="text-zinc-500">{t("common.loading")}</div>
+			</div>
+		);
+	}
 
+	// Filter sessions by search query
+	const filteredSessions = searchQuery
+		? sessions.filter((s) => {
+				const q = searchQuery.toLowerCase();
+				return (
+					s.name.toLowerCase().includes(q) ||
+					(s.customTitle || "").toLowerCase().includes(q) ||
+					(s.currentPath || "").toLowerCase().includes(q) ||
+					(s.ccFirstPrompt || "").toLowerCase().includes(q) ||
+					(s.ccSummary || "").toLowerCase().includes(q) ||
+					(s.ccRecap || "").toLowerCase().includes(q)
+				);
+			})
+		: sessions;
 
-  // Filter sessions by search query
-  const filteredSessions = searchQuery
-    ? sessions.filter(s => {
-        const q = searchQuery.toLowerCase();
-        return s.name.toLowerCase().includes(q)
-          || (s.customTitle || '').toLowerCase().includes(q)
-          || (s.currentPath || '').toLowerCase().includes(q)
-          || (s.ccFirstPrompt || '').toLowerCase().includes(q)
-          || (s.ccSummary || '').toLowerCase().includes(q)
-          || (s.ccRecap || '').toLowerCase().includes(q);
-      })
-    : sessions;
+	const isDraggable = !searchQuery; // Disable drag during search
 
-  const isDraggable = !searchQuery; // Disable drag during search
+	const containerClass = inline
+		? "h-full flex flex-col bg-[#0a0a0a] text-white overflow-hidden"
+		: "h-screen flex flex-col bg-[#0a0a0a] text-white";
 
-  const containerClass = inline
-    ? "h-full flex flex-col bg-[#0a0a0a] text-white overflow-hidden"
-    : "h-screen flex flex-col bg-[#0a0a0a] text-white";
+	return (
+		<div className={containerClass}>
+			{/* ─── Header: frosted glass ─── */}
+			<div className="shrink-0 px-4 pt-3 pb-2 bg-[#0a0a0a]/80 backdrop-blur-xl border-b border-white/[0.06] sticky top-0 z-10">
+				<div className="max-w-lg">
+					{/* Top row: title + actions */}
+					<div className="flex items-center justify-between mb-3">
+						<div className="flex items-center gap-2">
+							{onBack && (
+								<button
+									type="button"
+									onClick={onBack}
+									className="p-1.5 -ml-1.5 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
+								>
+									<ChevronLeft className="w-[18px] h-[18px]" />
+								</button>
+							)}
+							<h1 className="text-[18px] font-semibold tracking-[-0.02em] text-white">
+								Sessions
+							</h1>
+						</div>
+						<div className="flex items-center gap-1">
+							<button
+								type="button"
+								onClick={() => setShowSearch(!showSearch)}
+								className="p-2 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
+							>
+								<Search className="w-[18px] h-[18px]" />
+							</button>
+							<button
+								type="button"
+								onClick={() => setShowCreateModal(true)}
+								className="p-2 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
+								data-onboarding="new-session"
+							>
+								<Plus className="w-[18px] h-[18px]" />
+							</button>
+							{onClose && (
+								<button
+									type="button"
+									onClick={onClose}
+									className="p-2 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
+								>
+									<X className="w-[18px] h-[18px]" />
+								</button>
+							)}
+						</div>
+					</div>
 
-  return (
-    <div className={containerClass}>
-      {/* ─── Header: frosted glass ─── */}
-      <div className="shrink-0 px-4 pt-3 pb-2 bg-[#0a0a0a]/80 backdrop-blur-xl border-b border-white/[0.06] sticky top-0 z-10">
-        <div className="max-w-lg">
-          {/* Top row: title + actions */}
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              {onBack && (
-                <button
-                  onClick={onBack}
-                  className="p-1.5 -ml-1.5 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
-                >
-                  <ChevronLeft className="w-[18px] h-[18px]" />
-                </button>
-              )}
-              <h1 className="text-[18px] font-semibold tracking-[-0.02em] text-white">
-                Sessions
-              </h1>
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setShowSearch(!showSearch)}
-                className="p-2 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
-              >
-                <Search className="w-[18px] h-[18px]" />
-              </button>
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="p-2 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
-                data-onboarding="new-session"
-              >
-                <Plus className="w-[18px] h-[18px]" />
-              </button>
-              {onClose && (
-                <button
-                  onClick={onClose}
-                  className="p-2 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
-                >
-                  <X className="w-[18px] h-[18px]" />
-                </button>
-              )}
-            </div>
-          </div>
+					{/* Search bar (expandable) */}
+					{showSearch && (
+						<div className="mb-2">
+							<div className="relative max-w-sm">
+								<Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+								<input
+									// biome-ignore lint/a11y/noAutofocus: search input is only mounted on user toggle; immediate focus is expected UX
+									autoFocus
+									value={searchQuery}
+									onChange={(e) => setSearchQuery(e.target.value)}
+									placeholder={`${t("session.title")}...`}
+									className="w-full pl-9 pr-3 py-2 bg-white/[0.05] border border-white/[0.08] rounded-lg text-[13px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all"
+								/>
+								{searchQuery && (
+									<button
+										type="button"
+										onClick={() => setSearchQuery("")}
+										className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-zinc-500 hover:text-zinc-300"
+									>
+										<X className="w-3.5 h-3.5" />
+									</button>
+								)}
+							</div>
+						</div>
+					)}
 
-          {/* Search bar (expandable) */}
-          {showSearch && (
-            <div className="mb-2">
-              <div className="relative max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-                <input
-                  autoFocus
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={t('session.title') + '...'}
-                  className="w-full pl-9 pr-3 py-2 bg-white/[0.05] border border-white/[0.08] rounded-lg text-[13px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-zinc-500 hover:text-zinc-300"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
+					{/* Segmented tabs */}
+					<div className="inline-flex bg-white/[0.04] rounded-lg p-0.5">
+						<button
+							type="button"
+							onClick={() => setActiveTab("sessions")}
+							className={`px-5 py-1.5 text-[13px] font-medium rounded-md transition-all duration-200 ${
+								activeTab === "sessions"
+									? "bg-white/[0.09] text-white shadow-sm"
+									: "text-zinc-500 hover:text-zinc-400"
+							}`}
+						>
+							{t("session.title")}
+						</button>
+						<button
+							type="button"
+							onClick={() => setActiveTab("history")}
+							className={`px-5 py-1.5 text-[13px] font-medium rounded-md transition-all duration-200 ${
+								activeTab === "history"
+									? "bg-white/[0.09] text-white shadow-sm"
+									: "text-zinc-500 hover:text-zinc-400"
+							}`}
+							data-onboarding="history-tab"
+						>
+							{t("history.title")}
+						</button>
+					</div>
+				</div>
+			</div>
 
-          {/* Segmented tabs */}
-          <div className="inline-flex bg-white/[0.04] rounded-lg p-0.5">
-            <button
-              onClick={() => setActiveTab('sessions')}
-              className={`px-5 py-1.5 text-[13px] font-medium rounded-md transition-all duration-200 ${
-                activeTab === 'sessions'
-                  ? 'bg-white/[0.09] text-white shadow-sm'
-                  : 'text-zinc-500 hover:text-zinc-400'
-              }`}
-            >
-              {t('session.title')}
-            </button>
-            <button
-              onClick={() => setActiveTab('history')}
-              className={`px-5 py-1.5 text-[13px] font-medium rounded-md transition-all duration-200 ${
-                activeTab === 'history'
-                  ? 'bg-white/[0.09] text-white shadow-sm'
-                  : 'text-zinc-500 hover:text-zinc-400'
-              }`}
-              data-onboarding="history-tab"
-            >
-              {t('history.title')}
-            </button>
-          </div>
-        </div>
-      </div>
+			{/* Error message */}
+			{error && activeTab === "sessions" && (
+				<div className="px-4 py-2.5 bg-red-900/30 text-red-400 text-[12px] border-b border-red-500/20 shrink-0">
+					{error}
+				</div>
+			)}
 
-      {/* Error message */}
-      {error && activeTab === 'sessions' && (
-        <div className="px-4 py-2.5 bg-red-900/30 text-red-400 text-[12px] border-b border-red-500/20 shrink-0">
-          {error}
-        </div>
-      )}
+			{/* ─── Content ─── */}
+			<div className="flex-1 min-h-0 overflow-hidden">
+				<div
+					className="h-full"
+					style={
+						contentScale
+							? {
+									transform: `scale(${contentScale})`,
+									transformOrigin: "top left",
+									width: `${100 / contentScale}%`,
+									height: `${100 / contentScale}%`,
+								}
+							: undefined
+					}
+				>
+					{activeTab === "sessions" && (
+						<div className="h-full overflow-y-auto overscroll-contain">
+							<div className="px-3 py-3">
+								{/* Hook configuration banner */}
+								{hookConfigured === false && !hookBannerDismissed && (
+									<div className="mb-3 p-2.5 bg-amber-900/20 border border-amber-700/30 rounded-lg text-[12px] text-amber-400 flex items-start gap-2">
+										<span className="flex-1">
+											{t("onboarding.hookNotConfigured")}
+										</span>
+										<button
+											type="button"
+											onClick={async () => {
+												// Find the first available session to send the setup prompt
+												const target = sessions[0];
+												if (!target) return;
+												try {
+													const res = await authFetch(
+														`${API_BASE}/api/sessions/${encodeURIComponent(target.id)}/prompt`,
+														{
+															method: "POST",
+															headers: { "Content-Type": "application/json" },
+															body: JSON.stringify({
+																text: t("onboarding.hookSetupPrompt"),
+															}),
+														},
+													);
+													if (res.ok) {
+														setHookBannerDismissed(true);
+														localStorage.setItem(
+															"cchub-hook-banner-dismissed",
+															"1",
+														);
+														onSelectSession(target);
+													}
+												} catch {}
+											}}
+											className="shrink-0 text-blue-400 hover:text-blue-300"
+										>
+											{t("onboarding.hookSetupAction")}
+										</button>
+										<button
+											type="button"
+											onClick={() => {
+												setHookBannerDismissed(true);
+												localStorage.setItem(
+													"cchub-hook-banner-dismissed",
+													"1",
+												);
+											}}
+											className="shrink-0 text-amber-500 hover:text-amber-300"
+										>
+											{t("onboarding.hookNotConfiguredDismiss")}
+										</button>
+									</div>
+								)}
 
-      {/* ─── Content ─── */}
-      <div className="flex-1 min-h-0 overflow-hidden">
-        <div
-          className="h-full"
-          style={contentScale ? {
-            transform: `scale(${contentScale})`,
-            transformOrigin: 'top left',
-            width: `${100 / contentScale}%`,
-            height: `${100 / contentScale}%`,
-          } : undefined}
-        >
-          {activeTab === 'sessions' && (
-            <div className="h-full overflow-y-auto overscroll-contain">
-              <div className="px-3 py-3">
-                {/* Hook configuration banner */}
-                {hookConfigured === false && !hookBannerDismissed && (
-                  <div className="mb-3 p-2.5 bg-amber-900/20 border border-amber-700/30 rounded-lg text-[12px] text-amber-400 flex items-start gap-2">
-                    <span className="flex-1">{t('onboarding.hookNotConfigured')}</span>
-                    <button
-                      onClick={async () => {
-                        // Find the first available session to send the setup prompt
-                        const target = sessions[0];
-                        if (!target) return;
-                        try {
-                          const res = await authFetch(`${API_BASE}/api/sessions/${encodeURIComponent(target.id)}/prompt`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ text: t('onboarding.hookSetupPrompt') }),
-                          });
-                          if (res.ok) {
-                            setHookBannerDismissed(true);
-                            localStorage.setItem('cchub-hook-banner-dismissed', '1');
-                            onSelectSession(target);
-                          }
-                        } catch {}
-                      }}
-                      className="shrink-0 text-blue-400 hover:text-blue-300"
-                    >
-                      {t('onboarding.hookSetupAction')}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setHookBannerDismissed(true);
-                        localStorage.setItem('cchub-hook-banner-dismissed', '1');
-                      }}
-                      className="shrink-0 text-amber-500 hover:text-amber-300"
-                    >
-                      {t('onboarding.hookNotConfiguredDismiss')}
-                    </button>
-                  </div>
-                )}
+								{filteredSessions.length === 0 && sessions.length === 0 ? (
+									<div className="text-center text-zinc-600 py-12">
+										<p className="text-[14px]">{t("session.noSessions")}</p>
+										<p className="text-[12px] mt-1">
+											{t("session.noSessionsHint")}
+										</p>
+									</div>
+								) : filteredSessions.length === 0 && searchQuery ? (
+									<div className="text-center text-zinc-600 py-12">
+										<p className="text-[13px]">No matching sessions</p>
+									</div>
+								) : (
+									<>
+										<DndContext
+											collisionDetection={closestCenter}
+											onDragEnd={handleDragEnd}
+										>
+											<SortableContext
+												items={filteredSessions.map((s) => s.id)}
+												strategy={verticalListSortingStrategy}
+												disabled={!isDraggable}
+											>
+												<div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+													{filteredSessions.map((session, index) => (
+														<SortableSessionItem
+															key={session.id}
+															session={session}
+															index={index}
+															isDraggable={isDraggable}
+															onSelect={onSelectSession}
+															onSelectPane={onSelectPane}
+															onShowMenu={handleShowMenu}
+															onResume={handleResume}
+															onDelete={(id) => deleteSession(id)}
+															onShowConversation={handleShowConversation}
+															onPaneAction={handlePaneAction}
+															onClosePane={(sid, pid, name) =>
+																setPaneToClose({
+																	sessionId: sid,
+																	paneId: pid,
+																	name,
+																})
+															}
+														/>
+													))}
+												</div>
+											</SortableContext>
+										</DndContext>
 
-                {filteredSessions.length === 0 && sessions.length === 0 ? (
-                  <div className="text-center text-zinc-600 py-12">
-                    <p className="text-[14px]">{t('session.noSessions')}</p>
-                    <p className="text-[12px] mt-1">{t('session.noSessionsHint')}</p>
-                  </div>
-                ) : filteredSessions.length === 0 && searchQuery ? (
-                  <div className="text-center text-zinc-600 py-12">
-                    <p className="text-[13px]">No matching sessions</p>
-                  </div>
-                ) : (
-                  <>
-                    <DndContext
-                      collisionDetection={closestCenter}
-                      onDragEnd={handleDragEnd}
-                    >
-                      <SortableContext
-                        items={filteredSessions.map(s => s.id)}
-                        strategy={verticalListSortingStrategy}
-                        disabled={!isDraggable}
-                      >
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
-                          {filteredSessions.map((session, index) => (
-                            <SortableSessionItem
-                              key={session.id}
-                              session={session}
-                              index={index}
-                              isDraggable={isDraggable}
-                              onSelect={onSelectSession}
-                              onSelectPane={onSelectPane}
-                              onShowMenu={handleShowMenu}
-                              onResume={handleResume}
-                              onDelete={(id) => deleteSession(id)}
-                              onShowConversation={handleShowConversation}
-                              onPaneAction={handlePaneAction}
-                              onClosePane={(sid, pid, name) => setPaneToClose({ sessionId: sid, paneId: pid, name })}
-                            />
-                          ))}
-                        </div>
-                      </SortableContext>
-                    </DndContext>
+										{/* New session button at bottom */}
+										<button
+											type="button"
+											onClick={() => setShowCreateModal(true)}
+											className="mt-4 sm:mt-3 sm:w-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-dashed border-white/[0.08] text-zinc-500 hover:text-zinc-400 hover:border-white/[0.12] hover:bg-white/[0.02] transition-all max-sm:w-full max-sm:justify-center"
+										>
+											<Plus className="w-4 h-4" />
+											<span className="text-[13px]">
+												{t("session.newSession")}
+											</span>
+										</button>
+									</>
+								)}
+							</div>
+						</div>
+					)}
 
-                    {/* New session button at bottom */}
-                    <button
-                      onClick={() => setShowCreateModal(true)}
-                      className="mt-4 sm:mt-3 sm:w-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-dashed border-white/[0.08] text-zinc-500 hover:text-zinc-400 hover:border-white/[0.12] hover:bg-white/[0.02] transition-all max-sm:w-full max-sm:justify-center"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span className="text-[13px]">{t('session.newSession')}</span>
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
+					{activeTab === "history" && (
+						<div className="h-full overflow-y-auto overscroll-contain">
+							<SessionHistory
+								onSelectSession={onSelectSession}
+								onSessionResumed={() => {
+									setActiveTab("sessions");
+								}}
+								activeSessions={sessions}
+							/>
+						</div>
+					)}
+				</div>
+			</div>
 
-          {activeTab === 'history' && (
-            <div className="h-full overflow-y-auto overscroll-contain">
-              <SessionHistory
-                onSelectSession={onSelectSession}
-                onSessionResumed={() => {
-                  setActiveTab('sessions');
-                }}
-                activeSessions={sessions}
-              />
-            </div>
-          )}
-        </div>
-      </div>
+			{/* Pane close confirmation dialog */}
+			{paneToClose && (
+				<div
+					className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay)] animate-backdrop-in"
+					onClick={() => setPaneToClose(null)}
+				>
+					<div
+						className="bg-th-surface rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl animate-modal-in"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<h3 className="text-lg font-bold text-th-text mb-2">Close Pane</h3>
+						<p className="text-th-text-secondary mb-4">
+							<span className="font-medium text-th-text">
+								{paneToClose.name}
+							</span>{" "}
+							を閉じますか？
+						</p>
+						<div className="flex gap-3 justify-end">
+							<button
+								type="button"
+								onClick={() => setPaneToClose(null)}
+								className="px-4 py-2 bg-th-surface-active hover:bg-th-surface-hover rounded font-medium transition-colors text-th-text"
+							>
+								キャンセル
+							</button>
+							<button
+								type="button"
+								onClick={async () => {
+									try {
+										await authFetch(
+											`${API_BASE}/api/sessions/${encodeURIComponent(paneToClose.sessionId)}/panes/close`,
+											{
+												method: "POST",
+												headers: { "Content-Type": "application/json" },
+												body: JSON.stringify({ paneId: paneToClose.paneId }),
+											},
+										);
+									} catch {}
+									setPaneToClose(null);
+								}}
+								className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded font-medium transition-colors text-white"
+							>
+								閉じる
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 
-      {/* Pane close confirmation dialog */}
-      {paneToClose && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay)] animate-backdrop-in" onClick={() => setPaneToClose(null)}>
-          <div className="bg-th-surface rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl animate-modal-in" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-th-text mb-2">Close Pane</h3>
-            <p className="text-th-text-secondary mb-4">
-              <span className="font-medium text-th-text">{paneToClose.name}</span> を閉じますか？
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setPaneToClose(null)}
-                className="px-4 py-2 bg-th-surface-active hover:bg-th-surface-hover rounded font-medium transition-colors text-th-text"
-              >
-                キャンセル
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    await authFetch(`${API_BASE}/api/sessions/${encodeURIComponent(paneToClose.sessionId)}/panes/close`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ paneId: paneToClose.paneId }),
-                    });
-                  } catch {}
-                  setPaneToClose(null);
-                }}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded font-medium transition-colors text-white"
-              >
-                閉じる
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+			{/* Session menu dialog */}
+			{sessionForMenu && (
+				<SessionMenuDialog
+					session={sessionForMenu}
+					onChangeTheme={handleMenuChangeTheme}
+					onChangeTitle={handleMenuChangeTitle}
+					onDelete={handleMenuDelete}
+					onCancel={handleMenuClose}
+				/>
+			)}
 
-      {/* Session menu dialog */}
-      {sessionForMenu && (
-        <SessionMenuDialog
-          session={sessionForMenu}
-          onChangeTheme={handleMenuChangeTheme}
-          onChangeTitle={handleMenuChangeTitle}
-          onDelete={handleMenuDelete}
-          onCancel={handleMenuClose}
-        />
-      )}
+			{/* Create session modal */}
+			{showCreateModal && (
+				<CreateSessionModal
+					onConfirm={handleCreateSession}
+					onCancel={() => {
+						setShowCreateModal(false);
+						setCreateError(null);
+					}}
+					existingNames={new Set(sessions.map((s) => s.name))}
+					externalError={createError}
+				/>
+			)}
 
-      {/* Create session modal */}
-      {showCreateModal && (
-        <CreateSessionModal
-          onConfirm={handleCreateSession}
-          onCancel={() => { setShowCreateModal(false); setCreateError(null); }}
-          existingNames={new Set(sessions.map(s => s.name))}
-          externalError={createError}
-        />
-      )}
-
-      {/* Conversation viewer modal */}
-      {viewingConversation && (
-        <ConversationViewer
-          title={viewingConversation.title}
-          subtitle={viewingConversation.subtitle}
-          messages={conversation}
-          isLoading={loadingConversation}
-          onClose={() => setViewingConversation(null)}
-          isActive={viewingConversation.isActive}
-          onRefresh={handleRefreshConversation}
-        />
-      )}
-    </div>
-  );
+			{/* Conversation viewer modal */}
+			{viewingConversation && (
+				<ConversationViewer
+					title={viewingConversation.title}
+					subtitle={viewingConversation.subtitle}
+					messages={conversation}
+					isLoading={loadingConversation}
+					onClose={() => setViewingConversation(null)}
+					isActive={viewingConversation.isActive}
+					onRefresh={handleRefreshConversation}
+				/>
+			)}
+		</div>
+	);
 }

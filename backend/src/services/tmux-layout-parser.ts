@@ -183,20 +183,21 @@ export function toFrontendLayout(node: TmuxLayoutNode): {
     };
   }
 
-  const children = (node.children || []).map(toFrontendLayout);
+  const nodeChildren = node.children ?? [];
+  const children = nodeChildren.map(toFrontendLayout);
 
   // Calculate ratios from absolute sizes
   // tmux 'horizontal' split = side by side = our 'horizontal' (width-based ratio)
   // tmux 'vertical' split = stacked = our 'vertical' (height-based ratio)
   const isHorizontal = node.type === 'horizontal';
-  const totalSize = node.children!.reduce(
+  const totalSize = nodeChildren.reduce(
     (sum, c) => sum + (isHorizontal ? c.width : c.height),
     0,
   );
 
-  const ratio = node.children!.map(c => {
+  const ratio = nodeChildren.map(c => {
     const size = isHorizontal ? c.width : c.height;
-    return totalSize > 0 ? (size / totalSize) * 100 : 100 / node.children!.length;
+    return totalSize > 0 ? (size / totalSize) * 100 : 100 / nodeChildren.length;
   });
 
   return {

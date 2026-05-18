@@ -1,60 +1,60 @@
-@import 'tailwindcss';
+@import "tailwindcss";
 
 /* Theme CSS variables: dark = default, light = data-theme="light" */
 :root {
-  /* Brand / Accent */
-  --color-brand: #3b82f6;
-  --color-brand-dim: #2563eb;
-  --color-brand-glow: rgba(59, 130, 246, 0.3);
+	/* Brand / Accent */
+	--color-brand: #3b82f6;
+	--color-brand-dim: #2563eb;
+	--color-brand-glow: rgba(59, 130, 246, 0.3);
 
-  /* Surfaces */
-  --color-bg: #0a0a0a;
-  --color-surface: #141414;
-  --color-surface-hover: #1e1e1e;
-  --color-surface-active: #262626;
-  --color-overlay: rgba(0, 0, 0, 0.6);
+	/* Surfaces */
+	--color-bg: #0a0a0a;
+	--color-surface: #141414;
+	--color-surface-hover: #1e1e1e;
+	--color-surface-active: #262626;
+	--color-overlay: rgba(0, 0, 0, 0.6);
 
-  /* Text */
-  --color-text: #fafafa;
-  --color-text-secondary: #a1a1aa;
-  --color-text-muted: #71717a;
+	/* Text */
+	--color-text: #fafafa;
+	--color-text-secondary: #a1a1aa;
+	--color-text-muted: #71717a;
 
-  /* Borders */
-  --color-border: #262626;
-  --color-border-dim: #1a1a1a;
+	/* Borders */
+	--color-border: #262626;
+	--color-border-dim: #1a1a1a;
 
-  /* Semantic */
-  --color-success: #22c55e;
-  --color-warning: #f59e0b;
-  --color-error: #ef4444;
+	/* Semantic */
+	--color-success: #22c55e;
+	--color-warning: #f59e0b;
+	--color-error: #ef4444;
 
-  /* Typography */
-  font-family: 'Inter', 'Noto Sans JP', system-ui, -apple-system, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  font-size: 14px;
-  color: var(--color-text);
-  background-color: var(--color-bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+	/* Typography */
+	font-family: "Inter", "Noto Sans JP", system-ui, -apple-system, sans-serif;
+	line-height: 1.5;
+	font-weight: 400;
+	font-size: 14px;
+	color: var(--color-text);
+	background-color: var(--color-bg);
+	font-synthesis: none;
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
 }
 
 [data-theme="light"] {
-  --color-bg: #ffffff;
-  --color-surface: #fafafa;
-  --color-surface-hover: #f4f4f5;
-  --color-surface-active: #e4e4e7;
-  --color-overlay: rgba(0, 0, 0, 0.5);
-  --color-text: #09090b;
-  --color-text-secondary: #52525b;
-  --color-text-muted: #a1a1aa;
-  --color-border: #e4e4e7;
-  --color-border-dim: #f4f4f5;
-  --color-brand: #2563eb;
-  --color-brand-dim: #1d4ed8;
-  --color-brand-glow: rgba(37, 99, 235, 0.3);
+	--color-bg: #ffffff;
+	--color-surface: #fafafa;
+	--color-surface-hover: #f4f4f5;
+	--color-surface-active: #e4e4e7;
+	--color-overlay: rgba(0, 0, 0, 0.5);
+	--color-text: #09090b;
+	--color-text-secondary: #52525b;
+	--color-text-muted: #a1a1aa;
+	--color-border: #e4e4e7;
+	--color-border-dim: #f4f4f5;
+	--color-brand: #2563eb;
+	--color-brand-dim: #1d4ed8;
+	--color-brand-glow: rgba(37, 99, 235, 0.3);
 }
 
 /* Tailwind v4 @theme: generate th-* utility classes from CSS variables */
@@ -75,74 +75,86 @@
   --color-th-error: var(--color-error);
 }
 
-html, body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  height: var(--vh, 100dvh);
-  overflow: hidden;
-  overscroll-behavior: none;
+html,
+body {
+	margin: 0;
+	padding: 0;
+	height: 100%;
+	height: var(--vh, 100dvh);
+	overflow: hidden;
+	overscroll-behavior: none;
 }
 
 #root {
-  height: 100%;
-  height: var(--vh, 100dvh);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+	height: 100%;
+	height: var(--vh, 100dvh);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
 }
 
 /* On desktop (mouse pointer), allow text selection inside terminal panes.
    Many components use Tailwind's select-none to prevent accidental selection on
    touch devices, but this also blocks xterm.js mouse-based selection on desktop. */
 @media (pointer: fine) {
-  .terminal.xterm,
-  .terminal.xterm * {
-    user-select: auto !important;
-    -webkit-user-select: auto !important;
-  }
+	.terminal.xterm,
+	.terminal.xterm * {
+		user-select: auto !important;
+		-webkit-user-select: auto !important;
+	}
 }
 
 /* Hide xterm.js native scrollbar - scrolling is handled via touch gestures and wheel events */
 .xterm-viewport {
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE/Edge */
+	scrollbar-width: none; /* Firefox */
+	-ms-overflow-style: none; /* IE/Edge */
 }
 .xterm-viewport::-webkit-scrollbar {
-  display: none; /* Chrome/Safari/Android */
+	display: none; /* Chrome/Safari/Android */
 }
 
 /* Modal animation */
 @keyframes modal-in {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+	from {
+		opacity: 0;
+		transform: scale(0.95);
+	}
+	to {
+		opacity: 1;
+		transform: scale(1);
+	}
 }
 
 @keyframes modal-backdrop-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
 }
 
 .animate-modal-in {
-  animation: modal-in 0.15s ease-out;
+	animation: modal-in 0.15s ease-out;
 }
 
 .animate-backdrop-in {
-  animation: modal-backdrop-in 0.15s ease-out;
+	animation: modal-backdrop-in 0.15s ease-out;
 }
 
 /* Status glow for waiting state */
 @keyframes status-glow {
-  0%, 100% { box-shadow: 0 0 4px var(--color-brand-glow); }
-  50% { box-shadow: 0 0 8px var(--color-brand-glow), 0 0 16px var(--color-brand-glow); }
+	0%,
+	100% {
+		box-shadow: 0 0 4px var(--color-brand-glow);
+	}
+	50% {
+		box-shadow:
+			0 0 8px var(--color-brand-glow),
+			0 0 16px var(--color-brand-glow);
+	}
 }
 
 .animate-status-glow {
-  animation: status-glow 2s ease-in-out infinite;
+	animation: status-glow 2s ease-in-out infinite;
 }

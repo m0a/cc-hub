@@ -1,328 +1,371 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { WrapText, Eye } from 'lucide-react';
-import hljs from 'highlight.js';
-import 'highlight.js/styles/github-dark.css';
-import { useLineSelection } from '../../hooks/useLineSelection';
-import { PromptComposer } from './PromptComposer';
+/** biome-ignore-all lint/correctness/useExhaustiveDependencies: depends on refs and setters that React guarantees stable; adding them would cause unintended re-runs */
+/** biome-ignore-all lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: legacy click-on-div UI; keyboard navigation provided via main shortcuts */
+import hljs from "highlight.js";
+import { Eye, WrapText } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import "highlight.js/styles/github-dark.css";
+import { useLineSelection } from "../../hooks/useLineSelection";
+import { PromptComposer } from "./PromptComposer";
 
-const WORDWRAP_STORAGE_KEY = 'cchub-wordwrap';
-const FONTSIZE_STORAGE_KEY = 'cchub-fontsize';
+const WORDWRAP_STORAGE_KEY = "cchub-wordwrap";
+const FONTSIZE_STORAGE_KEY = "cchub-fontsize";
 const DEFAULT_FONTSIZE = 14;
 const MIN_FONTSIZE = 8;
 const MAX_FONTSIZE = 32;
 
 function getWordWrapSetting(fileName: string): boolean {
-  try {
-    const stored = localStorage.getItem(WORDWRAP_STORAGE_KEY);
-    if (stored) {
-      const settings = JSON.parse(stored);
-      return settings[fileName] ?? true; // デフォルトはtrue
-    }
-  } catch {
-    // ignore
-  }
-  return true; // デフォルトはtrue
+	try {
+		const stored = localStorage.getItem(WORDWRAP_STORAGE_KEY);
+		if (stored) {
+			const settings = JSON.parse(stored);
+			return settings[fileName] ?? true; // デフォルトはtrue
+		}
+	} catch {
+		// ignore
+	}
+	return true; // デフォルトはtrue
 }
 
 function setWordWrapSetting(fileName: string, value: boolean) {
-  try {
-    const stored = localStorage.getItem(WORDWRAP_STORAGE_KEY);
-    const settings = stored ? JSON.parse(stored) : {};
-    settings[fileName] = value;
-    localStorage.setItem(WORDWRAP_STORAGE_KEY, JSON.stringify(settings));
-  } catch {
-    // ignore
-  }
+	try {
+		const stored = localStorage.getItem(WORDWRAP_STORAGE_KEY);
+		const settings = stored ? JSON.parse(stored) : {};
+		settings[fileName] = value;
+		localStorage.setItem(WORDWRAP_STORAGE_KEY, JSON.stringify(settings));
+	} catch {
+		// ignore
+	}
 }
 
 function getFontSizeSetting(): number {
-  try {
-    const stored = localStorage.getItem(FONTSIZE_STORAGE_KEY);
-    if (stored) {
-      const size = parseInt(stored, 10);
-      if (!Number.isNaN(size) && size >= MIN_FONTSIZE && size <= MAX_FONTSIZE) {
-        return size;
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return DEFAULT_FONTSIZE;
+	try {
+		const stored = localStorage.getItem(FONTSIZE_STORAGE_KEY);
+		if (stored) {
+			const size = parseInt(stored, 10);
+			if (!Number.isNaN(size) && size >= MIN_FONTSIZE && size <= MAX_FONTSIZE) {
+				return size;
+			}
+		}
+	} catch {
+		// ignore
+	}
+	return DEFAULT_FONTSIZE;
 }
 
 function setFontSizeSetting(size: number) {
-  try {
-    localStorage.setItem(FONTSIZE_STORAGE_KEY, String(size));
-  } catch {
-    // ignore
-  }
+	try {
+		localStorage.setItem(FONTSIZE_STORAGE_KEY, String(size));
+	} catch {
+		// ignore
+	}
 }
 
 // Calculate distance between two touch points
 function getTouchDistance(touches: TouchList): number {
-  if (touches.length < 2) return 0;
-  const dx = touches[0].clientX - touches[1].clientX;
-  const dy = touches[0].clientY - touches[1].clientY;
-  return Math.sqrt(dx * dx + dy * dy);
+	if (touches.length < 2) return 0;
+	const dx = touches[0].clientX - touches[1].clientX;
+	const dy = touches[0].clientY - touches[1].clientY;
+	return Math.sqrt(dx * dx + dy * dy);
 }
 
 // Split highlighted HTML into lines, handling unclosed span tags
 function splitHighlightedHtml(html: string): string[] {
-  const rawLines = html.split('\n');
-  const result: string[] = [];
-  let openTags: string[] = [];
+	const rawLines = html.split("\n");
+	const result: string[] = [];
+	let openTags: string[] = [];
 
-  for (const rawLine of rawLines) {
-    const line = openTags.join('') + rawLine;
-    const tags: string[] = [];
-    const tagRe = /<(\/?)span([^>]*)>/g;
-    let m: RegExpExecArray | null = tagRe.exec(line);
-    while (m !== null) {
-      if (m[1] === '/') {
-        if (tags.length > 0) tags.pop();
-      } else {
-        tags.push(m[0]);
-      }
-      m = tagRe.exec(line);
-    }
-    result.push(line + '</span>'.repeat(tags.length));
-    openTags = tags;
-  }
+	for (const rawLine of rawLines) {
+		const line = openTags.join("") + rawLine;
+		const tags: string[] = [];
+		const tagRe = /<(\/?)span([^>]*)>/g;
+		let m: RegExpExecArray | null = tagRe.exec(line);
+		while (m !== null) {
+			if (m[1] === "/") {
+				if (tags.length > 0) tags.pop();
+			} else {
+				tags.push(m[0]);
+			}
+			m = tagRe.exec(line);
+		}
+		result.push(line + "</span>".repeat(tags.length));
+		openTags = tags;
+	}
 
-  return result;
+	return result;
 }
 
 interface CodeViewerProps {
-  content: string;
-  language?: string;
-  fileName?: string;
-  filePath?: string;
-  showLineNumbers?: boolean;
-  truncated?: boolean;
-  onCopyPrompt?: (text: string) => void;
-  onTogglePreview?: () => void;
-  hasPreview?: boolean;
-  initialScrollRatio?: number;
-  onScrollRatioChange?: (ratio: number) => void;
+	content: string;
+	language?: string;
+	fileName?: string;
+	filePath?: string;
+	showLineNumbers?: boolean;
+	truncated?: boolean;
+	onCopyPrompt?: (text: string) => void;
+	onTogglePreview?: () => void;
+	hasPreview?: boolean;
+	initialScrollRatio?: number;
+	onScrollRatioChange?: (ratio: number) => void;
 }
 
 export function CodeViewer({
-  content,
-  language = 'plaintext',
-  fileName,
-  filePath,
-  showLineNumbers = true,
-  truncated = false,
-  onCopyPrompt,
-  onTogglePreview,
-  hasPreview = false,
-  initialScrollRatio = 0,
-  onScrollRatioChange,
+	content,
+	language = "plaintext",
+	fileName,
+	filePath,
+	showLineNumbers = true,
+	truncated = false,
+	onCopyPrompt,
+	onTogglePreview,
+	hasPreview = false,
+	initialScrollRatio = 0,
+	onScrollRatioChange,
 }: CodeViewerProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [wordWrap, setWordWrap] = useState(() => getWordWrapSetting(fileName || ''));
-  const [fontSize, setFontSize] = useState(() => getFontSizeSetting());
-  const { selection, handleLineClick, isLineSelected, clearSelection } = useLineSelection();
+	const containerRef = useRef<HTMLDivElement>(null);
+	const [wordWrap, setWordWrap] = useState(() =>
+		getWordWrapSetting(fileName || ""),
+	);
+	const [fontSize, setFontSize] = useState(() => getFontSizeSetting());
+	const { selection, handleLineClick, isLineSelected, clearSelection } =
+		useLineSelection();
 
-  // Pinch zoom state
-  const pinchStateRef = useRef<{
-    initialDistance: number;
-    initialFontSize: number;
-  } | null>(null);
+	// Pinch zoom state
+	const pinchStateRef = useRef<{
+		initialDistance: number;
+		initialFontSize: number;
+	} | null>(null);
 
-  const toggleWordWrap = useCallback(() => {
-    const newValue = !wordWrap;
-    setWordWrap(newValue);
-    if (fileName) {
-      setWordWrapSetting(fileName, newValue);
-    }
-  }, [wordWrap, fileName]);
+	const toggleWordWrap = useCallback(() => {
+		const newValue = !wordWrap;
+		setWordWrap(newValue);
+		if (fileName) {
+			setWordWrapSetting(fileName, newValue);
+		}
+	}, [wordWrap, fileName]);
 
-  // Reset font size to default
-  const resetFontSize = useCallback(() => {
-    setFontSize(DEFAULT_FONTSIZE);
-    setFontSizeSetting(DEFAULT_FONTSIZE);
-  }, []);
+	// Reset font size to default
+	const resetFontSize = useCallback(() => {
+		setFontSize(DEFAULT_FONTSIZE);
+		setFontSizeSetting(DEFAULT_FONTSIZE);
+	}, []);
 
-  // Pinch zoom handlers
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+	// Pinch zoom handlers
+	useEffect(() => {
+		const container = containerRef.current;
+		if (!container) return;
 
-    const handleTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 2) {
-        // Prevent default zoom behavior
-        e.preventDefault();
-        pinchStateRef.current = {
-          initialDistance: getTouchDistance(e.touches),
-          initialFontSize: fontSize,
-        };
-      }
-    };
+		const handleTouchStart = (e: TouchEvent) => {
+			if (e.touches.length === 2) {
+				// Prevent default zoom behavior
+				e.preventDefault();
+				pinchStateRef.current = {
+					initialDistance: getTouchDistance(e.touches),
+					initialFontSize: fontSize,
+				};
+			}
+		};
 
-    const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 2 && pinchStateRef.current) {
-        e.preventDefault();
-        const currentDistance = getTouchDistance(e.touches);
-        const scale = currentDistance / pinchStateRef.current.initialDistance;
-        const newSize = Math.round(pinchStateRef.current.initialFontSize * scale);
-        const clampedSize = Math.max(MIN_FONTSIZE, Math.min(MAX_FONTSIZE, newSize));
-        setFontSize(clampedSize);
-      }
-    };
+		const handleTouchMove = (e: TouchEvent) => {
+			if (e.touches.length === 2 && pinchStateRef.current) {
+				e.preventDefault();
+				const currentDistance = getTouchDistance(e.touches);
+				const scale = currentDistance / pinchStateRef.current.initialDistance;
+				const newSize = Math.round(
+					pinchStateRef.current.initialFontSize * scale,
+				);
+				const clampedSize = Math.max(
+					MIN_FONTSIZE,
+					Math.min(MAX_FONTSIZE, newSize),
+				);
+				setFontSize(clampedSize);
+			}
+		};
 
-    const handleTouchEnd = (e: TouchEvent) => {
-      if (pinchStateRef.current && e.touches.length < 2) {
-        // Save the final font size
-        setFontSizeSetting(fontSize);
-        pinchStateRef.current = null;
-      }
-    };
+		const handleTouchEnd = (e: TouchEvent) => {
+			if (pinchStateRef.current && e.touches.length < 2) {
+				// Save the final font size
+				setFontSizeSetting(fontSize);
+				pinchStateRef.current = null;
+			}
+		};
 
-    container.addEventListener('touchstart', handleTouchStart, { passive: false });
-    container.addEventListener('touchmove', handleTouchMove, { passive: false });
-    container.addEventListener('touchend', handleTouchEnd);
+		container.addEventListener("touchstart", handleTouchStart, {
+			passive: false,
+		});
+		container.addEventListener("touchmove", handleTouchMove, {
+			passive: false,
+		});
+		container.addEventListener("touchend", handleTouchEnd);
 
-    return () => {
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchmove', handleTouchMove);
-      container.removeEventListener('touchend', handleTouchEnd);
-    };
-  }, [fontSize]);
+		return () => {
+			container.removeEventListener("touchstart", handleTouchStart);
+			container.removeEventListener("touchmove", handleTouchMove);
+			container.removeEventListener("touchend", handleTouchEnd);
+		};
+	}, [fontSize]);
 
-  // Restore scroll position from ratio on mount
-  useEffect(() => {
-    if (initialScrollRatio > 0 && containerRef.current) {
-      const el = containerRef.current;
-      requestAnimationFrame(() => {
-        el.scrollTop = initialScrollRatio * (el.scrollHeight - el.clientHeight);
-      });
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+	// Restore scroll position from ratio on mount
+	useEffect(() => {
+		if (initialScrollRatio > 0 && containerRef.current) {
+			const el = containerRef.current;
+			requestAnimationFrame(() => {
+				el.scrollTop = initialScrollRatio * (el.scrollHeight - el.clientHeight);
+			});
+		}
+	}, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Track scroll ratio for parent
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el || !onScrollRatioChange) return;
-    const handleScroll = () => {
-      const maxScroll = el.scrollHeight - el.clientHeight;
-      onScrollRatioChange(maxScroll > 0 ? el.scrollTop / maxScroll : 0);
-    };
-    el.addEventListener('scroll', handleScroll, { passive: true });
-    return () => el.removeEventListener('scroll', handleScroll);
-  }, [onScrollRatioChange]);
+	// Track scroll ratio for parent
+	useEffect(() => {
+		const el = containerRef.current;
+		if (!el || !onScrollRatioChange) return;
+		const handleScroll = () => {
+			const maxScroll = el.scrollHeight - el.clientHeight;
+			onScrollRatioChange(maxScroll > 0 ? el.scrollTop / maxScroll : 0);
+		};
+		el.addEventListener("scroll", handleScroll, { passive: true });
+		return () => el.removeEventListener("scroll", handleScroll);
+	}, [onScrollRatioChange]);
 
-  // Highlight and split into per-line HTML
-  const highlightedLines = useMemo(() => {
-    const rawLines = content.split('\n');
-    if (language === 'plaintext' || !hljs.getLanguage(language)) {
-      return rawLines.map(l => ({ text: l, html: null }));
-    }
-    try {
-      const result = hljs.highlight(content, { language, ignoreIllegals: true });
-      const htmlLines = splitHighlightedHtml(result.value);
-      return rawLines.map((text, i) => ({ text, html: htmlLines[i] ?? null }));
-    } catch {
-      return rawLines.map(l => ({ text: l, html: null }));
-    }
-  }, [content, language]);
+	// Highlight and split into per-line HTML
+	const highlightedLines = useMemo(() => {
+		const rawLines = content.split("\n");
+		if (language === "plaintext" || !hljs.getLanguage(language)) {
+			return rawLines.map((l) => ({ text: l, html: null }));
+		}
+		try {
+			const result = hljs.highlight(content, {
+				language,
+				ignoreIllegals: true,
+			});
+			const htmlLines = splitHighlightedHtml(result.value);
+			return rawLines.map((text, i) => ({ text, html: htmlLines[i] ?? null }));
+		} catch {
+			return rawLines.map((l) => ({ text: l, html: null }));
+		}
+	}, [content, language]);
 
+	return (
+		<div className="relative flex flex-col h-full bg-th-bg text-th-text font-mono text-sm">
+			{/* Truncation warning */}
+			{truncated && (
+				<div className="px-3 py-1.5 bg-yellow-900/50 text-yellow-300 text-xs border-b border-yellow-800">
+					ファイルが大きすぎるため一部のみ表示しています
+				</div>
+			)}
 
-  return (
-    <div className="relative flex flex-col h-full bg-th-bg text-th-text font-mono text-sm">
-      {/* Truncation warning */}
-      {truncated && (
-        <div className="px-3 py-1.5 bg-yellow-900/50 text-yellow-300 text-xs border-b border-yellow-800">
-          ファイルが大きすぎるため一部のみ表示しています
-        </div>
-      )}
+			{/* Code content */}
+			<div ref={containerRef} className="flex-1 overflow-auto touch-pan-y">
+				<div className={`min-h-full ${wordWrap ? "" : "min-w-fit"}`}>
+					{highlightedLines.map((line, i) => {
+						const lineNum = i + 1;
+						const selected = isLineSelected(lineNum);
+						return (
+							<div
+								// biome-ignore lint/suspicious/noArrayIndexKey: line index is the natural key for source-code rendering
+								key={i}
+								className={`flex ${selected ? "bg-blue-900/30" : ""} ${onCopyPrompt ? "cursor-pointer select-none" : ""}`}
+								onClick={
+									onCopyPrompt ? () => handleLineClick(lineNum) : undefined
+								}
+								onContextMenu={
+									onCopyPrompt ? (e) => e.preventDefault() : undefined
+								}
+								style={
+									onCopyPrompt ? { WebkitTouchCallout: "none" } : undefined
+								}
+							>
+								{/* Line number */}
+								{showLineNumbers && (
+									<div
+										className={`shrink-0 select-none text-right border-r border-th-border sticky left-0 px-1.5 ${
+											selected
+												? "bg-blue-800/40 text-blue-300"
+												: "bg-th-surface/50 text-th-text-muted"
+										}`}
+										style={{
+											fontSize: `${Math.max(10, fontSize - 2)}px`,
+											lineHeight: `${fontSize * 1.5}px`,
+											minWidth: "2.5rem",
+										}}
+									>
+										{lineNum}
+									</div>
+								)}
 
-      {/* Code content */}
-      <div ref={containerRef} className="flex-1 overflow-auto touch-pan-y">
-        <div className={`min-h-full ${wordWrap ? '' : 'min-w-fit'}`}>
-          {highlightedLines.map((line, i) => {
-            const lineNum = i + 1;
-            const selected = isLineSelected(lineNum);
-            return (
-              <div
-                key={i}
-                className={`flex ${selected ? 'bg-blue-900/30' : ''} ${onCopyPrompt ? 'cursor-pointer select-none' : ''}`}
-                onClick={onCopyPrompt ? () => handleLineClick(lineNum) : undefined}
-                onContextMenu={onCopyPrompt ? (e) => e.preventDefault() : undefined}
-                style={onCopyPrompt ? { WebkitTouchCallout: 'none' } : undefined}
-              >
-                {/* Line number */}
-                {showLineNumbers && (
-                  <div
-                    className={`shrink-0 select-none text-right border-r border-th-border sticky left-0 px-1.5 ${
-                      selected ? 'bg-blue-800/40 text-blue-300' : 'bg-th-surface/50 text-th-text-muted'
-                    }`}
-                    style={{ fontSize: `${Math.max(10, fontSize - 2)}px`, lineHeight: `${fontSize * 1.5}px`, minWidth: '2.5rem' }}
-                  >
-                    {lineNum}
-                  </div>
-                )}
+								{/* Code line */}
+								<pre
+									className={`flex-1 m-0 px-2 ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
+									style={{
+										fontSize: `${fontSize}px`,
+										lineHeight: `${fontSize * 1.5}px`,
+									}}
+								>
+									{line.html ? (
+										<code
+											// biome-ignore lint/security/noDangerouslySetInnerHtml: server-rendered highlight.js HTML
+											dangerouslySetInnerHTML={{
+												__html: line.html || "&nbsp;",
+											}}
+										/>
+									) : (
+										<code>{line.text || " "}</code>
+									)}
+								</pre>
+							</div>
+						);
+					})}
+				</div>
+			</div>
 
-                {/* Code line */}
-                <pre
-                  className={`flex-1 m-0 px-2 ${wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'}`}
-                  style={{ fontSize: `${fontSize}px`, lineHeight: `${fontSize * 1.5}px` }}
-                >
-                  {line.html ? (
-                    <code dangerouslySetInnerHTML={{ __html: line.html || '&nbsp;' }} />
-                  ) : (
-                    <code>{line.text || ' '}</code>
-                  )}
-                </pre>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+			{/* Floating controls - top right */}
+			<div className="absolute top-2 right-2 flex items-center gap-1.5 bg-th-surface/90 rounded-md p-1.5 backdrop-blur-sm">
+				{hasPreview && onTogglePreview && (
+					<button
+						type="button"
+						onClick={onTogglePreview}
+						className="flex items-center gap-1 px-2.5 py-1.5 text-sm text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
+						title="Preview"
+					>
+						<Eye className="w-4 h-4" />
+						Preview
+					</button>
+				)}
+				<button
+					type="button"
+					onClick={resetFontSize}
+					className="px-2.5 py-1.5 text-sm text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
+					title="フォントサイズをリセット (ピンチでズーム)"
+				>
+					{fontSize}px
+				</button>
+				<button
+					type="button"
+					onClick={toggleWordWrap}
+					className={`p-2 rounded transition-colors ${wordWrap ? "bg-blue-600 text-th-text" : "text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover"}`}
+					title={wordWrap ? "折り返しOFF" : "折り返しON"}
+				>
+					<WrapText className="w-5 h-5" />
+				</button>
+			</div>
 
-      {/* Floating controls - top right */}
-      <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-th-surface/90 rounded-md p-1.5 backdrop-blur-sm">
-        {hasPreview && onTogglePreview && (
-          <button
-            onClick={onTogglePreview}
-            className="flex items-center gap-1 px-2.5 py-1.5 text-sm text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
-            title="Preview"
-          >
-            <Eye className="w-4 h-4" />
-            Preview
-          </button>
-        )}
-        <button
-          onClick={resetFontSize}
-          className="px-2.5 py-1.5 text-sm text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
-          title="フォントサイズをリセット (ピンチでズーム)"
-        >
-          {fontSize}px
-        </button>
-        <button
-          onClick={toggleWordWrap}
-          className={`p-2 rounded transition-colors ${wordWrap ? 'bg-blue-600 text-th-text' : 'text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover'}`}
-          title={wordWrap ? '折り返しOFF' : '折り返しON'}
-        >
-          <WrapText className="w-5 h-5" />
-        </button>
-      </div>
-
-      {/* Prompt Composer */}
-      {selection && onCopyPrompt && (
-        <PromptComposer
-          filePath={filePath || fileName || 'unknown'}
-          startLine={selection.start}
-          endLine={selection.end}
-          selectedCode={highlightedLines.slice(selection.start - 1, selection.end).map(l => l.text).join('\n')}
-          language={language}
-          onSubmit={(text) => {
-            onCopyPrompt(text);
-            clearSelection();
-          }}
-          onClose={clearSelection}
-        />
-      )}
-    </div>
-  );
+			{/* Prompt Composer */}
+			{selection && onCopyPrompt && (
+				<PromptComposer
+					filePath={filePath || fileName || "unknown"}
+					startLine={selection.start}
+					endLine={selection.end}
+					selectedCode={highlightedLines
+						.slice(selection.start - 1, selection.end)
+						.map((l) => l.text)
+						.join("\n")}
+					language={language}
+					onSubmit={(text) => {
+						onCopyPrompt(text);
+						clearSelection();
+					}}
+					onClose={clearSelection}
+				/>
+			)}
+		</div>
+	);
 }

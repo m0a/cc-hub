@@ -62,7 +62,7 @@ export function decodeOctalOutput(encoded: string): Buffer {
         // rare CJK, etc.) which are stored as surrogate pairs in JS strings.
         // encoded[i] alone would be a lone surrogate → TextEncoder produces
         // U+FFFD (replacement character).
-        const codePoint = encoded.codePointAt(i)!;
+        const codePoint = encoded.codePointAt(i) ?? 0xfffd;
         const utf8 = textEncoder.encode(String.fromCodePoint(codePoint));
         for (const b of utf8) {
           bytes.push(b);

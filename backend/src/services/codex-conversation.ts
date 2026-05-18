@@ -156,7 +156,6 @@ export class CodexConversationService {
           output,
         };
         turn.toolResult = turn.toolResult ? [...turn.toolResult, result] : [result];
-        continue;
       }
     }
 

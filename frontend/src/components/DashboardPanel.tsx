@@ -1,5 +1,5 @@
-import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Dashboard } from "./dashboard/Dashboard";
 
 interface DashboardPanelProps {
@@ -8,7 +8,11 @@ interface DashboardPanelProps {
 	isTablet?: boolean;
 }
 
-export function DashboardPanel({ isOpen, onClose, isTablet }: DashboardPanelProps) {
+export function DashboardPanel({
+	isOpen,
+	onClose,
+	isTablet,
+}: DashboardPanelProps) {
 	const { t } = useTranslation();
 
 	if (!isOpen) return null;
@@ -31,6 +35,7 @@ export function DashboardPanel({ isOpen, onClose, isTablet }: DashboardPanelProp
 					</h1>
 					<div className="flex items-center gap-1">
 						<button
+							type="button"
 							onClick={onClose}
 							className="p-2 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
 						>

@@ -1,465 +1,573 @@
-import { useMemo, useState, useRef, useCallback } from 'react';
-import { FileText, ChevronLeft, ChevronRight, WrapText, Plus, Minus } from 'lucide-react';
-import hljs from 'highlight.js';
-import 'highlight.js/styles/github-dark.css';
-import { getLanguageFromPath } from './language-detect';
-import { useLineSelection } from '../../hooks/useLineSelection';
-import { PromptComposer } from './PromptComposer';
+/** biome-ignore-all lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: legacy click-on-div UI; keyboard navigation provided via main shortcuts */
+import hljs from "highlight.js";
+import {
+	ChevronLeft,
+	ChevronRight,
+	FileText,
+	Minus,
+	Plus,
+	WrapText,
+} from "lucide-react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import "highlight.js/styles/github-dark.css";
+import { useLineSelection } from "../../hooks/useLineSelection";
+import { getLanguageFromPath } from "./language-detect";
+import { PromptComposer } from "./PromptComposer";
 
-const WORDWRAP_STORAGE_KEY = 'cchub-wordwrap';
+const WORDWRAP_STORAGE_KEY = "cchub-wordwrap";
 
 function getWordWrapSetting(fileName: string): boolean {
-  try {
-    const stored = localStorage.getItem(WORDWRAP_STORAGE_KEY);
-    if (stored) {
-      const settings = JSON.parse(stored);
-      return settings[fileName] ?? true;
-    }
-  } catch {
-    // ignore
-  }
-  return true;
+	try {
+		const stored = localStorage.getItem(WORDWRAP_STORAGE_KEY);
+		if (stored) {
+			const settings = JSON.parse(stored);
+			return settings[fileName] ?? true;
+		}
+	} catch {
+		// ignore
+	}
+	return true;
 }
 
 function setWordWrapSetting(fileName: string, value: boolean) {
-  try {
-    const stored = localStorage.getItem(WORDWRAP_STORAGE_KEY);
-    const settings = stored ? JSON.parse(stored) : {};
-    settings[fileName] = value;
-    localStorage.setItem(WORDWRAP_STORAGE_KEY, JSON.stringify(settings));
-  } catch {
-    // ignore
-  }
+	try {
+		const stored = localStorage.getItem(WORDWRAP_STORAGE_KEY);
+		const settings = stored ? JSON.parse(stored) : {};
+		settings[fileName] = value;
+		localStorage.setItem(WORDWRAP_STORAGE_KEY, JSON.stringify(settings));
+	} catch {
+		// ignore
+	}
 }
 
 interface DiffViewerProps {
-  oldContent?: string;
-  newContent?: string;
-  fileName?: string;
-  filePath?: string;
-  toolName?: 'Write' | 'Edit' | 'git';
-  unifiedDiff?: string;
-  onCopyPrompt?: (text: string) => void;
+	oldContent?: string;
+	newContent?: string;
+	fileName?: string;
+	filePath?: string;
+	toolName?: "Write" | "Edit" | "git";
+	unifiedDiff?: string;
+	onCopyPrompt?: (text: string) => void;
 }
 
 interface DiffLine {
-  type: 'add' | 'remove' | 'context' | 'hunk';
-  content: string;
-  oldLineNum?: number;
-  newLineNum?: number;
+	type: "add" | "remove" | "context" | "hunk";
+	content: string;
+	oldLineNum?: number;
+	newLineNum?: number;
 }
 
 // Split highlighted HTML into lines, properly handling unclosed span tags
 function splitHighlightedHtml(html: string): string[] {
-  const rawLines = html.split('\n');
-  const result: string[] = [];
-  let openTags: string[] = [];
+	const rawLines = html.split("\n");
+	const result: string[] = [];
+	let openTags: string[] = [];
 
-  for (const rawLine of rawLines) {
-    const line = openTags.join('') + rawLine;
+	for (const rawLine of rawLines) {
+		const line = openTags.join("") + rawLine;
 
-    // Track open/close span tags
-    const tags: string[] = [];
-    const tagRe = /<(\/?)span([^>]*)>/g;
-    let m: RegExpExecArray | null = tagRe.exec(line);
-    while (m !== null) {
-      if (m[1] === '/') {
-        if (tags.length > 0) tags.pop();
-      } else {
-        tags.push(m[0]);
-      }
-      m = tagRe.exec(line);
-    }
+		// Track open/close span tags
+		const tags: string[] = [];
+		const tagRe = /<(\/?)span([^>]*)>/g;
+		let m: RegExpExecArray | null = tagRe.exec(line);
+		while (m !== null) {
+			if (m[1] === "/") {
+				if (tags.length > 0) tags.pop();
+			} else {
+				tags.push(m[0]);
+			}
+			m = tagRe.exec(line);
+		}
 
-    // Close unclosed tags at end of line
-    result.push(line + '</span>'.repeat(tags.length));
-    openTags = tags;
-  }
+		// Close unclosed tags at end of line
+		result.push(line + "</span>".repeat(tags.length));
+		openTags = tags;
+	}
 
-  return result;
+	return result;
 }
 
 function highlightCode(content: string, language: string): string[] {
-  if (!language || language === 'plaintext') {
-    return content.split('\n');
-  }
-  try {
-    if (!hljs.getLanguage(language)) {
-      return content.split('\n');
-    }
-    const result = hljs.highlight(content, { language, ignoreIllegals: true });
-    return splitHighlightedHtml(result.value);
-  } catch {
-    return content.split('\n');
-  }
+	if (!language || language === "plaintext") {
+		return content.split("\n");
+	}
+	try {
+		if (!hljs.getLanguage(language)) {
+			return content.split("\n");
+		}
+		const result = hljs.highlight(content, { language, ignoreIllegals: true });
+		return splitHighlightedHtml(result.value);
+	} catch {
+		return content.split("\n");
+	}
 }
 
 function computeDiff(oldText: string, newText: string): DiffLine[] {
-  const oldLines = oldText.split('\n');
-  const newLines = newText.split('\n');
-  const result: DiffLine[] = [];
+	const oldLines = oldText.split("\n");
+	const newLines = newText.split("\n");
+	const result: DiffLine[] = [];
 
-  const lcs = computeLCS(oldLines, newLines);
+	const lcs = computeLCS(oldLines, newLines);
 
-  let oldIdx = 0;
-  let newIdx = 0;
-  let lcsIdx = 0;
+	let oldIdx = 0;
+	let newIdx = 0;
+	let lcsIdx = 0;
 
-  while (oldIdx < oldLines.length || newIdx < newLines.length) {
-    if (lcsIdx < lcs.length && oldIdx < oldLines.length && oldLines[oldIdx] === lcs[lcsIdx]) {
-      if (newIdx < newLines.length && newLines[newIdx] === lcs[lcsIdx]) {
-        result.push({
-          type: 'context',
-          content: oldLines[oldIdx],
-          oldLineNum: oldIdx + 1,
-          newLineNum: newIdx + 1,
-        });
-        oldIdx++;
-        newIdx++;
-        lcsIdx++;
-      } else {
-        result.push({
-          type: 'add',
-          content: newLines[newIdx],
-          newLineNum: newIdx + 1,
-        });
-        newIdx++;
-      }
-    } else if (lcsIdx < lcs.length && newIdx < newLines.length && newLines[newIdx] === lcs[lcsIdx]) {
-      result.push({
-        type: 'remove',
-        content: oldLines[oldIdx],
-        oldLineNum: oldIdx + 1,
-      });
-      oldIdx++;
-    } else if (oldIdx < oldLines.length && newIdx < newLines.length) {
-      result.push({
-        type: 'remove',
-        content: oldLines[oldIdx],
-        oldLineNum: oldIdx + 1,
-      });
-      result.push({
-        type: 'add',
-        content: newLines[newIdx],
-        newLineNum: newIdx + 1,
-      });
-      oldIdx++;
-      newIdx++;
-    } else if (oldIdx < oldLines.length) {
-      result.push({
-        type: 'remove',
-        content: oldLines[oldIdx],
-        oldLineNum: oldIdx + 1,
-      });
-      oldIdx++;
-    } else if (newIdx < newLines.length) {
-      result.push({
-        type: 'add',
-        content: newLines[newIdx],
-        newLineNum: newIdx + 1,
-      });
-      newIdx++;
-    }
-  }
+	while (oldIdx < oldLines.length || newIdx < newLines.length) {
+		if (
+			lcsIdx < lcs.length &&
+			oldIdx < oldLines.length &&
+			oldLines[oldIdx] === lcs[lcsIdx]
+		) {
+			if (newIdx < newLines.length && newLines[newIdx] === lcs[lcsIdx]) {
+				result.push({
+					type: "context",
+					content: oldLines[oldIdx],
+					oldLineNum: oldIdx + 1,
+					newLineNum: newIdx + 1,
+				});
+				oldIdx++;
+				newIdx++;
+				lcsIdx++;
+			} else {
+				result.push({
+					type: "add",
+					content: newLines[newIdx],
+					newLineNum: newIdx + 1,
+				});
+				newIdx++;
+			}
+		} else if (
+			lcsIdx < lcs.length &&
+			newIdx < newLines.length &&
+			newLines[newIdx] === lcs[lcsIdx]
+		) {
+			result.push({
+				type: "remove",
+				content: oldLines[oldIdx],
+				oldLineNum: oldIdx + 1,
+			});
+			oldIdx++;
+		} else if (oldIdx < oldLines.length && newIdx < newLines.length) {
+			result.push({
+				type: "remove",
+				content: oldLines[oldIdx],
+				oldLineNum: oldIdx + 1,
+			});
+			result.push({
+				type: "add",
+				content: newLines[newIdx],
+				newLineNum: newIdx + 1,
+			});
+			oldIdx++;
+			newIdx++;
+		} else if (oldIdx < oldLines.length) {
+			result.push({
+				type: "remove",
+				content: oldLines[oldIdx],
+				oldLineNum: oldIdx + 1,
+			});
+			oldIdx++;
+		} else if (newIdx < newLines.length) {
+			result.push({
+				type: "add",
+				content: newLines[newIdx],
+				newLineNum: newIdx + 1,
+			});
+			newIdx++;
+		}
+	}
 
-  return result;
+	return result;
 }
 
 function computeLCS(a: string[], b: string[]): string[] {
-  const m = a.length;
-  const n = b.length;
+	const m = a.length;
+	const n = b.length;
 
-  const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+	const dp: number[][] = Array(m + 1)
+		.fill(null)
+		.map(() => Array(n + 1).fill(0));
 
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (a[i - 1] === b[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1] + 1;
-      } else {
-        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
-      }
-    }
-  }
+	for (let i = 1; i <= m; i++) {
+		for (let j = 1; j <= n; j++) {
+			if (a[i - 1] === b[j - 1]) {
+				dp[i][j] = dp[i - 1][j - 1] + 1;
+			} else {
+				dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+			}
+		}
+	}
 
-  const lcs: string[] = [];
-  let i = m, j = n;
-  while (i > 0 && j > 0) {
-    if (a[i - 1] === b[j - 1]) {
-      lcs.unshift(a[i - 1]);
-      i--;
-      j--;
-    } else if (dp[i - 1][j] > dp[i][j - 1]) {
-      i--;
-    } else {
-      j--;
-    }
-  }
+	const lcs: string[] = [];
+	let i = m,
+		j = n;
+	while (i > 0 && j > 0) {
+		if (a[i - 1] === b[j - 1]) {
+			lcs.unshift(a[i - 1]);
+			i--;
+			j--;
+		} else if (dp[i - 1][j] > dp[i][j - 1]) {
+			i--;
+		} else {
+			j--;
+		}
+	}
 
-  return lcs;
+	return lcs;
 }
 
 function parseUnifiedDiff(diff: string): DiffLine[] {
-  const lines = diff.split('\n');
-  const result: DiffLine[] = [];
-  let oldLineNum = 0;
-  let newLineNum = 0;
+	const lines = diff.split("\n");
+	const result: DiffLine[] = [];
+	let oldLineNum = 0;
+	let newLineNum = 0;
 
-  for (const line of lines) {
-    if (line.startsWith('---') || line.startsWith('+++') || line.startsWith('diff ') || line.startsWith('index ')) {
-      continue;
-    }
+	for (const line of lines) {
+		if (
+			line.startsWith("---") ||
+			line.startsWith("+++") ||
+			line.startsWith("diff ") ||
+			line.startsWith("index ")
+		) {
+			continue;
+		}
 
-    if (line.startsWith('@@')) {
-      const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-      if (match) {
-        oldLineNum = parseInt(match[1], 10);
-        newLineNum = parseInt(match[2], 10);
-      }
-      result.push({ type: 'hunk', content: line, oldLineNum: undefined, newLineNum: undefined });
-      continue;
-    }
+		if (line.startsWith("@@")) {
+			const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+			if (match) {
+				oldLineNum = parseInt(match[1], 10);
+				newLineNum = parseInt(match[2], 10);
+			}
+			result.push({
+				type: "hunk",
+				content: line,
+				oldLineNum: undefined,
+				newLineNum: undefined,
+			});
+			continue;
+		}
 
-    if (line.startsWith('\\')) continue;
+		if (line.startsWith("\\")) continue;
 
-    if (line.startsWith('+')) {
-      result.push({ type: 'add', content: line.slice(1), newLineNum: newLineNum++ });
-    } else if (line.startsWith('-')) {
-      result.push({ type: 'remove', content: line.slice(1), oldLineNum: oldLineNum++ });
-    } else if (line.startsWith(' ')) {
-      result.push({ type: 'context', content: line.slice(1), oldLineNum: oldLineNum++, newLineNum: newLineNum++ });
-    }
-  }
+		if (line.startsWith("+")) {
+			result.push({
+				type: "add",
+				content: line.slice(1),
+				newLineNum: newLineNum++,
+			});
+		} else if (line.startsWith("-")) {
+			result.push({
+				type: "remove",
+				content: line.slice(1),
+				oldLineNum: oldLineNum++,
+			});
+		} else if (line.startsWith(" ")) {
+			result.push({
+				type: "context",
+				content: line.slice(1),
+				oldLineNum: oldLineNum++,
+				newLineNum: newLineNum++,
+			});
+		}
+	}
 
-  return result;
+	return result;
 }
 
 export function DiffViewer({
-  oldContent,
-  newContent,
-  fileName,
-  filePath,
-  toolName = 'Edit',
-  unifiedDiff,
-  onCopyPrompt,
+	oldContent,
+	newContent,
+	fileName,
+	filePath,
+	toolName = "Edit",
+	unifiedDiff,
+	onCopyPrompt,
 }: DiffViewerProps) {
-  const [wordWrap, setWordWrap] = useState(() => getWordWrapSetting(fileName || ''));
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const { selection, handleLineClick, isLineSelected, clearSelection } = useLineSelection();
+	const [wordWrap, setWordWrap] = useState(() =>
+		getWordWrapSetting(fileName || ""),
+	);
+	const scrollContainerRef = useRef<HTMLDivElement>(null);
+	const { selection, handleLineClick, isLineSelected, clearSelection } =
+		useLineSelection();
 
-  const toggleWordWrap = useCallback(() => {
-    const newValue = !wordWrap;
-    setWordWrap(newValue);
-    if (fileName) {
-      setWordWrapSetting(fileName, newValue);
-    }
-  }, [wordWrap, fileName]);
+	const toggleWordWrap = useCallback(() => {
+		const newValue = !wordWrap;
+		setWordWrap(newValue);
+		if (fileName) {
+			setWordWrapSetting(fileName, newValue);
+		}
+	}, [wordWrap, fileName]);
 
-  const scrollRight = useCallback(() => {
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollLeft += 200;
-    }
-  }, []);
+	const scrollRight = useCallback(() => {
+		if (scrollContainerRef.current) {
+			scrollContainerRef.current.scrollLeft += 200;
+		}
+	}, []);
 
-  const scrollLeft = useCallback(() => {
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollLeft -= 200;
-    }
-  }, []);
+	const scrollLeft = useCallback(() => {
+		if (scrollContainerRef.current) {
+			scrollContainerRef.current.scrollLeft -= 200;
+		}
+	}, []);
 
-  const language = useMemo(() => {
-    if (!fileName) return 'plaintext';
-    return getLanguageFromPath(fileName);
-  }, [fileName]);
+	const language = useMemo(() => {
+		if (!fileName) return "plaintext";
+		return getLanguageFromPath(fileName);
+	}, [fileName]);
 
-  const diffLines = useMemo(() => {
-    if (unifiedDiff) {
-      return parseUnifiedDiff(unifiedDiff);
-    }
+	const diffLines = useMemo(() => {
+		if (unifiedDiff) {
+			return parseUnifiedDiff(unifiedDiff);
+		}
 
-    if (toolName === 'Write') {
-      const lines = (newContent || '').split('\n');
-      return lines.map((content, i): DiffLine => ({
-        type: 'add',
-        content,
-        newLineNum: i + 1,
-      }));
-    }
+		if (toolName === "Write") {
+			const lines = (newContent || "").split("\n");
+			return lines.map(
+				(content, i): DiffLine => ({
+					type: "add",
+					content,
+					newLineNum: i + 1,
+				}),
+			);
+		}
 
-    return computeDiff(oldContent || '', newContent || '');
-  }, [oldContent, newContent, toolName, unifiedDiff]);
+		return computeDiff(oldContent || "", newContent || "");
+	}, [oldContent, newContent, toolName, unifiedDiff]);
 
-  // Build highlighted line map from diff lines
-  const highlightedMap = useMemo(() => {
-    if (language === 'plaintext') return null;
+	// Build highlighted line map from diff lines
+	const highlightedMap = useMemo(() => {
+		if (language === "plaintext") return null;
 
-    // Reconstruct new-side (context + add) and old-side (context + remove)
-    const newSide: { idx: number; content: string }[] = [];
-    const oldSide: { idx: number; content: string }[] = [];
+		// Reconstruct new-side (context + add) and old-side (context + remove)
+		const newSide: { idx: number; content: string }[] = [];
+		const oldSide: { idx: number; content: string }[] = [];
 
-    for (let i = 0; i < diffLines.length; i++) {
-      const line = diffLines[i];
-      if (line.type === 'hunk') continue;
-      if (line.type === 'add' || line.type === 'context') {
-        newSide.push({ idx: i, content: line.content });
-      }
-      if (line.type === 'remove' || line.type === 'context') {
-        oldSide.push({ idx: i, content: line.content });
-      }
-    }
+		for (let i = 0; i < diffLines.length; i++) {
+			const line = diffLines[i];
+			if (line.type === "hunk") continue;
+			if (line.type === "add" || line.type === "context") {
+				newSide.push({ idx: i, content: line.content });
+			}
+			if (line.type === "remove" || line.type === "context") {
+				oldSide.push({ idx: i, content: line.content });
+			}
+		}
 
-    const highlightedNew = highlightCode(newSide.map(l => l.content).join('\n'), language);
-    const highlightedOld = highlightCode(oldSide.map(l => l.content).join('\n'), language);
+		const highlightedNew = highlightCode(
+			newSide.map((l) => l.content).join("\n"),
+			language,
+		);
+		const highlightedOld = highlightCode(
+			oldSide.map((l) => l.content).join("\n"),
+			language,
+		);
 
-    const result = new Map<number, string>();
+		const result = new Map<number, string>();
 
-    // Map new-side (context + add lines)
-    for (let i = 0; i < newSide.length; i++) {
-      result.set(newSide[i].idx, highlightedNew[i] || '');
-    }
+		// Map new-side (context + add lines)
+		for (let i = 0; i < newSide.length; i++) {
+			result.set(newSide[i].idx, highlightedNew[i] || "");
+		}
 
-    // Map old-side (remove lines only; context already mapped from new-side)
-    for (let i = 0; i < oldSide.length; i++) {
-      if (!result.has(oldSide[i].idx)) {
-        result.set(oldSide[i].idx, highlightedOld[i] || '');
-      }
-    }
+		// Map old-side (remove lines only; context already mapped from new-side)
+		for (let i = 0; i < oldSide.length; i++) {
+			if (!result.has(oldSide[i].idx)) {
+				result.set(oldSide[i].idx, highlightedOld[i] || "");
+			}
+		}
 
-    return result;
-  }, [diffLines, language]);
+		return result;
+	}, [diffLines, language]);
 
-  const stats = useMemo(() => {
-    const added = diffLines.filter(l => l.type === 'add').length;
-    const removed = diffLines.filter(l => l.type === 'remove').length;
-    return { added, removed };
-  }, [diffLines]);
+	const stats = useMemo(() => {
+		const added = diffLines.filter((l) => l.type === "add").length;
+		const removed = diffLines.filter((l) => l.type === "remove").length;
+		return { added, removed };
+	}, [diffLines]);
 
-  return (
-    <div className="flex flex-col h-full bg-th-bg text-th-text font-mono text-sm">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-th-border bg-th-surface">
-        <FileText className="w-4 h-4 text-yellow-400 shrink-0" />
-        {fileName && (
-          <span className="text-sm text-th-text-secondary truncate flex-1">{fileName}</span>
-        )}
-        {toolName !== 'git' && (
-          <span className={`text-xs px-1.5 py-0.5 rounded ${
-            toolName === 'Write' ? 'bg-green-900 text-green-300' : 'bg-yellow-900 text-yellow-300'
-          }`}>
-            {toolName === 'Write' ? '新規作成' : '編集'}
-          </span>
-        )}
-      </div>
+	return (
+		<div className="flex flex-col h-full bg-th-bg text-th-text font-mono text-sm">
+			{/* Header */}
+			<div className="flex items-center gap-2 px-3 py-2 border-b border-th-border bg-th-surface">
+				<FileText className="w-4 h-4 text-yellow-400 shrink-0" />
+				{fileName && (
+					<span className="text-sm text-th-text-secondary truncate flex-1">
+						{fileName}
+					</span>
+				)}
+				{toolName !== "git" && (
+					<span
+						className={`text-xs px-1.5 py-0.5 rounded ${
+							toolName === "Write"
+								? "bg-green-900 text-green-300"
+								: "bg-yellow-900 text-yellow-300"
+						}`}
+					>
+						{toolName === "Write" ? "新規作成" : "編集"}
+					</span>
+				)}
+			</div>
 
-      {/* Stats */}
-      <div className="flex items-center gap-4 px-3 py-1.5 border-b border-th-border bg-th-surface/50 text-xs">
-        <span className="text-green-400 flex items-center gap-0.5"><Plus className="w-3 h-3" />{stats.added} 追加</span>
-        <span className="text-red-400 flex items-center gap-0.5"><Minus className="w-3 h-3" />{stats.removed} 削除</span>
-        <div className="flex items-center gap-1 ml-auto">
-          {/* Scroll buttons */}
-          {!wordWrap && (
-            <>
-              <button
-                onClick={scrollLeft}
-                className="p-1 rounded text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover transition-colors"
-                title="左へスクロール"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button
-                onClick={scrollRight}
-                className="p-1 rounded text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover transition-colors"
-                title="右へスクロール"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </>
-          )}
-          {/* Word wrap toggle */}
-          <button
-            onClick={toggleWordWrap}
-            className={`p-1 rounded transition-colors ${wordWrap ? 'bg-blue-600 text-th-text' : 'text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover'}`}
-            title={wordWrap ? '折り返しOFF' : '折り返しON'}
-          >
-            <WrapText className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+			{/* Stats */}
+			<div className="flex items-center gap-4 px-3 py-1.5 border-b border-th-border bg-th-surface/50 text-xs">
+				<span className="text-green-400 flex items-center gap-0.5">
+					<Plus className="w-3 h-3" />
+					{stats.added} 追加
+				</span>
+				<span className="text-red-400 flex items-center gap-0.5">
+					<Minus className="w-3 h-3" />
+					{stats.removed} 削除
+				</span>
+				<div className="flex items-center gap-1 ml-auto">
+					{/* Scroll buttons */}
+					{!wordWrap && (
+						<>
+							<button
+								type="button"
+								onClick={scrollLeft}
+								className="p-1 rounded text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover transition-colors"
+								title="左へスクロール"
+							>
+								<ChevronLeft className="w-4 h-4" />
+							</button>
+							<button
+								type="button"
+								onClick={scrollRight}
+								className="p-1 rounded text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover transition-colors"
+								title="右へスクロール"
+							>
+								<ChevronRight className="w-4 h-4" />
+							</button>
+						</>
+					)}
+					{/* Word wrap toggle */}
+					<button
+						type="button"
+						onClick={toggleWordWrap}
+						className={`p-1 rounded transition-colors ${wordWrap ? "bg-blue-600 text-th-text" : "text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover"}`}
+						title={wordWrap ? "折り返しOFF" : "折り返しON"}
+					>
+						<WrapText className="w-4 h-4" />
+					</button>
+				</div>
+			</div>
 
-      {/* Diff content */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-auto">
-        <div className={`min-h-full ${wordWrap ? '' : 'min-w-fit'}`}>
-          {diffLines.map((line, i) => (
-            <div
-              key={i}
-              className={`flex min-w-full ${
-                line.type === 'add' ? 'bg-green-900/30' :
-                line.type === 'remove' ? 'bg-red-900/30' :
-                line.type === 'hunk' ? 'bg-blue-900/20' :
-                ''
-              }`}
-            >
-              {/* Line numbers - hidden when word wrap is enabled */}
-              {!wordWrap && (() => {
-                const lineNum = line.type === 'hunk' ? null : (line.newLineNum || line.oldLineNum || null);
-                return (
-                  <div
-                    className={`shrink-0 text-th-text-muted text-right select-none border-r border-th-border bg-th-surface/50 text-xs leading-6 px-1 min-w-[2rem] ${
-                      onCopyPrompt && lineNum ? 'cursor-pointer hover:text-th-text hover:bg-blue-900/30' : ''
-                    } ${lineNum && isLineSelected(lineNum) ? 'bg-blue-800/40 text-blue-300' : ''}`}
-                    onClick={onCopyPrompt && lineNum ? () => handleLineClick(lineNum) : undefined}
-                  >
-                    {line.type === 'hunk' ? '...' : (toolName === 'Write' ? line.newLineNum : (line.newLineNum || line.oldLineNum || ''))}
-                  </div>
-                );
-              })()}
+			{/* Diff content */}
+			<div ref={scrollContainerRef} className="flex-1 overflow-auto">
+				<div className={`min-h-full ${wordWrap ? "" : "min-w-fit"}`}>
+					{diffLines.map((line, i) => (
+						<div
+							// biome-ignore lint/suspicious/noArrayIndexKey: diff line position is the natural key
+							key={i}
+							className={`flex min-w-full ${
+								line.type === "add"
+									? "bg-green-900/30"
+									: line.type === "remove"
+										? "bg-red-900/30"
+										: line.type === "hunk"
+											? "bg-blue-900/20"
+											: ""
+							}`}
+						>
+							{/* Line numbers - hidden when word wrap is enabled */}
+							{!wordWrap &&
+								(() => {
+									const lineNum =
+										line.type === "hunk"
+											? null
+											: line.newLineNum || line.oldLineNum || null;
+									return (
+										<div
+											className={`shrink-0 text-th-text-muted text-right select-none border-r border-th-border bg-th-surface/50 text-xs leading-6 px-1 min-w-[2rem] ${
+												onCopyPrompt && lineNum
+													? "cursor-pointer hover:text-th-text hover:bg-blue-900/30"
+													: ""
+											} ${lineNum && isLineSelected(lineNum) ? "bg-blue-800/40 text-blue-300" : ""}`}
+											onClick={
+												onCopyPrompt && lineNum
+													? () => handleLineClick(lineNum)
+													: undefined
+											}
+										>
+											{line.type === "hunk"
+												? "..."
+												: toolName === "Write"
+													? line.newLineNum
+													: line.newLineNum || line.oldLineNum || ""}
+										</div>
+									);
+								})()}
 
-              {/* Indicator */}
-              <div className={`w-4 shrink-0 text-center leading-6 text-xs ${
-                line.type === 'add' ? 'text-green-400 bg-green-900/50' :
-                line.type === 'remove' ? 'text-red-400 bg-red-900/50' :
-                'text-th-text-muted'
-              }`}>
-                {line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ''}
-              </div>
+							{/* Indicator */}
+							<div
+								className={`w-4 shrink-0 text-center leading-6 text-xs ${
+									line.type === "add"
+										? "text-green-400 bg-green-900/50"
+										: line.type === "remove"
+											? "text-red-400 bg-red-900/50"
+											: "text-th-text-muted"
+								}`}
+							>
+								{line.type === "add" ? "+" : line.type === "remove" ? "-" : ""}
+							</div>
 
-              {/* Content */}
-              <pre className={`flex-1 px-2 leading-6 ${wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'}`}>
-                {highlightedMap?.has(i) ? (
-                  <span dangerouslySetInnerHTML={{ __html: highlightedMap.get(i) || '&nbsp;' }} />
-                ) : (
-                  line.content || ' '
-                )}
-              </pre>
-            </div>
-          ))}
-        </div>
-      </div>
+							{/* Content */}
+							<pre
+								className={`flex-1 px-2 leading-6 ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
+							>
+								{highlightedMap?.has(i) ? (
+									<span
+										// biome-ignore lint/security/noDangerouslySetInnerHtml: highlight.js output already escaped
+										dangerouslySetInnerHTML={{
+											__html: highlightedMap.get(i) || "&nbsp;",
+										}}
+									/>
+								) : (
+									line.content || " "
+								)}
+							</pre>
+						</div>
+					))}
+				</div>
+			</div>
 
-      {/* Prompt Composer */}
-      {selection && onCopyPrompt && (() => {
-        // Extract selected lines from diff (context + add lines with newLineNum in range)
-        const selectedLines = diffLines
-          .filter(l => {
-            const num = l.newLineNum || l.oldLineNum;
-            return num && num >= selection.start && num <= selection.end && l.type !== 'hunk';
-          })
-          .map(l => (l.type === 'add' ? '+' : l.type === 'remove' ? '-' : ' ') + l.content);
+			{/* Prompt Composer */}
+			{selection &&
+				onCopyPrompt &&
+				(() => {
+					// Extract selected lines from diff (context + add lines with newLineNum in range)
+					const selectedLines = diffLines
+						.filter((l) => {
+							const num = l.newLineNum || l.oldLineNum;
+							return (
+								num &&
+								num >= selection.start &&
+								num <= selection.end &&
+								l.type !== "hunk"
+							);
+						})
+						.map(
+							(l) =>
+								(l.type === "add" ? "+" : l.type === "remove" ? "-" : " ") +
+								l.content,
+						);
 
-        return (
-          <PromptComposer
-            filePath={filePath || fileName || 'unknown'}
-            startLine={selection.start}
-            endLine={selection.end}
-            selectedCode={selectedLines.join('\n')}
-            language={language}
-            onSubmit={(text) => {
-              onCopyPrompt(text);
-              clearSelection();
-            }}
-            onClose={clearSelection}
-          />
-        );
-      })()}
-    </div>
-  );
+					return (
+						<PromptComposer
+							filePath={filePath || fileName || "unknown"}
+							startLine={selection.start}
+							endLine={selection.end}
+							selectedCode={selectedLines.join("\n")}
+							language={language}
+							onSubmit={(text) => {
+								onCopyPrompt(text);
+								clearSelection();
+							}}
+							onClose={clearSelection}
+						/>
+					);
+				})()}
+		</div>
+	);
 }

@@ -124,31 +124,56 @@ export async function captureViewport(
   }
 
   // Claude TUI (and similar) only paints the rows it actually wrote to;
-  // tmux's capture-pane returns visually-blank entries for the rest. In
-  // live mode this leaves a "void" in the bottom half of the viewport.
-  // Mitigate by trimming the trailing blanks and prepending the most
-  // recent scrollback rows so the user sees actual content where the
-  // TUI left blanks, while the TUI's painted area stays at the bottom
-  // (its natural position).
+  // tmux's capture-pane returns visually-blank entries for the rest.
+  // Any window that overlaps the visible region (offset < rows) ends
+  // with those blanks, producing a "void" at the bottom of the slice
+  // even when the user has scrolled up. Trim them and prepend more
+  // scrollback rows from immediately above the current window so the
+  // viewport is full of meaningful content at every offset.
   //
-  // This only matters at offset=0 with the normal screen buffer. In
-  // altScreen mode (htop, vim, etc.) the TUI owns the whole surface,
-  // and in scrolled mode we're explicitly showing historical content.
+  // altScreen mode (htop, vim, etc.) is left alone — the TUI owns the
+  // whole surface there and blanks are intentional.
   let cursorPadShift = 0;
-  if (clampedOffset === 0 && !altScreen && historySize > 0) {
+  if (!altScreen && historySize > 0) {
     while (lines.length > 0 && isVisuallyBlank(lines[lines.length - 1])) {
       lines.pop();
     }
     const padNeeded = rows - lines.length;
     if (padNeeded > 0) {
-      const fetched = await captureScrollback(cs, paneId, padNeeded);
-      if (fetched.length > 0) {
-        const prepend = fetched.slice(-padNeeded);
-        lines = [...prepend, ...lines];
-        // tmux reports cursor_y relative to the original visible top, but
-        // the prepended scrollback rows now sit above the painted area;
-        // shift cursor down by the number of rows we actually prepended.
-        cursorPadShift = prepend.length;
+      // The current window starts at tmux line `start` (= -clampedOffset).
+      // To fill `padNeeded` rows we want the slice ending one row above
+      // `start` — i.e. -(clampedOffset + 1) — and extending `padNeeded`
+      // rows upward.
+      const padEnd = -(clampedOffset + 1);
+      const padStart = padEnd - (padNeeded - 1);
+      // Skip if the pad slice would go past the oldest scrollback row,
+      // or if we'd be sampling visible-region rows (offset==0 special
+      // case, handled by the simpler captureScrollback helper below).
+      if (clampedOffset === 0) {
+        const fetched = await captureScrollback(cs, paneId, padNeeded);
+        if (fetched.length > 0) {
+          const prepend = fetched.slice(-padNeeded);
+          lines = [...prepend, ...lines];
+          cursorPadShift = prepend.length;
+        }
+      } else if (padStart >= -historySize) {
+        try {
+          const padRaw = await cs.sendCommand(
+            `capture-pane -e -p -t ${paneId} -S ${padStart} -E ${padEnd}`,
+          );
+          const padLines = padRaw.split('\n');
+          while (padLines.length > 0 && isVisuallyBlank(padLines[padLines.length - 1])) {
+            padLines.pop();
+          }
+          if (padLines.length > 0) {
+            const prepend = padLines.slice(-padNeeded);
+            lines = [...prepend, ...lines];
+            // Cursor stays hidden in scrolled mode (atTail===false below),
+            // so no shift is needed here.
+          }
+        } catch {
+          // Capture failed (pane gone, etc.); fall through to blank pad.
+        }
       }
     }
   }

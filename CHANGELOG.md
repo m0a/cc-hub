@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.124] - 2026-05-18
+
+### Fixed
+- **EVEN G2 Glasses 統合の復旧**: v0.1.121 のプロトコル切替 (server-side scrollback) に追従できておらず、glasses クライアントが旧 `request-content` / `initial-content` / バイナリ `0x02` フレームに依存していた問題を修正
+  - WebSocket メッセージを `request-viewport` / `viewport` に置き換え、`viewport.lines` (ANSI 付き行配列) から `stripAnsi` してバッファ更新
+  - 不要になったバイナリフレームハンドラ・`resize 120x20` 送信を撤去 (resize はメイン UI 側のクライアントサイズを上書きしてしまうため、観測専用クライアントとしては正しい挙動)
+  - `requestContentAndWait` は新プロトコルでも引き続き機能 (buffer 差分で待機)
+
 ## [0.1.123] - 2026-05-18
 
 ### Added

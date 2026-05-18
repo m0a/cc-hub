@@ -67,22 +67,15 @@ export class CcHubWsClient {
       return
     }
 
-    this.ws.binaryType = 'arraybuffer'
-
     this.ws.onopen = () => {
       console.log('[ws] connected')
       this.callbacks.onReady()
     }
 
     this.ws.onmessage = (ev) => {
-      if (ev.data instanceof ArrayBuffer) {
-        console.log('[ws] binary frame:', ev.data.byteLength, 'bytes')
-        this.handleBinaryFrame(ev.data)
-      } else {
-        const preview = (ev.data as string).slice(0, 120)
-        console.log('[ws] json:', preview)
-        this.handleJsonMessage(ev.data as string)
-      }
+      const preview = (ev.data as string).slice(0, 120)
+      console.log('[ws] json:', preview)
+      this.handleJsonMessage(ev.data as string)
     }
 
     this.ws.onclose = () => {
@@ -102,56 +95,31 @@ export class CcHubWsClient {
         this.lastSessions = msg.sessions
         this.callbacks.onSessionsUpdated(msg.sessions)
       } else if (msg.type === 'subscribed' && msg.sessionId) {
-        console.log('[ws] subscribed to', msg.sessionId, '— sending resize')
-        this.send({ type: 'resize', sessionId: msg.sessionId, cols: 120, rows: 20, paneId: '%0' })
-      } else if (msg.type === 'initial-content' && msg.data && msg.sessionId) {
-        const text = atob(msg.data)
-        const clean = stripAnsi(text)
-        const lines = clean.split(/\r?\n/).filter(l => l.trim().length > 0)
-        const key = `${msg.sessionId}:${msg.paneId || '%0'}`
-        this.terminalBuffers.set(key, lines.slice(-this.maxLines))
-        this.callbacks.onTerminalOutput(msg.sessionId, msg.paneId || '%0', this.getTerminalText(msg.sessionId))
+        // Server emits an initial viewport on subscribe; ask explicitly too
+        // so we get one even if our active pane differs from the default.
+        const targetPane = this.getActivePaneId(msg.sessionId) || '%0'
+        console.log('[ws] subscribed to', msg.sessionId, '— requesting viewport for', targetPane)
+        this.send({ type: 'request-viewport', sessionId: msg.sessionId, paneId: targetPane, offset: 0 })
+      } else if (msg.type === 'viewport' && msg.sessionId && msg.viewport) {
+        this.applyViewport(msg.sessionId, msg.viewport)
       }
     } catch { /* ignore */ }
   }
 
-  private handleBinaryFrame(data: ArrayBuffer): void {
-    // Binary frame: [0x02][sessionId\0][paneId\0][raw data]
-    const bytes = new Uint8Array(data)
-    if (bytes[0] !== 0x02) return
-
-    let idx = 1
-    // Read sessionId (null-terminated)
-    let sessionIdEnd = idx
-    while (sessionIdEnd < bytes.length && bytes[sessionIdEnd] !== 0) sessionIdEnd++
-    const sessionId = new TextDecoder().decode(bytes.slice(idx, sessionIdEnd))
-    idx = sessionIdEnd + 1
-
-    // Read paneId (null-terminated)
-    let paneIdEnd = idx
-    while (paneIdEnd < bytes.length && bytes[paneIdEnd] !== 0) paneIdEnd++
-    const paneId = new TextDecoder().decode(bytes.slice(idx, paneIdEnd))
-    idx = paneIdEnd + 1
-
-    // Rest is terminal output
-    const rawText = new TextDecoder().decode(bytes.slice(idx))
-    const cleanText = stripAnsi(rawText)
-
-    // Update buffer
-    const key = `${sessionId}:${paneId}`
-    let buf = this.terminalBuffers.get(key)
-    if (!buf) {
-      buf = []
-      this.terminalBuffers.set(key, buf)
-    }
-
-    const newLines = cleanText.split('\n')
-    buf.push(...newLines)
-    // Keep only last N non-empty lines
-    const filtered = buf.filter(l => l.trim().length > 0)
-    this.terminalBuffers.set(key, filtered.slice(-this.maxLines))
-
-    this.callbacks.onTerminalOutput(sessionId, paneId, this.getTerminalText(sessionId))
+  private applyViewport(
+    sessionId: string,
+    viewport: { paneId: string; lines: string[] },
+  ): void {
+    const cleanLines = viewport.lines
+      .map((l) => stripAnsi(l))
+      .filter((l) => l.trim().length > 0)
+    const key = `${sessionId}:${viewport.paneId}`
+    this.terminalBuffers.set(key, cleanLines.slice(-this.maxLines))
+    this.callbacks.onTerminalOutput(
+      sessionId,
+      viewport.paneId,
+      this.getTerminalText(sessionId),
+    )
   }
 
   subscribe(sessionId: string): void {
@@ -220,16 +188,16 @@ export class CcHubWsClient {
           resolve()
         }
       }
-      // Poll briefly for buffer change after initial-content arrives
+      // Poll briefly for buffer change after the viewport push arrives
       const interval = setInterval(check, 50)
       setTimeout(() => clearInterval(interval), timeoutMs)
-      this.send({ type: 'request-content', sessionId, paneId: targetPane })
+      this.send({ type: 'request-viewport', sessionId, paneId: targetPane, offset: 0 })
     })
   }
 
   requestContent(sessionId: string, paneId?: string): void {
     const targetPane = paneId || this.getActivePaneId(sessionId) || '%0'
-    this.send({ type: 'request-content', sessionId, paneId: targetPane })
+    this.send({ type: 'request-viewport', sessionId, paneId: targetPane, offset: 0 })
   }
 
   sendInput(sessionId: string, text: string, paneId?: string): void {

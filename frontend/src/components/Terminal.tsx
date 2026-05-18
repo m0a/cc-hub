@@ -41,6 +41,10 @@ export interface ControlModeConfig {
    *  control mode is responsible for clamping to [0, historySize] and
    *  re-requesting the viewport from the server. */
   scrollBy?: (lines: number) => void;
+  /** Snap the viewport back to the live edge (offset=0). Equivalent to
+   *  the old `term.scrollToBottom()` in the days of frontend scrollback.
+   *  No-op if already at the live edge. */
+  scrollToLive?: () => void;
   /** Force-refresh the current viewport (e.g. after a re-connect). */
   refreshViewport?: () => void;
   /** Snapshot of the current scroll state for indicator UI. */
@@ -1069,7 +1073,11 @@ export const TerminalComponent = memo(forwardRef<TerminalRef, TerminalProps>(fun
 
   const handleShowKeyboard = useCallback(() => {
     setInputMode('input');
-    terminalRef.current?.scrollToBottom();
+    // Snap back to the live edge when the user taps to interact, matching
+    // the pre-server-side-scrollback behavior. `term.scrollToBottom()` is
+    // a no-op now (xterm scrollback is 0); the actual reset goes through
+    // the control mode's offset.
+    controlModeRef.current?.scrollToLive?.();
     fitTerminal();
   }, [fitTerminal]);
   showKeyboardRef.current = handleShowKeyboard;

@@ -637,6 +637,13 @@ export function DesktopLayout({
           paneOffsetRef.current.set(paneId, next);
           controlTerminalRef.current.requestViewport(paneId, next);
         },
+        scrollToLive: () => {
+          if (!controlTerminalRef.current.isConnected) return;
+          const cur = paneOffsetRef.current.get(paneId) ?? 0;
+          if (cur === 0) return;
+          paneOffsetRef.current.set(paneId, 0);
+          controlTerminalRef.current.requestViewport(paneId, 0);
+        },
         refreshViewport: () => {
           if (!controlTerminalRef.current.isConnected) return;
           const offset = paneOffsetRef.current.get(paneId) ?? 0;

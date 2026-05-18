@@ -236,6 +236,13 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(function 
       paneOffsetRef.current.set(currentPaneId, next);
       controlTerminal.requestViewport(currentPaneId, next);
     },
+    scrollToLive: () => {
+      if (!controlTerminal.isConnected) return;
+      const cur = paneOffsetRef.current.get(currentPaneId) ?? 0;
+      if (cur === 0) return;
+      paneOffsetRef.current.set(currentPaneId, 0);
+      controlTerminal.requestViewport(currentPaneId, 0);
+    },
     refreshViewport: () => {
       const offset = paneOffsetRef.current.get(currentPaneId) ?? 0;
       controlTerminal.requestViewport(currentPaneId, offset);

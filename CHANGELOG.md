@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.119] - 2026-05-18
+
+### Fixed
+- ターミナルが出力中にスクロールできない問題を修正 (#166)
+  - state-snapshot 適用後に毎回無条件で `term.scrollToBottom()` していたため、5/sec の snapshot 流入下でユーザーのスクロールアップが 200ms 以内に引き戻されていた
+  - 適用前に `viewportY >= baseY` (= 末尾固定) かどうかを判定し、末尾固定時のみ自動スクロール
+
+### Changed
+- `cchub notify` hook 受信時の CPU を大幅削減 (#166)
+  - `generateSmartMessage` がアクティブな Claude transcript (数 MB) を毎回 `readFile` + `split('\n')` していたのを、`Bun.file().slice()` で末尾 256 KB のみ読む方式に変更
+  - Hono request logger が `POST /api/notify` をスキップするように (既存の `/api/sessions` スキップと同様)
+  - cpu-prof 計測: `stringSplitFast` 17.1% + logger 5.1% が消失 → 想定 CPU 削減 ~20%
+
 ## [0.1.118] - 2026-05-18
 
 ### Changed

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.117] - 2026-05-18
+
+### Fixed
+- state-snapshot 送信が pane あたり最大 ~20/sec で連続発火し cchub が CPU 150% 以上を消費する問題を修正 (#162)
+  - `SNAPSHOT_MIN_INTERVAL_MS=100` の hard rate-limit を導入し、連続 `%output` 下でも 1 pane あたり最大 ~10/sec に制限
+  - 初回 (idle 後) snapshot は従来通り 50ms debounce 後に送信されるためタイピングレイテンシは維持
+- `[mux] state-snapshot ...` の詳細ログを `DEBUG_MUX=1` 配下に隔離し、journald への書き込み量を削減
+
 ## [0.1.116] - 2026-05-18
 
 ### Fixed

@@ -469,17 +469,19 @@ export interface TmuxLayoutNode {
 }
 
 // -----------------------------------------------------------------------------
-// Server-side scrollback (viewport on demand)
+// State sync (server-side diff sync, mosh-inspired)
 //
-// tmux is the authoritative store for both the visible region and the
-// scrollback. The frontend keeps no buffer of its own; it asks for a
-// `viewport` window (offset rows above the live edge) and the server
-// answers with the lines tmux currently has for that range.
+// The server treats `tmux capture-pane -e -p` as the canonical pane state.
+// On every output debounce window it captures a fresh PaneSnapshot, diffs it
+// against the previous snapshot, and pushes either a full snapshot (initial /
+// recovery) or a list of DiffOps. The client applies them by writing VT
+// sequences into xterm.js; xterm.js is not used to maintain authoritative
+// terminal state, only to render.
 // -----------------------------------------------------------------------------
 
 export interface PaneCursor {
   x: number;          // 0-based column
-  y: number;          // 0-based row within visible area (live mode only)
+  y: number;          // 0-based row within visible area
   visible: boolean;
 }
 
@@ -487,20 +489,25 @@ export interface PaneModes {
   altScreen: boolean;      // alternate screen buffer active (vim, htop, etc.)
 }
 
-export interface PaneViewport {
+export interface PaneSnapshot {
   paneId: string;
-  cols: number;            // pane width (cells)
-  rows: number;            // pane height (cells)
-  lines: string[];         // exactly `rows` entries, top-to-bottom, ANSI-encoded
-  cursor: PaneCursor;      // cursor.visible=false when offset>0 (scrolled away)
+  seq: number;             // server-assigned, monotonically increasing
+  cols: number;            // pane width (cells) at capture time
+  rows: number;            // pane height (cells) at capture time
+  lines: string[];         // visible region, each line includes ANSI escapes
+  // Lines pushed into tmux's scrollback since the previous snapshot. The
+  // client writes these into xterm.js so its own scrollback ring buffer is
+  // populated for wheel/touch scroll within the recent history.
+  scrollbackDelta?: string[];
+  cursor: PaneCursor;
   modes: PaneModes;
-  // tmux history_size at capture time. Total scrollback extent above the
-  // live edge — the frontend uses this to size its ScrollOverlay.
-  historySize: number;
-  // Echo of the request's offset (0 = live edge, N = N rows scrolled up).
-  offset: number;
-  atTail: boolean;         // offset === 0
 }
+
+export type DiffOp =
+  | { op: 'line'; row: number; content: string }
+  | { op: 'cursor'; x: number; y: number; visible: boolean }
+  | { op: 'mode'; name: keyof PaneModes; value: boolean }
+  | { op: 'size'; cols: number; rows: number };
 
 // Client → Server messages
 export type ControlClientMessage =
@@ -512,21 +519,27 @@ export type ControlClientMessage =
   | { type: 'select-pane'; paneId: string }
   | { type: 'ping'; timestamp: number }
   | { type: 'client-info'; deviceType: 'mobile' | 'tablet' | 'desktop' }
+  | { type: 'scroll'; paneId: string; lines: number } // positive = up, negative = down
   | { type: 'adjust-pane'; paneId: string; direction: 'L' | 'R' | 'U' | 'D'; amount: number }
   | { type: 'equalize-panes'; direction: 'horizontal' | 'vertical' }
   | { type: 'zoom-pane'; paneId: string }
   | { type: 'respawn-pane'; paneId: string }
-  // Ask the server for a viewport `offset` rows above the live edge.
-  // offset=0 means live mode; the server will also push fresh viewports
-  // unsolicited when new output arrives.
-  | { type: 'request-viewport'; paneId: string; offset: number };
+  // State sync: ack the highest applied snapshot seq so the server knows what
+  // base its next diff is built from.
+  | { type: 'state-ack'; paneId: string; seq: number }
+  // State sync: request a full snapshot (e.g. when local seq does not match
+  // the server's diff base, or after a forced refresh).
+  | { type: 'request-snapshot'; paneId: string };
 
 // Server → Client messages
 export type ControlServerMessage =
   | { type: 'layout'; layout: TmuxLayoutNode }
-  // Viewport payload. Sent in reply to `request-viewport` and pushed
-  // unsolicited to live-mode (offset=0) subscribers when tmux emits output.
-  | { type: 'viewport'; viewport: PaneViewport }
+  // State sync: full snapshot. Sent on subscribe, after resize, or when the
+  // client requested one. Replaces the previous `initial-content` mechanism.
+  | { type: 'state-snapshot'; snapshot: PaneSnapshot }
+  // State sync: incremental diff from `base` seq to `seq`. Client should
+  // request a full snapshot if its locally held base does not match.
+  | { type: 'state-diff'; paneId: string; base: number; seq: number; ops: DiffOp[] }
   | { type: 'ready' }
   | { type: 'pong'; timestamp: number }
   | { type: 'error'; message: string; paneId?: string }
@@ -538,17 +551,38 @@ export type ControlServerMessage =
 // Multiplexed WebSocket Types (single WS per client)
 // =============================================================================
 
+// Triggers for client-side self-verification dumps (Channel C, dev-only).
+export type DebugDumpTrigger = 'resize-done' | 'reconnect-done' | 'output-idle' | 'periodic' | 'user';
+
 // Client → Server messages for /ws/mux
 export type MuxClientMessage =
   | { type: 'subscribe'; sessionId: string }
   | { type: 'unsubscribe'; sessionId: string }
   | { type: 'subscribe-conversation'; sessionId: string }
   | { type: 'unsubscribe-conversation'; sessionId: string }
+  // Channel C: client sends its xterm.js buffer snapshot for server-side
+  // comparison against the canonical tmux state. Only used when the server
+  // reports `selfVerifyEnabled: true` in the `subscribed` response.
+  | {
+      type: 'debug-dump';
+      sessionId: string;
+      paneId: string;
+      lines: string[];                // xterm buffer.active rows, rtrim()'d on server
+      cursor: { x: number; y: number };
+      trigger: DebugDumpTrigger;
+      ts: number;
+      // The snapshot seq the client most recently applied for this pane.
+      // Allows the server to compare against the same snap the client saw
+      // (rather than a newer one), eliminating race-induced false drift.
+      appliedSeq?: number;
+    }
   | (ControlClientMessage & { sessionId: string });
 
 // Server → Client messages for /ws/mux
 export type MuxServerMessage =
-  | { type: 'subscribed'; sessionId: string }
+  // `selfVerifyEnabled` is true when CCHUB_SELF_VERIFY=1 on the server,
+  // signaling clients to start streaming `debug-dump` messages.
+  | { type: 'subscribed'; sessionId: string; selfVerifyEnabled?: boolean }
   | { type: 'unsubscribed'; sessionId: string }
   | { type: 'sessions-updated'; sessions: SessionResponse[] }
   | { type: 'conversation-subscribed'; sessionId: string; ccSessionId: string | null }

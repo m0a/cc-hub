@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.123] - 2026-05-18
+
+### Added
+- **Server-side scrollback (再導入)**: tmux を visible region とスクロールバックの単一情報源とし、xterm.js は描画専用にする構成へ。v0.1.121 で発生したモバイル描画 regression を解消した上で再投入
+  - WebSocket `request-viewport` / `viewport` プロトコル: クライアントが offset を指定して任意の窓を要求、サーバは tmux `capture-pane -S/-E` で該当行を返す
+  - `pane-viewport.ts` に offset ベースの window 取得を集約。altScreen TUI (htop/vim/Codex) は触らず、normal-screen の inline TUI / シェルに対してだけ scrollback で padFill して "void" を消す
+  - subscribe 直後に初期 viewport を即配信し、モバイルでの「灰色キャンバス」レースを排除
+  - 慣性スクロールは scroll 量を offset に換算して tmux に問い合わせる方式に置き換え (xterm 側 scrollback は 0)
+  - ターミナルタップ / ソフトキーボード表示で offset=0 (live edge) に強制復帰
+
+### Fixed
+- Void エリア対策の総合修正
+  - Claude TUI のように pane 全域を塗らないアプリで残る末尾空白を、上の scrollback で穴埋めして常にフル pane 分の内容を見せる
+  - スクロール中も同じ padFill を適用 (capture window が visible region をまたいでも void が広がらない)
+  - シェルがプロンプトを空白行に置いている場合は、カーソル行を含めて trim を止め、padFill のシフト分だけ cursor を下に追従させる (cursor が padded-in な scrollback 上に乗らない)
+- モバイルで `client-size` が 1 行単位で揺れて viewport が再送される現象を抑制 (`±1` 行は noise として吸収)
+
+### Changed
+- `state-snapshot` / `state-diff` ベースのフレーム配信を撤廃し、`viewport` 配信に統一 (実コード -481 行)
+- フロントエンドの xterm scrollback を 0 に固定 (履歴の管理は tmux 側のみ)
+
 ## [0.1.122] - 2026-05-18
 
 ### Reverted

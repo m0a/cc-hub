@@ -47,6 +47,7 @@ shared/      # Shared types and Zod schemas (types.ts)
 - **TmuxService** (`services/tmux.ts`) - Manages tmux sessions, spawns Claude Code processes, collects all pane info per session, batch agent info extraction
 - **TmuxLayoutParser** (`services/tmux-layout-parser.ts`) - Parses tmux layout strings into `TmuxLayoutNode` tree for frontend rendering
 - **TmuxOctalDecoder** (`services/tmux-octal-decoder.ts`) - Decodes tmux octal-encoded output, raw byte processing for split UTF-8 sequences, hex encoding for `send-keys -H`
+- **PaneViewport** (`services/pane-viewport.ts`) - Captures a viewport (visible region + optional scrollback offset) from a pane via `capture-pane -e -p -S/-E`. tmux is the single source of truth for both visible content and history; the frontend is render-only with `scrollback: 0`. Includes `padFill` for normal-screen inline TUIs (Claude Code etc.) that don't paint the full pane height — trims trailing blanks down to the cursor row and prepends scrollback so the user never sees "void" rows, shifting the cursor `y` accordingly. altScreen TUIs (htop/vim/Codex) are returned untouched
 - **ClaudeCodeService** (`services/claude-code.ts`) - Monitors Claude Code state from `.jsonl` files, PTY-based session matching
 - **SessionHistoryService** (`services/session-history.ts`) - Reads past Claude Code session history and conversations
 - **SessionMetadataService** (`services/session-metadata.ts`) - Persists session metadata (theme, title, session order, last known sessions for recovery after reboot)
@@ -107,8 +108,8 @@ shared/      # Shared types and Zod schemas (types.ts)
 **Terminal WebSocket** (`/ws/mux`):
 - Multiplexed WebSocket — single connection serves all sessions
 - Client subscribes/unsubscribes per session via JSON messages
-- Client messages (`MuxClientMessage`): `subscribe`, `unsubscribe`, then per-session: `input`, `resize`, `split`, `close-pane`, `resize-pane`, `select-pane`, `scroll`, `adjust-pane`, `equalize-panes`, `zoom-pane`, `request-content`, `ping`, `client-info`
-- Server messages (`MuxServerMessage`): `subscribed`, `unsubscribed`, `sessions-updated`, then per-session: `output`, `layout`, `initial-content`, `ready`, `pong`, `error`, `new-session`
+- Client messages (`MuxClientMessage`): `subscribe`, `unsubscribe`, `subscribe-conversation`, `unsubscribe-conversation`, then per-session (`ControlClientMessage`): `input`, `resize`, `split`, `close-pane`, `resize-pane`, `select-pane`, `adjust-pane`, `equalize-panes`, `zoom-pane`, `respawn-pane`, `request-viewport`, `ping`, `client-info`
+- Server messages (`MuxServerMessage`): `subscribed`, `unsubscribed`, `sessions-updated`, `conversation-subscribed`, `conversation-unsubscribed`, `initial-conversation`, `conversation-update`, then per-session (`ControlServerMessage`): `layout`, `viewport`, `ready`, `pong`, `error`, `new-session`, `pane-dead`, `hook-event`
 - Server periodically pushes `sessions-updated` (5s interval) with full session list
 
 **Other**:
@@ -128,7 +129,8 @@ shared/      # Shared types and Zod schemas (types.ts)
 - **SessionModal.tsx** - Session picker modal (Ctrl+B) with pane count badges and expandable pane list
 
 **Terminal**:
-- **Terminal.tsx** - xterm.js terminal with WebGL rendering, `ControlModeConfig` for tmux size sync (`proposeDimensions()` instead of `fit()`, `setExactSize()` from tmux layout). Supports font size adjustment, desktop text selection with auto-copy, touch selection mode for mobile/tablet
+- **Terminal.tsx** - xterm.js terminal with WebGL rendering, **`scrollback: 0`** (server-side scrollback). `ControlModeConfig` for tmux size sync (`proposeDimensions()` instead of `fit()`, `setExactSize()` from tmux layout) and viewport delivery (`registerOnViewport`, `scrollBy`, `scrollToLive`). Each new viewport is converted to a VT escape sequence (`viewport-render.ts`) and `term.write()`-ed to refresh the screen. Supports font size adjustment, desktop text selection with auto-copy, touch selection mode for mobile/tablet
+- **viewport-render.ts** (`utils/viewport-render.ts`) - Converts a `PaneViewport` into a VT sequence (`\x1b[?25l` + per-row `\x1b[r;1H\x1b[2K<line>` + cursor restore) that xterm.js can apply with a single `term.write()`
 
 **Session Management**:
 - **SessionTabs.tsx** / **SessionTab.tsx** - Tab bar for active sessions
@@ -172,7 +174,7 @@ shared/      # Shared types and Zod schemas (types.ts)
 
 ### Frontend Hooks
 
-- **useMultiplexedTerminal.ts** - WebSocket connection to `/ws/mux` for multiplexed terminal I/O. Handles auto-reconnect, keepalive pings, session subscribe/unsubscribe, base64 I/O encoding. Returns `sendInput`, `resize`, `splitPane`, `closePane`, `zoomPane`, `scrollPane`, `adjustPane`, `equalizePanes` etc.
+- **useMultiplexedTerminal.ts** - WebSocket connection to `/ws/mux` for multiplexed terminal I/O. Handles auto-reconnect, keepalive pings, session subscribe/unsubscribe, base64 I/O encoding, viewport dispatch (`onPaneViewport` callback). Returns `sendInput`, `resize`, `splitPane`, `closePane`, `selectPane`, `zoomPane`, `respawnPane`, `adjustPane`, `equalizePanes`, `requestViewport`, `sendClientInfo`
 - **useSessions.ts** - Active sessions state management
 - **useSessionHistory.ts** - Session history browsing
 - **useDashboard.ts** - Dashboard data fetching
@@ -207,11 +209,16 @@ Browser <--WebSocket (/ws/mux, JSON+binary)--> Hono Server <--tmux -CC (control 
 
 The backend upgrades HTTP to WebSocket at `/ws/mux`. A single multiplexed connection manages multiple session subscriptions. Each subscription creates a `TmuxControlSession` that manages `tmux -CC attach`, parsing structured protocol messages (`%output`, `%layout-change`, `%begin/%end/%error`, `%exit`). Terminal I/O is multiplexed per-pane and per-session using `MuxClientMessage` / `MuxServerMessage` types in `shared/types.ts`.
 
+The frontend is **render-only**: xterm.js has `scrollback: 0`, and history is held exclusively by tmux. The server periodically and on-demand sends `PaneViewport` frames (a snapshot of `rows` lines at a given scrollback offset, plus cursor/mode metadata) which the client applies via `viewportToVTSequence()` + `term.write()`.
+
 Key behaviors:
 - **Session push**: Server pushes `sessions-updated` every 5s with full session list (replaces polling)
 - **Layout sync**: `%layout-change` events update all connected clients in real-time
-- **Size management**: Client sends container size, tmux determines pane dimensions, xterm.js uses `setExactSize()` from layout
-- **Initial content**: Deferred until first resize for correct terminal dimensions (`capture-pane -e -p -S -`)
+- **Size management**: Client sends container size, tmux determines pane dimensions, xterm.js uses `setExactSize()` from layout. `setClientSize` absorbs ±1-row mobile noise so viewports don't re-emit on minor resize
+- **Viewport protocol**: Client sends `request-viewport { paneId, offset }`. Server replies (and live-mode subscribers also receive unsolicited pushes on tmux output) with `viewport { paneId, cols, rows, lines, cursor, modes, historySize, offset, atTail }`. `offset=0` = live edge; `offset>0` = N rows above into scrollback
+- **Initial viewport**: Sent immediately on `subscribe` so mobile doesn't show a gray canvas while waiting for the first resize round-trip
+- **padFill (Claude TUI etc.)**: For non-altScreen panes the server trims trailing blanks down to the cursor row and prepends scrollback to fill the pane, so the user never sees a "void" of unrendered cells. Cursor `y` is shifted by the prepend length to track the shell's view
+- **Scroll to live**: Tapping the terminal or showing the soft keyboard forces the client back to `offset=0`
 - **UTF-8**: Raw byte processing to handle split multi-byte sequences across `%output` lines
 
 ## CLI Commands
@@ -324,7 +331,7 @@ Uses custom i18n module with embedded translations:
 
 Types are defined in `shared/types.ts` with Zod schemas for validation. Import from `../../../shared/types` in both backend and frontend.
 
-Key types: `ControlClientMessage`, `ControlServerMessage` (per-session terminal I/O), `MuxClientMessage`, `MuxServerMessage` (multiplexed WebSocket protocol), `SessionResponse`, `PaneInfo`, `TmuxLayoutNode`.
+Key types: `ControlClientMessage`, `ControlServerMessage` (per-session terminal I/O), `MuxClientMessage`, `MuxServerMessage` (multiplexed WebSocket protocol), `PaneViewport` / `PaneCursor` / `PaneModes` (viewport frames), `SessionResponse`, `PaneInfo`, `TmuxLayoutNode`.
 
 ## Linting
 

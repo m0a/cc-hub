@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.129] - 2026-05-19
+
+### Fixed
+- **ConversationViewer の追従スクロール**: ストリーミング中にメッセージが追加されるたび最下部に強制スクロールしてしまい、上にスクロールして読んでいるとその場に留まれなかった問題を修正。ターミナルと同じ挙動 (最下部にいるときだけ追従、上にスクロール中は留まる、最下部に戻すと追従再開) に変更。`atBottomRef` を常時更新するよう内部状態追跡と外部コールバック (キーボード制御) を分離し、auto-scroll を `atBottomRef` でゲート (`frontend/src/components/ConversationViewer.tsx`)
+
 ## [0.1.128] - 2026-05-19
 
 ### Fixed

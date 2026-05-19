@@ -638,20 +638,19 @@ export function ConversationViewer({
 		let gestureFired = false;
 
 		let cooldownUntil = 0;
-		const reportIfChanged = () => {
-			if (Date.now() < cooldownUntil) return;
-			const atBottom = computeAtBottom();
-			if (atBottom === atBottomRef.current) return;
-			atBottomRef.current = atBottom;
-			cooldownUntil = Date.now() + 600; // ignore rapid layout-shift re-toggles
-			onAtBottomChangeRef.current?.(atBottom);
-		};
-
 		const onScroll = () => {
-			// Only react when the user is (or recently was) touching, to avoid
-			// feedback loops with keyboard show/hide layout shifts.
+			const atBottom = computeAtBottom();
+			const prev = atBottomRef.current;
+			// Always keep internal at-bottom state fresh — the auto-scroll
+			// effect reads this to decide whether to follow streaming output.
+			atBottomRef.current = atBottom;
+			// The external onAtBottomChange callback drives keyboard visibility,
+			// so keep it gated to user gestures to avoid show/hide oscillation.
 			if (!userTouching && Date.now() > userTouchedUntil) return;
-			reportIfChanged();
+			if (atBottom === prev) return;
+			if (Date.now() < cooldownUntil) return;
+			cooldownUntil = Date.now() + 600;
+			onAtBottomChangeRef.current?.(atBottom);
 		};
 		const onStart = (e: TouchEvent) => {
 			userTouching = true;
@@ -716,9 +715,13 @@ export function ConversationViewer({
 	useEffect(() => {
 		if (scrollToBottom && messages.length > 0 && !isLoading) {
 			if (messages.length > prevMessageCount) {
-				requestAnimationFrame(() => {
-					scrollToEnd();
-				});
+				// Only follow streaming output if the user is still at the bottom;
+				// otherwise they're reading older content and we'd yank them back.
+				if (atBottomRef.current) {
+					requestAnimationFrame(() => {
+						scrollToEnd();
+					});
+				}
 			}
 			setPrevMessageCount(messages.length);
 		}

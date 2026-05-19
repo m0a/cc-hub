@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.130] - 2026-05-19
+
+### Changed
+- **ConversationViewer の見た目を再設計**: ターミナル風のコンパクトレイアウトに変更。各ターンに role 色のサイドバー (2px) + 役割ラベル (uppercase, dim) + 本文を indent、Claude は violet / Codex は cyan / User は blue / System は gray / Summary は amber で識別。Tool 呼び出し・結果・Thinking はデフォルトで畳むようにし、1行サマリで全体を俯瞰しやすく (`frontend/src/components/ConversationViewer.tsx`)
+
 ## [0.1.129] - 2026-05-19
 
 ### Fixed

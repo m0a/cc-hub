@@ -102,14 +102,6 @@ function CollapsibleSection({
 	);
 }
 
-// Threshold for auto-expanding short content (characters)
-const SHORT_CONTENT_THRESHOLD = 500;
-
-// Check if content is short enough to auto-expand
-function isShortContent(content: string): boolean {
-	return content.length <= SHORT_CONTENT_THRESHOLD;
-}
-
 // Tool use display
 function getToolSummary(name: string, input: Record<string, unknown>): string {
 	// Bash has an explicit description field
@@ -153,7 +145,6 @@ function ToolUseDisplay({ tools }: { tools: ToolUseInfo[] }) {
 						title={title}
 						icon="🔧"
 						variant="tool"
-						defaultOpen={isShortContent(inputStr)}
 					>
 						<pre className="text-green-300 whitespace-pre-wrap break-all">
 							{inputStr}
@@ -190,7 +181,6 @@ function ToolResultDisplay({ results }: { results: ToolResultInfo[] }) {
 						}
 						icon={result.isError ? "❌" : "📋"}
 						variant={result.isError ? "error" : "result"}
-						defaultOpen={isShortContent(result.output) || hasImages}
 					>
 						{hasOutput && (
 							<pre
@@ -278,7 +268,6 @@ function ThinkingDisplay({ thinking }: { thinking: string }) {
 			title={t("conversation.thinking")}
 			icon="💭"
 			variant="thinking"
-			defaultOpen={isShortContent(thinking)}
 		>
 			<div className="text-purple-200 whitespace-pre-wrap">{thinking}</div>
 		</CollapsibleSection>
@@ -415,6 +404,25 @@ const markdownComponents = {
 	),
 };
 
+// Role → sidebar bar color + role-label color.
+// Terminal-style compact layout: a thin colored bar at the left edge
+// identifies the speaker; the role label sits on its own dim line and
+// the body is indented under the bar.
+function getRoleColors(kind: "you" | "claude" | "codex" | "system" | "summary") {
+	switch (kind) {
+		case "you":
+			return { bar: "bg-blue-400/70", label: "text-blue-300" };
+		case "claude":
+			return { bar: "bg-violet-400/70", label: "text-violet-300" };
+		case "codex":
+			return { bar: "bg-cyan-400/70", label: "text-cyan-300" };
+		case "summary":
+			return { bar: "bg-amber-400/70", label: "text-amber-300" };
+		default:
+			return { bar: "bg-zinc-500/50", label: "text-zinc-500" };
+	}
+}
+
 // Memoized message item component
 const MessageItem = memo(function MessageItem({
 	msg,
@@ -436,59 +444,65 @@ const MessageItem = memo(function MessageItem({
 	const isSummaryMessage =
 		msg.role === "user" && msg.content && isSystemSummary(msg.content);
 
-	// Get display role
 	let displayRole: string;
+	let kind: "you" | "claude" | "codex" | "system" | "summary";
 
 	if (isSummaryMessage) {
 		displayRole = t("conversation.systemSummary");
+		kind = "summary";
 	} else if (isToolResultOnly) {
 		displayRole = t("conversation.system");
+		kind = "system";
 	} else if (msg.role === "user") {
 		displayRole = t("conversation.you");
+		kind = "you";
+	} else if (agent === "codex") {
+		displayRole = t("conversation.codex");
+		kind = "codex";
 	} else {
-		displayRole =
-			agent === "codex" ? t("conversation.codex") : t("conversation.claude");
+		displayRole = t("conversation.claude");
+		kind = "claude";
 	}
 
-	const roleColor =
-		msg.role === "user"
-			? "text-blue-400"
-			: isSummaryMessage
-				? "text-amber-400"
-				: "text-zinc-500";
+	const { bar, label } = getRoleColors(kind);
 
 	return (
 		<div className="py-1">
-			<div
-				className={`text-[length:var(--cv-fs-meta,11px)] font-medium ${roleColor} mb-0.5`}
-			>
-				{displayRole}
-			</div>
-
-			{/* Thinking block (Claude only) */}
-			{msg.thinking && <ThinkingDisplay thinking={msg.thinking} />}
-
-			{/* Main text content */}
-			{msg.content && (
-				<div className="text-zinc-300 markdown-content leading-snug">
-					<ReactMarkdown
-						remarkPlugins={[remarkGfm]}
-						components={markdownComponents}
+			<div className="flex gap-2">
+				<div className={`w-[2px] shrink-0 self-stretch rounded-sm ${bar}`} />
+				<div className="flex-1 min-w-0">
+					<div
+						className={`text-[length:var(--cv-fs-meta,11px)] uppercase tracking-wide font-medium ${label} mb-0.5`}
 					>
-						{processImageReferences(msg.content)}
-					</ReactMarkdown>
+						{displayRole}
+					</div>
+
+					{/* Thinking block (Claude only) */}
+					{msg.thinking && <ThinkingDisplay thinking={msg.thinking} />}
+
+					{/* Main text content */}
+					{msg.content && (
+						<div className="text-zinc-300 markdown-content leading-snug">
+							<ReactMarkdown
+								remarkPlugins={[remarkGfm]}
+								components={markdownComponents}
+							>
+								{processImageReferences(msg.content)}
+							</ReactMarkdown>
+						</div>
+					)}
+
+					{/* Tool use (Claude only) */}
+					{msg.toolUse && msg.toolUse.length > 0 && (
+						<ToolUseDisplay tools={msg.toolUse} />
+					)}
+
+					{/* Tool result (displayed as System when no user text) */}
+					{msg.toolResult && msg.toolResult.length > 0 && (
+						<ToolResultDisplay results={msg.toolResult} />
+					)}
 				</div>
-			)}
-
-			{/* Tool use (Claude only) */}
-			{msg.toolUse && msg.toolUse.length > 0 && (
-				<ToolUseDisplay tools={msg.toolUse} />
-			)}
-
-			{/* Tool result (displayed as System when no user text) */}
-			{msg.toolResult && msg.toolResult.length > 0 && (
-				<ToolResultDisplay results={msg.toolResult} />
-			)}
+			</div>
 		</div>
 	);
 });

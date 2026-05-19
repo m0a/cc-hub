@@ -9,12 +9,15 @@ const isDev = process.argv.some(arg => arg.includes('--watch'));
 const DEFAULT_PORT = isDev ? 3456 : 5923;
 
 interface CliOptions {
-  command: 'serve' | 'setup' | 'uninstall' | 'update' | 'status' | 'notify' | 'help' | 'version';
+  command: 'serve' | 'setup' | 'uninstall' | 'update' | 'status' | 'notify' | 'help' | 'version' | 'debug';
   port: number;
   host: string;
   password?: string;
   updateCheck?: boolean;
   updateAuto?: boolean;
+  debugSubcommand?: 'enable' | 'disable' | 'profile' | 'status';
+  debugPort?: number;
+  debugSeconds?: number;
 }
 
 function printHelp(): void {
@@ -28,6 +31,8 @@ ${t('cli.usage')}
   cchub update [options]    Check and apply updates
   cchub status              Show service status
   cchub notify              Send hook event (reads JSON from stdin)
+  cchub debug <sub>         Toggle Bun inspector mode on the running service
+                            sub: enable | disable | profile | status
 
 ${t('cli.options')}
   ${t('cli.optionPort')}
@@ -37,6 +42,10 @@ ${t('cli.options')}
 update options:
   --check                Check only (no update)
   --auto                 Auto-update mode (for timer)
+
+debug options:
+  --port <port>          Inspector port (default 9229)
+  --seconds <n>          For 'profile' sub: enable for N seconds then auto-disable
 
 ${t('cli.examples')}
   ${t('cli.exampleStart')}
@@ -76,6 +85,26 @@ export function parseArgs(args: string[]): CliOptions {
         break;
       case 'notify':
         options.command = 'notify';
+        break;
+      case 'debug': {
+        options.command = 'debug';
+        // Next non-flag arg is the sub-command.
+        const sub = args[i + 1];
+        if (sub === 'enable' || sub === 'disable' || sub === 'profile' || sub === 'status') {
+          options.debugSubcommand = sub;
+          i++;
+        } else {
+          options.debugSubcommand = 'status';
+        }
+        break;
+      }
+      case '--seconds':
+        i++;
+        options.debugSeconds = parseInt(args[i], 10);
+        if (Number.isNaN(options.debugSeconds) || options.debugSeconds < 1) {
+          console.error('❌ --seconds must be a positive integer');
+          process.exit(1);
+        }
         break;
       case '-h':
       case '--help':
@@ -161,6 +190,10 @@ export async function runCli(options: CliOptions): Promise<'serve' | 'exit'> {
       await runNotify(options);
       return 'exit';
 
+    case 'debug':
+      await runDebug(options);
+      return 'exit';
+
     case 'serve':
       return 'serve';
   }
@@ -189,6 +222,18 @@ async function runNotify(options: CliOptions): Promise<void> {
 async function runStatus(): Promise<void> {
   const { showStatus } = await import('./commands/status');
   await showStatus();
+}
+
+async function runDebug(options: CliOptions): Promise<void> {
+  const { runDebug: runDebugImpl } = await import('./commands/debug');
+  // `options.port` is the server port; reuse the original DEFAULT_PORT default
+  // for that and let debug.ts pick the inspector port itself when the user
+  // hasn't passed an explicit override (we don't currently expose a separate
+  // `--inspect-port` flag — debug.ts defaults to 9229).
+  await runDebugImpl({
+    sub: options.debugSubcommand ?? 'status',
+    seconds: options.debugSeconds,
+  });
 }
 
 export { VERSION };

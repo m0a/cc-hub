@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.131] - 2026-05-19
+
+### Changed
+- **ConversationViewer の可読性向上**: Tool 結果を再びデフォルトで展開状態に (1行サマリだけだと結果が見づらかった)。折りたたみ内部の本文色を `zinc-500` / `th-text-secondary` から `zinc-300` / `zinc-200` に引き上げ、ダーク背景でのコントラストを改善 (`frontend/src/components/ConversationViewer.tsx`)
+
 ## [0.1.130] - 2026-05-19
 
 ### Changed

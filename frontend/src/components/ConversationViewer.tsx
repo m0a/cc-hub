@@ -94,7 +94,7 @@ function CollapsibleSection({
 				<span className="truncate">{title}</span>
 			</button>
 			{isOpen && (
-				<div className="ml-4 pl-2 border-l border-white/[0.06] text-[length:var(--cv-fs-meta,11px)] text-zinc-500 overflow-x-auto">
+				<div className="ml-4 pl-2 border-l border-white/[0.08] text-[length:var(--cv-fs-meta,11px)] text-zinc-300 overflow-x-auto">
 					{children}
 				</div>
 			)}
@@ -181,10 +181,11 @@ function ToolResultDisplay({ results }: { results: ToolResultInfo[] }) {
 						}
 						icon={result.isError ? "❌" : "📋"}
 						variant={result.isError ? "error" : "result"}
+						defaultOpen
 					>
 						{hasOutput && (
 							<pre
-								className={`whitespace-pre-wrap break-all ${result.isError ? "text-red-300" : "text-th-text-secondary"}`}
+								className={`whitespace-pre-wrap break-all ${result.isError ? "text-red-300" : "text-zinc-200"}`}
 							>
 								{isLong ? (
 									<ExpandableText text={result.output} preview={preview} />
@@ -230,7 +231,7 @@ function ToolResultDisplay({ results }: { results: ToolResultInfo[] }) {
 							</div>
 						)}
 						{!hasOutput && !hasImages && (
-							<pre className="whitespace-pre-wrap break-all text-th-text-secondary">
+							<pre className="whitespace-pre-wrap break-all text-zinc-400">
 								{t("conversation.noOutput")}
 							</pre>
 						)}

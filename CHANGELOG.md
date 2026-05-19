@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.128] - 2026-05-19
+
+### Fixed
+- **lost セッションの再開**: 再起動後に lost 状態で復元されたセッションで、`last-known-sessions.json` のスナップショットを毎回上書きする際 `currentPath` などが一時的に取れなかったタイミングで既存値ごと消えてしまい、フロントの再開フローが履歴 API ではなくアクティブ用エンドポイントに落ちて 404 になる事象を修正。新しい値が無いときだけ前回値を維持する fallback を追加 (`backend/src/routes/sessions.ts`)
+
 ## [0.1.127] - 2026-05-19
 
 ### Added

@@ -282,18 +282,25 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
     });
   }
 
-  // Save snapshot: active sessions + still-lost sessions (so lost ones persist across refreshes)
+  // Save snapshot: active sessions + still-lost sessions (so lost ones persist across refreshes).
+  // Fall back to previously-known values when tmux didn't report a field this round —
+  // otherwise a transient gap (e.g. currentPath missing on first capture) erases the data
+  // and lost-session resume can't find the project path.
+  const prevById = new Map(lastKnown.map(s => [s.id, s]));
   const snapshot: LastKnownSession[] = [
-    ...results.filter(s => s.state !== 'lost').map(s => ({
-      id: s.id,
-      name: s.name,
-      currentPath: s.currentPath,
-      agent: s.agent,
-      theme: s.theme,
-      customTitle: s.customTitle,
-      ccSessionId: s.ccSessionId,
-      agentSessionId: s.agentSessionId,
-    })),
+    ...results.filter(s => s.state !== 'lost').map(s => {
+      const prev = prevById.get(s.id);
+      return {
+        id: s.id,
+        name: s.name,
+        currentPath: s.currentPath ?? prev?.currentPath,
+        agent: s.agent ?? prev?.agent,
+        theme: s.theme ?? prev?.theme,
+        customTitle: s.customTitle ?? prev?.customTitle,
+        ccSessionId: s.ccSessionId ?? prev?.ccSessionId,
+        agentSessionId: s.agentSessionId ?? prev?.agentSessionId,
+      };
+    }),
     ...lostSessions,
   ];
   // Fire async, don't block response

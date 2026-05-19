@@ -23,6 +23,7 @@ import {
 } from "../hooks/useSessions";
 import { authFetch } from "../services/api";
 import { fireHookNotification } from "../utils/hookNotification";
+import { makePseudoViewport } from "../utils/viewport-pseudo";
 import { DashboardPanel } from "./DashboardPanel";
 import { FloatingKeyboard, type FloatingKeyboardRef } from "./FloatingKeyboard";
 import { FileViewer } from "./files/FileViewer";
@@ -437,9 +438,11 @@ export function DesktopLayout({
 	const zoomedPaneIdRef = useRef<string | null>(null);
 	zoomedPaneIdRef.current = zoomedPaneId;
 
-	// Per-pane viewport callbacks (paneId -> Set<callbacks>).
+	// Per-pane viewport callbacks (paneId -> Set<callbacks>). Second arg
+	// `isPseudo`: true when frame is a client-stitched preview while the real
+	// server reply is in flight.
 	const paneCallbacksRef = useRef<
-		Map<string, Set<(viewport: PaneViewport) => void>>
+		Map<string, Set<(viewport: PaneViewport, isPseudo?: boolean) => void>>
 	>(new Map());
 
 	// Last viewport per pane. Replayed when a Terminal mounts after the
@@ -449,6 +452,12 @@ export function DesktopLayout({
 	// Current scroll offset per pane (0 = live edge, N = N rows scrolled up
 	// into history). Updated by Terminal.scrollBy and by viewport responses.
 	const paneOffsetRef = useRef<Map<string, number>>(new Map());
+
+	// Per-pane viewport cache keyed by offset.
+	const paneViewportCacheRef = useRef<
+		Map<string, Map<number, { viewport: PaneViewport; historySize: number }>>
+	>(new Map());
+	const VIEWPORT_CACHE_LIMIT = 20;
 
 	const desktopStateRef = useRef(desktopState);
 	desktopStateRef.current = desktopState;
@@ -464,6 +473,25 @@ export function DesktopLayout({
 		sessionId: controlSessionId || "",
 		onPaneViewport: (paneId, viewport) => {
 			lastViewportRef.current.set(paneId, viewport);
+			let perPane = paneViewportCacheRef.current.get(paneId);
+			if (!perPane) {
+				perPane = new Map();
+				paneViewportCacheRef.current.set(paneId, perPane);
+			}
+			perPane.delete(viewport.offset);
+			perPane.set(viewport.offset, {
+				viewport,
+				historySize: viewport.historySize,
+			});
+			if (perPane.size > VIEWPORT_CACHE_LIMIT) {
+				const oldest = perPane.keys().next().value;
+				if (oldest !== undefined) perPane.delete(oldest);
+			}
+			// Drop stale responses (out-of-order viewport reply after the user has
+			// scrolled past it). Cache it but don't repaint unless it matches the
+			// current expected offset.
+			const expected = paneOffsetRef.current.get(paneId);
+			if (expected !== undefined && expected !== viewport.offset) return;
 			// Server clamps the requested offset to historySize; reflect that
 			// back so subsequent scrollBy / getScrollState see the canonical value.
 			paneOffsetRef.current.set(paneId, viewport.offset);
@@ -473,11 +501,14 @@ export function DesktopLayout({
 				return;
 			}
 			for (const cb of callbacks) {
-				cb(viewport);
+				cb(viewport, false);
 			}
 		},
 		onLayoutChange: (layout) => {
 			setControlLayout(layout);
+			// Pane sizes may have changed; drop the viewport cache (line widths
+			// in cached frames no longer match).
+			paneViewportCacheRef.current.clear();
 			// "Last-write-wins": if the tmux window size (from layout root) differs
 			// significantly from what we last sent, another client changed it.
 			// Clear lastSentSizeRef so the next user interaction re-sends our size.
@@ -726,10 +757,19 @@ export function DesktopLayout({
 					// lines = scroll UP into history (increase offset).
 					if (!controlTerminalRef.current.isConnected) return;
 					const cur = paneOffsetRef.current.get(paneId) ?? 0;
-					const history = lastViewportRef.current.get(paneId)?.historySize ?? 0;
+					const last = lastViewportRef.current.get(paneId);
+					const history = last?.historySize ?? 0;
 					const next = Math.max(0, Math.min(history, cur - lines));
 					if (next === cur) return;
 					paneOffsetRef.current.set(paneId, next);
+					const cbs = paneCallbacksRef.current.get(paneId);
+					const cached = paneViewportCacheRef.current.get(paneId)?.get(next);
+					if (cached && cached.historySize === history) {
+						if (cbs) for (const cb of cbs) cb(cached.viewport, false);
+					} else if (last && cbs) {
+						const pseudo = makePseudoViewport(last, next - last.offset);
+						for (const cb of cbs) cb(pseudo, true);
+					}
 					controlTerminalRef.current.requestViewport(paneId, next);
 				},
 				scrollToLive: () => {
@@ -737,6 +777,16 @@ export function DesktopLayout({
 					const cur = paneOffsetRef.current.get(paneId) ?? 0;
 					if (cur === 0) return;
 					paneOffsetRef.current.set(paneId, 0);
+					const last = lastViewportRef.current.get(paneId);
+					const history = last?.historySize ?? 0;
+					const cbs = paneCallbacksRef.current.get(paneId);
+					const cached = paneViewportCacheRef.current.get(paneId)?.get(0);
+					if (cached && cached.historySize === history) {
+						if (cbs) for (const cb of cbs) cb(cached.viewport, false);
+					} else if (last && cbs) {
+						const pseudo = makePseudoViewport(last, 0 - last.offset);
+						for (const cb of cbs) cb(pseudo, true);
+					}
 					controlTerminalRef.current.requestViewport(paneId, 0);
 				},
 				refreshViewport: () => {

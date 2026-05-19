@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.126] - 2026-05-19
+
+### Added
+- **スクロール体験の刷新**: server-side scrollback でスクロール時にサーバ応答待ちで画面が止まる問題を解消
+  - `viewport-pseudo.ts` 新設。`makePseudoViewport(viewport, delta)` で現フレームを delta 行ぶんずらし露出側を空行で埋めた疑似 viewport を生成。`scrollBy` / `scrollToLive` のキャッシュミス時にこの疑似フレームを即時描画し、サーバから本物が届いたら上書き。応答待ち中でも画面が実際にずれて動く
+  - クライアント側 viewport キャッシュ (`Map<offset, {viewport, historySize}>`、pane あたり LRU 20件)。同じ offset への往復スクロールはサーバラウンドトリップなしで即時描画。`historySize` を一緒に保存し、tmux 出力で履歴が変わった場合は自動で stale 扱い。`layout-change` で全キャッシュ破棄
+  - 右上のスクロール位置インジケータを `{ text, loading }` に拡張。応答待ち中は青色の `[N/M] ⏳`、本物着弾で黄色の `[N/M]` に切替＋3秒フェード。今どのくらいスクロール中で、サーバが追いついているかが視認できる
+
+### Fixed
+- 連続 wheel / touch スクロールで `scrollBy` が秒間 50回以上発火し、毎回 viewport 再取得＋全画面 VT 再描画が走って小刻みな揺れに見えていた問題を rAF coalesce で解消 (フレームに 1 回だけ scrollBy を flush)
+- 高速スクロール中に in-flight な複数の `request-viewport` 応答が前後して届いて画面が一瞬戻る現象に対し、`onPaneViewport` で現在の期待 offset と応答 offset を照合して不一致なら repaint をスキップする stale guard を追加 (キャッシュには保存)
+
 ## [0.1.125] - 2026-05-19
 
 ### Fixed

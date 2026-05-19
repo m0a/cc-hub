@@ -47,8 +47,11 @@ export interface ControlModeConfig {
 	sendInput: (data: string) => void;
 	/** Subscribe for viewport updates pushed by the server (offset=0 stream)
 	 *  or returned in response to scroll. Returns an unsubscribe fn. */
+	/** `isPseudo=true` marks a client-side stitched frame produced while the
+	 *  real server reply is still in flight — Terminal uses this to show a
+	 *  "loading" badge until the real viewport lands and clears it. */
 	registerOnViewport: (
-		callback: (viewport: PaneViewport) => void,
+		callback: (viewport: PaneViewport, isPseudo?: boolean) => void,
 	) => () => void;
 	isConnected: boolean;
 	onResize?: (cols: number, rows: number) => void;
@@ -144,7 +147,10 @@ export const TerminalComponent = memo(
 		const [fontSize, setFontSize] = useState(() => loadFontSize(sessionId));
 		const [keyboardOffset, setKeyboardOffset] = useState(0);
 		const [showFontSizeIndicator, setShowFontSizeIndicator] = useState(false);
-		const [scrollIndicator, setScrollIndicator] = useState<string | null>(null);
+		const [scrollIndicator, setScrollIndicator] = useState<{
+			text: string;
+			loading: boolean;
+		} | null>(null);
 		const scrollIndicatorTimerRef = useRef<number | null>(null);
 
 		const [isTouchDevice] = useState(() => {
@@ -563,16 +569,34 @@ export const TerminalComponent = memo(
 			let longPressTriggered = false;
 			const LONG_PRESS_DURATION = 400;
 
+			// rAF-coalesce scrollBy: a single wheel notch can fire several wheel
+			// events back-to-back, and touch momentum produces 50+ scroll ticks/sec.
+			// Sum deltas inside a frame and emit one scrollBy at frame boundary so
+			// we issue one viewport refetch per frame instead of many tiny ones.
+			let pendingScrollDelta = 0;
+			let pendingScrollRafId: number | null = null;
+			const flushPendingScroll = () => {
+				pendingScrollRafId = null;
+				const delta = pendingScrollDelta;
+				pendingScrollDelta = 0;
+				if (delta !== 0) controlModeRef.current?.scrollBy?.(delta);
+			};
 			const scrollTerminal = (lines: number) => {
 				// Server-side scrollback: tmux holds the authoritative history; the
 				// control mode adjusts the viewport offset and re-fetches.
-				controlModeRef.current?.scrollBy?.(lines);
+				pendingScrollDelta += lines;
+				if (pendingScrollRafId === null) {
+					pendingScrollRafId = requestAnimationFrame(flushPendingScroll);
+				}
 			};
 
 			const updateScrollIndicator = () => {
 				const state = controlModeRef.current?.getScrollState?.();
 				if (state && state.offset > 0) {
-					setScrollIndicator(`[${state.offset}/${state.historySize}]`);
+					setScrollIndicator((prev) => ({
+						text: `[${state.offset}/${state.historySize}]`,
+						loading: prev?.loading ?? false,
+					}));
 					if (scrollIndicatorTimerRef.current)
 						clearTimeout(scrollIndicatorTimerRef.current);
 					scrollIndicatorTimerRef.current = window.setTimeout(
@@ -1096,7 +1120,7 @@ export const TerminalComponent = memo(
 					cm.forceResize?.(dims.cols, dims.rows);
 				}
 			};
-			const cleanup = cm.registerOnViewport((viewport) => {
+			const cleanup = cm.registerOnViewport((viewport, isPseudo) => {
 				const term = terminalRef.current;
 				if (!term) return;
 				if (term.cols !== viewport.cols || term.rows !== viewport.rows) {
@@ -1109,13 +1133,20 @@ export const TerminalComponent = memo(
 				});
 				const state = cm.getScrollState?.();
 				if (state && state.offset > 0) {
-					setScrollIndicator(`[${state.offset}/${state.historySize}]`);
+					setScrollIndicator({
+						text: `[${state.offset}/${state.historySize}]`,
+						loading: !!isPseudo,
+					});
 					if (scrollIndicatorTimerRef.current)
 						clearTimeout(scrollIndicatorTimerRef.current);
-					scrollIndicatorTimerRef.current = window.setTimeout(
-						() => setScrollIndicator(null),
-						3000,
-					);
+					// Pin the badge while waiting for the real reply; only auto-fade
+					// once the real (non-pseudo) viewport has landed.
+					if (!isPseudo) {
+						scrollIndicatorTimerRef.current = window.setTimeout(
+							() => setScrollIndicator(null),
+							3000,
+						);
+					}
 				} else {
 					setScrollIndicator(null);
 				}
@@ -1352,8 +1383,17 @@ export const TerminalComponent = memo(
 						</div>
 					)}
 					{scrollIndicator && (
-						<div className="absolute top-2 right-2 z-30 bg-[var(--color-overlay)] px-2 py-1 rounded text-xs text-yellow-400/80 pointer-events-none font-mono">
-							{scrollIndicator}
+						<div
+							className={`absolute top-2 right-2 z-30 bg-[var(--color-overlay)] px-2 py-1 rounded text-xs pointer-events-none font-mono ${
+								scrollIndicator.loading
+									? "text-blue-300/90"
+									: "text-yellow-400/80"
+							}`}
+						>
+							{scrollIndicator.text}
+							{scrollIndicator.loading && (
+								<span className="ml-1 opacity-70">⏳</span>
+							)}
 						</div>
 					)}
 					{/* Selection mode controls */}

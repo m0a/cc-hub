@@ -20,6 +20,7 @@ import {
 } from "../components/Terminal";
 import { useMultiplexedTerminal } from "../hooks/useMultiplexedTerminal";
 import { fireHookNotification } from "../utils/hookNotification";
+import { makePseudoViewport } from "../utils/viewport-pseudo";
 
 interface PaneLeafInfo {
 	paneId: string;
@@ -71,14 +72,22 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 		// Derive effective active pane: external takes priority
 		const effectiveActivePaneId = externalActivePaneId ?? activePaneId;
 
-		// Per-pane viewport callbacks
+		// Per-pane viewport callbacks. Second arg `isPseudo`: true when the frame
+		// is a client-stitched preview while the real server reply is in flight.
 		const paneCallbacksRef = useRef<
-			Map<string, Set<(viewport: PaneViewport) => void>>
+			Map<string, Set<(viewport: PaneViewport, isPseudo?: boolean) => void>>
 		>(new Map());
 		// Last viewport per pane, replayed when a Terminal mounts late.
 		const lastViewportRef = useRef<Map<string, PaneViewport>>(new Map());
 		// Current scroll offset per pane (0 = live edge).
 		const paneOffsetRef = useRef<Map<string, number>>(new Map());
+
+		// Per-pane viewport cache keyed by offset. Lets a return-trip to a
+		// previously-visited offset paint instantly while the real refresh fetches.
+		const paneViewportCacheRef = useRef<
+			Map<string, Map<number, { viewport: PaneViewport; historySize: number }>>
+		>(new Map());
+		const VIEWPORT_CACHE_LIMIT = 20;
 
 		const onPanesChangeRef = useRef(onPanesChange);
 		onPanesChangeRef.current = onPanesChange;
@@ -97,15 +106,38 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 			token,
 			onPaneViewport: (paneId, viewport) => {
 				lastViewportRef.current.set(paneId, viewport);
+				let perPane = paneViewportCacheRef.current.get(paneId);
+				if (!perPane) {
+					perPane = new Map();
+					paneViewportCacheRef.current.set(paneId, perPane);
+				}
+				perPane.delete(viewport.offset);
+				perPane.set(viewport.offset, {
+					viewport,
+					historySize: viewport.historySize,
+				});
+				if (perPane.size > VIEWPORT_CACHE_LIMIT) {
+					const oldest = perPane.keys().next().value;
+					if (oldest !== undefined) perPane.delete(oldest);
+				}
+				// Drop stale responses (rapid wheel scroll fires many requests in
+				// flight; an older offset's reply arriving late would snap the
+				// screen back). Cache it but don't repaint unless it matches the
+				// current expected offset.
+				const expected = paneOffsetRef.current.get(paneId);
+				if (expected !== undefined && expected !== viewport.offset) return;
 				paneOffsetRef.current.set(paneId, viewport.offset);
 				const callbacks = paneCallbacksRef.current.get(paneId);
 				if (callbacks) {
 					for (const cb of callbacks) {
-						cb(viewport);
+						cb(viewport, false);
 					}
 				}
 			},
 			onLayoutChange: (layout: TmuxLayoutNode) => {
+				// Pane sizes may have changed; cached viewport `lines` no longer
+				// match the new column width, so drop the viewport cache.
+				paneViewportCacheRef.current.clear();
 				// Extract all leaf panes from the layout
 				const leaves = collectLeaves(layout);
 				console.log(
@@ -275,11 +307,23 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 						// edge (decrease offset), negative = into history (increase offset).
 						if (!controlTerminal.isConnected) return;
 						const cur = paneOffsetRef.current.get(currentPaneId) ?? 0;
-						const history =
-							lastViewportRef.current.get(currentPaneId)?.historySize ?? 0;
+						const last = lastViewportRef.current.get(currentPaneId);
+						const history = last?.historySize ?? 0;
 						const next = Math.max(0, Math.min(history, cur - lines));
 						if (next === cur) return;
 						paneOffsetRef.current.set(currentPaneId, next);
+						const cbs = paneCallbacksRef.current.get(currentPaneId);
+						const cached = paneViewportCacheRef.current
+							.get(currentPaneId)
+							?.get(next);
+						if (cached && cached.historySize === history) {
+							if (cbs) for (const cb of cbs) cb(cached.viewport, false);
+						} else if (last && cbs) {
+							// Pseudo-scroll: keep the screen moving while the real
+							// viewport is fetched. Real reply overwrites this frame.
+							const pseudo = makePseudoViewport(last, next - last.offset);
+							for (const cb of cbs) cb(pseudo, true);
+						}
 						controlTerminal.requestViewport(currentPaneId, next);
 					},
 					scrollToLive: () => {
@@ -287,6 +331,18 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 						const cur = paneOffsetRef.current.get(currentPaneId) ?? 0;
 						if (cur === 0) return;
 						paneOffsetRef.current.set(currentPaneId, 0);
+						const last = lastViewportRef.current.get(currentPaneId);
+						const history = last?.historySize ?? 0;
+						const cbs = paneCallbacksRef.current.get(currentPaneId);
+						const cached = paneViewportCacheRef.current
+							.get(currentPaneId)
+							?.get(0);
+						if (cached && cached.historySize === history) {
+							if (cbs) for (const cb of cbs) cb(cached.viewport, false);
+						} else if (last && cbs) {
+							const pseudo = makePseudoViewport(last, 0 - last.offset);
+							for (const cb of cbs) cb(pseudo, true);
+						}
 						controlTerminal.requestViewport(currentPaneId, 0);
 					},
 					refreshViewport: () => {

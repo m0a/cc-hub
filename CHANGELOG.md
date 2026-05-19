@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.127] - 2026-05-19
+
+### Added
+- **`cchub debug` CLI**: 本番 systemd user service の Bun inspector モードを必要な時だけ on/off できる仕組み。`BUN_OPTIONS` 環境変数を systemd drop-in (`~/.config/systemd/user/cchub.service.d/99-inspect.conf`) として書き出して `daemon-reload` + `restart`、終わったら drop-in を消して通常モードに戻す
+  - `cchub debug enable` — `0.0.0.0:9229` で Bun inspector を開く
+  - `cchub debug disable` — inspector を閉じて通常モードへ
+  - `cchub debug profile [--seconds N]` — N 秒だけ inspector を開いて自動で disable (デフォルト 30s)
+  - `cchub debug status` — 現在の inspector 状態を表示
+  - **アイドル時オーバーヘッドゼロ**: 通常モードでは inspector port は開かない。本番で慢性的なフットプリントを増やさずに、必要な時だけ Chrome DevTools (`chrome://inspect`) から JS 関数名・行番号付きで CPU profile / heap snapshot を取得可能
+  - Linux systemd user 限定 (macOS launchd は未対応)
+
 ## [0.1.126] - 2026-05-19
 
 ### Added

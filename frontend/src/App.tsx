@@ -140,7 +140,9 @@ function ConfirmDeleteDialog({
 					<span className="font-medium text-th-text">{sessionName}</span>{" "}
 					を削除しますか？
 				</p>
-				<p className="text-sm text-red-400 mb-6">この操作は取り消せません。</p>
+				<p className="text-sm text-th-text-secondary mb-6">
+					tmuxセッションを終了します。一覧には Lost として残り、「再開」ボタンで会話を続けられます。
+				</p>
 				<div className="flex gap-3 justify-end">
 					<button
 						type="button"

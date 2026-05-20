@@ -683,14 +683,16 @@ sessions.delete('/:id', async (c) => {
 
   const exists = await tmuxService.sessionExists(id);
   if (!exists) {
-    // May be a lost session — remove from last-known and return success
+    // Already lost — purge from last-known so it disappears from the list.
     await removeLastKnownSession(id).catch(() => {});
     return c.json({ success: true });
   }
 
   try {
     await tmuxService.killSession(id);
-    await removeLastKnownSession(id).catch(() => {});
+    // Keep the entry in last-known so the session shows up as "Lost" and can
+    // be resumed via the Resume button without going to the history tab.
+    // To purge entirely, delete the Lost session again.
     return c.json({ success: true });
   } catch (_error) {
     return c.json({ error: 'Failed to delete session' }, 500);

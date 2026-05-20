@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.135] - 2026-05-20
+
+### Changed
+- **セッション削除を「kill のみ・一覧から消さない」挙動に変更**: アクティブセッションを削除しても tmux は kill するが `last-known-sessions.json` のエントリは残し、一覧には Lost として表示され続けるようにした。これにより削除後も「再開」ボタンで会話の続きをワンタップで開ける。完全に一覧から消したい場合は Lost セッションをもう一度削除すると last-known からも除外される (`backend/src/routes/sessions.ts`)
+- 削除確認ダイアログの警告文を実挙動に合わせて更新 (「この操作は取り消せません」→「tmuxセッションを終了します。一覧には Lost として残り、「再開」ボタンで会話を続けられます。」)、トーンを警告赤から中立色に変更 (`frontend/src/App.tsx`, `frontend/src/components/SessionList.tsx`, `frontend/src/i18n/locales/{ja,en}.json`)
+
 ## [0.1.134] - 2026-05-20
 
 ### Fixed

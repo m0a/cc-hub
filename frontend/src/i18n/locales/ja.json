@@ -43,7 +43,7 @@
 		"clearColor": "色をクリア",
 		"deleteSession": "セッションを削除",
 		"deleteConfirm": "{{name}} を削除しますか？",
-		"deleteWarning": "この操作は取り消せません。",
+		"deleteWarning": "tmuxセッションを終了します。一覧には Lost として残り、「再開」ボタンで会話を続けられます。",
 		"sessionName": "セッション名",
 		"sessionNamePlaceholder": "空欄で自動生成",
 		"agent": "エージェント",

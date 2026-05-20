@@ -162,7 +162,7 @@ export function SessionMenuDialog({
 					<p className="text-th-text-secondary mb-4">
 						{t("session.deleteConfirm", { name: session.name })}
 					</p>
-					<p className="text-sm text-red-400 mb-6">
+					<p className="text-sm text-th-text-secondary mb-6">
 						{t("session.deleteWarning")}
 					</p>
 					<div className="flex gap-3 justify-end">

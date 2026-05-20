@@ -1,6 +1,8 @@
-import { X } from "lucide-react";
+import { X, Server, BarChart3 } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Dashboard } from "./dashboard/Dashboard";
+import { PeerManager } from "./PeerManager";
 
 interface DashboardPanelProps {
 	isOpen: boolean;
@@ -8,12 +10,15 @@ interface DashboardPanelProps {
 	isTablet?: boolean;
 }
 
+type PanelTab = "dashboard" | "peers";
+
 export function DashboardPanel({
 	isOpen,
 	onClose,
 	isTablet,
 }: DashboardPanelProps) {
 	const { t } = useTranslation();
+	const [tab, setTab] = useState<PanelTab>("dashboard");
 
 	if (!isOpen) return null;
 
@@ -30,9 +35,32 @@ export function DashboardPanel({
 			{/* Header */}
 			<div className="shrink-0 px-4 pt-3 pb-3 border-b border-white/[0.06]">
 				<div className="flex items-center justify-between max-w-lg">
-					<h1 className="text-[18px] font-semibold tracking-[-0.02em] text-white">
-						{t("dashboard.title")}
-					</h1>
+					<div className="flex items-center gap-1 bg-white/[0.04] rounded-lg p-0.5">
+						<button
+							type="button"
+							onClick={() => setTab("dashboard")}
+							className={`px-3 py-1.5 rounded-md text-sm font-medium inline-flex items-center gap-1.5 transition-colors ${
+								tab === "dashboard"
+									? "bg-white/[0.08] text-white"
+									: "text-zinc-400 hover:text-zinc-200"
+							}`}
+						>
+							<BarChart3 className="w-4 h-4" />
+							{t("dashboard.title")}
+						</button>
+						<button
+							type="button"
+							onClick={() => setTab("peers")}
+							className={`px-3 py-1.5 rounded-md text-sm font-medium inline-flex items-center gap-1.5 transition-colors ${
+								tab === "peers"
+									? "bg-white/[0.08] text-white"
+									: "text-zinc-400 hover:text-zinc-200"
+							}`}
+						>
+							<Server className="w-4 h-4" />
+							Servers
+						</button>
+					</div>
 					<div className="flex items-center gap-1">
 						<button
 							type="button"
@@ -45,9 +73,13 @@ export function DashboardPanel({
 				</div>
 			</div>
 
-			{/* Dashboard content */}
+			{/* Content */}
 			<div className="flex-1 min-h-0 overflow-y-auto">
-				<Dashboard className="h-full" compact />
+				{tab === "dashboard" ? (
+					<Dashboard className="h-full" compact />
+				) : (
+					<PeerManager />
+				)}
 			</div>
 		</div>
 	);

@@ -171,6 +171,67 @@ export type CreateSessionInput = z.infer<typeof CreateSessionSchema>;
 export type ResizeTerminalInput = z.infer<typeof ResizeTerminalSchema>;
 
 // =============================================================================
+// Peer (multi-server) Types
+// =============================================================================
+
+// "self" は Hub 自身を指す疑似 URL。フロント側で window.origin に解決する
+export const SELF_PEER_URL = 'self' as const;
+export const LOCAL_PEER_ID = 'local' as const;
+
+export type PeerStatus = 'online' | 'offline' | 'unauthorized' | 'unknown';
+
+export interface Peer {
+  id: string;          // 'local' or 'p_xxxx'
+  nickname: string;    // ユーザー表示名（絵文字OK）
+  url: string;         // 'self' か 'https://host:port'
+  color: string;       // '#RRGGBB' バッジ色
+  order: number;       // 表示順
+}
+
+// クライアントに払い出すペア情報（wsToken 含む）
+export interface PeerClientView extends Peer {
+  wsToken?: string;      // peer に直接WS接続するときの Bearer トークン (selfなら不要)
+  status: PeerStatus;
+  lastSeenAt?: string;   // ISO8601
+  latencyMs?: number;    // 直近のverify時のレイテンシ
+  errorMessage?: string; // unauthorized等の理由
+}
+
+export interface PeerListResponse {
+  peers: PeerClientView[];
+}
+
+// マージされたセッション一覧の項目。peer情報は ExtendedSessionResponse に直接生やしてある
+export type PeerSession = ExtendedSessionResponse & { peerId: string };
+
+export interface PeerSessionsResponse {
+  sessions: PeerSession[];
+  // peer 毎のエラーがあれば返す（一部peerが落ちていても他は表示するため）
+  errors?: { peerId: string; message: string }[];
+}
+
+export const PeerCreateSchema = z.object({
+  nickname: z.string().min(1).max(64),
+  url: z.url(),
+  password: z.string().min(1),  // peer へ代理ログインするため必須
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+});
+
+export const PeerUpdateSchema = z.object({
+  nickname: z.string().min(1).max(64).optional(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  password: z.string().min(1).optional(),  // 再認証用
+});
+
+export const PeerOrderSchema = z.object({
+  order: z.array(z.string()),  // peer id の配列
+});
+
+export type PeerCreateInput = z.infer<typeof PeerCreateSchema>;
+export type PeerUpdateInput = z.infer<typeof PeerUpdateSchema>;
+export type PeerOrderInput = z.infer<typeof PeerOrderSchema>;
+
+// =============================================================================
 // File Viewer Types
 // =============================================================================
 
@@ -394,6 +455,11 @@ export interface ExtendedSessionResponse extends SessionResponse {
   durationMinutes?: number;
   firstMessageId?: string;
   metrics?: SessionMetrics;
+  // Multi-server: 所属 peer の情報。`/api/peers/sessions` から返るときに付く。
+  // 単一 peer (= local only) の通常運用では unset。
+  peerId?: string;
+  peerNickname?: string;
+  peerColor?: string;
 }
 
 // =============================================================================

@@ -72,7 +72,12 @@ const translations: Record<string, Translations> = {
     update: {
       githubConnectionFailed: "Failed to connect to GitHub API",
       serviceRestarted: "Service restarted",
-      manualRestartRequired: "Manual restart required: systemctl --user restart cchub"
+      manualRestartRequired: "Manual restart required: systemctl --user restart cchub",
+      authUsing: "Using GitHub token from {{source}}",
+      rateLimitedAnon: "GitHub API rate limit exceeded (60/hr for unauthenticated requests)",
+      rateLimitedAuth: "GitHub API rate limit exceeded",
+      rateLimitHintAnon: "Hint: Authenticate to raise the limit to 5000/hr",
+      rateLimitResetAt: "Resets at: {{time}}"
     },
     usage: {
       limitReached: "Limit reached",
@@ -144,7 +149,12 @@ const translations: Record<string, Translations> = {
     update: {
       githubConnectionFailed: "GitHub APIへの接続に失敗しました",
       serviceRestarted: "サービスを再起動しました",
-      manualRestartRequired: "手動で再起動してください: systemctl --user restart cchub"
+      manualRestartRequired: "手動で再起動してください: systemctl --user restart cchub",
+      authUsing: "GitHub token を使用中 (取得元: {{source}})",
+      rateLimitedAnon: "GitHub API のレート制限に到達しました (未認証時は 60/時)",
+      rateLimitedAuth: "GitHub API のレート制限に到達しました",
+      rateLimitHintAnon: "ヒント: 認証すると上限が 5000/時 に拡大されます",
+      rateLimitResetAt: "リセット時刻: {{time}}"
     },
     usage: {
       limitReached: "リミット到達中",

@@ -43,7 +43,7 @@
 		"clearColor": "Clear Color",
 		"deleteSession": "Delete Session",
 		"deleteConfirm": "Delete {{name}}?",
-		"deleteWarning": "This action cannot be undone.",
+		"deleteWarning": "The tmux session will end. It will remain in the list as \"Lost\" and can be resumed with the Resume button.",
 		"sessionName": "Session Name",
 		"sessionNamePlaceholder": "Leave blank for auto-generation",
 		"agent": "Agent",

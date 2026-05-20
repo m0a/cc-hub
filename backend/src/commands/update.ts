@@ -55,26 +55,69 @@ interface GitHubRelease {
   }[];
 }
 
-async function getLatestRelease(): Promise<GitHubRelease | null> {
+interface GitHubTokenInfo {
+  token: string;
+  source: 'GITHUB_TOKEN' | 'GH_TOKEN' | 'gh CLI';
+}
+
+function getGitHubToken(): GitHubTokenInfo | null {
+  if (process.env.GITHUB_TOKEN) {
+    return { token: process.env.GITHUB_TOKEN, source: 'GITHUB_TOKEN' };
+  }
+  if (process.env.GH_TOKEN) {
+    return { token: process.env.GH_TOKEN, source: 'GH_TOKEN' };
+  }
+  try {
+    const proc = Bun.spawnSync(['gh', 'auth', 'token'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    if (proc.exitCode === 0) {
+      const token = new TextDecoder().decode(proc.stdout).trim();
+      if (token) return { token, source: 'gh CLI' };
+    }
+  } catch {
+    // gh not installed — fall through
+  }
+  return null;
+}
+
+async function getLatestRelease(tokenInfo: GitHubTokenInfo | null): Promise<GitHubRelease | null> {
+  const headers: Record<string, string> = {
+    'Accept': 'application/vnd.github.v3+json',
+    'User-Agent': `cchub/${VERSION}`,
+  };
+  if (tokenInfo) {
+    headers.Authorization = `Bearer ${tokenInfo.token}`;
+  }
+
   try {
     const response = await fetch(
       `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
-      {
-        headers: {
-          'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': `cchub/${VERSION}`,
-        },
-      }
+      { headers }
     );
 
-    if (!response.ok) {
-      if (response.status === 404) {
-        return null; // No releases yet
-      }
-      throw new Error(`GitHub API error: ${response.status}`);
+    if (response.ok) {
+      return await response.json();
     }
-
-    return await response.json();
+    if (response.status === 404) {
+      return null;
+    }
+    if (response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0') {
+      console.error(`❌ ${t(tokenInfo ? 'update.rateLimitedAuth' : 'update.rateLimitedAnon')}`);
+      const resetHeader = response.headers.get('x-ratelimit-reset');
+      if (resetHeader) {
+        const resetDate = new Date(parseInt(resetHeader, 10) * 1000);
+        console.error(`   ${t('update.rateLimitResetAt', { time: resetDate.toLocaleString() })}`);
+      }
+      if (!tokenInfo) {
+        console.error(`💡 ${t('update.rateLimitHintAnon')}`);
+        console.error('   - export GITHUB_TOKEN=<token>');
+        console.error('   - gh auth login');
+      }
+      return null;
+    }
+    throw new Error(`GitHub API error: ${response.status}`);
   } catch (_error) {
     console.error(`❌ ${t('update.githubConnectionFailed')}`);
     return null;
@@ -127,7 +170,12 @@ export async function checkAndUpdate(checkOnly: boolean, autoMode: boolean): Pro
     console.log(`🔍 更新を確認中... (現在: v${currentVersion})`);
   }
 
-  const release = await getLatestRelease();
+  const tokenInfo = getGitHubToken();
+  if (tokenInfo && !autoMode) {
+    console.log(`🔑 ${t('update.authUsing', { source: tokenInfo.source })}`);
+  }
+
+  const release = await getLatestRelease(tokenInfo);
 
   if (!release) {
     if (!autoMode) {

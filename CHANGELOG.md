@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.133] - 2026-05-20
+
+### Added
+- `cchub update` で GitHub トークン認証をサポートし、未認証 60/時のレート制限 (60/hr) を 5000/時 に引き上げ可能に
+  - 検出順: `GITHUB_TOKEN` env → `GH_TOKEN` env → `gh auth token` サブプロセス自動検出
+  - 認証時は `🔑 Using GitHub token from {{source}}` を表示
+  - 403 + `x-ratelimit-remaining: 0` を rate limit として識別し、リセット時刻と認証手順 (`export GITHUB_TOKEN=<token>` / `gh auth login`) を表示
+  - 未設定時は従来通り未認証で動作 (`backend/src/commands/update.ts`, `backend/src/i18n/index.ts`)
+
 ## [0.1.132] - 2026-05-20
 
 ### Added

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.134] - 2026-05-20
+
+### Fixed
+- ターミナルでマウスホイール/トラックパッドのスクロールが効かず、代わりに Claude / Codex の入力履歴が切り替わる問題を修正
+  - 原因: xterm.js は active mouse protocol が WHEEL を含むとき、wheel イベントを直接アプリ (Ink TUI) に転送し、TUI 側で↑/↓キー扱いとなっていた
+  - 対応: `Terminal.tsx` の wheel listener を capture 段階に移し `stopPropagation()` を追加。xterm.js のハンドラに届かないようにして、`scrollTerminal()` だけが走るようにした
+
 ## [0.1.133] - 2026-05-20
 
 ### Added

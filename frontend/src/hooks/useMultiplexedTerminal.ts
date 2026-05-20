@@ -5,6 +5,9 @@ import { reportWsLatency } from "../services/latency-store";
 interface UseMultiplexedTerminalOptions {
 	sessionId: string;
 	token?: string | null;
+	// Multi-server: アクティブな peer の WS base URL ("wss://host:port") を指定。
+	// 省略時は Hub (window.location.host) を使う。
+	peerWsBase?: string | null;
 	onPaneViewport?: (paneId: string, viewport: PaneViewport) => void;
 	onLayoutChange?: (layout: TmuxLayoutNode) => void;
 	onNewSession?: (sessionId: string, sessionName: string) => void;
@@ -69,6 +72,10 @@ let sharedWsConnectStart = 0;
 let sharedLastPongAt = 0;
 let subscribedSession: string | null = null;
 let wsReady = false;
+// Multi-server: 現在の WS 接続が向いている base URL。
+// 接続先が切り替わったら force close して新しい URL に再接続する。
+let currentWsBase: string | null = null;
+let currentWsToken: string | null = null;
 
 // Force-close a CONNECTING socket if onopen hasn't fired by this deadline.
 // Mobile networks can leave the TCP handshake in a zombie state — no onopen,
@@ -153,7 +160,29 @@ function subscribeToSession(sessionId: string, force = false) {
 	sendRaw({ type: "subscribe", sessionId });
 }
 
-function ensureConnection(token?: string | null) {
+function ensureConnection(token?: string | null, wsBase?: string | null) {
+	const desiredBase = wsBase ?? getWsBase();
+	const desiredToken = (token ?? getAuthToken()) || null;
+
+	// 接続先 (URL or token) が変わったら force close して再接続させる
+	const baseChanged =
+		(currentWsBase !== null && currentWsBase !== desiredBase) ||
+		(currentWsToken !== null && currentWsToken !== desiredToken);
+	if (baseChanged && sharedWs) {
+		console.log(
+			`[MUX] target changed (${currentWsBase} → ${desiredBase}); reconnecting`,
+		);
+		try {
+			sharedWs.close();
+		} catch {}
+		sharedWs = null;
+		subscribedSession = null;
+		wsReady = false;
+	}
+
+	currentWsBase = desiredBase;
+	currentWsToken = desiredToken;
+
 	if (sharedWs?.readyState === WebSocket.OPEN) return;
 
 	if (sharedWs?.readyState === WebSocket.CONNECTING) {
@@ -177,10 +206,9 @@ function ensureConnection(token?: string | null) {
 		sharedConnectWatchdog = null;
 	}
 
-	let wsUrl = `${getWsBase()}/ws/mux`;
-	const authToken = token || getAuthToken();
-	if (authToken) {
-		wsUrl += `?token=${encodeURIComponent(authToken)}`;
+	let wsUrl = `${desiredBase}/ws/mux`;
+	if (desiredToken) {
+		wsUrl += `?token=${encodeURIComponent(desiredToken)}`;
 	}
 
 	const ws = new WebSocket(wsUrl);
@@ -364,7 +392,7 @@ function ensureConnection(token?: string | null) {
 
 		if (event.code !== 1000) {
 			sharedReconnectTimeout = window.setTimeout(() => {
-				ensureConnection();
+				ensureConnection(currentWsToken, currentWsBase);
 			}, 2000);
 		}
 	};
@@ -390,7 +418,7 @@ function registerVisibilityListener() {
 				clearTimeout(sharedReconnectTimeout);
 				sharedReconnectTimeout = null;
 			}
-			ensureConnection();
+			ensureConnection(currentWsToken, currentWsBase);
 			return;
 		}
 		// Returning to tab: if CONNECTING is older than a short threshold (3s),
@@ -426,7 +454,7 @@ function registerVisibilityListener() {
 			clearTimeout(sharedReconnectTimeout);
 			sharedReconnectTimeout = null;
 		}
-		ensureConnection();
+		ensureConnection(currentWsToken, currentWsBase);
 	});
 	window.addEventListener("offline", () => {
 		console.log("[MUX] navigator offline");
@@ -509,7 +537,7 @@ export function dispatchInputEcho(
 export function useMultiplexedTerminal(
 	options: UseMultiplexedTerminalOptions,
 ): UseMultiplexedTerminalReturn {
-	const { sessionId, token } = options;
+	const { sessionId, token, peerWsBase } = options;
 	const [isConnected, setIsConnected] = useState(false);
 	const [deadPanes, setDeadPanes] = useState<Set<string>>(new Set());
 
@@ -549,18 +577,23 @@ export function useMultiplexedTerminal(
 	});
 
 	useEffect(() => {
+		// peer 切替時は ensureConnection が force close + 再接続するので、
+		// 接続復帰後 (onopen/ready) で subscribeToSession が呼ばれる
+		if (peerWsBase !== undefined) {
+			ensureConnection(token, peerWsBase);
+		}
 		if (sharedWs?.readyState === WebSocket.OPEN && wsReady) {
 			subscribeToSession(sessionId);
 		}
-	}, [sessionId]);
+	}, [sessionId, token, peerWsBase]);
 
 	const connect = useCallback(() => {
 		registerVisibilityListener();
-		ensureConnection(token);
+		ensureConnection(token, peerWsBase);
 		if (sharedWs?.readyState === WebSocket.OPEN && wsReady) {
 			subscribeToSession(sessionId);
 		}
-	}, [sessionId, token]);
+	}, [sessionId, token, peerWsBase]);
 
 	const disconnect = useCallback(() => {
 		if (subscribedSession) {

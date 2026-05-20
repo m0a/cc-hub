@@ -17,6 +17,8 @@ import type {
 	TmuxLayoutNode,
 } from "../../../shared/types";
 import { useMultiplexedTerminal } from "../hooks/useMultiplexedTerminal";
+import { usePeerConnection } from "../hooks/usePeerConnection";
+import { usePeers } from "../hooks/usePeers";
 import {
 	updateCachedSessionsByHookEvent,
 	useSessions,
@@ -433,6 +435,10 @@ export function DesktopLayout({
 		null,
 	);
 
+	// Multi-server: アクティブセッションが remote peer の場合、そっちの WS に切り替える
+	const { peers } = usePeers();
+	const peerConn = usePeerConnection(controlSessionId || "", apiSessions, peers);
+
 	// Zoom state: when a pane is zoomed, show only that pane full-screen
 	const [zoomedPaneId, setZoomedPaneId] = useState<string | null>(null);
 	const zoomedPaneIdRef = useRef<string | null>(null);
@@ -471,6 +477,8 @@ export function DesktopLayout({
 
 	const controlTerminal = useMultiplexedTerminal({
 		sessionId: controlSessionId || "",
+		peerWsBase: peerConn.wsBase,
+		token: peerConn.token,
 		onPaneViewport: (paneId, viewport) => {
 			lastViewportRef.current.set(paneId, viewport);
 			let perPane = paneViewportCacheRef.current.get(paneId);

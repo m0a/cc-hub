@@ -3,23 +3,9 @@ import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import type { HistorySession } from '../../../shared/types';
 
-export interface HistorySession {
-  sessionId: string;
-  projectPath: string;
-  projectName: string;
-  firstPrompt?: string;
-  summary?: string;
-  modified: string;
-  // Phase 2 additions
-  startTime?: string;
-  endTime?: string;
-  durationMinutes?: number;
-  messageCount?: number;
-  gitBranch?: string;
-  // For session matching with active sessions
-  firstMessageUuid?: string;
-}
+export type { HistorySession };
 
 interface SessionMetadata {
   startTime?: string;

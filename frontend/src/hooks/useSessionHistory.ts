@@ -43,10 +43,12 @@ interface UseSessionHistoryResult {
 	resumeSession: (
 		sessionId: string,
 		projectPath: string,
+		agent?: "claude" | "codex",
 	) => Promise<{ tmuxSessionId: string } | null>;
 	fetchConversation: (
 		sessionId: string,
 		projectDirName?: string,
+		agent?: "claude" | "codex",
 	) => Promise<ConversationMessage[]>;
 }
 
@@ -149,14 +151,18 @@ export function useSessionHistory(): UseSessionHistoryResult {
 	}, [sessionsByProject, fetchProjectSessions]);
 
 	const resumeSession = useCallback(
-		async (sessionId: string, projectPath: string) => {
+		async (
+			sessionId: string,
+			projectPath: string,
+			agent?: "claude" | "codex",
+		) => {
 			try {
 				const response = await authFetch(
 					`${API_BASE}/api/sessions/history/resume`,
 					{
 						method: "POST",
 						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({ sessionId, projectPath }),
+						body: JSON.stringify({ sessionId, projectPath, agent }),
 					},
 				);
 				if (!response.ok) {
@@ -179,6 +185,7 @@ export function useSessionHistory(): UseSessionHistoryResult {
 		async (
 			sessionId: string,
 			projectDirName?: string,
+			agent?: "claude" | "codex",
 		): Promise<ConversationMessage[]> => {
 			try {
 				const url = new URL(
@@ -187,6 +194,9 @@ export function useSessionHistory(): UseSessionHistoryResult {
 				);
 				if (projectDirName) {
 					url.searchParams.set("projectDirName", projectDirName);
+				}
+				if (agent === "codex") {
+					url.searchParams.set("agent", "codex");
 				}
 				const response = await authFetch(url.toString(), {
 					cache: "no-store",

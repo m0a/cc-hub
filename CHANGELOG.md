@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.132] - 2026-05-20
+
+### Added
+- **履歴タブの Codex 対応**: `~/.codex/sessions/**` の rollout JSONL を読み取り、Claude セッションと同じ project バケットに merge して表示する `CodexHistoryService` を追加。各履歴行に `Claude` / `Codex` バッジを表示、再開時は agent に応じて `claude -r` / `codex resume` を自動切り替え。検索 (SSE ストリーミング含む)・会話表示・プロジェクト一覧の全エンドポイントで Codex セッションを統合 (`backend/src/services/codex-history.ts`, `backend/src/routes/sessions.ts`, `frontend/src/components/SessionHistory.tsx`, `frontend/src/hooks/useSessionHistory.ts`, `shared/types.ts`)
+
 ## [0.1.131] - 2026-05-19
 
 ### Changed

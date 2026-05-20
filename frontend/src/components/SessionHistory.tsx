@@ -74,6 +74,12 @@ function HistoryItem({
 	const messageCount = session.messageCount;
 	const gitBranch = session.gitBranch;
 
+	const agent = session.agent ?? "claude";
+	const agentBadge =
+		agent === "codex"
+			? { label: "Codex", className: "text-cyan-300 bg-cyan-400/10 border-cyan-400/20" }
+			: { label: "Claude", className: "text-violet-300 bg-violet-400/10 border-violet-400/20" };
+
 	return (
 		<div
 			onClick={onTap}
@@ -85,6 +91,11 @@ function HistoryItem({
 						{truncatedText}
 					</p>
 					<div className="flex items-center gap-3 mt-1.5 text-[11px] text-zinc-600">
+						<span
+							className={`inline-flex items-center px-1.5 py-px rounded border text-[10px] font-medium ${agentBadge.className}`}
+						>
+							{agentBadge.label}
+						</span>
 						<span>
 							{formatRelativeTime(session.modified, t, i18n.language)}
 						</span>
@@ -297,6 +308,7 @@ export function SessionHistory({
 			const result = await resumeSession(
 				session.sessionId,
 				session.projectPath,
+				session.agent,
 			);
 
 			if (result) {
@@ -359,6 +371,7 @@ export function SessionHistory({
 			const messages = await fetchConversation(
 				session.sessionId,
 				projectDirName,
+				session.agent,
 			);
 			setConversation(messages);
 		} finally {
@@ -405,7 +418,11 @@ export function SessionHistory({
 		setLoadingConversation(true);
 		setConversation([]);
 		try {
-			const messages = await fetchConversation(session.sessionId);
+			const messages = await fetchConversation(
+				session.sessionId,
+				undefined,
+				session.agent,
+			);
 			setConversation(messages);
 		} finally {
 			setLoadingConversation(false);

@@ -415,6 +415,9 @@ export interface HistorySession {
   gitBranch?: string;
   // For session matching with active sessions
   firstMessageUuid?: string;
+  // Which agent produced this history entry. Drives the resume command
+  // (`claude -r <id>` vs `codex resume <id>`) and the badge in the UI.
+  agent?: AgentProvider;
 }
 
 export interface HistorySessionsResponse {

@@ -8,6 +8,7 @@ import { ClaudeCodeService } from '../services/claude-code';
 import { CodexService } from '../services/codex';
 import { CodexConversationService } from '../services/codex-conversation';
 import { SessionHistoryService } from '../services/session-history';
+import { CodexHistoryService } from '../services/codex-history';
 import { PromptHistoryService } from '../services/prompt-history';
 import { getAllSessionMetadata, setSessionTheme, setSessionTitle, getSessionOrder, setSessionOrder, getLastKnownSessions, saveLastKnownSessions, removeLastKnownSession, type LastKnownSession } from '../services/session-metadata';
 import { computeSessionMetrics } from '../services/session-metrics';
@@ -19,6 +20,7 @@ const claudeCodeService = new ClaudeCodeService();
 const codexService = new CodexService();
 const codexConversationService = new CodexConversationService();
 const sessionHistoryService = new SessionHistoryService();
+const codexHistoryService = new CodexHistoryService(undefined, codexConversationService);
 const promptHistoryService = new PromptHistoryService();
 
 export function shellQuote(value: string): string {
@@ -404,8 +406,27 @@ sessions.post('/', async (c) => {
 });
 
 // GET /sessions/history/projects - Get list of projects (fast, no file content reading)
+// Merges Claude (~/.claude/projects/*) and Codex (~/.codex/sessions/**) buckets
+// by encoded cwd so the same directory shows up once.
 sessions.get('/history/projects', async (c) => {
-  const projects = await sessionHistoryService.getProjects();
+  const [claudeProjects, codexProjects] = await Promise.all([
+    sessionHistoryService.getProjects(),
+    codexHistoryService.getProjects(),
+  ]);
+  const byDir = new Map<string, typeof claudeProjects[number]>();
+  for (const p of claudeProjects) byDir.set(p.dirName, p);
+  for (const p of codexProjects) {
+    const existing = byDir.get(p.dirName);
+    if (existing) {
+      existing.sessionCount += p.sessionCount;
+      if (!existing.latestModified || (p.latestModified && p.latestModified > existing.latestModified)) {
+        existing.latestModified = p.latestModified;
+      }
+    } else {
+      byDir.set(p.dirName, p);
+    }
+  }
+  const projects = Array.from(byDir.values()).sort((a, b) => a.projectName.localeCompare(b.projectName));
   return c.json({ projects });
 });
 
@@ -413,8 +434,15 @@ sessions.get('/history/projects', async (c) => {
 sessions.get('/history/search', async (c) => {
   const query = c.req.query('q') || '';
   const limit = parseInt(c.req.query('limit') || '50', 10);
-  const sessions = await sessionHistoryService.searchSessions(query, limit);
-  return c.json({ sessions });
+  const [claudeMatches, codexMatches] = await Promise.all([
+    sessionHistoryService.searchSessions(query, limit),
+    codexHistoryService.searchSessions(query, limit),
+  ]);
+  const merged = [
+    ...claudeMatches.map(s => ({ ...s, agent: s.agent ?? 'claude' as const })),
+    ...codexMatches,
+  ].sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime()).slice(0, limit);
+  return c.json({ sessions: merged });
 });
 
 // GET /sessions/history/search/stream - Streaming search with SSE
@@ -430,11 +458,22 @@ sessions.get('/history/search/stream', async (c) => {
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
+      let yielded = 0;
 
       try {
-        for await (const session of sessionHistoryService.searchSessionsStream(query, limit)) {
-          const data = `data: ${JSON.stringify(session)}\n\n`;
-          controller.enqueue(encoder.encode(data));
+        // Emit Codex matches up-front (small set, scanned in one pass).
+        const codexMatches = await codexHistoryService.searchSessions(query, limit);
+        for (const session of codexMatches) {
+          if (yielded >= limit) break;
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(session)}\n\n`));
+          yielded++;
+        }
+        // Then stream Claude matches incrementally.
+        for await (const session of sessionHistoryService.searchSessionsStream(query, limit - yielded)) {
+          if (yielded >= limit) break;
+          const tagged = { ...session, agent: session.agent ?? 'claude' as const };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(tagged)}\n\n`));
+          yielded++;
         }
         // Send done event
         controller.enqueue(encoder.encode('event: done\ndata: {}\n\n'));
@@ -456,18 +495,33 @@ sessions.get('/history/search/stream', async (c) => {
 });
 
 // GET /sessions/history/projects/:dirName - Get sessions for a specific project
+// Returns merged Claude + Codex sessions in the same project bucket.
 sessions.get('/history/projects/:dirName', async (c) => {
   const dirName = c.req.param('dirName');
-  const sessions = await sessionHistoryService.getProjectSessions(dirName);
-  return c.json({ sessions });
+  const [claudeSessions, codexSessions] = await Promise.all([
+    sessionHistoryService.getProjectSessions(dirName),
+    codexHistoryService.getProjectSessions(dirName),
+  ]);
+  const merged = [
+    ...claudeSessions.map(s => ({ ...s, agent: s.agent ?? 'claude' as const })),
+    ...codexSessions,
+  ].sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
+  return c.json({ sessions: merged });
 });
 
-// GET /sessions/history - Get past Claude Code session history
+// GET /sessions/history - Get past session history (recent across all projects)
 // NOTE: This must be defined BEFORE /:id to prevent "history" being interpreted as an id
 sessions.get('/history', async (c) => {
   const includeMetadata = c.req.query('metadata') === 'true';
-  const history = await sessionHistoryService.getRecentSessions(30, includeMetadata);
-  return c.json({ sessions: history });
+  const [claudeHistory, codexHistory] = await Promise.all([
+    sessionHistoryService.getRecentSessions(30, includeMetadata),
+    codexHistoryService.getRecentSessions(30),
+  ]);
+  const merged = [
+    ...claudeHistory.map(s => ({ ...s, agent: s.agent ?? 'claude' as const })),
+    ...codexHistory,
+  ].sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime()).slice(0, 30);
+  return c.json({ sessions: merged });
 });
 
 // GET /sessions/history/:sessionId/conversation - Get conversation history for a session
@@ -480,7 +534,7 @@ sessions.get('/history/:sessionId/conversation', async (c) => {
   const last = lastQuery ? parseInt(lastQuery, 10) : undefined;
   const agent = c.req.query('agent');
   const messages = agent === 'codex'
-    ? await codexConversationService.getConversation(sessionId)
+    ? await codexHistoryService.getConversation(sessionId)
     : await sessionHistoryService.getConversation(sessionId, projectDirName);
   return c.json({ messages: last ? messages.slice(-last) : messages });
 });

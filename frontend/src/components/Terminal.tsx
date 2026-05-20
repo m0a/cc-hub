@@ -1022,18 +1022,23 @@ export const TerminalComponent = memo(
 				e.preventDefault(); // Mobile/tablet: prevent default
 			};
 
-			// Mouse wheel scroll
+			// Mouse wheel scroll — intercept on the capture phase before xterm.js
+			// receives the event. xterm.js forwards wheel events to the application
+			// (e.g. Claude / Codex Ink TUIs interpret wheel as ↑/↓ → input history),
+			// which prevents the user from scrolling tmux's scrollback. Stopping
+			// propagation here keeps the wheel local to our scrollTerminal() call.
 			const handleWheel = (e: WheelEvent) => {
 				const term = terminalRef.current;
 				if (!term) return;
 				e.preventDefault();
+				e.stopPropagation();
 				const lines = Math.ceil(Math.abs(e.deltaY) / 40);
 				scrollTerminal(e.deltaY > 0 ? lines : -lines);
 				updateScrollIndicator();
 			};
 
 			if (container) {
-				container.addEventListener("wheel", handleWheel, { passive: false });
+				container.addEventListener("wheel", handleWheel, { capture: true, passive: false });
 				container.addEventListener("touchstart", handleTouchStart, {
 					passive: true,
 				});
@@ -1061,7 +1066,7 @@ export const TerminalComponent = memo(
 					);
 					container.removeEventListener("mouseup", handleMouseUp);
 					container.removeEventListener("contextmenu", handleContextMenu);
-					container.removeEventListener("wheel", handleWheel);
+					container.removeEventListener("wheel", handleWheel, { capture: true } as EventListenerOptions);
 				}
 				if (resizeTimeout) clearTimeout(resizeTimeout);
 				resizeObserver.disconnect();

@@ -100,12 +100,16 @@ import { SessionHistory } from "./SessionHistory";
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
 // Directory browser API functions
+// peerId が指定された場合は /api/peers/:peerId/files/* に振り分け。
 async function browseDirectory(
 	path?: string,
+	peerId?: string,
 ): Promise<{ path: string; files: FileInfo[]; parentPath: string | null }> {
-	const url = path
-		? `${API_BASE}/api/files/browse?path=${encodeURIComponent(path)}`
+	const isRemote = peerId && peerId !== "local";
+	const base = isRemote
+		? `${API_BASE}/api/peers/${encodeURIComponent(peerId)}/files/browse`
 		: `${API_BASE}/api/files/browse`;
+	const url = path ? `${base}?path=${encodeURIComponent(path)}` : base;
 	const response = await authFetch(url);
 	if (!response.ok) {
 		throw new Error("Failed to browse directory");
@@ -115,8 +119,13 @@ async function browseDirectory(
 
 async function createDirectory(
 	path: string,
+	peerId?: string,
 ): Promise<{ path: string; success: boolean }> {
-	const response = await authFetch(`${API_BASE}/api/files/mkdir`, {
+	const isRemote = peerId && peerId !== "local";
+	const url = isRemote
+		? `${API_BASE}/api/peers/${encodeURIComponent(peerId)}/files/mkdir`
+		: `${API_BASE}/api/files/mkdir`;
+	const response = await authFetch(url, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ path }),
@@ -310,8 +319,6 @@ function CreateSessionModal({
 	const [selectedPeerId, setSelectedPeerId] = useState<string>(LOCAL_PEER_ID);
 	const [nameManuallyEdited, setNameManuallyEdited] = useState(false);
 	const [currentPath, setCurrentPath] = useState<string>("");
-	// peer 選択時は Hub のディレクトリピッカーが使えないので、生 path 入力にする
-	const [remoteWorkingDir, setRemoteWorkingDir] = useState<string>("~");
 	const [directories, setDirectories] = useState<FileInfo[]>([]);
 	const [parentPath, setParentPath] = useState<string | null>(null);
 	const [isLoading, setIsLoading] = useState(true);
@@ -329,36 +336,42 @@ function CreateSessionModal({
 	const existingNamesRef = useRef(existingNames);
 	existingNamesRef.current = existingNames;
 
-	const loadDirectory = useCallback(async (path?: string) => {
-		setIsLoading(true);
-		setError(null);
-		try {
-			const result = await browseDirectory(path);
-			setCurrentPath(result.path);
-			setDirectories(result.files);
-			setParentPath(result.parentPath);
+	const loadDirectory = useCallback(
+		async (path: string | undefined, peerId: string) => {
+			setIsLoading(true);
+			setError(null);
+			try {
+				const target = peerId === LOCAL_PEER_ID ? undefined : peerId;
+				const result = await browseDirectory(path, target);
+				setCurrentPath(result.path);
+				setDirectories(result.files);
+				setParentPath(result.parentPath);
 
-			// Auto-suggest session name from directory name (only if not manually edited)
-			if (!nameManuallyEditedRef.current) {
-				const dirName = result.path.split("/").pop() || "";
-				let suggested = dirName;
-				let counter = 1;
-				while (existingNamesRef.current.has(suggested)) {
-					suggested = `${dirName}-${counter++}`;
+				// Auto-suggest session name from directory name (only if not manually edited)
+				if (!nameManuallyEditedRef.current) {
+					const dirName = result.path.split("/").pop() || "";
+					let suggested = dirName;
+					let counter = 1;
+					while (existingNamesRef.current.has(suggested)) {
+						suggested = `${dirName}-${counter++}`;
+					}
+					setName(suggested);
 				}
-				setName(suggested);
+			} catch (err) {
+				setError(err instanceof Error ? err.message : "Failed to load directory");
+				setDirectories([]);
+				setParentPath(null);
+			} finally {
+				setIsLoading(false);
 			}
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to load directory");
-		} finally {
-			setIsLoading(false);
-		}
-	}, []);
+		},
+		[],
+	);
 
-	// Load initial directory
+	// Initial load + peer 切替時のリロード
 	useEffect(() => {
-		loadDirectory();
-	}, [loadDirectory]);
+		loadDirectory(undefined, selectedPeerId);
+	}, [loadDirectory, selectedPeerId]);
 
 	// Focus new folder input when shown
 	useEffect(() => {
@@ -368,12 +381,12 @@ function CreateSessionModal({
 	}, [showNewFolderInput]);
 
 	const handleDirectoryClick = (dir: FileInfo) => {
-		loadDirectory(dir.path);
+		loadDirectory(dir.path, selectedPeerId);
 	};
 
 	const handleGoUp = () => {
 		if (parentPath) {
-			loadDirectory(parentPath);
+			loadDirectory(parentPath, selectedPeerId);
 		}
 	};
 
@@ -383,8 +396,7 @@ function CreateSessionModal({
 	};
 
 	const handleSubmit = () => {
-		const workingDir = isRemote ? remoteWorkingDir.trim() : currentPath;
-		onConfirm(name, workingDir, agent, isRemote ? selectedPeerId : undefined);
+		onConfirm(name, currentPath, agent, isRemote ? selectedPeerId : undefined);
 	};
 
 	const handleCreateFolder = async () => {
@@ -394,11 +406,12 @@ function CreateSessionModal({
 		setError(null);
 		try {
 			const newPath = `${currentPath}/${newFolderName.trim()}`;
-			await createDirectory(newPath);
+			const target = isRemote ? selectedPeerId : undefined;
+			await createDirectory(newPath, target);
 			setShowNewFolderInput(false);
 			setNewFolderName("");
 			// Navigate to the new directory
-			loadDirectory(newPath);
+			loadDirectory(newPath, selectedPeerId);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to create folder");
 		} finally {
@@ -482,27 +495,7 @@ function CreateSessionModal({
 					</div>
 				)}
 
-				{/* Remote workingDir input (peer 選択時) */}
-				{isRemote && (
-					<label className="mb-3 block">
-						<span className="text-xs text-th-text-secondary mb-1 block">
-							{t("session.workingDirectory")} (peer 上のパス)
-						</span>
-						<input
-							type="text"
-							value={remoteWorkingDir}
-							onChange={(e) => setRemoteWorkingDir(e.target.value)}
-							placeholder="~"
-							className="w-full px-3 py-2 bg-th-bg border border-th-border rounded text-th-text font-mono text-sm placeholder-th-text-muted focus:outline-none focus:border-blue-500"
-						/>
-						<p className="mt-1 text-[11px] text-th-text-muted">
-							ディレクトリ一覧は peer 側に存在する必要があります。`~` でホームディレクトリ。
-						</p>
-					</label>
-				)}
-
-				{/* Directory picker — local 選択時のみ */}
-				{!isRemote && (
+				{/* Directory picker — local / remote 共通 (remote は peer 側の filesystem を browse) */}
 				<div className="flex-1 min-h-0 flex flex-col">
 					<div className="flex items-center justify-between mb-2">
 						<span className="text-xs text-th-text-secondary">
@@ -619,7 +612,6 @@ function CreateSessionModal({
 						)}
 					</div>
 				</div>
-				)}
 
 				{/* Action buttons */}
 				<div className="flex gap-3 justify-end mt-3 pt-3 border-t border-th-border">

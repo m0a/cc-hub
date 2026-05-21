@@ -330,6 +330,55 @@ peers.post('/history/:peerId/resume', async (c) => {
   return c.json(data, (res.status >= 400 && res.status < 600 ? res.status : 502) as 400 | 401 | 404 | 409 | 500 | 502);
 });
 
+// -----------------------------------------------------------------------------
+// Files API プロキシ (peer 上のディレクトリ browse / mkdir 用)
+// 新規セッション作成ダイアログで peer 側の filesystem を参照させるため、
+// /api/files/browse と /api/files/mkdir を peer-aware にする。
+// -----------------------------------------------------------------------------
+
+// GET /api/peers/:peerId/files/browse?path=...
+peers.get('/:peerId/files/browse', async (c) => {
+  const peerId = c.req.param('peerId');
+  const peer = (await listPeers()).find(p => p.id === peerId);
+  if (!peer) return c.json({ error: 'Peer not found' }, 404);
+
+  const qsPath = c.req.query('path');
+  const suffix = qsPath ? `?path=${encodeURIComponent(qsPath)}` : '';
+  const path = `/api/files/browse${suffix}`;
+
+  if (peer.url === SELF_PEER_URL) {
+    // self は Hub の /api/files/browse をそのまま使えるが、ルーター越しに呼ぶより
+    // クライアントが直接 /api/files/browse を叩いた方が良いので、ここは remote 専用と割り切る
+    return c.json({ error: 'Use /api/files/browse for local peer' }, 400);
+  }
+
+  const res = await peerFetch(peer.id, peer.url, peer.wsToken, path);
+  const data = await res.json().catch(() => ({}));
+  if (res.ok) return c.json(data as Record<string, unknown>);
+  return c.json(data as Record<string, unknown>, (res.status >= 400 && res.status < 600 ? res.status : 502) as 400 | 404 | 500 | 502);
+});
+
+// POST /api/peers/:peerId/files/mkdir
+peers.post('/:peerId/files/mkdir', async (c) => {
+  const peerId = c.req.param('peerId');
+  const peer = (await listPeers()).find(p => p.id === peerId);
+  if (!peer) return c.json({ error: 'Peer not found' }, 404);
+  if (peer.url === SELF_PEER_URL) {
+    return c.json({ error: 'Use /api/files/mkdir for local peer' }, 400);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const init: RequestInit = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  };
+  const res = await peerFetch(peer.id, peer.url, peer.wsToken, '/api/files/mkdir', init);
+  const data = await res.json().catch(() => ({}));
+  if (res.ok) return c.json(data as Record<string, unknown>);
+  return c.json(data as Record<string, unknown>, (res.status >= 400 && res.status < 600 ? res.status : 502) as 400 | 404 | 500 | 502);
+});
+
 // GET /api/peers/sessions - 全 peer のセッション一覧をマージして返す
 peers.get('/sessions', async (c) => {
   const allPeers = await listPeers();

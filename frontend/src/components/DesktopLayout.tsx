@@ -18,6 +18,7 @@ import type {
 } from "../../../shared/types";
 import { useMultiplexedTerminal } from "../hooks/useMultiplexedTerminal";
 import { usePeerConnection } from "../hooks/usePeerConnection";
+import { nukeClientCache } from "../utils/nuke-cache";
 import { usePeers } from "../hooks/usePeers";
 import {
 	updateCachedSessionsByHookEvent,
@@ -1101,16 +1102,7 @@ export function DesktopLayout({
 			// Ctrl/Cmd + Shift + F5: Cache clear & reload
 			if (e.shiftKey && e.key === "F5") {
 				e.preventDefault();
-				Promise.all(
-					[
-						navigator.serviceWorker
-							?.getRegistrations()
-							.then((regs) => Promise.all(regs.map((r) => r.unregister()))),
-						caches
-							?.keys()
-							.then((keys) => Promise.all(keys.map((k) => caches.delete(k)))),
-					].filter(Boolean),
-				).then(() => location.reload());
+				void nukeClientCache();
 				return;
 			}
 

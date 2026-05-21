@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.145] - 2026-05-22
+
+### Changed
+- **「キャッシュクリア」を完全リセット仕様に強化**: 従来は Service Worker unregister と Cache API 削除のみで、IndexedDB / localStorage / sessionStorage が残り、`location.reload()` も memory cache を許容していたため、PWA がスタックしたバージョンに留まることがあった。`frontend/src/utils/nuke-cache.ts` (新規) に統一処理を切り出し、SW + Cache API + IndexedDB + localStorage + sessionStorage をすべて削除した上で `?_nocache=<timestamp>` 付きの cache-busted hard reload (`location.replace`) を行う。Dashboard の「キャッシュクリア」ボタンと `Ctrl/Cmd+Shift+F5` ショートカット両方で同じ処理を実行 (`frontend/src/components/dashboard/Dashboard.tsx`, `frontend/src/components/DesktopLayout.tsx`)
+- 副作用: localStorage を消すため認証トークンも消える → 再ログインが必要になる
+
 ## [0.1.144] - 2026-05-22
 
 ### Fixed

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useDashboard } from "../../hooks/useDashboard";
 import { useTheme } from "../../hooks/useTheme";
 import { useUiScale } from "../../hooks/useUiScale";
+import { nukeClientCache } from "../../utils/nuke-cache";
 import { DailyUsageChart } from "./DailyUsageChart";
 import { HourlyHeatmap } from "./HourlyHeatmap";
 import { ModelUsageChart } from "./ModelUsageChart";
@@ -55,15 +56,7 @@ export function Dashboard({ className = "", compact = false }: DashboardProps) {
 	const handleClearCache = useCallback(async () => {
 		setCacheClearing(true);
 		try {
-			if ("serviceWorker" in navigator) {
-				const regs = await navigator.serviceWorker.getRegistrations();
-				await Promise.all(regs.map((r) => r.unregister()));
-			}
-			if (typeof caches !== "undefined") {
-				const keys = await caches.keys();
-				await Promise.all(keys.map((k) => caches.delete(k)));
-			}
-			setTimeout(() => location.reload(), 500);
+			await nukeClientCache();
 		} catch (e) {
 			console.error("Cache clear failed:", e);
 			setCacheClearing(false);

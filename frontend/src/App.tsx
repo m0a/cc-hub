@@ -5,6 +5,7 @@ import {
 	FileText,
 	MessageSquare,
 	RotateCw,
+	Server,
 	Terminal as TerminalIcon,
 	X as XIcon,
 } from "lucide-react";
@@ -23,6 +24,7 @@ import { DesktopLayout } from "./components/DesktopLayout";
 import { Dashboard } from "./components/dashboard/Dashboard";
 import { FileViewer } from "./components/files/FileViewer";
 import { LoginForm } from "./components/LoginForm";
+import { PeerManager } from "./components/PeerManager";
 import { Onboarding, useOnboarding } from "./components/Onboarding";
 import { SessionList } from "./components/SessionList";
 import type { TerminalRef } from "./components/Terminal";
@@ -258,6 +260,9 @@ export function App() {
 	const [retryCount, setRetryCount] = useState(0);
 	const [showSessionList, setShowSessionList] = useState(false);
 	const [showMobileDashboard, setShowMobileDashboard] = useState(false);
+	const [mobileDashboardTab, setMobileDashboardTab] = useState<
+		"dashboard" | "peers"
+	>("dashboard");
 	const [sessionToDelete, setSessionToDelete] = useState<OpenSession | null>(
 		null,
 	);
@@ -1222,10 +1227,33 @@ export function App() {
 			{showMobileDashboard && (
 				<div className="fixed inset-0 z-50 flex flex-col bg-[#0a0a0a] animate-modal-in">
 					<div className="shrink-0 px-4 pt-3 pb-3 border-b border-white/[0.06]">
-						<div className="flex items-center justify-between">
-							<h1 className="text-[18px] font-semibold tracking-[-0.02em] text-white">
-								Dashboard
-							</h1>
+						<div className="flex items-center justify-between gap-2">
+							<div className="flex items-center gap-1 bg-white/[0.04] rounded-lg p-0.5">
+								<button
+									type="button"
+									onClick={() => setMobileDashboardTab("dashboard")}
+									className={`px-3 py-1.5 rounded-md text-sm font-medium inline-flex items-center gap-1.5 transition-colors ${
+										mobileDashboardTab === "dashboard"
+											? "bg-white/[0.08] text-white"
+											: "text-zinc-400 hover:text-zinc-200"
+									}`}
+								>
+									<BarChart3 className="w-4 h-4" />
+									Dashboard
+								</button>
+								<button
+									type="button"
+									onClick={() => setMobileDashboardTab("peers")}
+									className={`px-3 py-1.5 rounded-md text-sm font-medium inline-flex items-center gap-1.5 transition-colors ${
+										mobileDashboardTab === "peers"
+											? "bg-white/[0.08] text-white"
+											: "text-zinc-400 hover:text-zinc-200"
+									}`}
+								>
+									<Server className="w-4 h-4" />
+									Servers
+								</button>
+							</div>
 							<button
 								type="button"
 								onClick={() => setShowMobileDashboard(false)}
@@ -1236,7 +1264,11 @@ export function App() {
 						</div>
 					</div>
 					<div className="flex-1 min-h-0 overflow-y-auto">
-						<Dashboard className="h-full" />
+						{mobileDashboardTab === "dashboard" ? (
+							<Dashboard className="h-full" />
+						) : (
+							<PeerManager />
+						)}
 					</div>
 				</div>
 			)}

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.148] - 2026-05-22
+
+### Fixed
+- **複数の tmux セッションが同じ `ccSessionId` / `ccRecap` / `ccFirstPrompt` を共有してしまう問題を修正**: `getSessionForPath` / `getRecentSessionsForPath` は workingDir の project dir に jsonl が見つからないと `/` まで親ディレクトリへ遡って探す挙動だった。これが「Claude Code を `/Users/m0a` で起動 → `cd <subdir>` した tmux pane」では祖先 (= m0a) project の最新 jsonl を全 pane に返してしまい、別々の Claude Code セッションが同じ recap を表示する漏洩を起こしていた。親遡上を削除して exact path match のみに変更。jsonl が無い pane は `null` を返す (= 表示しない方が誤情報よりまし)。launchd / TZ skew のフォールバックは既存の `ptySessionId` / `tty-start-time` 経路でカバー済み (`backend/src/services/claude-code.ts`)
+
+### Changed
+- `cchub-send` Skill に「双方向対話のセットアップ」「peer の hook 設定を診断する (`/api/notify/hook-status`)」「`--submit` フラグの使い方」を追記。`Bash(cchub send:*)` の事前許可を必須ステップとして明文化 (`.claude/skills/cchub-send/SKILL.md`)
+
 ## [0.1.147] - 2026-05-22
 
 ### Fixed

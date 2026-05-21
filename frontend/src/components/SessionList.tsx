@@ -138,8 +138,8 @@ async function createDirectory(
 }
 
 interface SessionListProps {
-	onSelectSession: (session: SessionResponse) => void;
-	onSelectPane?: (session: SessionResponse, paneId: string) => void;
+	onSelectSession: (session: ExtendedSessionResponse) => void;
+	onSelectPane?: (session: ExtendedSessionResponse, paneId: string) => void;
 	onBack?: () => void;
 	onClose?: () => void; // Close button in header (used in modal)
 	inline?: boolean; // true for side panel, false for fullscreen
@@ -1318,9 +1318,13 @@ export function SessionList({
 
 				if (isLost && session?.currentPath) {
 					if (conversationId) {
-						// Lost session with a known conversation id: resume via history API
-						const response = await authFetch(
-							`${API_BASE}/api/sessions/history/resume`,
+						// Lost session with a known conversation id: resume via history API.
+						// Route to the owning peer so a remote peer's lost session is resumed
+						// on that peer's Hub, not the local one.
+						const response = await sessionFetch(
+							session,
+							peers,
+							`/api/sessions/history/resume`,
 							{
 								method: "POST",
 								headers: { "Content-Type": "application/json" },
@@ -1346,22 +1350,28 @@ export function SessionList({
 								agent: data.agent ?? session.agent,
 								theme: session.theme,
 								customTitle: session.customTitle,
+								peerId: session.peerId,
 							});
 						}
 					} else {
 						// Lost session without a conversation id: create a fresh session in the same
 						// directory using the original agent so a Codex session doesn't come back as Claude.
+						// Pass through the peerId so a remote lost session re-creates on the same peer.
 						const newSession = await createSession(
 							session.name,
 							session.currentPath,
 							session.agent,
+							session.peerId,
 						);
 						if (newSession) onSelectSession(newSession);
 					}
 				} else {
-					// Active session: resume the agent in the existing tmux session
-					const response = await authFetch(
-						`${API_BASE}/api/sessions/${sessionId}/resume`,
+					// Active session: resume the agent in the existing tmux session.
+					// Route via the owning peer for the same reason as above.
+					const response = await sessionFetch(
+						session,
+						peers,
+						`/api/sessions/${sessionId}/resume`,
 						{
 							method: "POST",
 							headers: { "Content-Type": "application/json" },
@@ -1379,7 +1389,7 @@ export function SessionList({
 				console.error("Failed to resume session:", err);
 			}
 		},
-		[sessions, onSelectSession, createSession],
+		[sessions, onSelectSession, createSession, peers],
 	);
 
 	// Show conversation for an active session

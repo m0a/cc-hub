@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.138] - 2026-05-21
+
+### Fixed
+- **Lost セッション再開時の peer ルーティング**: `SessionList.handleResume` がローカル Hub の `/api/sessions/history/resume` を `authFetch` で直接叩いており、`session.peerId` を無視していた。これにより remote peer (例: Mac) 上のロストセッションを再開しようとすると Hub (例: Linux) 側で `cd '/Users/m0a' && claude -r ...` を実行しようとして `cd: no such file or directory` で失敗していた。`sessionFetch(session, peers, …)` 経由に切り替え、所属 peer の URL に直接 POST されるよう修正。conversationId なし時の `createSession` 経路にも `session.peerId` を引き継ぐようにした。あわせてアクティブセッションの `POST /:id/resume` も peer-aware に統一 (`frontend/src/components/SessionList.tsx`)
+- `SessionListProps.onSelectSession` / `onSelectPane` の引数型を `SessionResponse` → `ExtendedSessionResponse` に拡張。resume 後のナビゲートで `peerId` を伝搬できるようにし、後続の WebSocket subscribe が正しい peer に向くようにした (`frontend/src/components/SessionList.tsx`)
+
 ## [0.1.137] - 2026-05-21
 
 ### Added

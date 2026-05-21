@@ -232,7 +232,9 @@ export interface PeerDiscoverResponse {
 export const PeerCreateSchema = z.object({
   nickname: z.string().min(1).max(64),
   url: z.url(),
-  password: z.string().min(1),  // peer へ代理ログインするため必須
+  // peer 側で auth が無効 (パスワード未設定) ならクライアントは password を
+  // 送らなくて良い。loginToPeer 側で 400 = "auth disabled" を空トークンで処理する
+  password: z.string().optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
 });
 

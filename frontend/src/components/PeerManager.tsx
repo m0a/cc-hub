@@ -124,13 +124,15 @@ function AddPeerForm({ onSubmit, onCancel, initialNickname, initialUrl }: AddFor
 				/>
 			</div>
 			<div>
-				<label htmlFor="peer-password" className="block text-xs text-th-text-secondary mb-1">そのサーバーのパスワード</label>
+				<label htmlFor="peer-password" className="block text-xs text-th-text-secondary mb-1">
+					そのサーバーのパスワード
+					<span className="ml-1 text-th-text-muted">(peer 側が認証無効なら空でOK)</span>
+				</label>
 				<input
 					id="peer-password"
 					type="password"
 					value={password}
 					onChange={(e) => setPassword(e.target.value)}
-					required
 					className="w-full px-3 py-2 bg-th-surface border border-th-border rounded-md text-th-text"
 				/>
 			</div>

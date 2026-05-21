@@ -22,13 +22,54 @@ function normalizePeerUrl(url: string): string {
 }
 
 /**
+ * peer の /api/auth/required を叩いて、認証が有効か確認する。
+ * 接続失敗時は throw する (PeerAuthError)。
+ */
+async function isPeerAuthRequired(url: string): Promise<boolean> {
+  const base = normalizePeerUrl(url);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(`${base}/api/auth/required`, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new PeerAuthError(0, `peer に接続できません: ${msg}`);
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!response.ok) {
+    throw new PeerAuthError(response.status, `peer 確認失敗: HTTP ${response.status}`);
+  }
+  const body = (await response.json().catch(() => ({}))) as { required?: boolean };
+  return body.required === true;
+}
+
+/**
  * peer に対してパスワードログインを行い JWT トークンを取得する。
  *
- * peer 側が auth disabled (password なし) の場合、401 ではなく 400 が返るので
- * その時は「トークン不要」とみなして空文字列を返す。
+ * password が undefined/空文字の場合:
+ *   - peer 側 auth 無効 → 空トークンを返す (OK)
+ *   - peer 側 auth 有効 → "password 必須" エラー
+ *
+ * password が指定されている場合:
+ *   - 通常通り /api/auth/login へ POST
+ *   - peer 側 auth 無効なら 400 が返るので空トークンとして扱う
  */
-export async function loginToPeer(url: string, password: string): Promise<string> {
+export async function loginToPeer(url: string, password?: string): Promise<string> {
   const base = normalizePeerUrl(url);
+
+  // password 未指定: まず peer 側の auth 設定を確認
+  if (!password) {
+    const required = await isPeerAuthRequired(url);
+    if (required) {
+      throw new PeerAuthError(401, 'この peer はパスワード認証が有効です。パスワードを入力してください');
+    }
+    return '';
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS);
@@ -60,11 +101,10 @@ export async function loginToPeer(url: string, password: string): Promise<string
   }
 
   const json = (await response.json().catch(() => ({}))) as { token?: string };
-  if (!json.token && response.status !== 400) {
-    // auth 無効の peer なら 400 で抜けているので、ここに来てトークン無しは異常
+  if (!json.token) {
     throw new PeerAuthError(500, 'peer の応答に token がありません');
   }
-  return json.token ?? '';
+  return json.token;
 }
 
 /**

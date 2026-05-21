@@ -276,6 +276,14 @@ export function PeerManager() {
 	};
 
 	const handleDiscover = async () => {
+		// 社内ネットワークなど Tailscale 以外の環境で意図せずポートスキャンに
+		// 見えてしまうのを避けるため、毎回ユーザーに確認を取る。
+		const ok = confirm(
+			"Tailscale tailnet 内の各ホストの :5923 (cchub の既定ポート) に HTTP リクエストを送信して、cchub の有無を確認します。\n\n" +
+				"Tailscale 外のホストには送信しません。実行しますか？",
+		);
+		if (!ok) return;
+
 		setDiscovering(true);
 		setDiscoverError(null);
 		try {

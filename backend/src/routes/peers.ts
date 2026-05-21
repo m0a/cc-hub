@@ -21,6 +21,7 @@ import {
   type StoredPeer,
 } from '../services/peer-registry';
 import { loginToPeer, verifyPeer, peerFetch, PeerAuthError } from '../services/peer-auth';
+import { discoverPeers } from '../services/peer-discovery';
 import { buildSessionsList } from './sessions';
 
 export const peers = new Hono();
@@ -56,6 +57,12 @@ function toClientView(peer: StoredPeer & {
 peers.get('/', async (c) => {
   const all = await listPeers();
   return c.json({ peers: all.map(toClientView) });
+});
+
+// GET /api/peers/discover - Tailscale tailnet 内で cchub が動いている peer を検出
+peers.get('/discover', async (c) => {
+  const discovered = await discoverPeers();
+  return c.json({ discovered });
 });
 
 // POST /api/peers - peer を追加

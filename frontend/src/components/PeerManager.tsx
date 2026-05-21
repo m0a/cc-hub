@@ -1,7 +1,15 @@
-import { Plus, Trash2, RefreshCw, Pencil, Server, Wifi, WifiOff, AlertTriangle, X } from "lucide-react";
+import { Plus, Trash2, RefreshCw, Pencil, Server, Wifi, WifiOff, AlertTriangle, X, Search, CheckCircle2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
-import { LOCAL_PEER_ID, type PeerClientView } from "../../../shared/types";
+import {
+	LOCAL_PEER_ID,
+	type DiscoveredPeer,
+	type PeerClientView,
+	type PeerDiscoverResponse,
+} from "../../../shared/types";
 import { usePeers } from "../hooks/usePeers";
+import { authFetch } from "../services/api";
+
+const API_BASE = import.meta.env.VITE_API_URL || "";
 
 const COLOR_OPTIONS = [
 	"#10b981", "#3b82f6", "#f59e0b", "#ec4899",
@@ -58,11 +66,13 @@ function ColorSwatch({ color, selected, onClick }: { color: string; selected: bo
 interface AddFormProps {
 	onSubmit: (input: { nickname: string; url: string; password: string; color?: string }) => Promise<void>;
 	onCancel: () => void;
+	initialNickname?: string;
+	initialUrl?: string;
 }
 
-function AddPeerForm({ onSubmit, onCancel }: AddFormProps) {
-	const [nickname, setNickname] = useState("");
-	const [url, setUrl] = useState("https://");
+function AddPeerForm({ onSubmit, onCancel, initialNickname, initialUrl }: AddFormProps) {
+	const [nickname, setNickname] = useState(initialNickname ?? "");
+	const [url, setUrl] = useState(initialUrl ?? "https://");
 	const [password, setPassword] = useState("");
 	const [color, setColor] = useState<string | undefined>(undefined);
 	const [submitting, setSubmitting] = useState(false);
@@ -250,12 +260,39 @@ function EditPeerForm({ peer, onSubmit, onCancel }: EditFormProps) {
 export function PeerManager() {
 	const { peers, isLoading, error, refresh, addPeer, updatePeer, deletePeer, verifyPeer } = usePeers();
 	const [adding, setAdding] = useState(false);
+	const [addPrefill, setAddPrefill] = useState<{ nickname: string; url: string } | null>(null);
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [verifyingId, setVerifyingId] = useState<string | null>(null);
+	const [discovering, setDiscovering] = useState(false);
+	const [discovered, setDiscovered] = useState<DiscoveredPeer[] | null>(null);
+	const [discoverError, setDiscoverError] = useState<string | null>(null);
 
 	const handleAdd = async (input: { nickname: string; url: string; password: string; color?: string }) => {
 		await addPeer(input);
 		setAdding(false);
+		setAddPrefill(null);
+	};
+
+	const handleDiscover = async () => {
+		setDiscovering(true);
+		setDiscoverError(null);
+		try {
+			const res = await authFetch(`${API_BASE}/api/peers/discover`);
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			const data = (await res.json()) as PeerDiscoverResponse;
+			setDiscovered(data.discovered);
+		} catch (err) {
+			setDiscoverError(err instanceof Error ? err.message : "検索に失敗しました");
+		} finally {
+			setDiscovering(false);
+		}
+	};
+
+	const handlePickDiscovered = (d: DiscoveredPeer) => {
+		if (d.alreadyRegistered) return;
+		setAddPrefill({ nickname: d.displayName, url: d.url });
+		setAdding(true);
+		setDiscovered(null);
 	};
 
 	const handleEdit = async (id: string, input: { nickname?: string; color?: string; password?: string }) => {
@@ -282,7 +319,7 @@ export function PeerManager() {
 
 	return (
 		<div className="space-y-4 p-4">
-			<div className="flex items-center justify-between">
+			<div className="flex items-center justify-between flex-wrap gap-2">
 				<h2 className="text-lg font-semibold text-th-text">サーバー (Peers)</h2>
 				<div className="flex gap-2">
 					<button
@@ -295,7 +332,17 @@ export function PeerManager() {
 					</button>
 					<button
 						type="button"
-						onClick={() => setAdding(true)}
+						onClick={() => void handleDiscover()}
+						disabled={discovering}
+						className="px-3 py-2 rounded-md bg-th-surface-hover hover:bg-th-surface text-th-text text-sm font-medium inline-flex items-center gap-1 disabled:opacity-50"
+						title="Tailscale ネットワーク内を検索"
+					>
+						<Search className={`w-4 h-4 ${discovering ? "animate-pulse" : ""}`} />
+						{discovering ? "検索中…" : "検索"}
+					</button>
+					<button
+						type="button"
+						onClick={() => { setAddPrefill(null); setAdding(true); }}
 						disabled={adding}
 						className="px-3 py-2 rounded-md bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white text-sm font-medium inline-flex items-center gap-1"
 					>
@@ -305,8 +352,91 @@ export function PeerManager() {
 			</div>
 
 			{error && <div className="text-red-400 text-sm bg-red-900/20 p-3 rounded">{error}</div>}
+			{discoverError && (
+				<div className="text-red-400 text-sm bg-red-900/20 p-3 rounded">
+					検索エラー: {discoverError}
+				</div>
+			)}
 
-			{adding && <AddPeerForm onSubmit={handleAdd} onCancel={() => setAdding(false)} />}
+			{discovered !== null && (
+				<div className="bg-th-surface-hover border border-th-border rounded-md p-3 space-y-2">
+					<div className="flex items-center justify-between mb-2">
+						<h3 className="font-semibold text-th-text inline-flex items-center gap-1">
+							<Search className="w-4 h-4" /> ネットワーク内の cchub ({discovered.length})
+						</h3>
+						<button
+							type="button"
+							onClick={() => setDiscovered(null)}
+							className="text-th-text-muted hover:text-th-text"
+						>
+							<X className="w-4 h-4" />
+						</button>
+					</div>
+					{discovered.length === 0 ? (
+						<p className="text-sm text-th-text-muted py-2">
+							未登録の cchub は見つかりませんでした。<br />
+							<span className="text-xs">tailscale で online な peer のみ対象、ポート 5923 を確認します。</span>
+						</p>
+					) : (
+						<ul className="space-y-1">
+							{discovered.map((d) => (
+								<li
+									key={d.hostname}
+									className={`flex items-center justify-between gap-2 p-2 rounded ${
+										d.alreadyRegistered ? "opacity-50" : "hover:bg-th-surface cursor-pointer"
+									}`}
+									onClick={() => handlePickDiscovered(d)}
+									onKeyDown={(e) => {
+										if (e.key === "Enter" || e.key === " ") {
+											e.preventDefault();
+											handlePickDiscovered(d);
+										}
+									}}
+								>
+									<div className="flex-1 min-w-0">
+										<div className="flex items-center gap-2">
+											<span className="font-medium text-th-text truncate">{d.displayName}</span>
+											{d.version && (
+												<span className="text-xs px-1.5 py-0.5 rounded bg-th-surface text-th-text-muted">
+													v{d.version}
+												</span>
+											)}
+											{d.alreadyRegistered && (
+												<span className="text-xs px-1.5 py-0.5 rounded bg-emerald-900/40 text-emerald-300 inline-flex items-center gap-1">
+													<CheckCircle2 className="w-3 h-3" /> 登録済み
+												</span>
+											)}
+										</div>
+										<div className="text-xs text-th-text-muted font-mono truncate mt-0.5">
+											{d.hostname}
+											{d.alreadyRegistered && d.registeredAs && (
+												<span className="ml-2">→ {d.registeredAs}</span>
+											)}
+										</div>
+									</div>
+									{!d.alreadyRegistered && (
+										<button
+											type="button"
+											className="shrink-0 px-3 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium inline-flex items-center gap-1"
+										>
+											<Plus className="w-3 h-3" /> 追加
+										</button>
+									)}
+								</li>
+							))}
+						</ul>
+					)}
+				</div>
+			)}
+
+			{adding && (
+				<AddPeerForm
+					onSubmit={handleAdd}
+					onCancel={() => { setAdding(false); setAddPrefill(null); }}
+					initialNickname={addPrefill?.nickname}
+					initialUrl={addPrefill?.url}
+				/>
+			)}
 
 			{isLoading ? (
 				<div className="text-th-text-muted text-sm">読み込み中…</div>

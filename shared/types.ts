@@ -210,6 +210,25 @@ export interface PeerSessionsResponse {
   errors?: { peerId: string; message: string }[];
 }
 
+export interface DiscoveredPeer {
+  /** Tailscale が報告する短いホスト名 */
+  displayName: string;
+  /** Tailscale MagicDNS 名 */
+  hostname: string;
+  /** 検出した URL (デフォルトポート) */
+  url: string;
+  /** cchub バージョン */
+  version?: string;
+  /** 既に peers.json に登録済みか */
+  alreadyRegistered: boolean;
+  /** 登録済みなら nickname */
+  registeredAs?: string;
+}
+
+export interface PeerDiscoverResponse {
+  discovered: DiscoveredPeer[];
+}
+
 export const PeerCreateSchema = z.object({
   nickname: z.string().min(1).max(64),
   url: z.url(),

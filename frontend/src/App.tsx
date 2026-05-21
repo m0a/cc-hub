@@ -200,6 +200,8 @@ function getSavedOpenSessionIds(): string[] {
 
 export function App() {
 	const { t } = useTranslation();
+	const tRef = useRef(t);
+	tRef.current = t;
 	// Auth state
 	const auth = useAuth();
 	// Onboarding state
@@ -494,7 +496,10 @@ export function App() {
 	}, [showSessionList, fileViewerVisible, showConversation]);
 
 	// Create initial session for first-time users
-	const createInitialSession = async (): Promise<OpenSession | null> => {
+	// 毎 render で新インスタンスが作られると fetchAndOpenSession の useEffect が
+	// 無限に再実行されて activeSessionId を localStorage から巻き戻す。
+	// useCallback で安定化し、t は ref 経由で参照する。
+	const createInitialSession = useCallback(async (): Promise<OpenSession | null> => {
 		try {
 			const response = await authFetch(`${API_BASE}/api/sessions`, {
 				method: "POST",
@@ -502,7 +507,7 @@ export function App() {
 				body: JSON.stringify({
 					name: "Welcome",
 					workingDir: "~",
-					initialPrompt: t("onboarding.welcomePrompt"),
+					initialPrompt: tRef.current("onboarding.welcomePrompt"),
 				}),
 			});
 			if (response.ok) {
@@ -513,7 +518,7 @@ export function App() {
 			console.error("Failed to create initial session:", err);
 		}
 		return null;
-	};
+	}, []);
 
 	// Retry handler for loading screen
 	const handleRetry = useCallback(() => {
@@ -565,7 +570,7 @@ export function App() {
 				}
 			} catch (err) {
 				if (isTransientNetworkError(err)) {
-					setLoadError(t("loading.connectionFailed"));
+					setLoadError(tRef.current("loading.connectionFailed"));
 				} else {
 					setShowSessionList(true);
 				}
@@ -575,7 +580,11 @@ export function App() {
 		};
 
 		fetchAndOpenSession();
-	}, [createInitialSession, retryCount, t]);
+		// `t` (useTranslation) は i18n の hydration で参照が変わることがあり、
+		// それで fetchAndOpenSession が再実行されると saveLastSession() より前の
+		// localStorage を読んで activeSessionId が意図せず巻き戻る。
+		// t は ref 経由で参照し、ここの deps からは外す。
+	}, [createInitialSession, retryCount]);
 
 	// Save to localStorage when sessions change
 	useEffect(() => {

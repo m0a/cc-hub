@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.136] - 2026-05-21
+
+### Added
+- **マルチサーバー対応 (Phase 1 + 2)**: Hub に登録した複数の cchub インスタンス (peer) のセッションを 1 画面でマージ表示し、選択するとターミナル WebSocket がその peer に直接切り替わる。ブラウザは Hub URL を1つ知っていれば全マシン操作できる。
+  - Hub に peer レジストリ (`~/.cc-hub/peers.json`, mode 0600) を追加し、`GET/POST/PATCH/DELETE /api/peers` および集約 `GET /api/peers/sessions` を提供 (`backend/src/services/peer-registry.ts`, `backend/src/services/peer-auth.ts`, `backend/src/routes/peers.ts`)
+  - Servers タブを Dashboard パネルに追加し、デスクトップ・モバイル両方から peer の追加 / ニックネーム / 識別色 / 削除を操作可能に (`frontend/src/components/PeerManager.tsx`, `frontend/src/components/DashboardPanel.tsx`, `frontend/src/App.tsx`)
+  - セッションカードに peer ニックネームバッジと色付き左ボーダーを表示 (`frontend/src/components/SessionList.tsx`)
+  - `useMultiplexedTerminal` に `peerWsBase` を渡せるよう refactor、選択中セッションの peer に応じて WS 接続先を切替 (`frontend/src/hooks/useMultiplexedTerminal.ts`, `frontend/src/hooks/usePeerConnection.ts`, `frontend/src/pages/TerminalPage.tsx`, `frontend/src/components/DesktopLayout.tsx`)
+- **peer 自動検出**: Servers タブの「🔍 検索」ボタンで Tailscale tailnet 内の cchub インスタンスを発見。クリックで peer 追加フォームに pre-fill。実行前に必ず確認ダイアログを出すため、社内ネットワーク等でスキャンしてしまう事故を防ぐ (`backend/src/services/peer-discovery.ts`)
+- **パスワード無効な peer の追加**: peer 側で `cchub` を `-P` なしで起動していても追加できるよう、`/api/auth/required` で事前判定する (`backend/src/services/peer-auth.ts`)
+
+### Fixed
+- `fetchAndOpenSession` の useEffect 依存に毎レンダー再生成される `createInitialSession` が含まれていたため、効果が無限に再実行され `activeSessionId` を localStorage の値に巻き戻していた。`useCallback` で安定化し、`t` は ref 経由で参照することで peer セッションが「開いてすぐ Hub セッションに戻る」現象を解消 (`frontend/src/App.tsx`)
+- peer 接続中にその peer から届く `sessions-updated` push が Hub のマージ済み一覧を上書きし、`peerId` を `local` に書き換えて WS 接続先がフリップしていた。Hub 接続中のみ受信するようガード追加 (`frontend/src/hooks/useMultiplexedTerminal.ts`)
+- モバイル (TerminalPage) は `peerWsBase` を `useMultiplexedTerminal` に渡していなかったため、スマホからは peer セッションのターミナルが開けなかった。desktop と同じ配線に統一 (`frontend/src/pages/TerminalPage.tsx`)
+- peer セッションのテーマ / タイトル変更 / 削除が Hub 固定で 404 になっていたのを、`sessionFetch(session, peers, path, init)` ヘルパー経由で peer の URL + トークンに振り分けるよう修正 (`frontend/src/services/peer-fetch.ts`, `frontend/src/hooks/useSessions.ts`, `frontend/src/components/SessionList.tsx`)
+
+### Notes
+- File viewer / conversation viewer / session resume / session order などの REST 系は引き続き Hub 固定 (peer の対象に飛ばさない)。Phase 3 で対応予定
+- peer 追加 / 削除は Hub にログインしているクライアントなら誰でも実行可能 (家庭内利用前提)
+
 ## [0.1.135] - 2026-05-20
 
 ### Changed

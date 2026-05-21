@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.137] - 2026-05-21
+
+### Added
+- **peer に対するセッション作成**: 新規セッションダイアログに「サーバー」セレクターを追加し、Hub だけでなく登録済み peer 上にも新しいセッションを作れるようにした。さらに peer 選択時はその peer の filesystem を Hub のディレクトリピッカーと同じ UI で browse できる ─ `~/Users/m0a` などをタップで掘っていける (`frontend/src/components/SessionList.tsx`, `frontend/src/hooks/useSessions.ts`, `backend/src/routes/peers.ts`)
+- **履歴一覧のマルチサーバー対応**: 「履歴」タブで全 peer のプロジェクトをマージ表示し、各プロジェクト・各セッションに peer ニックネームバッジと色付き左ボーダーを付ける。プロジェクト展開、会話履歴の表示、再開ボタンすべてが該当 peer の API に振り分けられるようになった。検索 (SSE) は当面 Hub 限定 (`backend/src/routes/peers.ts`, `frontend/src/hooks/useSessionHistory.ts`, `frontend/src/components/SessionHistory.tsx`)
+- **`usePeers` の定期 polling**: 5秒間隔で `/api/peers` を再取得することで、verify の一時的失敗で `offline` 表示のまま固定されていた peer がオンライン復帰時に自動で再選択可能になる (`frontend/src/hooks/usePeers.ts`)
+
+### Fixed
+- `POST /api/peers/history/:peerId/resume` が peer 側の status code を 200/502 に潰していて、`duplicate_working_dir` (409) のような特別ハンドリングが効かなくなっていたのを修正。peer のステータスをそのまま透過する (`backend/src/routes/peers.ts`)
+
+### Notes
+- File viewer / conversation viewer / session resume は引き続き peer 対応の余地あり (Phase 4 候補)
+- peer 横断 search も Hub のみ。SSE のストリーミング merge は今後の課題
+
 ## [0.1.136] - 2026-05-21
 
 ### Added

@@ -324,8 +324,10 @@ peers.post('/history/:peerId/resume', async (c) => {
   };
   const path = '/api/sessions/history/resume';
   const res = await peerFetch(peer.id, peer.url, peer.wsToken, path, init);
-  const data = await res.json().catch(() => ({}));
-  return c.json(data as Record<string, unknown>, res.ok ? 200 : 502);
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  // peer 側のステータスをそのまま透過 (duplicate_working_dir などのコードもクライアントに届ける)
+  if (res.ok) return c.json(data);
+  return c.json(data, (res.status >= 400 && res.status < 600 ? res.status : 502) as 400 | 401 | 404 | 409 | 500 | 502);
 });
 
 // GET /api/peers/sessions - 全 peer のセッション一覧をマージして返す

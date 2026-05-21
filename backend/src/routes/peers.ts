@@ -4,6 +4,7 @@ import {
   PeerCreateSchema,
   PeerUpdateSchema,
   PeerOrderSchema,
+  CrossPeerSessionOrderSchema,
   LOCAL_PEER_ID,
   SELF_PEER_URL,
   type PeerClientView,
@@ -21,6 +22,8 @@ import {
   updatePeer,
   deletePeer,
   setPeerOrder,
+  getCrossPeerSessionOrder,
+  setCrossPeerSessionOrder,
   type StoredPeer,
 } from '../services/peer-registry';
 import { loginToPeer, verifyPeer, peerFetch, PeerAuthError } from '../services/peer-auth';
@@ -128,6 +131,19 @@ peers.delete('/:id', async (c) => {
 peers.put('/order', zValidator('json', PeerOrderSchema), async (c) => {
   const { order } = c.req.valid('json');
   await setPeerOrder(order);
+  return c.json({ success: true });
+});
+
+// GET /api/peers/session-order - peer 横断のセッション並び順を取得
+peers.get('/session-order', async (c) => {
+  const order = await getCrossPeerSessionOrder();
+  return c.json({ order });
+});
+
+// PUT /api/peers/session-order - peer 横断のセッション並び順を保存
+peers.put('/session-order', zValidator('json', CrossPeerSessionOrderSchema), async (c) => {
+  const { order } = c.req.valid('json');
+  await setCrossPeerSessionOrder(order);
   return c.json({ success: true });
 });
 

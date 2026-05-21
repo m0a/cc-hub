@@ -248,9 +248,15 @@ export const PeerOrderSchema = z.object({
   order: z.array(z.string()),  // peer id の配列
 });
 
+// Cross-peer session display order. Each entry is `${peerId}:${sessionId}`.
+export const CrossPeerSessionOrderSchema = z.object({
+  order: z.array(z.string()),
+});
+
 export type PeerCreateInput = z.infer<typeof PeerCreateSchema>;
 export type PeerUpdateInput = z.infer<typeof PeerUpdateSchema>;
 export type PeerOrderInput = z.infer<typeof PeerOrderSchema>;
+export type CrossPeerSessionOrderInput = z.infer<typeof CrossPeerSessionOrderSchema>;
 
 // =============================================================================
 // File Viewer Types

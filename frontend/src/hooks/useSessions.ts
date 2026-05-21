@@ -8,7 +8,7 @@ import {
 	type SessionResponse,
 	type SessionTheme,
 } from "../../../shared/types";
-import { isTransientNetworkError } from "../services/api";
+import { authFetch, isTransientNetworkError } from "../services/api";
 import { sessionFetch } from "../services/peer-fetch";
 import {
 	applyHookIndicatorUpdate,
@@ -16,10 +16,61 @@ import {
 } from "./usePeerSessionsWatcher";
 import { usePeers } from "./usePeers";
 
+const API_BASE = import.meta.env.VITE_API_URL || "";
+
 // Module-level merged cache produced by the peer sessions watcher.
 // Every peer — including the local Hub — pushes `sessions-updated` over its
 // own WS, so this is the single source of truth.
 let cachedSessions: ExtendedSessionResponse[] = [];
+
+// Cross-peer session order persisted on the Hub. Each entry is the composite
+// key `${peerId}:${sessionId}`. `null` = not yet fetched.
+let cachedMergedOrder: string[] | null = null;
+let mergedOrderFetched = false;
+
+function compositeKey(s: ExtendedSessionResponse): string {
+	return `${s.peerId ?? "local"}:${s.id}`;
+}
+
+function sortByMergedOrder(
+	list: ExtendedSessionResponse[],
+): ExtendedSessionResponse[] {
+	if (!cachedMergedOrder || cachedMergedOrder.length === 0) return list;
+	const orderMap = new Map(cachedMergedOrder.map((key, i) => [key, i]));
+	return [...list].sort((a, b) => {
+		const ai = orderMap.get(compositeKey(a)) ?? Number.MAX_SAFE_INTEGER;
+		const bi = orderMap.get(compositeKey(b)) ?? Number.MAX_SAFE_INTEGER;
+		return ai - bi;
+	});
+}
+
+/**
+ * Apply a new cross-peer order locally and re-sort the cached sessions.
+ * Used by the drag-end handler for optimistic update — the same value is
+ * also PUT to the Hub so reload / other clients pick it up.
+ */
+export function applyLocalSessionOrder(order: string[]) {
+	cachedMergedOrder = order;
+	cachedSessions = sortByMergedOrder(cachedSessions);
+	window.dispatchEvent(new CustomEvent("cchub-sessions-reorder"));
+}
+
+async function fetchMergedOrderOnce(): Promise<void> {
+	if (mergedOrderFetched) return;
+	mergedOrderFetched = true;
+	try {
+		const res = await authFetch(`${API_BASE}/api/peers/session-order`);
+		if (!res.ok) return;
+		const data = (await res.json()) as { order?: string[] };
+		if (Array.isArray(data.order)) {
+			cachedMergedOrder = data.order;
+			cachedSessions = sortByMergedOrder(cachedSessions);
+			window.dispatchEvent(new CustomEvent("cchub-sessions-reorder"));
+		}
+	} catch {
+		mergedOrderFetched = false;
+	}
+}
 
 /** hookイベントで Hub local セッションの indicatorState を即座に更新する */
 export function updateCachedSessionsByHookEvent(
@@ -85,18 +136,23 @@ export function useSessions(): UseSessionsReturn {
 	const [isLoading, setIsLoading] = useState(() => cachedSessions.length === 0);
 	const [error, setError] = useState<string | null>(null);
 
-	// Listen for WS push and hook events
 	useEffect(() => {
 		const hookHandler = () => setSessions(cachedSessions);
+		const reorderHandler = () => setSessions(cachedSessions);
 		window.addEventListener("cchub-hook-event", hookHandler);
-		return () => window.removeEventListener("cchub-hook-event", hookHandler);
+		window.addEventListener("cchub-sessions-reorder", reorderHandler);
+		void fetchMergedOrderOnce();
+		return () => {
+			window.removeEventListener("cchub-hook-event", hookHandler);
+			window.removeEventListener("cchub-sessions-reorder", reorderHandler);
+		};
 	}, []);
 
 	// Per-peer WS watcher already dedups by payload before notifying, so a
 	// listener firing here implies the data actually changed for some peer.
 	const handlePeerSessions = useCallback(
 		(sessionsByPeer: ReadonlyMap<string, PeerSession[]>) => {
-			cachedSessions = flattenPeerSessions(sessionsByPeer);
+			cachedSessions = sortByMergedOrder(flattenPeerSessions(sessionsByPeer));
 			setSessions(cachedSessions);
 			setIsLoading(false);
 		},

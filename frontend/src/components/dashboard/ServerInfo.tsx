@@ -207,6 +207,10 @@ interface ServerInfoProps {
 		mountpoint: string;
 	};
 	connectedClients?: number;
+	/** Label for the panel header; defaults to "Server". */
+	label?: string;
+	/** Hide the throughput chart (it tracks this browser's WS bytes, not the peer's). */
+	hideThroughput?: boolean;
 }
 
 // Throughput history (kept in module scope so it persists across re-renders)
@@ -238,12 +242,15 @@ export function ServerInfo({
 	systemMetrics,
 	diskUsage,
 	connectedClients,
+	label,
+	hideThroughput = false,
 }: ServerInfoProps) {
 	const isLight = useIsLightMode();
 
 	const [throughput, setThroughput] = useState(0);
 	const [, forceUpdate] = useState(0);
 	useEffect(() => {
+		if (hideThroughput) return;
 		const interval = setInterval(() => {
 			const val = window.__cchub_ws_bytes_per_sec || 0;
 			setThroughput(val);
@@ -257,7 +264,7 @@ export function ServerInfo({
 			forceUpdate((n) => n + 1);
 		}, 1000);
 		return () => clearInterval(interval);
-	}, []);
+	}, [hideThroughput]);
 
 	const getCpu = useMemo(() => (s: SystemMetricsSnapshot) => s.cpuPercent, []);
 	const getMem = useMemo(
@@ -276,7 +283,9 @@ export function ServerInfo({
 	return (
 		<div className="space-y-3">
 			<div className="flex items-center justify-between">
-				<h3 className="text-[13px] font-semibold text-zinc-300">Server</h3>
+				<h3 className="text-[13px] font-semibold text-zinc-300 truncate">
+					{label ?? "Server"}
+				</h3>
 				<div className="flex items-center gap-1.5">
 					<Users className="w-3 h-3 text-teal-400" />
 					<span className="text-[12px] text-teal-400 font-mono tabular-nums">
@@ -323,7 +332,8 @@ export function ServerInfo({
 						/>
 					</div>
 
-					{/* Throughput */}
+					{/* Throughput (local-only — tracks this browser's WS bytes) */}
+					{!hideThroughput && (
 					<div>
 						<div className="flex items-baseline justify-between mb-0.5">
 							<span className="text-[11px] text-zinc-500">Throughput</span>
@@ -391,6 +401,7 @@ export function ServerInfo({
 							</div>
 						)}
 					</div>
+					)}
 				</div>
 			)}
 

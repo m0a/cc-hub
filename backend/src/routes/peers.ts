@@ -29,6 +29,8 @@ import {
 import { loginToPeer, verifyPeer, peerFetch, PeerAuthError } from '../services/peer-auth';
 import { discoverPeers } from '../services/peer-discovery';
 import { buildSessionsList, sessionHistoryService, codexHistoryService } from './sessions';
+import { buildDashboard } from './dashboard';
+import type { DashboardResponse } from '../../../shared/types';
 
 export const peers = new Hono();
 
@@ -393,6 +395,30 @@ peers.post('/:peerId/files/mkdir', async (c) => {
   const data = await res.json().catch(() => ({}));
   if (res.ok) return c.json(data as Record<string, unknown>);
   return c.json(data as Record<string, unknown>, (res.status >= 400 && res.status < 600 ? res.status : 502) as 400 | 404 | 500 | 502);
+});
+
+// GET /api/peers/:peerId/dashboard - peer (or self) の dashboard を返す
+peers.get('/:peerId/dashboard', async (c) => {
+  const peerId = c.req.param('peerId');
+  const peer = (await listPeers()).find(p => p.id === peerId);
+  if (!peer) return c.json({ error: 'Peer not found' }, 404);
+
+  if (peer.url === SELF_PEER_URL) {
+    const data = await buildDashboard();
+    return c.json(data);
+  }
+
+  try {
+    const res = await peerFetch(peer.id, peer.url, peer.wsToken, '/api/dashboard');
+    if (!res.ok) {
+      return c.json({ error: `HTTP ${res.status}` }, 502);
+    }
+    const data = (await res.json()) as DashboardResponse;
+    return c.json(data);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Fetch failed';
+    return c.json({ error: message }, 502);
+  }
 });
 
 // GET /api/peers/sessions - 全 peer のセッション一覧をマージして返す

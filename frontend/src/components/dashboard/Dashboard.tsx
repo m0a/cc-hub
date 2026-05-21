@@ -1,7 +1,8 @@
 import { Globe, Moon, Sun } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDashboard } from "../../hooks/useDashboard";
+import { usePeers } from "../../hooks/usePeers";
 import { useTheme } from "../../hooks/useTheme";
 import { useUiScale } from "../../hooks/useUiScale";
 import { nukeClientCache } from "../../utils/nuke-cache";
@@ -9,7 +10,7 @@ import { DailyUsageChart } from "./DailyUsageChart";
 import { HourlyHeatmap } from "./HourlyHeatmap";
 import { ModelUsageChart } from "./ModelUsageChart";
 import { NetworkLatency } from "./NetworkLatency";
-import { ServerInfo } from "./ServerInfo";
+import { PeerServerCard } from "./PeerServerCard";
 import { UsageLimits } from "./UsageLimits";
 
 // Onboarding localStorage keys
@@ -25,6 +26,11 @@ type AgentTab = "claude" | "codex";
 
 export function Dashboard({ className = "", compact = false }: DashboardProps) {
 	const { t, i18n } = useTranslation();
+	const { peers } = usePeers();
+	const sortedPeers = useMemo(
+		() => [...peers].sort((a, b) => a.order - b.order),
+		[peers],
+	);
 	const { data, isLoading, error } = useDashboard(30000);
 	const { theme, toggleTheme } = useTheme();
 	const {
@@ -157,13 +163,9 @@ export function Dashboard({ className = "", compact = false }: DashboardProps) {
 					<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
 						<NetworkLatency />
 					</div>
-					<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
-						<ServerInfo
-							systemMetrics={data?.systemMetrics}
-							diskUsage={data?.diskUsage}
-							connectedClients={data?.connectedClients}
-						/>
-					</div>
+					{sortedPeers.map((peer) => (
+						<PeerServerCard key={peer.id} peer={peer} />
+					))}
 					<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
 						<UsageLimits
 							data={data?.usageLimits || null}

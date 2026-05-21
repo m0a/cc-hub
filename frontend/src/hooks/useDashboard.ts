@@ -33,7 +33,6 @@ export function useDashboard(
 			if (!isTransientNetworkError(err)) {
 				setError(err instanceof Error ? err.message : "Unknown error");
 			}
-			// Keep previous data on error (don't setData(null))
 		} finally {
 			setIsLoading(false);
 		}
@@ -42,7 +41,6 @@ export function useDashboard(
 	useEffect(() => {
 		fetchDashboard();
 
-		// Auto-refresh at interval
 		const interval = setInterval(fetchDashboard, refreshInterval);
 		return () => clearInterval(interval);
 	}, [fetchDashboard, refreshInterval]);

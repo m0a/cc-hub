@@ -32,10 +32,7 @@ async function getDiskUsage(): Promise<{ total: number; used: number; available:
   }
 }
 
-export const dashboard = new Hono();
-
-// GET /dashboard - Get dashboard data
-dashboard.get('/', async (c) => {
+export async function buildDashboard(): Promise<DashboardResponse> {
   const [usageLimits, codexUsageLimits, dailyActivity, modelUsage, hourlyActivity, usageHistory, systemMetrics, diskUsage] = await Promise.all([
     anthropicUsageService.getUsageLimits(),
     codexUsageService.getUsageLimits(),
@@ -55,12 +52,12 @@ dashboard.get('/', async (c) => {
     );
   }
 
-  const response: DashboardResponse = {
+  return {
     limits: null, // Deprecated
     usageLimits,
     usageLimitsStatus: anthropicUsageService.getStatus(),
     codexUsageLimits,
-    usageHistory: usageHistory,
+    usageHistory,
     dailyActivity,
     modelUsage,
     costEstimates: [],
@@ -70,6 +67,12 @@ dashboard.get('/', async (c) => {
     diskUsage: diskUsage || undefined,
     connectedClients: getConnectedClientCount(),
   };
+}
 
+export const dashboard = new Hono();
+
+// GET /dashboard - Get dashboard data
+dashboard.get('/', async (c) => {
+  const response = await buildDashboard();
   return c.json(response);
 });

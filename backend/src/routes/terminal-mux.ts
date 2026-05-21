@@ -48,6 +48,9 @@ interface MuxSubscription {
 export interface MuxData {
   mux: true;
   visitorId: string;
+  /** Stable per-device identifier sent by the client (localStorage UUID).
+   *  Used to count unique devices, falling back to visitorId if absent. */
+  deviceId?: string;
   subscriptions: Map<string, MuxSubscription>;
   conversationWatchers: Map<string, ConversationWatcher>;
   lastPingAt: number;
@@ -122,7 +125,14 @@ export function pushSessionsNow() {
 }
 
 export function getConnectedClientCount(): number {
-  return activeMuxConnections.size;
+  // Count unique devices, not raw WebSocket connections.
+  // A client without a deviceId (very old client / direct WS test) falls back
+  // to its per-connection visitorId so it still counts as one.
+  const devices = new Set<string>();
+  for (const ws of activeMuxConnections) {
+    devices.add(ws.data.deviceId ?? ws.data.visitorId);
+  }
+  return devices.size;
 }
 
 export function broadcastToMuxClients(msg: Record<string, unknown>) {

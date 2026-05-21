@@ -1296,6 +1296,7 @@ export function SessionList({
 		title: string;
 		subtitle: string;
 		isActive: boolean;
+		peerId?: string;
 	} | null>(null);
 	const [conversation, setConversation] = useState<ConversationMessage[]>([]);
 	const [loadingConversation, setLoadingConversation] = useState(false);
@@ -1396,17 +1397,19 @@ export function SessionList({
 			title: string,
 			subtitle: string,
 			isActive: boolean,
+			peerId?: string,
 		) => {
 			setViewingConversation({
 				sessionId: ccSessionId,
 				title,
 				subtitle,
 				isActive,
+				peerId,
 			});
 			setLoadingConversation(true);
 			setConversation([]);
 			try {
-				const messages = await fetchConversation(ccSessionId);
+				const messages = await fetchConversation(ccSessionId, undefined, undefined, peerId);
 				setConversation(messages);
 			} finally {
 				setLoadingConversation(false);
@@ -1419,7 +1422,12 @@ export function SessionList({
 	const handleRefreshConversation = useCallback(async () => {
 		if (!viewingConversation) return;
 		try {
-			const messages = await fetchConversation(viewingConversation.sessionId);
+			const messages = await fetchConversation(
+				viewingConversation.sessionId,
+				undefined,
+				undefined,
+				viewingConversation.peerId,
+			);
 			setConversation(messages);
 		} catch (err) {
 			console.error("Failed to refresh conversation:", err);

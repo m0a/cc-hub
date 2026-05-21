@@ -17,6 +17,7 @@ import type {
 } from "../../../shared/types";
 import {
 	type ProjectInfo,
+	projectKey,
 	useSessionHistory,
 } from "../hooks/useSessionHistory";
 import { authFetch } from "../services/api";
@@ -181,12 +182,23 @@ function ProjectGroupItem({
 		}
 	};
 
+	const showPeerBadge =
+		project.peerId && project.peerId !== "local" && project.peerNickname;
+
 	return (
 		<div>
 			<button
 				type="button"
 				onClick={handleToggle}
 				className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/[0.03] rounded-md transition-colors"
+				style={
+					showPeerBadge && project.peerColor
+						? {
+								borderLeft: `3px solid ${project.peerColor}`,
+								paddingLeft: 8,
+							}
+						: undefined
+				}
 			>
 				<ChevronRight
 					className={`w-3.5 h-3.5 text-zinc-600 transition-transform duration-150 ${isExpanded ? "rotate-90" : ""}`}
@@ -195,6 +207,21 @@ function ProjectGroupItem({
 				<span className="flex-1 text-left text-[13px] text-zinc-400 truncate">
 					{project.projectName}
 				</span>
+				{showPeerBadge && (
+					<span
+						className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium"
+						style={{
+							backgroundColor: `${project.peerColor}26`,
+							color: project.peerColor,
+						}}
+					>
+						<span
+							className="w-1 h-1 rounded-full"
+							style={{ backgroundColor: project.peerColor }}
+						/>
+						{project.peerNickname}
+					</span>
+				)}
 				<span className="text-[11px] text-zinc-600 tabular-nums">
 					{project.sessionCount}
 				</span>
@@ -309,6 +336,7 @@ export function SessionHistory({
 				session.sessionId,
 				session.projectPath,
 				session.agent,
+				session.peerId,
 			);
 
 			if (result) {
@@ -372,6 +400,7 @@ export function SessionHistory({
 				session.sessionId,
 				projectDirName,
 				session.agent,
+				session.peerId,
 			);
 			setConversation(messages);
 		} finally {
@@ -422,6 +451,7 @@ export function SessionHistory({
 				session.sessionId,
 				undefined,
 				session.agent,
+				session.peerId,
 			);
 			setConversation(messages);
 		} finally {
@@ -509,20 +539,25 @@ export function SessionHistory({
 					</div>
 				) : (
 					/* Project list */
-					projects.map((project) => (
-						<ProjectGroupItem
-							key={project.dirName}
-							project={project}
-							sessions={sessionsByProject.get(project.dirName)}
-							isLoading={loadingProjects.has(project.dirName)}
-							onExpand={() => fetchProjectSessions(project.dirName)}
-							onTap={handleTap}
-							onResume={handleResume}
-							onNavigate={handleNavigate}
-							resumingId={resumingId}
-							activeCcSessionIds={activeCcSessionIds}
-						/>
-					))
+					projects.map((project) => {
+						const key = projectKey(project.peerId, project.dirName);
+						return (
+							<ProjectGroupItem
+								key={key}
+								project={project}
+								sessions={sessionsByProject.get(key)}
+								isLoading={loadingProjects.has(key)}
+								onExpand={() =>
+									fetchProjectSessions(project.peerId, project.dirName)
+								}
+								onTap={handleTap}
+								onResume={handleResume}
+								onNavigate={handleNavigate}
+								resumingId={resumingId}
+								activeCcSessionIds={activeCcSessionIds}
+							/>
+						);
+					})
 				)}
 			</div>
 

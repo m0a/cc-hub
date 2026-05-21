@@ -19,8 +19,9 @@ const tmuxService = new TmuxService();
 const claudeCodeService = new ClaudeCodeService();
 const codexService = new CodexService();
 const codexConversationService = new CodexConversationService();
-const sessionHistoryService = new SessionHistoryService();
-const codexHistoryService = new CodexHistoryService(undefined, codexConversationService);
+// peers.ts からも参照するため export
+export const sessionHistoryService = new SessionHistoryService();
+export const codexHistoryService = new CodexHistoryService(undefined, codexConversationService);
 const promptHistoryService = new PromptHistoryService();
 
 export function shellQuote(value: string): string {

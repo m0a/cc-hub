@@ -505,10 +505,31 @@ export interface HistorySession {
   // Which agent produced this history entry. Drives the resume command
   // (`claude -r <id>` vs `codex resume <id>`) and the badge in the UI.
   agent?: AgentProvider;
+  // Multi-server: 履歴が属する peer の情報
+  peerId?: string;
+  peerNickname?: string;
+  peerColor?: string;
 }
 
 export interface HistorySessionsResponse {
   sessions: HistorySession[];
+}
+
+// Multi-server: 履歴プロジェクト (~/.claude/projects/ のディレクトリ単位)
+export interface PeerHistoryProject {
+  dirName: string;
+  projectPath: string;
+  projectName: string;
+  sessionCount: number;
+  latestModified?: string;
+  peerId: string;
+  peerNickname?: string;
+  peerColor?: string;
+}
+
+export interface PeerHistoryProjectsResponse {
+  projects: PeerHistoryProject[];
+  errors?: { peerId: string; message: string }[];
 }
 
 export interface ToolUseInfo {

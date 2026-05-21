@@ -22,6 +22,7 @@ interface CliOptions {
   sendText?: string;
   sendStdin?: boolean;
   sendNewline?: boolean;
+  sendSubmit?: boolean;
   sendBase64?: boolean;
 }
 
@@ -57,7 +58,9 @@ debug options:
 
 send options:
   --stdin                Read payload from stdin instead of arg
-  --newline              Append \\r to payload (acts like pressing Enter)
+  --newline              Append \\r to payload (acts like pressing Enter once)
+  --submit               Append \\r\\r — Claude Code TUI needs two CRs to exit
+                         paste mode and actually send the message
   --base64               Treat payload as base64 (binary-safe)
 
 ${t('cli.examples')}
@@ -118,6 +121,9 @@ export function parseArgs(args: string[]): CliOptions {
         break;
       case '--newline':
         options.sendNewline = true;
+        break;
+      case '--submit':
+        options.sendSubmit = true;
         break;
       case '--base64':
         options.sendBase64 = true;
@@ -271,6 +277,7 @@ async function runSend(options: CliOptions): Promise<void> {
       text: options.sendText,
       stdin: options.sendStdin ?? false,
       newline: options.sendNewline ?? false,
+      submit: options.sendSubmit ?? false,
       base64: options.sendBase64 ?? false,
       localPort: options.port,
     });

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.150] - 2026-05-22
+
+### Added
+- **ダッシュボードのマルチサーバー対応**: 登録された peer ごとに `ServerInfo` カードを並べて、各 peer の CPU / Memory / Disk / Swap / Load を独立にポーリング表示する。新規 hook `usePeerServerMetrics` が `/api/peers/:peerId/dashboard` を 30 秒間隔で叩く。Throughput はブラウザの WS バイト数を見ているので Local カードのみで表示し、remote カードでは抑制する (`frontend/src/components/dashboard/PeerServerCard.tsx`, `frontend/src/hooks/usePeerServerMetrics.ts`, `backend/src/routes/peers.ts`, `backend/src/routes/dashboard.ts`)
+
+### Changed
+- **接続端末数をユニーク化**: `connectedClients` バッジが従来は WebSocket 接続数 (= 同じブラウザの複数タブ・再接続も別カウント) を返していた。フロントが `localStorage` に永続 UUID を保存して mux WS の URL に `?deviceId=...` で送信し、backend は deviceId 単位でユニーク化した数を返すよう変更。1 端末から複数タブを開いても 1 カウント、別端末/別ブラウザは別カウントになる (`frontend/src/utils/device-id.ts`, `frontend/src/hooks/useMultiplexedTerminal.ts`, `backend/src/index.ts`, `backend/src/routes/terminal-mux.ts`)
+
 ## [0.1.149] - 2026-05-22
 
 ### Fixed

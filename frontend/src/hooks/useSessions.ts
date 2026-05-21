@@ -4,44 +4,33 @@ import {
 	DEFAULT_AGENT_PROVIDER,
 	type ExtendedSessionResponse,
 	type IndicatorState,
-	LOCAL_PEER_ID,
 	type PeerSession,
 	type SessionResponse,
 	type SessionTheme,
 } from "../../../shared/types";
 import { isTransientNetworkError } from "../services/api";
 import { sessionFetch } from "../services/peer-fetch";
-import { usePeerSessionsWatcher } from "./usePeerSessionsWatcher";
+import {
+	applyHookIndicatorUpdate,
+	usePeerSessionsWatcher,
+} from "./usePeerSessionsWatcher";
 import { usePeers } from "./usePeers";
 
-// Module-level cache (shared across all useSessions instances).
-// `cachedSessions`: Hub-local sessions, fed by the multiplexed terminal WS push.
-// `cachedRemotePeerSessions`: flat list of remote peer sessions, fed by the
-// per-peer WS watcher (usePeerSessionsWatcher).
-let cachedSessions: ExtendedSessionResponse[] | null = null;
-let cachedRemotePeerSessions: PeerSession[] = [];
+// Module-level merged cache produced by the peer sessions watcher.
+// Every peer — including the local Hub — pushes `sessions-updated` over its
+// own WS, so this is the single source of truth.
+let cachedSessions: ExtendedSessionResponse[] = [];
 
-/** hookイベントでcachedSessionsのindicatorStateを即座に更新する */
+/** hookイベントで Hub local セッションの indicatorState を即座に更新する */
 export function updateCachedSessionsByHookEvent(
 	event: string,
 	ccSessionId?: string,
 ) {
 	const newState = hookEventToIndicatorState(event);
-	if (!newState || !ccSessionId || !cachedSessions) return;
-
-	cachedSessions = cachedSessions.map((session) => {
-		if (session.ccSessionId !== ccSessionId) return session;
-		if (!session.panes) return session;
-		return {
-			...session,
-			panes: session.panes.map((pane) => ({
-				...pane,
-				indicatorState: newState,
-			})),
-		};
-	});
-
-	window.dispatchEvent(new CustomEvent("cchub-hook-event"));
+	if (!newState || !ccSessionId) return;
+	if (applyHookIndicatorUpdate(ccSessionId, newState)) {
+		window.dispatchEvent(new CustomEvent("cchub-hook-event"));
+	}
 }
 
 function hookEventToIndicatorState(event: string): IndicatorState | null {
@@ -79,31 +68,10 @@ interface UseSessionsReturn {
 	) => Promise<boolean>;
 }
 
-function mergedSessions(): ExtendedSessionResponse[] {
-	const local = (cachedSessions ?? []).map((s) =>
-		// 既存の WS push 由来セッションには peerId が付かないので、local として注釈
-		s.peerId ? s : { ...s, peerId: LOCAL_PEER_ID },
-	);
-	return [...local, ...cachedRemotePeerSessions];
-}
-
-function updateSessions(
-	setSessions: React.Dispatch<React.SetStateAction<ExtendedSessionResponse[]>>,
-	newLocalSessions: ExtendedSessionResponse[],
-) {
-	cachedSessions = newLocalSessions;
-	const merged = mergedSessions();
-	setSessions((prev) => {
-		const newJson = JSON.stringify(merged);
-		const prevJson = JSON.stringify(prev);
-		return newJson === prevJson ? prev : merged;
-	});
-}
-
 function flattenPeerSessions(
 	sessionsByPeer: ReadonlyMap<string, PeerSession[]>,
-): PeerSession[] {
-	const out: PeerSession[] = [];
+): ExtendedSessionResponse[] {
+	const out: ExtendedSessionResponse[] = [];
 	for (const sessions of sessionsByPeer.values()) {
 		out.push(...sessions);
 	}
@@ -112,40 +80,25 @@ function flattenPeerSessions(
 
 export function useSessions(): UseSessionsReturn {
 	const { peers } = usePeers();
-	const [sessions, setSessions] = useState<ExtendedSessionResponse[]>(
-		() => mergedSessions(),
-	);
-	const [isLoading, setIsLoading] = useState(() => !cachedSessions);
+	const [sessions, setSessions] =
+		useState<ExtendedSessionResponse[]>(cachedSessions);
+	const [isLoading, setIsLoading] = useState(() => cachedSessions.length === 0);
 	const [error, setError] = useState<string | null>(null);
 
 	// Listen for WS push and hook events
 	useEffect(() => {
-		const hookHandler = () => {
-			if (cachedSessions) setSessions(mergedSessions());
-		};
-
-		const pushHandler = (e: Event) => {
-			const pushed = (e as CustomEvent).detail as ExtendedSessionResponse[];
-			if (pushed) {
-				updateSessions(setSessions, pushed);
-				setIsLoading(false);
-			}
-		};
-
+		const hookHandler = () => setSessions(cachedSessions);
 		window.addEventListener("cchub-hook-event", hookHandler);
-		window.addEventListener("cchub-sessions-push", pushHandler);
-		return () => {
-			window.removeEventListener("cchub-hook-event", hookHandler);
-			window.removeEventListener("cchub-sessions-push", pushHandler);
-		};
+		return () => window.removeEventListener("cchub-hook-event", hookHandler);
 	}, []);
 
 	// Per-peer WS watcher already dedups by payload before notifying, so a
 	// listener firing here implies the data actually changed for some peer.
 	const handlePeerSessions = useCallback(
 		(sessionsByPeer: ReadonlyMap<string, PeerSession[]>) => {
-			cachedRemotePeerSessions = flattenPeerSessions(sessionsByPeer);
-			setSessions(mergedSessions());
+			cachedSessions = flattenPeerSessions(sessionsByPeer);
+			setSessions(cachedSessions);
+			setIsLoading(false);
 		},
 		[],
 	);

@@ -6,6 +6,7 @@
  */
 import { useEffect, useMemo } from "react";
 import {
+	type IndicatorState,
 	LOCAL_PEER_ID,
 	type MuxServerMessage,
 	type PeerClientView,
@@ -38,7 +39,17 @@ function notifyListeners() {
 	for (const listener of listeners) listener(sessionsByPeer);
 }
 
+function isLocalPeer(peer: PeerClientView): boolean {
+	return peer.id === LOCAL_PEER_ID || peer.url === "self";
+}
+
 function peerWsUrl(peer: PeerClientView): string {
+	if (isLocalPeer(peer)) {
+		const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+		const base = `${protocol}//${window.location.host}`;
+		const token = localStorage.getItem("cc-hub-token");
+		return appendWsToken(`${base}/ws/mux`, token);
+	}
 	const base = peerHttpUrlToWsUrl(peer.url);
 	return appendWsToken(`${base}/ws/mux`, peer.wsToken ?? null);
 }
@@ -152,10 +163,12 @@ function closeWatcher(peerId: string) {
 }
 
 function reconcile(peers: PeerClientView[]) {
+	// Watch every peer including the local Hub. Without a dedicated WS for
+	// the Hub, the multiplexed terminal sharedWs is the only source of
+	// `sessions-updated`, and that WS follows the active session's peer —
+	// when it's pointing at a remote peer the Hub's session list goes stale.
 	const want = new Map<string, PeerClientView>();
 	for (const peer of peers) {
-		if (peer.id === LOCAL_PEER_ID) continue;
-		if (peer.url === "self") continue;
 		want.set(peer.id, peer);
 	}
 
@@ -191,6 +204,33 @@ function peersWatcherKey(peers: PeerClientView[]): string {
 		.map((p) => `${p.id}|${p.url}|${p.wsToken ?? ""}`)
 		.sort()
 		.join(";");
+}
+
+/**
+ * Push an immediate indicatorState change for the local-Hub sessions whose
+ * Claude Code session matches `ccSessionId`. Called from hook event handlers
+ * so the spinner reacts before the next `sessions-updated` push arrives.
+ */
+export function applyHookIndicatorUpdate(
+	ccSessionId: string,
+	indicatorState: IndicatorState,
+): boolean {
+	const local = sessionsByPeer.get(LOCAL_PEER_ID);
+	if (!local) return false;
+	let changed = false;
+	const next = local.map((session) => {
+		if (session.ccSessionId !== ccSessionId) return session;
+		if (!session.panes) return session;
+		changed = true;
+		return {
+			...session,
+			panes: session.panes.map((pane) => ({ ...pane, indicatorState })),
+		};
+	});
+	if (!changed) return false;
+	sessionsByPeer.set(LOCAL_PEER_ID, next);
+	notifyListeners();
+	return true;
 }
 
 export function usePeerSessionsWatcher(

@@ -820,6 +820,12 @@ const PaneRespawnSchema = z.object({
   paneId: PaneIdSchema,
 });
 
+const PaneInputSchema = z.object({
+  paneId: PaneIdSchema,
+  data: z.string(),
+  encoding: z.enum(['utf-8', 'base64']).optional().default('utf-8'),
+});
+
 // POST /sessions/:id/panes/focus - Focus a specific pane
 sessions.post('/:id/panes/focus', async (c) => {
   const id = c.req.param('id');
@@ -965,6 +971,40 @@ sessions.post('/:id/panes/respawn', async (c) => {
     return c.json({ success: true });
   } catch (_error) {
     return c.json({ error: 'Failed to respawn pane' }, 500);
+  }
+});
+
+// POST /sessions/:id/panes/input - Send raw input bytes to a specific pane
+sessions.post('/:id/panes/input', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = PaneInputSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid request', issues: parsed.error.issues }, 400);
+  }
+
+  const exists = await tmuxService.sessionExists(id);
+  if (!exists) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+
+  try {
+    const controlSession = controlSessions.get(id) || await getOrCreateControlSession(id);
+    const panes = await controlSession.listPanes();
+    const targetPane = panes.find(p => p.paneId === parsed.data.paneId);
+    if (!targetPane) {
+      return c.json({ error: 'Pane not found' }, 404);
+    }
+
+    const buffer = parsed.data.encoding === 'base64'
+      ? Buffer.from(parsed.data.data, 'base64')
+      : Buffer.from(parsed.data.data, 'utf-8');
+    await controlSession.sendInput(parsed.data.paneId, buffer);
+
+    return c.json({ success: true, paneId: parsed.data.paneId, bytes: buffer.length });
+  } catch (_error) {
+    return c.json({ error: 'Failed to send input' }, 500);
   }
 });
 

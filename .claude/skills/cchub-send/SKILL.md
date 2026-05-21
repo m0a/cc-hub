@@ -99,7 +99,8 @@ printf '\x03' | base64 | cchub send local:my-session:%5 --stdin --base64   # Ctr
 - 返信は `--submit` を使うよう明示。`--newline` 1回だと長文では submit されない
 - 返事が複数ターン続く場合に備えて、終了マーカー (`[reply-done]` 等) を最後に別送するよう指示すると追跡しやすい (※実際には相手の Claude Code が本文末尾に連結して1回の send で済ませてくることが多いので、マーカーは本文末尾でも追跡可能な文字列にしておく)
 - 受信側 (= こちらの pane) に返事が届くと、それは「ユーザーからの新しい入力」として Claude Code TUI に流し込まれる。すなわち相手の応答が次のターンのプロンプトになる
-- **届いた返事が submit されないまま入力欄に溜まることがある** (相手側で `--submit` が抜けた / paste mode が抜けてない)。手動で進める場合は `tmux send-keys -t <自分のpane> Enter` で確定できる
+- **届いた返事が submit されないまま入力欄に溜まることがある** (相手側で `--submit` が抜けた / paste mode が抜けてない)。peer に対しては自分の tmux から手出しできないので、追い打ちで `cchub send <target> "" --submit` (空 payload + `\r\r` だけ 2 bytes) を送ると確定する。同じ pane なら `tmux send-keys -t <自分のpane> Enter` でもよい
+- **複数行 payload は `--submit` だけでは submit されないことがある** — 改行を含む本文を `cchub send ... "<multi-line>" --submit` や `--stdin --submit` で送ると、TUI の paste mode が末尾の `\r\r` を吸収しきれず入力欄に残ることがある。送信成功 (`✅ sent ...`) を見たあとに peer 側の indicator が動かなかったら、追い打ちで `cchub send <target> "" --submit` を送る (これだけ 2 bytes で `\r\r`)
 
 ### デバッグ: 「届いてるのか?」を確かめる
 
@@ -175,6 +176,7 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://<peer-host>:5923/api/sessions
 | `peer に接続できません` | peer の URL/port 違い、サーバ停止 | URL と起動状態を確認 |
 | 文字列は届くが Claude Code が応答しない | paste mode で submit されていない | `--submit` を付ける (末尾に `\r\r` を付与) |
 | `--newline` だと長文で submit されない | CR 1回だと paste mode の改行扱い | `--newline` を `--submit` に置き換える |
+| `--submit` 付きでも複数行 payload が submit されない | 改行を含む paste で末尾 `\r\r` が吸収される | 続けて `cchub send <target> "" --submit` を 1 発撃って `\r\r` だけ単独で送る |
 | 相手から返事が来ない | 相手側 peers.json にこちらが未登録 / 名前ミス | 相手側 `POST /api/peers` で登録、返信指示文に正確な nickname/id を書く |
 | **相手の Claude Code が `cchub send` を実行しない** | Bash permission prompt で停止 | 返信側に `Bash(cchub send:*)` を事前許可 (settings.local.json or `--dangerously-skip-permissions`) |
 | `indicatorState` 上は idle なのに submit が効いてない | hook 状態の遅延 / permission prompt 中も idle 表示 | UI を目視確認、または相手に「開始マーカーを別送」させる |

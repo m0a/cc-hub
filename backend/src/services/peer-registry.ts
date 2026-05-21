@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, chmod } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { ensureDataDir } from '../utils/storage';
 import {
@@ -59,7 +59,15 @@ async function load(): Promise<PeersStore> {
 
 async function save(store: PeersStore): Promise<void> {
   const filePath = await getFilePath();
-  await writeFile(filePath, JSON.stringify(store, null, 2));
+  // wsToken を含むので owner read/write のみに制限。
+  // writeFile の mode は新規作成時のみ適用される ─ 既存ファイル上書き時は
+  // umask の名残で 0644 のままになりうるので、毎回 chmod で強制する。
+  await writeFile(filePath, JSON.stringify(store, null, 2), { mode: 0o600 });
+  try {
+    await chmod(filePath, 0o600);
+  } catch {
+    /* permissions might already be correct, or fs doesn't support chmod */
+  }
 }
 
 function generateId(): string {

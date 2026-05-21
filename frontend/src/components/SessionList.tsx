@@ -38,6 +38,7 @@ import { usePeers } from "../hooks/usePeers";
 import { useSessions } from "../hooks/useSessions";
 import { sessionFetch } from "../services/peer-fetch";
 import { formatRelativeTime } from "../utils/format";
+import { toHomeShortPath } from "../utils/path";
 
 // Theme color mapping
 const THEME_COLORS: Record<SessionTheme, { border: string; bg: string }> = {
@@ -419,7 +420,7 @@ function CreateSessionModal({
 		}
 	};
 
-	const shortPath = currentPath.replace(/^\/home\/[^/]+/, "~");
+	const shortPath = toHomeShortPath(currentPath);
 
 	return (
 		<div className="fixed inset-0 z-50 flex items-start justify-center pt-4 bg-[var(--color-overlay)] animate-backdrop-in">
@@ -825,14 +826,13 @@ function SessionItem({
 					: extSession.waitingToolName === "UserInput"
 						? t("session.waitingInput")
 						: t("session.waitingPermission");
-	const shortPath =
-		extSession.currentPath?.replace(/^\/home\/[^/]+\//, "~/") || "";
+	const shortPath = toHomeShortPath(extSession.currentPath);
 
 	// Use customTitle if set, then pane title if cc is running and title exists, otherwise use session name
 	const displayTitle = session.customTitle
 		? session.customTitle
 		: supportsConversationMetadata && extSession.paneTitle
-			? extSession.paneTitle.replace(/^[✳★●◆]\s*/, "") // Remove status icons
+			? extSession.paneTitle.replace(/^[✳★●◆✻✽⏳⠀-⣿]\s*/, "") // Remove status icons / Braille spinner frames
 			: session.name;
 
 	// Show resume button only when no agent is currently running and we have a
@@ -1127,7 +1127,7 @@ function SessionItem({
 						const cmd = pane.currentCommand || "shell";
 						const isAgentPane = isAgentProvider(cmd) || !!pane.agentName;
 						const paneTitle = pane.title
-							?.replace(/^[✳★●◆⠂⠈⠐⠠⠄⠁✻✽⏳]\s*/, "")
+							?.replace(/^[✳★●◆✻✽⏳⠀-⣿]\s*/, "")
 							.trim();
 						const displayName = pane.agentName || paneTitle || cmd;
 						const agentColorMap: Record<string, string> = {

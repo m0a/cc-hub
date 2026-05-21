@@ -11,6 +11,7 @@ import {
 import { useCallback, useState } from "react";
 import type { FileInfo } from "../../../../shared/types";
 import { authFetch } from "../../services/api";
+import { toHomeShortPath } from "../../utils/path";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
@@ -259,7 +260,7 @@ export function FileBrowser({
 	);
 
 	// Get short path for display
-	const shortPath = currentPath.replace(/^\/home\/[^/]+\//, "~/");
+	const shortPath = toHomeShortPath(currentPath);
 
 	// Show the loading placeholder only on the initial directory load (when no
 	// files have arrived yet). Once we have a tree, keep it mounted so reading

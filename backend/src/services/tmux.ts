@@ -27,6 +27,19 @@ interface TmuxSessionInfo {
   panes?: TmuxPaneInfo[];
 }
 
+/**
+ * Locale env for child processes. macOS launchd-spawned services inherit a
+ * bare environment without LANG/LC_ALL, which causes tmux to fall back to
+ * ASCII output and replace non-ASCII characters (e.g. Claude Code's Braille
+ * spinner `⠐` → `_`) before we ever read pane_title. Pin a UTF-8 locale so
+ * tmux emits real UTF-8 bytes regardless of how cchub was launched.
+ */
+const TMUX_ENV: NodeJS.ProcessEnv = {
+  ...process.env,
+  LANG: process.env.LANG || 'en_US.UTF-8',
+  LC_ALL: process.env.LC_ALL || 'en_US.UTF-8',
+};
+
 const CCHUB_TMUX_CONFIG = `# CC Hub tmux configuration
 # Auto-generated - do not edit manually
 
@@ -109,6 +122,7 @@ export class TmuxService {
     const proc = Bun.spawn(['tmux', 'source-file', this.configPath], {
       stdout: 'pipe',
       stderr: 'pipe',
+      env: TMUX_ENV,
     });
 
     await proc.exited;
@@ -146,6 +160,7 @@ export class TmuxService {
       const proc = Bun.spawn(['ps', '-A', '-o', 'tty,args'], {
         stdout: 'pipe',
         stderr: 'pipe',
+        env: TMUX_ENV,
       });
 
       const output = await new Response(proc.stdout).text();
@@ -224,6 +239,7 @@ export class TmuxService {
       const sessionsProc = Bun.spawn(['tmux', 'list-sessions', '-F', '#{session_name}:#{session_created}:#{session_attached}'], {
         stdout: 'pipe',
         stderr: 'pipe',
+        env: TMUX_ENV,
       });
 
       const sessionsText = await new Response(sessionsProc.stdout).text();
@@ -256,6 +272,7 @@ export class TmuxService {
       const panesProc = Bun.spawn(['tmux', 'list-panes', '-a', '-F', fmtString], {
         stdout: 'pipe',
         stderr: 'pipe',
+        env: TMUX_ENV,
       });
 
       const panesText = await new Response(panesProc.stdout).text();
@@ -435,6 +452,7 @@ export class TmuxService {
       const proc = Bun.spawn(['tmux', 'capture-pane', '-t', sessionId, '-p', '-S', `-${lines}`], {
         stdout: 'pipe',
         stderr: 'pipe',
+        env: TMUX_ENV,
       });
 
       const exitCode = await proc.exited;
@@ -487,6 +505,7 @@ export class TmuxService {
     const proc = Bun.spawn(['tmux', 'new-session', '-d', '-s', name], {
       stdout: 'pipe',
       stderr: 'pipe',
+      env: TMUX_ENV,
     });
 
     const exitCode = await proc.exited;
@@ -509,6 +528,7 @@ export class TmuxService {
     const proc = Bun.spawn(['tmux', 'kill-session', '-t', sessionId], {
       stdout: 'pipe',
       stderr: 'pipe',
+      env: TMUX_ENV,
     });
 
     const exitCode = await proc.exited;
@@ -525,6 +545,7 @@ export class TmuxService {
     const proc = Bun.spawn(['tmux', 'has-session', '-t', sessionId], {
       stdout: 'pipe',
       stderr: 'pipe',
+      env: TMUX_ENV,
     });
 
     const exitCode = await proc.exited;
@@ -539,6 +560,7 @@ export class TmuxService {
       const proc = Bun.spawn(['tmux', 'display-message', '-t', sessionId, '-p', '#{pane_in_mode}'], {
         stdout: 'pipe',
         stderr: 'pipe',
+        env: TMUX_ENV,
       });
 
       const exitCode = await proc.exited;
@@ -561,6 +583,7 @@ export class TmuxService {
       const proc = Bun.spawn(['tmux', 'show-buffer'], {
         stdout: 'pipe',
         stderr: 'pipe',
+        env: TMUX_ENV,
       });
 
       const exitCode = await proc.exited;
@@ -583,6 +606,7 @@ export class TmuxService {
       const proc = Bun.spawn(['tmux', 'capture-pane', '-t', sessionId, '-p', '-S', `-${lines}`], {
         stdout: 'pipe',
         stderr: 'pipe',
+        env: TMUX_ENV,
       });
 
       const exitCode = await proc.exited;
@@ -605,6 +629,7 @@ export class TmuxService {
       const proc = Bun.spawn(['tmux', 'send-keys', '-t', sessionId, keys, 'Enter'], {
         stdout: 'pipe',
         stderr: 'pipe',
+        env: TMUX_ENV,
       });
 
       const exitCode = await proc.exited;

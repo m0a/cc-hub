@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.141] - 2026-05-22
+
+### Fixed
+- **Hub local セッションが peer 接続中に消える問題を完全解消**: v0.1.140 で peer のセッション一覧を WS push に統一したが、Hub local 自身は引き続き `useMultiplexedTerminal` の sharedWs (アクティブセッションの peer に追従する) 経由でしか受信できておらず、Mac peer のセッションを開いた状態のままだと Hub の sessions-updated が来ず Linux 側の一覧が空になっていた。`usePeerSessionsWatcher` を Hub local も対象にして全 peer (local 含む) に独立 WS を張る設計に変更。`useMultiplexedTerminal` 側の sessions-updated dispatch は重複防止で撤去 (`frontend/src/hooks/usePeerSessionsWatcher.ts`, `frontend/src/hooks/useSessions.ts`, `frontend/src/hooks/useMultiplexedTerminal.ts`)
+- 副次: `cachedSessions` / `cachedRemotePeerSessions` の二系統 cache を watcher の sessionsByPeer 一系統に統合し、`mergedSessions` / `updateSessions` を撤去して useSessions のコードを簡素化
+
 ## [0.1.140] - 2026-05-22
 
 ### Changed

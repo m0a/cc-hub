@@ -14,6 +14,7 @@ import {
 	type SessionResponse,
 } from "../../../shared/types";
 import { appendWsToken, peerHttpUrlToWsUrl } from "../services/peer-ws";
+import { fireHookNotification } from "../utils/hookNotification";
 
 type PeerSessionsListener = (
 	sessionsByPeer: ReadonlyMap<string, PeerSession[]>,
@@ -130,6 +131,28 @@ function openWatcher(peer: PeerClientView) {
 			} catch {
 				return;
 			}
+
+			if (msg.type === "hook-event") {
+				// Indicator state should react before the next 5s sessions-updated push.
+				// `ccSessionId` is a UUID so it is safe to look up across all peers.
+				const ccSessionId = msg.sessionId;
+				const newState = hookEventToIndicatorState(msg.event);
+				if (ccSessionId && newState) {
+					applyHookIndicatorUpdate(ccSessionId, newState);
+				}
+				// Forward to OS notification path so non-active peers can notify too.
+				// The terminal sharedWs only ever subscribes to one peer, so without
+				// this the user never gets notified from any other peer.
+				fireHookNotification(
+					msg.event,
+					msg.cwd,
+					ccSessionId,
+					msg.data,
+					msg.message,
+				);
+				return;
+			}
+
 			if (msg.type !== "sessions-updated") return;
 
 			// Per-peer dedup: backend already filters identical payloads, but a
@@ -228,30 +251,51 @@ function peersWatcherKey(peers: PeerClientView[]): string {
 }
 
 /**
- * Push an immediate indicatorState change for the local-Hub sessions whose
+ * Push an immediate indicatorState change for any peer's sessions whose
  * Claude Code session matches `ccSessionId`. Called from hook event handlers
  * so the spinner reacts before the next `sessions-updated` push arrives.
+ * Covers Hub-local sessions as well as remote peers — `ccSessionId` is a
+ * Claude-generated UUID so collisions across peers are negligible.
  */
 export function applyHookIndicatorUpdate(
 	ccSessionId: string,
 	indicatorState: IndicatorState,
 ): boolean {
-	const local = sessionsByPeer.get(LOCAL_PEER_ID);
-	if (!local) return false;
 	let changed = false;
-	const next = local.map((session) => {
-		if (session.ccSessionId !== ccSessionId) return session;
-		if (!session.panes) return session;
-		changed = true;
-		return {
-			...session,
-			panes: session.panes.map((pane) => ({ ...pane, indicatorState })),
-		};
-	});
-	if (!changed) return false;
-	sessionsByPeer.set(LOCAL_PEER_ID, next);
-	notifyListeners();
-	return true;
+	for (const [peerId, sessions] of sessionsByPeer) {
+		let peerChanged = false;
+		const next = sessions.map((session) => {
+			if (session.ccSessionId !== ccSessionId) return session;
+			if (!session.panes) return session;
+			peerChanged = true;
+			return {
+				...session,
+				panes: session.panes.map((pane) => ({ ...pane, indicatorState })),
+			};
+		});
+		if (peerChanged) {
+			sessionsByPeer.set(peerId, next);
+			changed = true;
+		}
+	}
+	if (changed) notifyListeners();
+	return changed;
+}
+
+function hookEventToIndicatorState(event: string): IndicatorState | null {
+	switch (event) {
+		case "Stop":
+		case "Notification":
+		case "SubagentStop":
+			return "completed";
+		case "PostToolUse":
+			return "waiting_input";
+		case "PreToolUse":
+		case "UserPromptSubmit":
+			return "processing";
+		default:
+			return null;
+	}
 }
 
 export function usePeerSessionsWatcher(

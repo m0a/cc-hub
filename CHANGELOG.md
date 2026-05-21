@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.140] - 2026-05-22
+
+### Changed
+- **peer セッション取得を polling → WS push に統一**: 5秒間隔の `GET /api/peers/sessions` を撤廃し、各 remote peer の `/ws/mux` に常時接続して `sessions-updated` push を直接購読するよう変更。PWA を peer セッションのまま再オープンした場合に Hub の sessions-updated が一度も届かず Linux 側のセッションが画面から消える問題も同時に解消する。WS 接続は peer 単位で永続化されるので peer 切替で leak しない (`frontend/src/hooks/usePeerSessionsWatcher.ts` 新規, `frontend/src/hooks/useSessions.ts`)
+- **peer WS URL ヘルパー共通化**: `peerHttpUrlToWsUrl` / `appendWsToken` を `frontend/src/services/peer-ws.ts` に切り出し、`useMultiplexedTerminal` / `usePeerConnection` / `usePeerSessionsWatcher` の3箇所のインライン正規表現を統一 (`frontend/src/services/peer-ws.ts` 新規)
+- watcher の再接続を exponential backoff (5s→60s cap) に変更。永続的にオフラインな peer への connect loop を抑制
+
 ## [0.1.139] - 2026-05-22
 
 ### Fixed

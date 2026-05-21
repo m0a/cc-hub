@@ -1,0 +1,214 @@
+/**
+ * Each remote peer gets a persistent WebSocket to its `/ws/mux` so
+ * `sessions-updated` push lands in the client without polling. The terminal
+ * sharedWs only follows the currently-active session, so leaving this watcher
+ * separate lets every peer's session list stay live in the background.
+ */
+import { useEffect, useMemo } from "react";
+import {
+	LOCAL_PEER_ID,
+	type MuxServerMessage,
+	type PeerClientView,
+	type PeerSession,
+	type SessionResponse,
+} from "../../../shared/types";
+import { appendWsToken, peerHttpUrlToWsUrl } from "../services/peer-ws";
+
+type PeerSessionsListener = (
+	sessionsByPeer: ReadonlyMap<string, PeerSession[]>,
+) => void;
+
+interface PeerWatcher {
+	ws: WebSocket | null;
+	retryTimer: number | null;
+	retryAttempt: number;
+	lastSessionsJson: string;
+	closed: boolean;
+}
+
+const RETRY_INITIAL_MS = 5_000;
+const RETRY_MAX_MS = 60_000;
+
+const watchers = new Map<string, PeerWatcher>();
+const peerInfoById = new Map<string, PeerClientView>();
+const sessionsByPeer = new Map<string, PeerSession[]>();
+const listeners = new Set<PeerSessionsListener>();
+
+function notifyListeners() {
+	for (const listener of listeners) listener(sessionsByPeer);
+}
+
+function peerWsUrl(peer: PeerClientView): string {
+	const base = peerHttpUrlToWsUrl(peer.url);
+	return appendWsToken(`${base}/ws/mux`, peer.wsToken ?? null);
+}
+
+function enrichPeerSessions(
+	peer: PeerClientView,
+	sessions: SessionResponse[],
+): PeerSession[] {
+	return sessions.map((s) => ({
+		...s,
+		peerId: peer.id,
+		peerNickname: peer.nickname,
+		peerColor: peer.color,
+	}));
+}
+
+function scheduleRetry(peerId: string) {
+	const watcher = watchers.get(peerId);
+	if (!watcher || watcher.closed) return;
+	if (watcher.retryTimer !== null) return;
+	const delay = Math.min(
+		RETRY_INITIAL_MS * 2 ** watcher.retryAttempt,
+		RETRY_MAX_MS,
+	);
+	watcher.retryAttempt++;
+	watcher.retryTimer = window.setTimeout(() => {
+		watcher.retryTimer = null;
+		const peer = peerInfoById.get(peerId);
+		if (peer && !watcher.closed) openWatcher(peer);
+	}, delay);
+}
+
+function openWatcher(peer: PeerClientView) {
+	let watcher = watchers.get(peer.id);
+	if (!watcher) {
+		watcher = {
+			ws: null,
+			retryTimer: null,
+			retryAttempt: 0,
+			lastSessionsJson: "",
+			closed: false,
+		};
+		watchers.set(peer.id, watcher);
+	}
+	if (
+		watcher.ws &&
+		(watcher.ws.readyState === WebSocket.OPEN ||
+			watcher.ws.readyState === WebSocket.CONNECTING)
+	) {
+		return;
+	}
+
+	try {
+		const ws = new WebSocket(peerWsUrl(peer));
+		watcher.ws = ws;
+
+		ws.onopen = () => {
+			if (watcher) watcher.retryAttempt = 0;
+		};
+
+		ws.onmessage = (event) => {
+			if (typeof event.data !== "string") return;
+			let msg: MuxServerMessage;
+			try {
+				msg = JSON.parse(event.data) as MuxServerMessage;
+			} catch {
+				return;
+			}
+			if (msg.type !== "sessions-updated") return;
+
+			// Per-peer dedup: backend already filters identical payloads, but a
+			// second listener registering would otherwise re-stringify the same
+			// data downstream. Hash once here.
+			const json = JSON.stringify(msg.sessions);
+			if (json === watcher.lastSessionsJson) return;
+			watcher.lastSessionsJson = json;
+
+			sessionsByPeer.set(peer.id, enrichPeerSessions(peer, msg.sessions));
+			notifyListeners();
+		};
+
+		ws.onclose = () => {
+			if (watcher) watcher.ws = null;
+			// Keep last-known sessions until reconnect succeeds; clearing here would
+			// flash the UI empty on transient drops.
+			if (watcher && !watcher.closed) scheduleRetry(peer.id);
+		};
+	} catch {
+		scheduleRetry(peer.id);
+	}
+}
+
+function closeWatcher(peerId: string) {
+	const watcher = watchers.get(peerId);
+	if (!watcher) return;
+	watcher.closed = true;
+	if (watcher.retryTimer !== null) {
+		window.clearTimeout(watcher.retryTimer);
+		watcher.retryTimer = null;
+	}
+	if (watcher.ws) {
+		try {
+			watcher.ws.close();
+		} catch {
+			// ignore
+		}
+		watcher.ws = null;
+	}
+	watchers.delete(peerId);
+	if (sessionsByPeer.delete(peerId)) notifyListeners();
+}
+
+function reconcile(peers: PeerClientView[]) {
+	const want = new Map<string, PeerClientView>();
+	for (const peer of peers) {
+		if (peer.id === LOCAL_PEER_ID) continue;
+		if (peer.url === "self") continue;
+		want.set(peer.id, peer);
+	}
+
+	for (const id of Array.from(watchers.keys())) {
+		const next = want.get(id);
+		if (!next) {
+			closeWatcher(id);
+			continue;
+		}
+		const prev = peerInfoById.get(id);
+		if (prev && (prev.url !== next.url || prev.wsToken !== next.wsToken)) {
+			closeWatcher(id);
+		}
+	}
+
+	for (const peer of want.values()) {
+		peerInfoById.set(peer.id, peer);
+		openWatcher(peer);
+	}
+
+	for (const id of Array.from(peerInfoById.keys())) {
+		if (!want.has(id)) peerInfoById.delete(id);
+	}
+}
+
+/**
+ * Stabilize the dependency for reconcile. `usePeers()` returns a new array
+ * reference on every poll, but only `id|url|wsToken` actually affect the
+ * watcher; rerun reconcile only when one of those changes.
+ */
+function peersWatcherKey(peers: PeerClientView[]): string {
+	return peers
+		.map((p) => `${p.id}|${p.url}|${p.wsToken ?? ""}`)
+		.sort()
+		.join(";");
+}
+
+export function usePeerSessionsWatcher(
+	peers: PeerClientView[],
+	onChange: PeerSessionsListener,
+) {
+	const key = useMemo(() => peersWatcherKey(peers), [peers]);
+
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `key` already encodes the parts of `peers` that matter; including the raw array would re-run on every poll.
+	useEffect(() => {
+		reconcile(peers);
+	}, [key]);
+
+	useEffect(() => {
+		listeners.add(onChange);
+		onChange(sessionsByPeer);
+		return () => {
+			listeners.delete(onChange);
+		};
+	}, [onChange]);
+}

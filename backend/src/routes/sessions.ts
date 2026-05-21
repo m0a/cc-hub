@@ -163,6 +163,13 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       durationMinutes = Math.round((Date.now() - modified.getTime()) / 60000);
     }
 
+    // ccSessionId is needed for hook-event matching even when the session was
+    // resolved via parent-directory traversal (e.g. a `claude` invocation with
+    // no project dir yet). But user-visible content (recap / firstPrompt /
+    // summary) must NOT leak from an ancestor project — gate it on
+    // ccSession.projectPath === s.currentPath.
+    const isExactPathMatch = !!ccSession && !!s.currentPath && ccSession.projectPath === s.currentPath;
+
     const sessionIndicatorState = includeClaudeInfo
       ? indicatorState
       : includeCodexInfo
@@ -194,10 +201,10 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       currentPath: s.currentPath,
       paneTitle: s.paneTitle,
       waitingToolName: includeClaudeInfo ? effectiveWaitingToolName : includeCodexInfo ? hookToolName : undefined,
-      ccSummary: includeClaudeInfo ? ccSession?.summary : includeCodexInfo ? codexThread?.title : undefined,
-      ccFirstPrompt: includeClaudeInfo ? ccSession?.firstPrompt : includeCodexInfo ? codexThread?.firstPrompt : undefined,
-      ccRecap: includeClaudeInfo ? ccSession?.lastRecap?.content : undefined,
-      ccRecapAt: includeClaudeInfo ? ccSession?.lastRecap?.timestamp : undefined,
+      ccSummary: includeClaudeInfo ? (isExactPathMatch ? ccSession?.summary : undefined) : includeCodexInfo ? codexThread?.title : undefined,
+      ccFirstPrompt: includeClaudeInfo ? (isExactPathMatch ? ccSession?.firstPrompt : undefined) : includeCodexInfo ? codexThread?.firstPrompt : undefined,
+      ccRecap: includeClaudeInfo && isExactPathMatch ? ccSession?.lastRecap?.content : undefined,
+      ccRecapAt: includeClaudeInfo && isExactPathMatch ? ccSession?.lastRecap?.timestamp : undefined,
       indicatorState: sessionIndicatorState,
       ccSessionId: includeClaudeInfo ? ccSession?.sessionId : undefined,
       agentSessionId: includeCodexInfo ? codexThread?.sessionId : undefined,

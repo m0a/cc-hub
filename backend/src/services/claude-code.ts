@@ -107,7 +107,10 @@ export class ClaudeCodeService {
    * e.g., /home/m0a/cchub -> -home-m0a-cchub
    */
   private pathToProjectName(path: string): string {
-    return path.replace(/\//g, '-');
+    // Claude Code stores project dirs with both '/' and '.' collapsed to '-'
+    // (e.g. /Users/m0a/repo/github.com/m0a/cc-hub → -Users-m0a-repo-github-com-m0a-cc-hub).
+    // Match that convention so exact-path lookups succeed for paths with dots.
+    return path.replace(/[/.]/g, '-');
   }
 
   /**
@@ -681,71 +684,102 @@ export class ClaudeCodeService {
 
   private async getSessionForPathUncached(workingDir: string): Promise<ClaudeCodeSession | null> {
     try {
-      // Exact path only. Parent-directory traversal would mis-attribute an
-      // ancestor project's latest jsonl (e.g. /Users/m0a) to a deeper tmux
-      // pane whose project dir happens to be empty — causing all panes to
-      // share the same wrong ccSessionId / recap.
-      const projectName = this.pathToProjectName(workingDir);
-      const projectDir = join(this.claudeDir, projectName);
-      const indexPath = join(projectDir, 'sessions-index.json');
+      // Try exact path first, then parent directories. The parent-dir fallback
+      // is needed so that a tmux pane whose project dir has no jsonl (e.g. a
+      // freshly-started `claude` whose tty-start-time match also fails) still
+      // gets a ccSessionId for hook events to bind to. The route handler
+      // gates user-visible fields (recap / firstPrompt / summary) by an
+      // exact-path-match check on projectPath to keep ancestor content from
+      // leaking into deeper panes.
+      let currentPath = workingDir;
 
-      try {
-        // First, find the most recently modified .jsonl file
-        const files = await readdir(projectDir);
-        const jsonlFiles = files.filter(f => f.endsWith('.jsonl'));
+      while (currentPath && currentPath !== '/') {
+        const projectName = this.pathToProjectName(currentPath);
+        const projectDir = join(this.claudeDir, projectName);
+        const indexPath = join(projectDir, 'sessions-index.json');
 
-        // Get stats for all files in parallel
-        const fileStats = await Promise.all(
-          jsonlFiles.map(async (file) => {
-            try {
-              const fileStat = await stat(join(projectDir, file));
-              return { name: file, mtime: fileStat.mtimeMs };
-            } catch {
-              return null;
-            }
-          })
-        );
-
-        // Find the most recent file
-        const validStats = fileStats.filter((s): s is { name: string; mtime: number } => s !== null);
-        const latestFile = validStats.reduce<{ name: string; mtime: number } | null>(
-          (latest, current) => (!latest || current.mtime > latest.mtime) ? current : latest,
-          null
-        );
-
-        // Read the index to get cached info
-        let index: SessionsIndex | null = null;
         try {
-          const content = await readFile(indexPath, 'utf-8');
-          index = JSON.parse(content);
-        } catch {
-          // Index doesn't exist or is invalid
-        }
+          // First, find the most recently modified .jsonl file
+          const files = await readdir(projectDir);
+          const jsonlFiles = files.filter(f => f.endsWith('.jsonl'));
 
-        // Check if the latest file is newer than what's in the index
-        if (latestFile) {
-          const sessionId = latestFile.name.replace('.jsonl', '');
-          const indexEntry = index?.entries?.find(e => e.sessionId === sessionId);
+          // Get stats for all files in parallel
+          const fileStats = await Promise.all(
+            jsonlFiles.map(async (file) => {
+              try {
+                const fileStat = await stat(join(projectDir, file));
+                return { name: file, mtime: fileStat.mtimeMs };
+              } catch {
+                return null;
+              }
+            })
+          );
 
-          // If this file is in the index and not much newer, use cached data
-          // But always check waiting state for accuracy
-          if (indexEntry && (latestFile.mtime - (indexEntry.fileMtime || 0)) < 60000) {
+          // Find the most recent file
+          const validStats = fileStats.filter((s): s is { name: string; mtime: number } => s !== null);
+          const latestFile = validStats.reduce<{ name: string; mtime: number } | null>(
+            (latest, current) => (!latest || current.mtime > latest.mtime) ? current : latest,
+            null
+          );
+
+          // Read the index to get cached info
+          let index: SessionsIndex | null = null;
+          try {
+            const content = await readFile(indexPath, 'utf-8');
+            index = JSON.parse(content);
+          } catch {
+            // Index doesn't exist or is invalid
+          }
+
+          // Check if the latest file is newer than what's in the index
+          if (latestFile) {
+            const sessionId = latestFile.name.replace('.jsonl', '');
+            const indexEntry = index?.entries?.find(e => e.sessionId === sessionId);
+
+            // If this file is in the index and not much newer, use cached data
+            // But always check waiting state for accuracy
+            if (indexEntry && (latestFile.mtime - (indexEntry.fileMtime || 0)) < 60000) {
+              const filePath = join(projectDir, latestFile.name);
+              const [waitingToolName, lastUserMessage, firstMessageId, lastRecap] = await Promise.all([
+                this.checkWaitingState(filePath),
+                this.readLastUserMessage(filePath),
+                this.readFirstMessageId(filePath),
+                this.readLastRecap(filePath),
+              ]);
+
+              return {
+                sessionId: indexEntry.sessionId,
+                summary: lastUserMessage || indexEntry.summary,
+                firstPrompt: indexEntry.firstPrompt,
+                messageCount: indexEntry.messageCount,
+                modified: indexEntry.modified,
+                gitBranch: indexEntry.gitBranch,
+                projectPath: indexEntry.projectPath ?? currentPath,
+
+                waitingToolName: waitingToolName || undefined,
+                firstMessageId: firstMessageId || undefined,
+                lastRecap: lastRecap || undefined,
+              };
+            }
+
+            // For active sessions (not in index or much newer), read directly
             const filePath = join(projectDir, latestFile.name);
-            const [waitingToolName, lastUserMessage, firstMessageId, lastRecap] = await Promise.all([
-              this.checkWaitingState(filePath),
+            const [firstPrompt, lastUserMessage, waitingToolName, firstMessageId, lastRecap] = await Promise.all([
+              this.readFirstPromptFromFile(filePath),
               this.readLastUserMessage(filePath),
+              this.checkWaitingState(filePath),
               this.readFirstMessageId(filePath),
               this.readLastRecap(filePath),
             ]);
 
             return {
-              sessionId: indexEntry.sessionId,
-              summary: lastUserMessage || indexEntry.summary,
-              firstPrompt: indexEntry.firstPrompt,
-              messageCount: indexEntry.messageCount,
-              modified: indexEntry.modified,
-              gitBranch: indexEntry.gitBranch,
-              projectPath: indexEntry.projectPath,
+              sessionId,
+              summary: lastUserMessage || indexEntry?.summary,
+              firstPrompt: firstPrompt || indexEntry?.firstPrompt,
+              messageCount: indexEntry?.messageCount,
+              modified: new Date(latestFile.mtime).toISOString(),
+              gitBranch: indexEntry?.gitBranch,
+              projectPath: indexEntry?.projectPath ?? currentPath,
 
               waitingToolName: waitingToolName || undefined,
               firstMessageId: firstMessageId || undefined,
@@ -753,52 +787,33 @@ export class ClaudeCodeService {
             };
           }
 
-          // For active sessions (not in index or much newer), read directly
-          const filePath = join(projectDir, latestFile.name);
-          const [firstPrompt, lastUserMessage, waitingToolName, firstMessageId, lastRecap] = await Promise.all([
-            this.readFirstPromptFromFile(filePath),
-            this.readLastUserMessage(filePath),
-            this.checkWaitingState(filePath),
-            this.readFirstMessageId(filePath),
-            this.readLastRecap(filePath),
-          ]);
+          // Fallback to index-only data
+          if (index?.entries && index.entries.length > 0) {
+            const sortedEntries = [...index.entries].sort((a, b) => {
+              const aTime = a.fileMtime || 0;
+              const bTime = b.fileMtime || 0;
+              return bTime - aTime;
+            });
 
-          return {
-            sessionId,
-            summary: lastUserMessage || indexEntry?.summary,
-            firstPrompt: firstPrompt || indexEntry?.firstPrompt,
-            messageCount: indexEntry?.messageCount,
-            modified: new Date(latestFile.mtime).toISOString(),
-            gitBranch: indexEntry?.gitBranch,
-            projectPath: indexEntry?.projectPath,
-
-            waitingToolName: waitingToolName || undefined,
-            firstMessageId: firstMessageId || undefined,
-            lastRecap: lastRecap || undefined,
-          };
+            const latest = sortedEntries[0];
+            return {
+              sessionId: latest.sessionId,
+              summary: latest.summary,
+              firstPrompt: latest.firstPrompt,
+              messageCount: latest.messageCount,
+              modified: latest.modified,
+              gitBranch: latest.gitBranch,
+              projectPath: latest.projectPath ?? currentPath,
+            };
+          }
+        } catch {
+          // Index doesn't exist for this path, try parent
         }
 
-        // Fallback to index-only data
-        if (index?.entries && index.entries.length > 0) {
-          const sortedEntries = [...index.entries].sort((a, b) => {
-            const aTime = a.fileMtime || 0;
-            const bTime = b.fileMtime || 0;
-            return bTime - aTime;
-          });
-
-          const latest = sortedEntries[0];
-          return {
-            sessionId: latest.sessionId,
-            summary: latest.summary,
-            firstPrompt: latest.firstPrompt,
-            messageCount: latest.messageCount,
-            modified: latest.modified,
-            gitBranch: latest.gitBranch,
-            projectPath: latest.projectPath,
-          };
-        }
-      } catch {
-        // Project dir does not exist for this workingDir — return null.
+        // Move to parent directory
+        const parentPath = currentPath.substring(0, currentPath.lastIndexOf('/'));
+        if (parentPath === currentPath) break;
+        currentPath = parentPath || '/';
       }
 
       return null;
@@ -843,66 +858,79 @@ export class ClaudeCodeService {
     const sessions: ClaudeCodeSession[] = [];
 
     try {
-      // Exact path only — same reason as getSessionForPathUncached: parent
-      // traversal contaminates deeper panes with ancestor project sessions.
-      const projectName = this.pathToProjectName(workingDir);
-      const projectDir = join(this.claudeDir, projectName);
+      // Parent-dir traversal mirrors getSessionForPathUncached; user-visible
+      // fields are gated by exact-path-match in the route handler.
+      let currentPath = workingDir;
 
-      try {
-        const files = await readdir(projectDir);
-        const jsonlFiles = files.filter(f => f.endsWith('.jsonl'));
+      while (currentPath && currentPath !== '/') {
+        const projectName = this.pathToProjectName(currentPath);
+        const projectDir = join(this.claudeDir, projectName);
 
-        // Get stats for all files
-        const fileStats = await Promise.all(
-          jsonlFiles.map(async (file) => {
-            try {
-              const fileStat = await stat(join(projectDir, file));
-              return { name: file, mtime: fileStat.mtimeMs };
-            } catch {
-              return null;
-            }
-          })
-        );
+        try {
+          const files = await readdir(projectDir);
+          const jsonlFiles = files.filter(f => f.endsWith('.jsonl'));
 
-        // Sort by mtime descending and take top N
-        const validStats = fileStats
-          .filter((s): s is { name: string; mtime: number } => s !== null)
-          .sort((a, b) => b.mtime - a.mtime)
-          .slice(0, count);
+          // Get stats for all files
+          const fileStats = await Promise.all(
+            jsonlFiles.map(async (file) => {
+              try {
+                const fileStat = await stat(join(projectDir, file));
+                return { name: file, mtime: fileStat.mtimeMs };
+              } catch {
+                return null;
+              }
+            })
+          );
 
-        // Read session info for each file (in parallel)
-        const sessionResults = await Promise.all(
-          validStats.map(async (fileStat) => {
-            const sessionId = fileStat.name.replace('.jsonl', '');
-            const filePath = join(projectDir, fileStat.name);
+          // Sort by mtime descending and take top N
+          const validStats = fileStats
+            .filter((s): s is { name: string; mtime: number } => s !== null)
+            .sort((a, b) => b.mtime - a.mtime)
+            .slice(0, count);
 
-            const [firstPrompt, lastUserMessage, waitingToolName, firstMessageId, lastRecap] = await Promise.all([
-              this.readFirstPromptFromFile(filePath),
-              this.readLastUserMessage(filePath),
-              this.checkWaitingState(filePath),
-              this.readFirstMessageId(filePath),
-              this.readLastRecap(filePath),
-            ]);
+          // Read session info for each file (in parallel)
+          const projectPathForResults = currentPath;
+          const sessionResults = await Promise.all(
+            validStats.map(async (fileStat) => {
+              const sessionId = fileStat.name.replace('.jsonl', '');
+              const filePath = join(projectDir, fileStat.name);
 
-            return {
-              sessionId,
-              summary: lastUserMessage || undefined,
-              firstPrompt: firstPrompt || undefined,
-              modified: new Date(fileStat.mtime).toISOString(),
-              projectPath: workingDir,
+              const [firstPrompt, lastUserMessage, waitingToolName, firstMessageId, lastRecap] = await Promise.all([
+                this.readFirstPromptFromFile(filePath),
+                this.readLastUserMessage(filePath),
+                this.checkWaitingState(filePath),
+                this.readFirstMessageId(filePath),
+                this.readLastRecap(filePath),
+              ]);
 
-              waitingToolName: waitingToolName || undefined,
-              firstMessageId: firstMessageId || undefined,
-              lastRecap: lastRecap || undefined,
-            };
-          })
-        );
-        sessions.push(...sessionResults);
-      } catch {
-        // Project dir does not exist for this workingDir.
+              return {
+                sessionId,
+                summary: lastUserMessage || undefined,
+                firstPrompt: firstPrompt || undefined,
+                modified: new Date(fileStat.mtime).toISOString(),
+                projectPath: projectPathForResults,
+
+                waitingToolName: waitingToolName || undefined,
+                firstMessageId: firstMessageId || undefined,
+                lastRecap: lastRecap || undefined,
+              };
+            })
+          );
+          sessions.push(...sessionResults);
+
+          if (sessions.length >= count) {
+            return sessions.slice(0, count);
+          }
+        } catch {
+          // Try parent directory
+        }
+
+        const parentPath = currentPath.substring(0, currentPath.lastIndexOf('/'));
+        if (parentPath === currentPath) break;
+        currentPath = parentPath || '/';
       }
 
-      return sessions.slice(0, count);
+      return sessions;
     } catch {
       return sessions;
     }

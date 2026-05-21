@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.143] - 2026-05-22
+
+### Fixed
+- **peer sessions watcher の WS が backend zombie 検知で 60 秒ごとに切断され、retry ループに陥っていた問題を修正**: v0.1.140 で導入した watcher が ping を送っていなかったため、Hub の `terminal-mux` (`PING_TIMEOUT_MS=60s`) で zombie 判定され `close → 5s 後 retry → close` のサイクルに入っていた。Linux Hub 側に対しても Mac peer 側に対しても同様に発生し、その副作用で peer のターミナル表示が停止する症状が出ていた。watcher に 25 秒間隔の ping を追加 (`frontend/src/hooks/usePeerSessionsWatcher.ts`)
+
 ## [0.1.142] - 2026-05-22
 
 ### Added

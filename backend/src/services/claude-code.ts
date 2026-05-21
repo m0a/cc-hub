@@ -107,7 +107,10 @@ export class ClaudeCodeService {
    * e.g., /home/m0a/cchub -> -home-m0a-cchub
    */
   private pathToProjectName(path: string): string {
-    return path.replace(/\//g, '-');
+    // Claude Code stores project dirs with both '/' and '.' collapsed to '-'
+    // (e.g. /Users/m0a/repo/github.com/m0a/cc-hub → -Users-m0a-repo-github-com-m0a-cc-hub).
+    // Match that convention so exact-path lookups succeed for paths with dots.
+    return path.replace(/[/.]/g, '-');
   }
 
   /**

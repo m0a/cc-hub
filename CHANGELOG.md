@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.149] - 2026-05-22
+
+### Fixed
+- **v0.1.148 で全 tmux session の indicator が常に `completed` のまま動かなくなった退化を修正**: 親遡上削除により `ccSessionId` が null になり、hook event の `session_id` と紐付けできなくなっていた。親遡上は復活させて hook 紐付け用の `ccSessionId` は取得し、漏洩防止のために recap 系 (`ccRecap` / `ccFirstPrompt` / `ccSummary`) は `ccSession.projectPath === currentPath` のときだけ表示するよう分離 (`backend/src/services/claude-code.ts`, `backend/src/routes/sessions.ts`)
+- **`pathToProjectName` が `.` を `-` に置換していなかった問題を修正**: Claude Code 側は `/Users/m0a/repo/github.com/m0a/cc-hub` → `-Users-m0a-repo-github-com-m0a-cc-hub` のように `.` も `-` に変換するが、cchub の `pathToProjectName` は `/` のみ置換していたため、`.` を含む path (`github.com` 等) の project dir を見つけられず親遡上で祖先 (= `/Users/m0a`) のセッションを全 pane に共有してしまっていた。`/` と `.` の両方を置換するよう修正 (`backend/src/services/claude-code.ts`)
+
+### Changed
+- `cchub-send` Skill に複数行 paste の submit 挙動 (`--submit` フラグの末尾 CR2回でも paste mode を抜けないことがある) と、対処手順 (別 send で `\r` を追い打ち / 受信側 pane で `tmux send-keys Enter`) を追記 (`.claude/skills/cchub-send/SKILL.md`)
+
 ## [0.1.148] - 2026-05-22
 
 ### Fixed

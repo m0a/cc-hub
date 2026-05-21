@@ -306,11 +306,18 @@ function ensureConnection(token?: string | null, wsBase?: string | null) {
 			case "unsubscribed":
 				break;
 			case "sessions-updated": {
-				window.dispatchEvent(
-					new CustomEvent("cchub-sessions-push", {
-						detail: msg.sessions,
-					}),
-				);
+				// Multi-server: peer 接続中の sessions-updated はその peer 単独の
+				// セッション一覧で、Hub が返すマージ済みリストと整合しない。
+				// Hub に向いている時 (or 初期接続) のみ受け取る。
+				const isHubConnection =
+					currentWsBase === null || currentWsBase === getWsBase();
+				if (isHubConnection) {
+					window.dispatchEvent(
+						new CustomEvent("cchub-sessions-push", {
+							detail: msg.sessions,
+						}),
+					);
+				}
 				break;
 			}
 			case "viewport": {

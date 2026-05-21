@@ -29,6 +29,8 @@ import {
 	type FileInfo,
 	type IndicatorState,
 	isAgentProvider,
+	LOCAL_PEER_ID,
+	type PeerClientView,
 	type SessionResponse,
 	type SessionTheme,
 } from "../../../shared/types";
@@ -289,17 +291,27 @@ function CreateSessionModal({
 	onCancel,
 	existingNames,
 	externalError,
+	peers,
 }: {
-	onConfirm: (name: string, workingDir?: string, agent?: AgentProvider) => void;
+	onConfirm: (
+		name: string,
+		workingDir?: string,
+		agent?: AgentProvider,
+		peerId?: string,
+	) => void;
 	onCancel: () => void;
 	existingNames: Set<string>;
 	externalError?: string | null;
+	peers: PeerClientView[];
 }) {
 	const { t } = useTranslation();
 	const [name, setName] = useState("");
 	const [agent, setAgent] = useState<AgentProvider>(DEFAULT_AGENT_PROVIDER);
+	const [selectedPeerId, setSelectedPeerId] = useState<string>(LOCAL_PEER_ID);
 	const [nameManuallyEdited, setNameManuallyEdited] = useState(false);
 	const [currentPath, setCurrentPath] = useState<string>("");
+	// peer 選択時は Hub のディレクトリピッカーが使えないので、生 path 入力にする
+	const [remoteWorkingDir, setRemoteWorkingDir] = useState<string>("~");
 	const [directories, setDirectories] = useState<FileInfo[]>([]);
 	const [parentPath, setParentPath] = useState<string | null>(null);
 	const [isLoading, setIsLoading] = useState(true);
@@ -309,6 +321,8 @@ function CreateSessionModal({
 	const [creatingFolder, setCreatingFolder] = useState(false);
 	const inputRef = useRef<HTMLInputElement>(null);
 	const newFolderInputRef = useRef<HTMLInputElement>(null);
+
+	const isRemote = selectedPeerId !== LOCAL_PEER_ID;
 
 	const nameManuallyEditedRef = useRef(nameManuallyEdited);
 	nameManuallyEditedRef.current = nameManuallyEdited;
@@ -369,7 +383,8 @@ function CreateSessionModal({
 	};
 
 	const handleSubmit = () => {
-		onConfirm(name, currentPath, agent);
+		const workingDir = isRemote ? remoteWorkingDir.trim() : currentPath;
+		onConfirm(name, workingDir, agent, isRemote ? selectedPeerId : undefined);
 	};
 
 	const handleCreateFolder = async () => {
@@ -439,7 +454,55 @@ function CreateSessionModal({
 					</div>
 				</div>
 
-				{/* Directory picker */}
+				{/* Server (peer) selector — 1 件しか無ければ非表示 */}
+				{peers.length > 1 && (
+					<div className="mb-3">
+						<div className="text-xs text-th-text-secondary mb-1">サーバー</div>
+						<div className="grid grid-cols-2 gap-2">
+							{peers.map((peer) => (
+								<button
+									key={peer.id}
+									type="button"
+									onClick={() => setSelectedPeerId(peer.id)}
+									disabled={peer.id !== LOCAL_PEER_ID && peer.status !== "online"}
+									className={`px-3 py-2 rounded border text-sm font-medium transition-colors truncate text-left ${
+										selectedPeerId === peer.id
+											? "border-blue-500 bg-blue-600/20 text-blue-300"
+											: "border-th-border bg-th-bg text-th-text-secondary hover:bg-th-surface-active"
+									} disabled:opacity-40 disabled:cursor-not-allowed`}
+									style={{
+										borderLeftColor: selectedPeerId === peer.id ? undefined : peer.color,
+										borderLeftWidth: 3,
+									}}
+								>
+									{peer.nickname}
+								</button>
+							))}
+						</div>
+					</div>
+				)}
+
+				{/* Remote workingDir input (peer 選択時) */}
+				{isRemote && (
+					<label className="mb-3 block">
+						<span className="text-xs text-th-text-secondary mb-1 block">
+							{t("session.workingDirectory")} (peer 上のパス)
+						</span>
+						<input
+							type="text"
+							value={remoteWorkingDir}
+							onChange={(e) => setRemoteWorkingDir(e.target.value)}
+							placeholder="~"
+							className="w-full px-3 py-2 bg-th-bg border border-th-border rounded text-th-text font-mono text-sm placeholder-th-text-muted focus:outline-none focus:border-blue-500"
+						/>
+						<p className="mt-1 text-[11px] text-th-text-muted">
+							ディレクトリ一覧は peer 側に存在する必要があります。`~` でホームディレクトリ。
+						</p>
+					</label>
+				)}
+
+				{/* Directory picker — local 選択時のみ */}
+				{!isRemote && (
 				<div className="flex-1 min-h-0 flex flex-col">
 					<div className="flex items-center justify-between mb-2">
 						<span className="text-xs text-th-text-secondary">
@@ -556,6 +619,7 @@ function CreateSessionModal({
 						)}
 					</div>
 				</div>
+				)}
 
 				{/* Action buttons */}
 				<div className="flex gap-3 justify-end mt-3 pt-3 border-t border-th-border">
@@ -1426,10 +1490,11 @@ export function SessionList({
 		name: string,
 		workingDir?: string,
 		agent?: AgentProvider,
+		peerId?: string,
 	) => {
 		setCreateError(null);
 		try {
-			const session = await createSession(name || undefined, workingDir, agent);
+			const session = await createSession(name || undefined, workingDir, agent, peerId);
 			if (session) {
 				setShowCreateModal(false);
 				onSelectSession(session);
@@ -1849,6 +1914,7 @@ export function SessionList({
 			{/* Create session modal */}
 			{showCreateModal && (
 				<CreateSessionModal
+					peers={peers}
 					onConfirm={handleCreateSession}
 					onCancel={() => {
 						setShowCreateModal(false);

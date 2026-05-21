@@ -61,13 +61,22 @@ export function usePeers(): UsePeersReturn {
 		}
 	}, []);
 
-	// 初回ロード
+	// 初回ロード + 定期更新 (peer の status を最新化するため)
 	useEffect(() => {
+		let cancelled = false;
 		if (cachedPeers === null) {
 			void refresh();
 		} else {
 			setIsLoading(false);
 		}
+		const timer = setInterval(() => {
+			if (cancelled) return;
+			void refresh();
+		}, 5000);
+		return () => {
+			cancelled = true;
+			clearInterval(timer);
+		};
 	}, [refresh]);
 
 	const addPeer = useCallback(async (input: PeerCreateInput): Promise<PeerClientView> => {

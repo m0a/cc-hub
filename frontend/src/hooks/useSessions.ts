@@ -70,6 +70,9 @@ interface UseSessionsReturn {
 		name?: string,
 		workingDir?: string,
 		agent?: AgentProvider,
+		// Multi-server: 指定した peer (remote cchub) にセッションを作る。
+		// 省略時 or local 指定で Hub に作る。
+		peerId?: string,
 	) => Promise<ExtendedSessionResponse | null>;
 	deleteSession: (id: string) => Promise<boolean>;
 	updateSessionTheme: (
@@ -173,13 +176,21 @@ export function useSessions(): UseSessionsReturn {
 			name?: string,
 			workingDir?: string,
 			agent: AgentProvider = DEFAULT_AGENT_PROVIDER,
+			peerId?: string,
 		): Promise<SessionResponse | null> => {
 			setError(null);
-			const response = await authFetch(`${API_BASE}/api/sessions`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ name, workingDir, agent }),
-			});
+			// peerId が指定されてれば peer に対して POST する。
+			// `sessionFetch` は session オブジェクトを取るので、ダミーで peerId だけ渡す。
+			const response = await sessionFetch(
+				peerId ? { peerId } : undefined,
+				peers,
+				"/api/sessions",
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ name, workingDir, agent }),
+				},
+			);
 
 			if (!response.ok) {
 				const errorData = await response.json().catch(() => ({}));
@@ -188,11 +199,15 @@ export function useSessions(): UseSessionsReturn {
 				throw err;
 			}
 
-			const session = await response.json();
-			setSessions((prev) => [session, ...prev]);
-			return session;
+			const session = (await response.json()) as ExtendedSessionResponse;
+			// peer に作ったなら peerId を埋め込む (UIで識別できるように)
+			const enriched: ExtendedSessionResponse = peerId
+				? { ...session, peerId }
+				: session;
+			setSessions((prev) => [enriched, ...prev]);
+			return enriched;
 		},
-		[],
+		[peers],
 	);
 
 	const deleteSession = useCallback(async (id: string): Promise<boolean> => {

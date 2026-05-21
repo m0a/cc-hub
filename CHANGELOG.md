@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.146] - 2026-05-22
+
+### Added
+- **`cchub send` CLI と `POST /api/sessions/:id/panes/input` エンドポイント**: ローカル / peer サーバの tmux パネルへ任意のバイト列を CLI から送り込めるようになった。`cchub send <peer>:<session>:<paneId> "text"` の形式で、`<peer>` は `local` / peer id / nickname のいずれかを許容。`--stdin` で stdin から payload を読み込み、`--newline` で末尾に CR を付与 (シェルや TUI に "Enter で確定" させる用途)、`--base64` でバイナリを送信できる。peer 認証がある場合は `peers.json` の `wsToken` を Bearer として自動で付ける (`backend/src/routes/sessions.ts`, `backend/src/commands/send.ts`, `backend/src/cli.ts`)
+- `cchub-send` skill を追加。target 記法、フラグの使い分け、`paneId` の調べ方、よくあるエラーの解決手順をまとめてある (`.claude/skills/cchub-send/SKILL.md`)
+
 ## [0.1.145] - 2026-05-22
 
 ### Changed

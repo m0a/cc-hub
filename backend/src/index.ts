@@ -9,6 +9,7 @@ import { upload } from './routes/upload';
 import { files } from './routes/files';
 import { dashboard } from './routes/dashboard';
 import { notify } from './routes/notify';
+import { peers } from './routes/peers';
 import { muxOpen, muxMessage, muxClose, type MuxData } from './routes/terminal-mux';
 import { parseArgs, runCli, VERSION } from './cli';
 import { conditionalAuthMiddleware, isAuthRequired, getJwtSecret } from './middleware/auth';
@@ -149,6 +150,8 @@ app.use('/api/sessions', conditionalAuthMiddleware);
 app.use('/api/upload/*', conditionalAuthMiddleware);
 app.use('/api/files/*', conditionalAuthMiddleware);
 app.use('/api/dashboard', conditionalAuthMiddleware);
+app.use('/api/peers', conditionalAuthMiddleware);
+app.use('/api/peers/*', conditionalAuthMiddleware);
 
 app.route('/api/logs', logs);
 app.route('/api/sessions', sessions);
@@ -156,6 +159,7 @@ app.route('/api/upload', upload);
 app.route('/api/files', files);
 app.route('/api/dashboard', dashboard);
 app.route('/api/notify', notify);
+app.route('/api/peers', peers);
 
 // Static files handling
 const staticRoot = process.env.STATIC_ROOT || '../frontend/dist';

@@ -4,15 +4,24 @@ import {
 	DEFAULT_AGENT_PROVIDER,
 	type ExtendedSessionResponse,
 	type IndicatorState,
+	LOCAL_PEER_ID,
+	type PeerSession,
+	type PeerSessionsResponse,
 	type SessionResponse,
 	type SessionTheme,
 } from "../../../shared/types";
 import { authFetch, isTransientNetworkError } from "../services/api";
+import { sessionFetch } from "../services/peer-fetch";
+import { usePeers } from "./usePeers";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
 // Module-level cache (shared across all useSessions instances, updated by WS push)
 let cachedSessions: ExtendedSessionResponse[] | null = null;
+// Remote peer sessions (excluding local). Updated by polling /api/peers/sessions.
+let cachedRemotePeerSessions: PeerSession[] = [];
+
+const PEER_POLL_INTERVAL = 5000;
 
 /** hookイベントでcachedSessionsのindicatorStateを即座に更新する */
 export function updateCachedSessionsByHookEvent(
@@ -69,21 +78,52 @@ interface UseSessionsReturn {
 	) => Promise<boolean>;
 }
 
+function mergedSessions(): ExtendedSessionResponse[] {
+	const local = (cachedSessions ?? []).map((s) =>
+		// 既存の WS push 由来セッションには peerId が付かないので、local として注釈
+		s.peerId ? s : { ...s, peerId: LOCAL_PEER_ID },
+	);
+	return [...local, ...cachedRemotePeerSessions];
+}
+
 function updateSessions(
 	setSessions: React.Dispatch<React.SetStateAction<ExtendedSessionResponse[]>>,
-	newSessions: ExtendedSessionResponse[],
+	newLocalSessions: ExtendedSessionResponse[],
 ) {
-	cachedSessions = newSessions;
+	cachedSessions = newLocalSessions;
+	const merged = mergedSessions();
 	setSessions((prev) => {
-		const newJson = JSON.stringify(newSessions);
+		const newJson = JSON.stringify(merged);
 		const prevJson = JSON.stringify(prev);
-		return newJson === prevJson ? prev : newSessions;
+		return newJson === prevJson ? prev : merged;
 	});
 }
 
+async function pollRemotePeerSessions(
+	setSessions: React.Dispatch<React.SetStateAction<ExtendedSessionResponse[]>>,
+): Promise<boolean> {
+	try {
+		const res = await authFetch(`${API_BASE}/api/peers/sessions`);
+		if (!res.ok) return false;
+		const data = (await res.json()) as PeerSessionsResponse;
+		if (!Array.isArray(data.sessions)) return false;
+		const remote = data.sessions.filter((s) => s.peerId !== LOCAL_PEER_ID);
+		const stableJson = JSON.stringify(remote);
+		const prevJson = JSON.stringify(cachedRemotePeerSessions);
+		if (stableJson === prevJson) return true;
+		cachedRemotePeerSessions = remote;
+		const merged = mergedSessions();
+		setSessions(merged);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 export function useSessions(): UseSessionsReturn {
+	const { peers } = usePeers();
 	const [sessions, setSessions] = useState<ExtendedSessionResponse[]>(
-		() => cachedSessions || [],
+		() => mergedSessions(),
 	);
 	const [isLoading, setIsLoading] = useState(() => !cachedSessions);
 	const [error, setError] = useState<string | null>(null);
@@ -91,7 +131,7 @@ export function useSessions(): UseSessionsReturn {
 	// Listen for WS push and hook events
 	useEffect(() => {
 		const hookHandler = () => {
-			if (cachedSessions) setSessions(cachedSessions);
+			if (cachedSessions) setSessions(mergedSessions());
 		};
 
 		const pushHandler = (e: Event) => {
@@ -107,6 +147,24 @@ export function useSessions(): UseSessionsReturn {
 		return () => {
 			window.removeEventListener("cchub-hook-event", hookHandler);
 			window.removeEventListener("cchub-sessions-push", pushHandler);
+		};
+	}, []);
+
+	// Poll remote peer sessions (only fires while non-local peers exist)
+	useEffect(() => {
+		let cancelled = false;
+		let timer: ReturnType<typeof setInterval> | null = null;
+
+		void pollRemotePeerSessions(setSessions);
+
+		timer = setInterval(() => {
+			if (cancelled) return;
+			void pollRemotePeerSessions(setSessions);
+		}, PEER_POLL_INTERVAL);
+
+		return () => {
+			cancelled = true;
+			if (timer) clearInterval(timer);
 		};
 	}, []);
 
@@ -140,7 +198,8 @@ export function useSessions(): UseSessionsReturn {
 	const deleteSession = useCallback(async (id: string): Promise<boolean> => {
 		setError(null);
 		try {
-			const response = await authFetch(`${API_BASE}/api/sessions/${id}`, {
+			const session = sessions.find((s) => s.id === id);
+			const response = await sessionFetch(session, peers, `/api/sessions/${id}`, {
 				method: "DELETE",
 			});
 
@@ -154,14 +213,17 @@ export function useSessions(): UseSessionsReturn {
 			}
 			return false;
 		}
-	}, []);
+	}, [sessions, peers]);
 
 	const updateSessionTheme = useCallback(
 		async (id: string, theme: SessionTheme | null): Promise<boolean> => {
 			setError(null);
 			try {
-				const response = await authFetch(
-					`${API_BASE}/api/sessions/${id}/theme`,
+				const session = sessions.find((s) => s.id === id);
+				const response = await sessionFetch(
+					session,
+					peers,
+					`/api/sessions/${id}/theme`,
 					{
 						method: "PUT",
 						headers: { "Content-Type": "application/json" },
@@ -184,7 +246,7 @@ export function useSessions(): UseSessionsReturn {
 				return false;
 			}
 		},
-		[],
+		[sessions, peers],
 	);
 
 	return {

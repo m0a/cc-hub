@@ -32,7 +32,9 @@ import {
 	type SessionResponse,
 	type SessionTheme,
 } from "../../../shared/types";
+import { usePeers } from "../hooks/usePeers";
 import { useSessions } from "../hooks/useSessions";
+import { sessionFetch } from "../services/peer-fetch";
 import { formatRelativeTime } from "../utils/format";
 
 // Theme color mapping
@@ -800,7 +802,19 @@ function SessionItem({
 	const isLive =
 		!isLost &&
 		(cardIndicator === "processing" || cardIndicator === "waiting_input");
-	const accentColor = session.theme ? ACCENT_HEX[session.theme] : undefined;
+	// peer 色は theme より優先度が低い。peer はマルチサーバー時の所属表示なので、
+	// ユーザーが明示的に theme をつけていればそちらを尊重する。
+	const peerAccentColor =
+		extSession.peerId && extSession.peerId !== "local"
+			? extSession.peerColor
+			: undefined;
+	const accentColor = session.theme
+		? ACCENT_HEX[session.theme]
+		: peerAccentColor;
+	const peerBadge =
+		extSession.peerNickname && extSession.peerId && extSession.peerId !== "local"
+			? { nickname: extSession.peerNickname, color: extSession.peerColor ?? "#64748b" }
+			: null;
 
 	// Lost session: show recreate UI
 	if (isLost) {
@@ -968,8 +982,23 @@ function SessionItem({
 					)}
 
 				{/* Metadata row: agent / context / memory / tokens */}
-				{(agentLabel || extSession.metrics) && (
+				{(agentLabel || extSession.metrics || peerBadge) && (
 					<div className="mt-1.5 flex items-center gap-3 flex-wrap text-[11px] text-zinc-500">
+						{peerBadge && (
+							<span
+								className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium"
+								style={{
+									backgroundColor: `${peerBadge.color}26`,
+									color: peerBadge.color,
+								}}
+							>
+								<span
+									className="w-1.5 h-1.5 rounded-full"
+									style={{ backgroundColor: peerBadge.color }}
+								/>
+								{peerBadge.nickname}
+							</span>
+						)}
 						{agentLabel && (
 							<span className="inline-flex items-center px-2 py-0.5 rounded-full font-medium bg-zinc-500/15 text-zinc-400">
 								{agentLabel}
@@ -1173,6 +1202,7 @@ export function SessionList({
 		deleteSession,
 		updateSessionTheme,
 	} = useSessions();
+	const { peers } = usePeers();
 	const { fetchConversation } = useSessionHistory();
 
 	const [sessionForMenu, setSessionForMenu] = useState<SessionResponse | null>(
@@ -1437,11 +1467,16 @@ export function SessionList({
 	const handleMenuChangeTitle = async (title: string | null) => {
 		if (sessionForMenu) {
 			try {
-				await authFetch(`${API_BASE}/api/sessions/${sessionForMenu.id}/title`, {
-					method: "PUT",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ title }),
-				});
+				await sessionFetch(
+					sessionForMenu as ExtendedSessionResponse,
+					peers,
+					`/api/sessions/${sessionForMenu.id}/title`,
+					{
+						method: "PUT",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ title }),
+					},
+				);
 				setSessionForMenu(null);
 			} catch (err) {
 				console.error("Failed to update title:", err);

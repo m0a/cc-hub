@@ -19,6 +19,9 @@ import {
 	type TerminalRef,
 } from "../components/Terminal";
 import { useMultiplexedTerminal } from "../hooks/useMultiplexedTerminal";
+import { usePeerConnection } from "../hooks/usePeerConnection";
+import { usePeers } from "../hooks/usePeers";
+import { useSessions } from "../hooks/useSessions";
 import { fireHookNotification } from "../utils/hookNotification";
 import { makePseudoViewport } from "../utils/viewport-pseudo";
 
@@ -101,9 +104,15 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 		// Tracks whether initial zoom has been done (for multi-pane sessions)
 		const initialZoomDoneRef = useRef(false);
 
+		// Multi-server: sessionId が remote peer のものなら、その peer の WS に接続する
+		const { peers } = usePeers();
+		const { sessions: apiSessions } = useSessions();
+		const peerConn = usePeerConnection(sessionId, apiSessions, peers);
+
 		const controlTerminal = useMultiplexedTerminal({
 			sessionId,
-			token,
+			token: peerConn.token ?? token,
+			peerWsBase: peerConn.wsBase,
 			onPaneViewport: (paneId, viewport) => {
 				lastViewportRef.current.set(paneId, viewport);
 				let perPane = paneViewportCacheRef.current.get(paneId);

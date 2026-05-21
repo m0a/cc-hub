@@ -25,6 +25,7 @@ import type {
 	GitFileChange,
 } from "../../../../shared/types";
 import { useFileViewer } from "../../hooks/useFileViewer";
+import { stripHomeProjectPrefix, toHomeShortPath } from "../../utils/path";
 import { CodeViewer } from "./CodeViewer";
 import { DiffViewer } from "./DiffViewer";
 import { FileBrowser } from "./FileBrowser";
@@ -1458,7 +1459,7 @@ function ChangesView({
 		}
 		return buildTree(
 			claudeChanges.map((c) => ({
-				path: c.path.replace(/^\/home\/[^/]+\/[^/]+\//, ""),
+				path: stripHomeProjectPrefix(c.path),
 				change: c,
 			})),
 		);
@@ -1613,7 +1614,7 @@ function ChangesView({
 												{getFileName(change.path)}
 											</div>
 											<div className="text-xs text-th-text-muted truncate">
-												{change.path.replace(/^\/home\/[^/]+\//, "~/")}
+												{toHomeShortPath(change.path)}
 											</div>
 										</div>
 										<div className="text-xs text-th-text-muted shrink-0">

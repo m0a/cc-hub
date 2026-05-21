@@ -10,6 +10,7 @@ import type {
 	SessionTheme,
 } from "../../../shared/types";
 import { authFetch } from "../services/api";
+import { toHomeShortPath } from "../utils/path";
 import { ChatView } from "./chat/ChatView";
 import type { ControlModeConfig } from "./Terminal";
 import { TerminalComponent, type TerminalRef } from "./Terminal";
@@ -698,7 +699,7 @@ function SessionSelector({ sessions, onSelect }: SessionSelectorProps) {
 						<div className="font-medium truncate">{session.name}</div>
 						{session.currentPath && (
 							<div className="text-xs text-th-text-secondary truncate">
-								{session.currentPath.replace(/^\/home\/[^/]+\//, "~/")}
+								{toHomeShortPath(session.currentPath)}
 							</div>
 						)}
 					</button>

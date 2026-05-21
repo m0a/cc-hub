@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.139] - 2026-05-22
+
+### Fixed
+- **macOS launchd 経由起動時に pane_title の非ASCII文字が `_` に化ける**: Mac で `cchub` を launchd で起動した場合、子プロセスに `LANG`/`LC_ALL` が継承されないため tmux が ASCII fallback モードで動き、Claude Code のスピナー `⠐` (U+2810) などの非ASCII文字を `_` に置換していた。結果として peer 経由で Linux Hub に届く paneTitle が `_ <topic>` の形式になり、UI 上で `_` プレフィックスとして表示されていた。`backend/src/services/tmux.ts` 内の全 `Bun.spawn` 呼び出しに `env: TMUX_ENV` (LANG/LC_ALL を UTF-8 で固定) を渡すよう修正。launchd 経由でも UTF-8 出力が保証されるようになった (`backend/src/services/tmux.ts`)
+- 関連: SessionList / App / PaneContainer / FileBrowser / FileViewer / hookNotification の paneTitle 加工正規表現を `[✳★●◆✻✽⏳⠀-⣿]\s*` に統一。Claude/Codex のスピナーアニメーション全フレーム (U+2800–U+28FF) を除去できるようにした (`frontend/src/App.tsx`, `frontend/src/components/PaneContainer.tsx`, `frontend/src/components/SessionList.tsx`, `frontend/src/components/files/FileBrowser.tsx`, `frontend/src/components/files/FileViewer.tsx`, `frontend/src/utils/hookNotification.ts`)
+- 関連: ホームディレクトリ短縮の正規表現を `/(?:home|Users)/<user>` 対応に拡張し、共通ユーティリティ `frontend/src/utils/path.ts` (`toHomeShortPath` / `stripHomeProjectPrefix`) に集約。macOS の `/Users/<user>` パスもチルダ省略されるようになり、`SessionList` / `PaneContainer` / `FileBrowser` / `FileViewer` / `hookNotification` の 7 箇所のインライン regex を1関数経由に統一 (`frontend/src/utils/path.ts` 新規)
+
 ## [0.1.138] - 2026-05-21
 
 ### Fixed

@@ -1177,7 +1177,7 @@ export function App() {
 										);
 										// Priority: agentName > paneTitle (stripped) > command > paneId
 										const paneTitle = apiPane?.title
-											?.replace(/^[✳★●◆⠂⠈⠐⠠⠄⠁✻✽⏳]\s*/, "")
+											?.replace(/^[✳★●◆✻✽⏳⠀-⣿]\s*/, "")
 											.trim();
 										const label =
 											apiPane?.agentName ||

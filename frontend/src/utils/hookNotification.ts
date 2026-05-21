@@ -5,6 +5,8 @@
  * デバウンスで1回だけ通知する。
  */
 
+import { toHomeShortPath } from "./path";
+
 const EVENT_MESSAGES: Record<string, string> = {
 	Stop: "応答が完了しました",
 	Notification: "ユーザー入力を待っています",
@@ -79,7 +81,7 @@ export function fireHookNotification(
 	lastNotification = { key, time: now };
 
 	// Title: project/directory name (e.g. "~/lifestyle-app-work-1")
-	const projectName = cwd?.replace(/^\/home\/[^/]+\//, "~/") || "CC Hub";
+	const projectName = toHomeShortPath(cwd) || "CC Hub";
 	// Body: smart message from transcript, or fallback
 	const body = smartMessage || EVENT_MESSAGES[event] || `Hook: ${event}`;
 

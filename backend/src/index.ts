@@ -348,10 +348,12 @@ export default {
         }
       }
 
+      const deviceId = url.searchParams.get('deviceId') || undefined;
       const upgraded = server.upgrade(req, {
         data: {
           mux: true,
           visitorId: crypto.randomUUID(),
+          deviceId,
           subscriptions: new Map(),
           conversationWatchers: new Map(),
           lastPingAt: Date.now(),

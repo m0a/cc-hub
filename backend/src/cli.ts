@@ -9,7 +9,7 @@ const isDev = process.argv.some(arg => arg.includes('--watch'));
 const DEFAULT_PORT = isDev ? 3456 : 5923;
 
 interface CliOptions {
-  command: 'serve' | 'setup' | 'uninstall' | 'update' | 'status' | 'notify' | 'help' | 'version' | 'debug';
+  command: 'serve' | 'setup' | 'uninstall' | 'update' | 'status' | 'notify' | 'help' | 'version' | 'debug' | 'send';
   port: number;
   host: string;
   password?: string;
@@ -18,6 +18,11 @@ interface CliOptions {
   debugSubcommand?: 'enable' | 'disable' | 'profile' | 'status';
   debugPort?: number;
   debugSeconds?: number;
+  sendTarget?: string;
+  sendText?: string;
+  sendStdin?: boolean;
+  sendNewline?: boolean;
+  sendBase64?: boolean;
 }
 
 function printHelp(): void {
@@ -31,6 +36,9 @@ ${t('cli.usage')}
   cchub update [options]    Check and apply updates
   cchub status              Show service status
   cchub notify              Send hook event (reads JSON from stdin)
+  cchub send <target> [text]  Send input to a pane on a peer or local server
+                              target: <peer>:<session>:<paneId>
+                              (peer can be 'local', a peer id, or a nickname)
   cchub debug <sub>         Toggle Bun inspector mode on the running service
                             sub: enable | disable | profile | status
 
@@ -46,6 +54,11 @@ update options:
 debug options:
   --port <port>          Inspector port (default 9229)
   --seconds <n>          For 'profile' sub: enable for N seconds then auto-disable
+
+send options:
+  --stdin                Read payload from stdin instead of arg
+  --newline              Append \\r to payload (acts like pressing Enter)
+  --base64               Treat payload as base64 (binary-safe)
 
 ${t('cli.examples')}
   ${t('cli.exampleStart')}
@@ -85,6 +98,29 @@ export function parseArgs(args: string[]): CliOptions {
         break;
       case 'notify':
         options.command = 'notify';
+        break;
+      case 'send': {
+        options.command = 'send';
+        const next = args[i + 1];
+        if (next && !next.startsWith('-')) {
+          options.sendTarget = next;
+          i++;
+          const maybeText = args[i + 1];
+          if (maybeText !== undefined && !maybeText.startsWith('-')) {
+            options.sendText = maybeText;
+            i++;
+          }
+        }
+        break;
+      }
+      case '--stdin':
+        options.sendStdin = true;
+        break;
+      case '--newline':
+        options.sendNewline = true;
+        break;
+      case '--base64':
+        options.sendBase64 = true;
         break;
       case 'debug': {
         options.command = 'debug';
@@ -190,6 +226,10 @@ export async function runCli(options: CliOptions): Promise<'serve' | 'exit'> {
       await runNotify(options);
       return 'exit';
 
+    case 'send':
+      await runSend(options);
+      return 'exit';
+
     case 'debug':
       await runDebug(options);
       return 'exit';
@@ -217,6 +257,27 @@ async function runUpdate(options: CliOptions): Promise<void> {
 async function runNotify(options: CliOptions): Promise<void> {
   const { sendNotify } = await import('./commands/notify');
   await sendNotify(options.port);
+}
+
+async function runSend(options: CliOptions): Promise<void> {
+  if (!options.sendTarget) {
+    console.error('❌ target is required: cchub send <peer>:<session>:<paneId> [text]');
+    process.exit(1);
+  }
+  const { runSend: runSendImpl } = await import('./commands/send');
+  try {
+    await runSendImpl({
+      target: options.sendTarget,
+      text: options.sendText,
+      stdin: options.sendStdin ?? false,
+      newline: options.sendNewline ?? false,
+      base64: options.sendBase64 ?? false,
+      localPort: options.port,
+    });
+  } catch (err) {
+    console.error(`❌ ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
 }
 
 async function runStatus(): Promise<void> {

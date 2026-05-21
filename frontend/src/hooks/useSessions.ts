@@ -11,6 +11,8 @@ import {
 	type SessionTheme,
 } from "../../../shared/types";
 import { authFetch, isTransientNetworkError } from "../services/api";
+import { sessionFetch } from "../services/peer-fetch";
+import { usePeers } from "./usePeers";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
@@ -119,6 +121,7 @@ async function pollRemotePeerSessions(
 }
 
 export function useSessions(): UseSessionsReturn {
+	const { peers } = usePeers();
 	const [sessions, setSessions] = useState<ExtendedSessionResponse[]>(
 		() => mergedSessions(),
 	);
@@ -195,7 +198,8 @@ export function useSessions(): UseSessionsReturn {
 	const deleteSession = useCallback(async (id: string): Promise<boolean> => {
 		setError(null);
 		try {
-			const response = await authFetch(`${API_BASE}/api/sessions/${id}`, {
+			const session = sessions.find((s) => s.id === id);
+			const response = await sessionFetch(session, peers, `/api/sessions/${id}`, {
 				method: "DELETE",
 			});
 
@@ -209,14 +213,17 @@ export function useSessions(): UseSessionsReturn {
 			}
 			return false;
 		}
-	}, []);
+	}, [sessions, peers]);
 
 	const updateSessionTheme = useCallback(
 		async (id: string, theme: SessionTheme | null): Promise<boolean> => {
 			setError(null);
 			try {
-				const response = await authFetch(
-					`${API_BASE}/api/sessions/${id}/theme`,
+				const session = sessions.find((s) => s.id === id);
+				const response = await sessionFetch(
+					session,
+					peers,
+					`/api/sessions/${id}/theme`,
 					{
 						method: "PUT",
 						headers: { "Content-Type": "application/json" },
@@ -239,7 +246,7 @@ export function useSessions(): UseSessionsReturn {
 				return false;
 			}
 		},
-		[],
+		[sessions, peers],
 	);
 
 	return {

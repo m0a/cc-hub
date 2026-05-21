@@ -32,7 +32,9 @@ import {
 	type SessionResponse,
 	type SessionTheme,
 } from "../../../shared/types";
+import { usePeers } from "../hooks/usePeers";
 import { useSessions } from "../hooks/useSessions";
+import { sessionFetch } from "../services/peer-fetch";
 import { formatRelativeTime } from "../utils/format";
 
 // Theme color mapping
@@ -1200,6 +1202,7 @@ export function SessionList({
 		deleteSession,
 		updateSessionTheme,
 	} = useSessions();
+	const { peers } = usePeers();
 	const { fetchConversation } = useSessionHistory();
 
 	const [sessionForMenu, setSessionForMenu] = useState<SessionResponse | null>(
@@ -1464,11 +1467,16 @@ export function SessionList({
 	const handleMenuChangeTitle = async (title: string | null) => {
 		if (sessionForMenu) {
 			try {
-				await authFetch(`${API_BASE}/api/sessions/${sessionForMenu.id}/title`, {
-					method: "PUT",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ title }),
-				});
+				await sessionFetch(
+					sessionForMenu as ExtendedSessionResponse,
+					peers,
+					`/api/sessions/${sessionForMenu.id}/title`,
+					{
+						method: "PUT",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ title }),
+					},
+				);
 				setSessionForMenu(null);
 			} catch (err) {
 				console.error("Failed to update title:", err);

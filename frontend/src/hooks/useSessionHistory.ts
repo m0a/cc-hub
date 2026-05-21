@@ -2,34 +2,36 @@ import { useCallback, useEffect, useState } from "react";
 import type {
 	ConversationMessage,
 	HistorySession,
+	PeerHistoryProject,
+	PeerHistoryProjectsResponse,
 } from "../../../shared/types";
+import { LOCAL_PEER_ID } from "../../../shared/types";
 import { authFetch, isTransientNetworkError } from "../services/api";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
-export interface ProjectInfo {
-	dirName: string;
-	projectPath: string;
-	projectName: string;
-	sessionCount: number;
-	latestModified?: string;
+// Multi-server: 内部キーは `${peerId}::${dirName}` で識別する (peer 跨ぎで dirName が
+// 衝突しうるため)。UI 側もこのキーで expand 状態などを持つ。
+export type ProjectKey = string;
+export function projectKey(peerId: string, dirName: string): ProjectKey {
+	return `${peerId}::${dirName}`;
 }
 
+export type ProjectInfo = PeerHistoryProject;
+
 interface UseSessionHistoryResult {
-	// Project-level data (fast initial load)
 	projects: ProjectInfo[];
 	isLoadingProjects: boolean;
 
-	// Session-level data (lazy loaded per project)
-	sessionsByProject: Map<string, HistorySession[]>;
-	loadingProjects: Set<string>;
+	sessionsByProject: Map<ProjectKey, HistorySession[]>;
+	loadingProjects: Set<ProjectKey>;
 	fetchProjectSessions: (
+		peerId: string,
 		dirName: string,
 		forceRefresh?: boolean,
 	) => Promise<void>;
 	refreshAllLoadedProjects: () => Promise<void>;
 
-	// Search
 	searchResults: HistorySession[];
 	isSearching: boolean;
 	searchQuery: string;
@@ -38,17 +40,18 @@ interface UseSessionHistoryResult {
 
 	error: string | null;
 
-	// Actions
 	refresh: () => Promise<void>;
 	resumeSession: (
 		sessionId: string,
 		projectPath: string,
 		agent?: "claude" | "codex",
+		peerId?: string,
 	) => Promise<{ tmuxSessionId: string } | null>;
 	fetchConversation: (
 		sessionId: string,
 		projectDirName?: string,
 		agent?: "claude" | "codex",
+		peerId?: string,
 	) => Promise<ConversationMessage[]>;
 }
 
@@ -56,19 +59,18 @@ export function useSessionHistory(): UseSessionHistoryResult {
 	const [projects, setProjects] = useState<ProjectInfo[]>([]);
 	const [isLoadingProjects, setIsLoadingProjects] = useState(true);
 	const [sessionsByProject, setSessionsByProject] = useState<
-		Map<string, HistorySession[]>
+		Map<ProjectKey, HistorySession[]>
 	>(new Map());
-	const [loadingProjects, setLoadingProjects] = useState<Set<string>>(
+	const [loadingProjects, setLoadingProjects] = useState<Set<ProjectKey>>(
 		new Set(),
 	);
 	const [error, setError] = useState<string | null>(null);
 
-	// Search state
 	const [searchResults, setSearchResults] = useState<HistorySession[]>([]);
 	const [isSearching, setIsSearching] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
 
-	// Fetch project list (fast)
+	// 全 peer のプロジェクト一覧を取得
 	const fetchProjects = useCallback(async (silent = false) => {
 		try {
 			if (!silent) {
@@ -76,13 +78,12 @@ export function useSessionHistory(): UseSessionHistoryResult {
 				setError(null);
 			}
 			const response = await authFetch(
-				`${API_BASE}/api/sessions/history/projects`,
+				`${API_BASE}/api/peers/history/projects`,
 			);
 			if (!response.ok) {
 				throw new Error("Failed to fetch projects");
 			}
-			const data = await response.json();
-			// Only update state if data has changed to prevent unnecessary re-renders
+			const data = (await response.json()) as PeerHistoryProjectsResponse;
 			setProjects((prev) => {
 				const newJson = JSON.stringify(data.projects || []);
 				const prevJson = JSON.stringify(prev);
@@ -99,31 +100,28 @@ export function useSessionHistory(): UseSessionHistoryResult {
 		}
 	}, []);
 
-	// Fetch sessions for a specific project (lazy)
 	const fetchProjectSessions = useCallback(
-		async (dirName: string, forceRefresh = false) => {
-			// Skip if already loaded or loading (unless forceRefresh)
+		async (peerId: string, dirName: string, forceRefresh = false) => {
+			const key = projectKey(peerId, dirName);
 			if (
 				!forceRefresh &&
-				(sessionsByProject.has(dirName) || loadingProjects.has(dirName))
+				(sessionsByProject.has(key) || loadingProjects.has(key))
 			) {
 				return;
 			}
 
 			try {
-				setLoadingProjects((prev) => new Set(prev).add(dirName));
-
+				setLoadingProjects((prev) => new Set(prev).add(key));
 				const response = await authFetch(
-					`${API_BASE}/api/sessions/history/projects/${encodeURIComponent(dirName)}`,
+					`${API_BASE}/api/peers/history/${encodeURIComponent(peerId)}/projects/${encodeURIComponent(dirName)}`,
 				);
 				if (!response.ok) {
 					throw new Error("Failed to fetch project sessions");
 				}
-				const data = await response.json();
-
+				const data = (await response.json()) as { sessions?: HistorySession[] };
 				setSessionsByProject((prev) => {
 					const next = new Map(prev);
-					next.set(dirName, data.sessions || []);
+					next.set(key, data.sessions ?? []);
 					return next;
 				});
 			} catch (err) {
@@ -131,7 +129,7 @@ export function useSessionHistory(): UseSessionHistoryResult {
 			} finally {
 				setLoadingProjects((prev) => {
 					const next = new Set(prev);
-					next.delete(dirName);
+					next.delete(key);
 					return next;
 				});
 			}
@@ -139,14 +137,14 @@ export function useSessionHistory(): UseSessionHistoryResult {
 		[sessionsByProject, loadingProjects],
 	);
 
-	// Refresh all loaded projects (after resume, etc.)
 	const refreshAllLoadedProjects = useCallback(async () => {
-		const loadedDirNames = Array.from(sessionsByProject.keys());
-		// Clear cache
+		const loadedKeys = Array.from(sessionsByProject.keys());
 		setSessionsByProject(new Map());
-		// Re-fetch all
 		await Promise.all(
-			loadedDirNames.map((dirName) => fetchProjectSessions(dirName, true)),
+			loadedKeys.map((key) => {
+				const [peerId, dirName] = key.split("::");
+				return fetchProjectSessions(peerId, dirName, true);
+			}),
 		);
 	}, [sessionsByProject, fetchProjectSessions]);
 
@@ -155,16 +153,18 @@ export function useSessionHistory(): UseSessionHistoryResult {
 			sessionId: string,
 			projectPath: string,
 			agent?: "claude" | "codex",
+			peerId?: string,
 		) => {
 			try {
-				const response = await authFetch(
-					`${API_BASE}/api/sessions/history/resume`,
-					{
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({ sessionId, projectPath, agent }),
-					},
-				);
+				const isRemote = peerId && peerId !== LOCAL_PEER_ID;
+				const url = isRemote
+					? `${API_BASE}/api/peers/history/${encodeURIComponent(peerId)}/resume`
+					: `${API_BASE}/api/sessions/history/resume`;
+				const response = await authFetch(url, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ sessionId, projectPath, agent }),
+				});
 				if (!response.ok) {
 					const errorData = await response.json().catch(() => ({}));
 					const err = new Error(errorData.error || "Failed to resume session");
@@ -186,21 +186,21 @@ export function useSessionHistory(): UseSessionHistoryResult {
 			sessionId: string,
 			projectDirName?: string,
 			agent?: "claude" | "codex",
+			peerId?: string,
 		): Promise<ConversationMessage[]> => {
 			try {
-				const url = new URL(
-					`${API_BASE}/api/sessions/history/${sessionId}/conversation`,
-					window.location.origin,
-				);
+				const isRemote = peerId && peerId !== LOCAL_PEER_ID;
+				const base = isRemote
+					? `${API_BASE}/api/peers/history/${encodeURIComponent(peerId)}/${encodeURIComponent(sessionId)}/conversation`
+					: `${API_BASE}/api/sessions/history/${encodeURIComponent(sessionId)}/conversation`;
+				const url = new URL(base, window.location.origin);
 				if (projectDirName) {
 					url.searchParams.set("projectDirName", projectDirName);
 				}
 				if (agent === "codex") {
 					url.searchParams.set("agent", "codex");
 				}
-				const response = await authFetch(url.toString(), {
-					cache: "no-store",
-				});
+				const response = await authFetch(url.toString(), { cache: "no-store" });
 				if (!response.ok) {
 					throw new Error("Failed to fetch conversation");
 				}
@@ -214,7 +214,7 @@ export function useSessionHistory(): UseSessionHistoryResult {
 		[],
 	);
 
-	// Search sessions with streaming (incremental results)
+	// Search は Hub の SSE をそのまま使用 (Phase: peer 横断 search は未実装)
 	const searchSessions = useCallback(async (query: string) => {
 		setSearchQuery(query);
 		if (!query.trim()) {
@@ -223,10 +223,9 @@ export function useSessionHistory(): UseSessionHistoryResult {
 		}
 
 		setIsSearching(true);
-		setSearchResults([]); // Clear previous results
+		setSearchResults([]);
 
 		try {
-			// Use EventSource for SSE streaming
 			const url = `${API_BASE}/api/sessions/history/search/stream?q=${encodeURIComponent(query)}`;
 			const eventSource = new EventSource(url);
 
@@ -235,7 +234,7 @@ export function useSessionHistory(): UseSessionHistoryResult {
 					const session = JSON.parse(event.data) as HistorySession;
 					setSearchResults((prev) => [...prev, session]);
 				} catch {
-					// Ignore parse errors
+					/* Ignore parse errors */
 				}
 			};
 
@@ -260,13 +259,11 @@ export function useSessionHistory(): UseSessionHistoryResult {
 		}
 	}, []);
 
-	// Clear search
 	const clearSearch = useCallback(() => {
 		setSearchQuery("");
 		setSearchResults([]);
 	}, []);
 
-	// Initial load: projects only
 	useEffect(() => {
 		fetchProjects();
 	}, [fetchProjects]);

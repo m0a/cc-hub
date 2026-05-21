@@ -121,7 +121,13 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
         ccSession = await claudeCodeService.getSessionByTtyStartTime(s.paneTty, s.currentPath);
       }
 
-      if (!ccSession && ptySessionId) {
+      // Final fallback: pick the most recent `.jsonl` for the working dir. Earlier
+      // this branch required `ptySessionId` (i.e. only ran for `claude -r <uuid>`),
+      // which meant a freshly-started `claude` (no `-r`) whose tty-start-time
+      // detection failed (TZ skew on macOS launchd, etc.) ended up with no
+      // ccSession at all — and therefore no `ccSessionId` for hook events to
+      // match against, so the indicator never reacted.
+      if (!ccSession) {
         const pathSession = ccSessionsByPath.get(s.currentPath);
         if (pathSession) {
           ccSession = pathSession;

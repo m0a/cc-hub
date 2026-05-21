@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.147] - 2026-05-22
+
+### Fixed
+- **新規 `claude` セッション (= `-r` フラグ無し) で `ccSessionId` が取れず indicator state の即時更新と通知が動かない問題を修正**: `buildSessionsList` の最終 path fallback (`ccSessionsByPath.get(currentPath)`) が `ptySessionId` 必須になっていたため、`claude -r <uuid>` ではない新規起動セッションでは hook event の `session_id` と紐付けるべき `ccSessionId` が常に `undefined` になり、`applyHookIndicatorUpdate` が peer 横断検索しても何にもヒットしないという経路ができていた。条件から `ptySessionId` 要件を外し、`getSessionByTtyStartTime` (TZ skew で失敗することがある) が null を返したら無条件で cwd 配下の最新 `.jsonl` にフォールバックするよう変更 (`backend/src/routes/sessions.ts`)
+
+### Added
+- **`cchub send --submit` フラグ**: 末尾に `\r\r` を追加して送信する。Claude Code の TUI は paste mode に入った入力を `\r` 1回では submit せず、明示的に2回の Enter を要求するため、`cchub send` から Claude Code に対話させるときは `--newline` ではなく `--submit` を使うのが確実 (`backend/src/commands/send.ts`, `backend/src/cli.ts`)
+
 ## [0.1.146] - 2026-05-22
 
 ### Added

@@ -16,6 +16,10 @@ export interface SendOptions {
   text?: string;
   stdin: boolean;
   newline: boolean;
+  // Append `\r\r` so Claude Code's TUI exits paste mode and submits the input.
+  // Plain `--newline` is `\r` only, which Claude Code treats as a newline
+  // inside multi-line paste and never submits.
+  submit: boolean;
   base64: boolean;
   localPort: number;
 }
@@ -75,6 +79,9 @@ export async function runSend(options: SendOptions): Promise<void> {
 
   if (options.newline) {
     payload = `${payload}\r`;
+  }
+  if (options.submit) {
+    payload = `${payload}\r\r`;
   }
 
   const peer = await resolvePeer(target.peer, options.localPort);

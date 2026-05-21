@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.144] - 2026-05-22
+
+### Fixed
+- **他 peer の indicator state / OS 通知が動かない問題を修正**: 従来は peer の `hook-event` (Stop / PreToolUse / UserPromptSubmit / PostToolUse) が「ターミナルでアクティブに表示している peer」の sharedWs 経由でしか届かず、他 peer は通知も indicator 即時更新も受け取れなかった。`usePeerSessionsWatcher` が各 peer 用 WS で hook-event を受け、`applyHookIndicatorUpdate` (全 peer 横断検索) で indicator を即時反映 + `fireHookNotification` で OS 通知を発火するように変更 (`frontend/src/hooks/usePeerSessionsWatcher.ts`)
+- 副次: `applyHookIndicatorUpdate` を Hub local 限定から全 peer 横断検索 (ccSessionId UUID) に変更
+
 ## [0.1.143] - 2026-05-22
 
 ### Fixed

@@ -22,6 +22,7 @@ type PeerSessionsListener = (
 interface PeerWatcher {
 	ws: WebSocket | null;
 	retryTimer: number | null;
+	pingTimer: number | null;
 	retryAttempt: number;
 	lastSessionsJson: string;
 	closed: boolean;
@@ -29,6 +30,8 @@ interface PeerWatcher {
 
 const RETRY_INITIAL_MS = 5_000;
 const RETRY_MAX_MS = 60_000;
+// Backend zombie cutoff is 60s; ping every 25s with margin.
+const PING_INTERVAL_MS = 25_000;
 
 const watchers = new Map<string, PeerWatcher>();
 const peerInfoById = new Map<string, PeerClientView>();
@@ -88,6 +91,7 @@ function openWatcher(peer: PeerClientView) {
 		watcher = {
 			ws: null,
 			retryTimer: null,
+			pingTimer: null,
 			retryAttempt: 0,
 			lastSessionsJson: "",
 			closed: false,
@@ -107,7 +111,15 @@ function openWatcher(peer: PeerClientView) {
 		watcher.ws = ws;
 
 		ws.onopen = () => {
-			if (watcher) watcher.retryAttempt = 0;
+			if (!watcher) return;
+			watcher.retryAttempt = 0;
+			// Backend disconnects WS that hasn't sent a `ping` for 60s, so keep it
+			// alive while the watcher's only job is to listen for pushes.
+			watcher.pingTimer = window.setInterval(() => {
+				if (ws.readyState === WebSocket.OPEN) {
+					ws.send(JSON.stringify({ type: "ping", timestamp: Date.now() }));
+				}
+			}, PING_INTERVAL_MS);
 		};
 
 		ws.onmessage = (event) => {
@@ -132,10 +144,15 @@ function openWatcher(peer: PeerClientView) {
 		};
 
 		ws.onclose = () => {
-			if (watcher) watcher.ws = null;
+			if (!watcher) return;
+			watcher.ws = null;
+			if (watcher.pingTimer !== null) {
+				window.clearInterval(watcher.pingTimer);
+				watcher.pingTimer = null;
+			}
 			// Keep last-known sessions until reconnect succeeds; clearing here would
 			// flash the UI empty on transient drops.
-			if (watcher && !watcher.closed) scheduleRetry(peer.id);
+			if (!watcher.closed) scheduleRetry(peer.id);
 		};
 	} catch {
 		scheduleRetry(peer.id);
@@ -149,6 +166,10 @@ function closeWatcher(peerId: string) {
 	if (watcher.retryTimer !== null) {
 		window.clearTimeout(watcher.retryTimer);
 		watcher.retryTimer = null;
+	}
+	if (watcher.pingTimer !== null) {
+		window.clearInterval(watcher.pingTimer);
+		watcher.pingTimer = null;
 	}
 	if (watcher.ws) {
 		try {

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.142] - 2026-05-22
+
+### Added
+- **peer 横断のセッション並び替え**: Hub 側に `${peerId}:${sessionId}` 形式の merged order を保存する `/api/peers/session-order` (GET/PUT) を新設し、ドラッグ&ドロップで Hub と remote peer のセッションを混在して並び替え可能にした。並び順は端末間で共有される (`backend/src/services/peer-registry.ts`, `backend/src/routes/peers.ts`, `frontend/src/hooks/useSessions.ts`, `frontend/src/components/SessionList.tsx`)
+
+### Fixed
+- 並び替え時に `useSortable` / `SortableContext` の id が `session.id` のみだったため、Hub と peer で同名 tmux セッション (e.g. `cchub-work-1`) があると衝突して並び替えが破綻していた問題を修正。composite key (`${peerId}:${sessionId}`) で一意化
+
 ## [0.1.141] - 2026-05-22
 
 ### Fixed

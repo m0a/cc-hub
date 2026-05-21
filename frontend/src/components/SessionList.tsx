@@ -35,7 +35,10 @@ import {
 	type SessionTheme,
 } from "../../../shared/types";
 import { usePeers } from "../hooks/usePeers";
-import { useSessions } from "../hooks/useSessions";
+import {
+	applyLocalSessionOrder,
+	useSessions,
+} from "../hooks/useSessions";
 import { sessionFetch } from "../services/peer-fetch";
 import { formatRelativeTime } from "../utils/format";
 import { toHomeShortPath } from "../utils/path";
@@ -637,13 +640,17 @@ function CreateSessionModal({
 }
 
 // Sortable wrapper for SessionItem (drag-to-reorder)
+function sessionCompositeKey(session: ExtendedSessionResponse): string {
+	return `${session.peerId ?? "local"}:${session.id}`;
+}
+
 function SortableSessionItem({
 	session,
 	index,
 	isDraggable,
 	...sessionItemProps
 }: {
-	session: SessionResponse;
+	session: ExtendedSessionResponse;
 	index: number;
 	isDraggable: boolean;
 } & Omit<Parameters<typeof SessionItem>[0], "session">) {
@@ -654,7 +661,10 @@ function SortableSessionItem({
 		transform,
 		transition,
 		isDragging,
-	} = useSortable({ id: session.id, disabled: !isDraggable });
+	} = useSortable({
+		id: sessionCompositeKey(session),
+		disabled: !isDraggable,
+	});
 
 	const style = {
 		transform: CSS.Transform.toString(transform),
@@ -1465,27 +1475,37 @@ export function SessionList({
 		[],
 	);
 
-	// Drag-to-reorder handler
+	// Drag-to-reorder handler. Session order is a cross-peer merged list stored
+	// on the Hub (`/api/peers/session-order`) so the same ordering applies to
+	// every peer's sessions, including drags across peer boundaries. Each entry
+	// in the saved order is a `${peerId}:${sessionId}` composite key.
 	const handleDragEnd = useCallback(
 		async (event: DragEndEvent) => {
 			const { active, over } = event;
 			if (!over || active.id === over.id) return;
 
-			const oldIndex = sessions.findIndex((s) => s.id === active.id);
-			const newIndex = sessions.findIndex((s) => s.id === over.id);
+			const oldIndex = sessions.findIndex(
+				(s) => sessionCompositeKey(s) === active.id,
+			);
+			const newIndex = sessions.findIndex(
+				(s) => sessionCompositeKey(s) === over.id,
+			);
 			if (oldIndex === -1 || newIndex === -1) return;
 
-			// Compute new order
-			const newOrder = sessions.map((s) => s.id);
-			const [moved] = newOrder.splice(oldIndex, 1);
-			newOrder.splice(newIndex, 0, moved);
+			const reordered = [...sessions];
+			const [moved] = reordered.splice(oldIndex, 1);
+			reordered.splice(newIndex, 0, moved);
 
-			// Save to backend
+			const compositeOrder = reordered.map(sessionCompositeKey);
+
+			// Optimistic local update so the UI reorders before the round-trip.
+			applyLocalSessionOrder(compositeOrder);
+
 			try {
-				await authFetch(`${API_BASE}/api/sessions/order`, {
+				await authFetch(`${API_BASE}/api/peers/session-order`, {
 					method: "PUT",
 					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ order: newOrder }),
+					body: JSON.stringify({ order: compositeOrder }),
 				});
 			} catch (err) {
 				console.error("Failed to save session order:", err);
@@ -1799,14 +1819,14 @@ export function SessionList({
 											onDragEnd={handleDragEnd}
 										>
 											<SortableContext
-												items={filteredSessions.map((s) => s.id)}
+												items={filteredSessions.map(sessionCompositeKey)}
 												strategy={verticalListSortingStrategy}
 												disabled={!isDraggable}
 											>
 												<div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
 													{filteredSessions.map((session, index) => (
 														<SortableSessionItem
-															key={session.id}
+															key={sessionCompositeKey(session)}
 															session={session}
 															index={index}
 															isDraggable={isDraggable}

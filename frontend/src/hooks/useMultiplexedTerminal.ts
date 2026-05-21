@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PaneViewport, TmuxLayoutNode } from "../../../shared/types";
 import { reportWsLatency } from "../services/latency-store";
+import { appendWsToken } from "../services/peer-ws";
 
 interface UseMultiplexedTerminalOptions {
 	sessionId: string;
@@ -206,10 +207,7 @@ function ensureConnection(token?: string | null, wsBase?: string | null) {
 		sharedConnectWatchdog = null;
 	}
 
-	let wsUrl = `${desiredBase}/ws/mux`;
-	if (desiredToken) {
-		wsUrl += `?token=${encodeURIComponent(desiredToken)}`;
-	}
+	const wsUrl = appendWsToken(`${desiredBase}/ws/mux`, desiredToken);
 
 	const ws = new WebSocket(wsUrl);
 	sharedWs = ws;

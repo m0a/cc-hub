@@ -4,6 +4,7 @@ import {
 	LOCAL_PEER_ID,
 	type PeerClientView,
 } from "../../../shared/types";
+import { peerHttpUrlToWsUrl } from "../services/peer-ws";
 
 export interface PeerConnectionInfo {
 	peerId: string;
@@ -39,10 +40,9 @@ export function usePeerConnection(
 		const peer = peers.find((p) => p.id === peerId);
 		if (!peer || peer.url === "self") return hubInfo;
 
-		const wsBase = peer.url.replace(/^http(s?):/, (_match, s) => `ws${s}:`).replace(/\/+$/, "");
 		return {
 			peerId,
-			wsBase,
+			wsBase: peerHttpUrlToWsUrl(peer.url),
 			token: peer.wsToken ?? null,
 			apiBase: peer.url.replace(/\/+$/, ""),
 		};

@@ -6,22 +6,20 @@ import {
 	type IndicatorState,
 	LOCAL_PEER_ID,
 	type PeerSession,
-	type PeerSessionsResponse,
 	type SessionResponse,
 	type SessionTheme,
 } from "../../../shared/types";
-import { authFetch, isTransientNetworkError } from "../services/api";
+import { isTransientNetworkError } from "../services/api";
 import { sessionFetch } from "../services/peer-fetch";
+import { usePeerSessionsWatcher } from "./usePeerSessionsWatcher";
 import { usePeers } from "./usePeers";
 
-const API_BASE = import.meta.env.VITE_API_URL || "";
-
-// Module-level cache (shared across all useSessions instances, updated by WS push)
+// Module-level cache (shared across all useSessions instances).
+// `cachedSessions`: Hub-local sessions, fed by the multiplexed terminal WS push.
+// `cachedRemotePeerSessions`: flat list of remote peer sessions, fed by the
+// per-peer WS watcher (usePeerSessionsWatcher).
 let cachedSessions: ExtendedSessionResponse[] | null = null;
-// Remote peer sessions (excluding local). Updated by polling /api/peers/sessions.
 let cachedRemotePeerSessions: PeerSession[] = [];
-
-const PEER_POLL_INTERVAL = 5000;
 
 /** hookイベントでcachedSessionsのindicatorStateを即座に更新する */
 export function updateCachedSessionsByHookEvent(
@@ -102,25 +100,14 @@ function updateSessions(
 	});
 }
 
-async function pollRemotePeerSessions(
-	setSessions: React.Dispatch<React.SetStateAction<ExtendedSessionResponse[]>>,
-): Promise<boolean> {
-	try {
-		const res = await authFetch(`${API_BASE}/api/peers/sessions`);
-		if (!res.ok) return false;
-		const data = (await res.json()) as PeerSessionsResponse;
-		if (!Array.isArray(data.sessions)) return false;
-		const remote = data.sessions.filter((s) => s.peerId !== LOCAL_PEER_ID);
-		const stableJson = JSON.stringify(remote);
-		const prevJson = JSON.stringify(cachedRemotePeerSessions);
-		if (stableJson === prevJson) return true;
-		cachedRemotePeerSessions = remote;
-		const merged = mergedSessions();
-		setSessions(merged);
-		return true;
-	} catch {
-		return false;
+function flattenPeerSessions(
+	sessionsByPeer: ReadonlyMap<string, PeerSession[]>,
+): PeerSession[] {
+	const out: PeerSession[] = [];
+	for (const sessions of sessionsByPeer.values()) {
+		out.push(...sessions);
 	}
+	return out;
 }
 
 export function useSessions(): UseSessionsReturn {
@@ -153,23 +140,16 @@ export function useSessions(): UseSessionsReturn {
 		};
 	}, []);
 
-	// Poll remote peer sessions (only fires while non-local peers exist)
-	useEffect(() => {
-		let cancelled = false;
-		let timer: ReturnType<typeof setInterval> | null = null;
-
-		void pollRemotePeerSessions(setSessions);
-
-		timer = setInterval(() => {
-			if (cancelled) return;
-			void pollRemotePeerSessions(setSessions);
-		}, PEER_POLL_INTERVAL);
-
-		return () => {
-			cancelled = true;
-			if (timer) clearInterval(timer);
-		};
-	}, []);
+	// Per-peer WS watcher already dedups by payload before notifying, so a
+	// listener firing here implies the data actually changed for some peer.
+	const handlePeerSessions = useCallback(
+		(sessionsByPeer: ReadonlyMap<string, PeerSession[]>) => {
+			cachedRemotePeerSessions = flattenPeerSessions(sessionsByPeer);
+			setSessions(mergedSessions());
+		},
+		[],
+	);
+	usePeerSessionsWatcher(peers, handlePeerSessions);
 
 	const createSession = useCallback(
 		async (

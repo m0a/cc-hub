@@ -272,8 +272,12 @@ export function App() {
 		null,
 	);
 	const [showOverlay, setShowOverlay] = useState(true);
-	// FileViewer state: per-session instances kept mounted for state preservation
-	const [fileViewerDirs, setFileViewerDirs] = useState<string[]>([]);
+	// FileViewer state: per-session instances kept mounted for state preservation.
+	// `peerId` rides along so the FileViewer hits the host that actually owns the
+	// files (otherwise remote-peer paths return "Access denied" from the Hub).
+	const [fileViewerDirs, setFileViewerDirs] = useState<
+		{ dir: string; peerId?: string }[]
+	>([]);
 	const [activeFileViewerDir, setActiveFileViewerDir] = useState<string | null>(
 		null,
 	);
@@ -281,8 +285,10 @@ export function App() {
 	const [fileViewerOpenDirs, setFileViewerOpenDirs] = useState<Set<string>>(
 		new Set(),
 	);
-	const openFileViewer = useCallback((dir: string) => {
-		setFileViewerDirs((prev) => (prev.includes(dir) ? prev : [...prev, dir]));
+	const openFileViewer = useCallback((dir: string, peerId?: string) => {
+		setFileViewerDirs((prev) =>
+			prev.some((d) => d.dir === dir) ? prev : [...prev, { dir, peerId }],
+		);
 		setActiveFileViewerDir(dir);
 		setFileViewerOpenDirs((prev) => {
 			const next = new Set(prev);
@@ -1002,7 +1008,15 @@ export function App() {
 					))}
 				<button
 					type="button"
-					onClick={() => openFileViewer(activeSession?.currentPath || "/")}
+					onClick={() => {
+						// Resolve peerId from apiSessions as well — when reload restores
+						// activeSessionId for a remote-peer session, openSessions can
+						// momentarily lack the entry while apiSessions already has it.
+						const peerId =
+							activeSession?.peerId ??
+							apiSessions.find((s) => s.id === activeSessionId)?.peerId;
+						openFileViewer(activeSession?.currentPath || "/", peerId);
+					}}
 					className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
 					title="ファイルブラウザ"
 					data-onboarding="file-browser"
@@ -1286,10 +1300,11 @@ export function App() {
 			)}
 
 			{/* File Viewer Modal - per-session instances kept mounted */}
-			{fileViewerDirs.map((dir) => (
+			{fileViewerDirs.map(({ dir, peerId }) => (
 				<FileViewer
 					key={dir}
 					sessionWorkingDir={dir}
+					peerId={peerId}
 					onClose={() => closeFileViewer(dir)}
 					hidden={
 						!fileViewerOpenDirs.has(dir) ||

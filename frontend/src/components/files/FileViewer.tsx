@@ -54,6 +54,8 @@ function getStoredChangesDisplay(): ChangesDisplay {
 
 interface FileViewerProps {
 	sessionWorkingDir: string;
+	/** Peer that owns the files on disk. Unset / "local" → the Hub. */
+	peerId?: string;
 	onClose: () => void;
 	initialPath?: string;
 	onCopyPrompt?: (text: string) => void;
@@ -137,6 +139,7 @@ function getFileName(path: string): string {
 
 export function FileViewer({
 	sessionWorkingDir,
+	peerId,
 	onClose,
 	initialPath,
 	onCopyPrompt,
@@ -162,7 +165,13 @@ export function FileViewer({
 		getChanges,
 		getGitChanges,
 		getGitDiff,
-	} = useFileViewer(sessionWorkingDir);
+	} = useFileViewer(sessionWorkingDir, peerId);
+
+	// Files API prefix that matches the peer (`/api/files` for local, the
+	// `/api/peers/<id>/files` proxy for remote). Used for upload/download/raw
+	// URLs that don't go through useFileViewer.
+	const filesApiBase =
+		peerId && peerId !== "local" ? `/api/peers/${peerId}/files` : "/api/files";
 
 	const [viewMode, setViewMode] = useState<ViewMode>("browser");
 	const [listMode, setListMode] = useState<ListMode>("browser");
@@ -221,7 +230,7 @@ export function FileViewer({
 					);
 				}
 				console.log("[upload] sending POST /api/files/upload");
-				const res = await fetch("/api/files/upload", {
+				const res = await fetch(`${filesApiBase}/upload`, {
 					method: "POST",
 					body: formData,
 				});
@@ -257,7 +266,7 @@ export function FileViewer({
 
 	const handleDownloadFile = useCallback(() => {
 		if (!selectedFile) return;
-		const url = `/api/files/download?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`;
+		const url = `${filesApiBase}/download?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`;
 		// Use a temporary anchor to trigger download with proper filename from Content-Disposition
 		const a = document.createElement("a");
 		a.href = url;
@@ -778,7 +787,7 @@ export function FileViewer({
 													mimeType={selectedFile.mimeType}
 													fileName={getFileName(selectedFile.path)}
 													size={selectedFile.size}
-													srcUrl={`/api/files/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
+													srcUrl={`${filesApiBase}/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
 												/>
 											) : isMediaFile(selectedFile.path) ? (
 												<div className="flex flex-col h-full bg-th-bg">
@@ -790,7 +799,7 @@ export function FileViewer({
 																playsInline
 																preload="metadata"
 																className="w-full h-full object-contain rounded"
-																src={`/api/files/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
+																src={`${filesApiBase}/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
 															/>
 														) : (
 															// biome-ignore lint/a11y/useMediaCaption: arbitrary user files; no caption track available
@@ -798,7 +807,7 @@ export function FileViewer({
 																controls
 																preload="metadata"
 																className="w-full max-w-md"
-																src={`/api/files/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
+																src={`${filesApiBase}/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
 															/>
 														)}
 													</div>
@@ -924,7 +933,7 @@ export function FileViewer({
 								mimeType={selectedFile.mimeType}
 								fileName={getFileName(selectedFile.path)}
 								size={selectedFile.size}
-								srcUrl={`/api/files/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
+								srcUrl={`${filesApiBase}/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
 							/>
 						) : isMediaFile(selectedFile.path) ? (
 							<div className="flex flex-col items-center justify-center h-full p-4 bg-th-bg">
@@ -933,14 +942,14 @@ export function FileViewer({
 									<video
 										controls
 										className="max-w-full max-h-full rounded"
-										src={`/api/files/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
+										src={`${filesApiBase}/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
 									/>
 								) : (
 									// biome-ignore lint/a11y/useMediaCaption: arbitrary user files; no caption track available
 									<audio
 										controls
 										className="w-full max-w-md"
-										src={`/api/files/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
+										src={`${filesApiBase}/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
 									/>
 								)}
 								<div className="mt-2 text-xs text-th-text-muted">

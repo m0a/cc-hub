@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import {
   PeerCreateSchema,
@@ -529,3 +529,76 @@ peers.get('/sessions', async (c) => {
     : { sessions: merged };
   return c.json(response);
 });
+
+// -----------------------------------------------------------------------------
+// Generic Files API proxy
+// -----------------------------------------------------------------------------
+// FileViewer (list / read / raw / changes / git-changes / git-diff / language /
+// download / upload) needs to target the peer that owns the files on disk.
+// The individual /browse and /mkdir proxies above stay as-is — they were added
+// first and have specific shapes. Everything else is forwarded via this
+// catch-all so we don't have to hand-write a route per endpoint.
+//
+// We bypass peerFetch (5s timeout) so that streamed responses such as
+// /files/raw on a large image or video don't get cut off mid-flight.
+
+function normalizePeerBaseUrl(u: string): string {
+  return u.replace(/\/+$/, '');
+}
+
+async function proxyPeerFiles(c: Context): Promise<Response> {
+  const peerId = c.req.param('peerId');
+  const peer = (await listPeers()).find(p => p.id === peerId);
+  if (!peer) return c.json({ error: 'Peer not found' }, 404);
+  if (peer.url === SELF_PEER_URL) {
+    return c.json({ error: 'Use /api/files/* for local peer' }, 400);
+  }
+
+  // /api/peers/:peerId/files/<rest>?<query>  →  peer's /api/files/<rest>?<query>
+  const incoming = new URL(c.req.url);
+  const prefix = `/api/peers/${peerId}/files`;
+  const subpath = incoming.pathname.startsWith(prefix)
+    ? incoming.pathname.slice(prefix.length)
+    : '';
+  const targetPath = `/api/files${subpath}${incoming.search}`;
+
+  const headers = new Headers();
+  if (peer.wsToken) headers.set('Authorization', `Bearer ${peer.wsToken}`);
+  const ct = c.req.header('Content-Type');
+  if (ct) headers.set('Content-Type', ct);
+
+  const init: RequestInit = { method: c.req.method, headers };
+  if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
+    init.body = c.req.raw.body;
+    // Bun requires duplex: 'half' when streaming a request body.
+    (init as RequestInit & { duplex?: string }).duplex = 'half';
+  }
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(`${normalizePeerBaseUrl(peer.url)}${targetPath}`, init);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Peer unreachable';
+    return c.json({ error: message }, 502);
+  }
+
+  // Strip hop-by-hop headers but keep Content-Type / Content-Length etc.
+  const respHeaders = new Headers();
+  for (const [k, v] of upstream.headers) {
+    const lk = k.toLowerCase();
+    if (lk === 'connection' || lk === 'transfer-encoding' || lk === 'keep-alive') continue;
+    respHeaders.set(k, v);
+  }
+  return new Response(upstream.body, { status: upstream.status, headers: respHeaders });
+}
+
+peers.all('/:peerId/files/list', proxyPeerFiles);
+peers.all('/:peerId/files/read', proxyPeerFiles);
+peers.all('/:peerId/files/raw', proxyPeerFiles);
+peers.all('/:peerId/files/download', proxyPeerFiles);
+peers.all('/:peerId/files/upload', proxyPeerFiles);
+peers.all('/:peerId/files/language', proxyPeerFiles);
+peers.all('/:peerId/files/changes/:dir', proxyPeerFiles);
+peers.all('/:peerId/files/git-changes/:dir', proxyPeerFiles);
+peers.all('/:peerId/files/git-diff/:dir', proxyPeerFiles);
+peers.all('/:peerId/files/images/:filename', proxyPeerFiles);

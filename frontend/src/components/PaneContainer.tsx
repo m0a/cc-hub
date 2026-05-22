@@ -40,6 +40,8 @@ interface ExtendedSession {
 	currentCommand?: string;
 	theme?: SessionTheme;
 	panes?: PaneInfo[];
+	// Multi-server: peer this session lives on. Unset = local Hub.
+	peerId?: string;
 }
 
 // Control mode context passed through the pane tree
@@ -656,6 +658,7 @@ function TerminalPane({
 							key={`${sessionId}-${reloadKey}-${globalReloadKey}`}
 							ref={terminalRef}
 							sessionId={sessionId}
+							peerId={session?.peerId}
 							hideKeyboard={true}
 							onConnect={handleConnect}
 							onDisconnect={handleDisconnect}

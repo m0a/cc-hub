@@ -26,6 +26,7 @@ import {
 } from "../hooks/useSessions";
 import { authFetch } from "../services/api";
 import { fireHookNotification } from "../utils/hookNotification";
+import { uploadImage } from "../utils/upload-image";
 import { makePseudoViewport } from "../utils/viewport-pseudo";
 import { DashboardPanel } from "./DashboardPanel";
 import { FloatingKeyboard, type FloatingKeyboardRef } from "./FloatingKeyboard";
@@ -48,6 +49,8 @@ interface OpenSession {
 	currentPath?: string;
 	ccSessionId?: string;
 	theme?: SessionTheme;
+	// Multi-server: peer this session belongs to. Unset = local Hub.
+	peerId?: string;
 }
 
 interface DesktopState {
@@ -468,6 +471,20 @@ export function DesktopLayout({
 
 	const desktopStateRef = useRef(desktopState);
 	desktopStateRef.current = desktopState;
+	const sessionsRef = useRef(sessions);
+	sessionsRef.current = sessions;
+
+	// Resolve the peer that owns the currently-active pane's session, so
+	// image uploads land on the host whose Claude Code will read them.
+	const getActivePeerId = useCallback((): string | undefined => {
+		const pane = findPaneById(
+			desktopStateRef.current.root,
+			activePaneRef.current,
+		);
+		const sid = pane?.type === "terminal" ? pane.sessionId : null;
+		if (!sid) return undefined;
+		return sessionsRef.current.find((s) => s.id === sid)?.peerId;
+	}, []);
 
 	// Timer for applying exact tmux pane sizes after layout-change
 	const layoutSizeTimerRef = useRef<number | null>(null);
@@ -890,16 +907,12 @@ export function DesktopLayout({
 				const imageType = item.types.find((t) => t.startsWith("image/"));
 				if (imageType) {
 					const blob = await item.getType(imageType);
-					const formData = new FormData();
-					formData.append("image", blob, "clipboard-image.png");
-
-					const response = await authFetch(`${API_BASE}/api/upload/image`, {
-						method: "POST",
-						body: formData,
-					});
-
-					const result = await response.json();
-					if (response.ok && result.path) {
+					const result = await uploadImage(
+						blob,
+						getActivePeerId(),
+						"clipboard-image.png",
+					);
+					if (result.ok && result.path) {
 						const ref = terminalRefs.current?.get(activePaneRef.current);
 						ref?.sendInput(result.path);
 					} else {
@@ -1166,29 +1179,18 @@ export function DesktopLayout({
 			setIsUploading(true);
 
 			try {
-				const formData = new FormData();
-				formData.append("image", file);
-
-				const response = await authFetch(`${API_BASE}/api/upload/image`, {
-					method: "POST",
-					body: formData,
-				});
-
-				const result = await response.json();
-
-				if (response.ok && result.path) {
+				const result = await uploadImage(file, getActivePeerId());
+				if (result.ok && result.path) {
 					const ref = terminalRefs.current?.get(activePaneRef.current);
 					ref?.sendInput(result.path);
 				} else {
 					console.error("Upload failed:", result.error);
 				}
-			} catch (err) {
-				console.error("Upload error:", err);
 			} finally {
 				setIsUploading(false);
 			}
 		},
-		[],
+		[getActivePeerId],
 	);
 
 	const handleUrlExtract = useCallback(() => {

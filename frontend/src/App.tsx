@@ -102,6 +102,8 @@ interface OpenSession {
 	theme?: SessionTheme;
 	panes?: PaneInfo[];
 	indicatorState?: IndicatorState;
+	// Multi-server: the peer this session lives on. Unset = local Hub.
+	peerId?: string;
 }
 
 function apiToOpenSession(s: ExtendedSessionResponse): OpenSession {
@@ -117,6 +119,7 @@ function apiToOpenSession(s: ExtendedSessionResponse): OpenSession {
 		theme: s.theme,
 		panes: s.panes,
 		indicatorState: s.indicatorState,
+		peerId: s.peerId,
 	};
 }
 

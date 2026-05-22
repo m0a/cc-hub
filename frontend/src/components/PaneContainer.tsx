@@ -56,7 +56,7 @@ export interface ControlModeContext {
 	onCopyPrompt?: (text: string) => void;
 	setKeyboardVisible?: (visible: boolean) => void;
 	onShowSessions?: () => void;
-	onOpenFileViewer?: (dir: string) => void;
+	onOpenFileViewer?: (dir: string, peerId?: string) => void;
 }
 
 interface PaneContainerProps {
@@ -226,7 +226,7 @@ function TerminalPane({
 		(e: React.MouseEvent) => {
 			e.stopPropagation();
 			const s = sessionId ? sessions.find((s) => s.id === sessionId) : null;
-			controlModeContext.onOpenFileViewer?.(s?.currentPath || "/");
+			controlModeContext.onOpenFileViewer?.(s?.currentPath || "/", s?.peerId);
 			controlModeContext.setKeyboardVisible?.(false);
 		},
 		[controlModeContext, sessionId, sessions],

@@ -1,9 +1,10 @@
-import { useCallback, useState } from "react";
-import type {
-	FileChange,
-	FileContent,
-	FileInfo,
-	GitFileChange,
+import { useCallback, useMemo, useState } from "react";
+import {
+	LOCAL_PEER_ID,
+	type FileChange,
+	type FileContent,
+	type FileInfo,
+	type GitFileChange,
 } from "../../../shared/types";
 import { authFetch, isTransientNetworkError } from "../services/api";
 
@@ -32,7 +33,14 @@ interface UseFileViewerReturn {
 	) => Promise<{ language: string; isImage: boolean; isText: boolean }>;
 }
 
-export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
+/**
+ * `peerId` (optional) routes every files API call to the peer that owns the
+ * file system on disk. Unset / `local` → the Hub.
+ */
+export function useFileViewer(
+	sessionWorkingDir: string,
+	peerId?: string,
+): UseFileViewerReturn {
 	const [currentPath, setCurrentPath] = useState(sessionWorkingDir);
 	const [files, setFiles] = useState<FileInfo[]>([]);
 	const [parentPath, setParentPath] = useState<string | null>(null);
@@ -42,6 +50,13 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
 	const [gitBranch, setGitBranch] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+
+	const filesApiBase = useMemo(() => {
+		const isRemote = peerId && peerId !== LOCAL_PEER_ID;
+		return isRemote
+			? `${API_BASE}/api/peers/${encodeURIComponent(peerId)}/files`
+			: `${API_BASE}/api/files`;
+	}, [peerId]);
 
 	const listDirectory = useCallback(
 		async (path: string) => {
@@ -53,9 +68,7 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
 					path,
 					sessionWorkingDir,
 				});
-				const response = await authFetch(
-					`${API_BASE}/api/files/list?${params}`,
-				);
+				const response = await authFetch(`${filesApiBase}/list?${params}`);
 
 				if (!response.ok) {
 					const data = await response
@@ -76,7 +89,7 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
 				setIsLoading(false);
 			}
 		},
-		[sessionWorkingDir],
+		[sessionWorkingDir, filesApiBase],
 	);
 
 	const readFile = useCallback(
@@ -93,9 +106,7 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
 					params.set("maxSize", maxSize.toString());
 				}
 
-				const response = await authFetch(
-					`${API_BASE}/api/files/read?${params}`,
-				);
+				const response = await authFetch(`${filesApiBase}/read?${params}`);
 
 				if (!response.ok) {
 					const data = await response
@@ -114,7 +125,7 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
 				setIsLoading(false);
 			}
 		},
-		[sessionWorkingDir],
+		[sessionWorkingDir, filesApiBase],
 	);
 
 	const getChanges = useCallback(async () => {
@@ -123,7 +134,7 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
 
 		try {
 			const response = await authFetch(
-				`${API_BASE}/api/files/changes/${encodeURIComponent(sessionWorkingDir)}`,
+				`${filesApiBase}/changes/${encodeURIComponent(sessionWorkingDir)}`,
 			);
 
 			if (!response.ok) {
@@ -142,7 +153,7 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
 		} finally {
 			setIsLoading(false);
 		}
-	}, [sessionWorkingDir]);
+	}, [sessionWorkingDir, filesApiBase]);
 
 	const getGitChanges = useCallback(async () => {
 		setIsLoading(true);
@@ -150,7 +161,7 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
 
 		try {
 			const response = await authFetch(
-				`${API_BASE}/api/files/git-changes/${encodeURIComponent(sessionWorkingDir)}`,
+				`${filesApiBase}/git-changes/${encodeURIComponent(sessionWorkingDir)}`,
 			);
 
 			if (!response.ok) {
@@ -170,7 +181,7 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
 		} finally {
 			setIsLoading(false);
 		}
-	}, [sessionWorkingDir]);
+	}, [sessionWorkingDir, filesApiBase]);
 
 	const getGitDiff = useCallback(
 		async (filePath: string, staged?: boolean): Promise<string> => {
@@ -179,7 +190,7 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
 				if (staged) params.set("staged", "true");
 
 				const response = await authFetch(
-					`${API_BASE}/api/files/git-diff/${encodeURIComponent(sessionWorkingDir)}?${params}`,
+					`${filesApiBase}/git-diff/${encodeURIComponent(sessionWorkingDir)}?${params}`,
 				);
 
 				if (!response.ok) {
@@ -192,7 +203,7 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
 				return "";
 			}
 		},
-		[sessionWorkingDir],
+		[sessionWorkingDir, filesApiBase],
 	);
 
 	const navigateTo = useCallback(
@@ -212,18 +223,19 @@ export function useFileViewer(sessionWorkingDir: string): UseFileViewerReturn {
 		setSelectedFile(null);
 	}, []);
 
-	const getLanguage = useCallback(async (path: string) => {
-		const params = new URLSearchParams({ path });
-		const response = await authFetch(
-			`${API_BASE}/api/files/language?${params}`,
-		);
+	const getLanguage = useCallback(
+		async (path: string) => {
+			const params = new URLSearchParams({ path });
+			const response = await authFetch(`${filesApiBase}/language?${params}`);
 
-		if (!response.ok) {
-			return { language: "plaintext", isImage: false, isText: true };
-		}
+			if (!response.ok) {
+				return { language: "plaintext", isImage: false, isText: true };
+			}
 
-		return response.json();
-	}, []);
+			return response.json();
+		},
+		[filesApiBase],
+	);
 
 	return {
 		currentPath,

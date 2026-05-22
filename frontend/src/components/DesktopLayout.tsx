@@ -270,7 +270,9 @@ export function DesktopLayout({
 	const { sessions: apiSessions } = useSessions();
 
 	// Merge prop sessions with API sessions to get latest theme info
-	// propSessionsにないセッションもapiSessionsから追加する（分割ペイン用）
+	// propSessionsにないセッションもapiSessionsから追加する（分割ペイン用）。
+	// `peerId` は session が属する host を表す不変属性なので、apiSessions 側を
+	// 真の値として常に採用する (propSession 側は古いキャッシュ/未設定のことがある)。
 	const sessions =
 		apiSessions.length > 0
 			? apiSessions.map((apiSession) => {
@@ -284,6 +286,7 @@ export function DesktopLayout({
 								agent: apiSession.agent,
 								agentSessionId: apiSession.agentSessionId,
 								panes: apiSession.panes,
+								peerId: apiSession.peerId ?? propSession.peerId,
 							}
 						: {
 								id: apiSession.id,
@@ -296,18 +299,23 @@ export function DesktopLayout({
 								currentCommand: apiSession.currentCommand,
 								theme: apiSession.theme,
 								panes: apiSession.panes,
+								peerId: apiSession.peerId,
 							};
 				})
 			: propSessions;
-	const [fileViewerDirs, setFileViewerDirs] = useState<string[]>([]);
+	const [fileViewerDirs, setFileViewerDirs] = useState<
+		{ dir: string; peerId?: string }[]
+	>([]);
 	const [activeFileViewerDir, setActiveFileViewerDir] = useState<string | null>(
 		null,
 	);
 	const [fileViewerOpenDirs, setFileViewerOpenDirs] = useState<Set<string>>(
 		new Set(),
 	);
-	const openFileViewer = useCallback((dir: string) => {
-		setFileViewerDirs((prev) => (prev.includes(dir) ? prev : [...prev, dir]));
+	const openFileViewer = useCallback((dir: string, peerId?: string) => {
+		setFileViewerDirs((prev) =>
+			prev.some((d) => d.dir === dir) ? prev : [...prev, { dir, peerId }],
+		);
 		setActiveFileViewerDir(dir);
 		setFileViewerOpenDirs((prev) => {
 			const next = new Set(prev);
@@ -1397,7 +1405,7 @@ export function DesktopLayout({
 									type="button"
 									onClick={() => {
 										const dir = activeSession?.currentPath;
-										if (dir) openFileViewer(dir);
+										if (dir) openFileViewer(dir, activeSession?.peerId);
 									}}
 									className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
 									title="ファイル"
@@ -1506,10 +1514,11 @@ export function DesktopLayout({
 			/>
 
 			{/* File Viewer Modal - per-session instances kept mounted */}
-			{fileViewerDirs.map((dir) => (
+			{fileViewerDirs.map(({ dir, peerId }) => (
 				<FileViewer
 					key={dir}
 					sessionWorkingDir={dir}
+					peerId={peerId}
 					onClose={() => closeFileViewer(dir)}
 					hidden={
 						!fileViewerOpenDirs.has(dir) ||

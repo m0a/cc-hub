@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.151] - 2026-05-22
+
+### Fixed
+- **画像添付がリモート peer のセッションで動かなかった問題を修正**: 画像 upload は常に Hub の `/tmp/cchub-images/` に保存して、その path を tmux pane に送る作りだった。pane が remote peer 上の Claude Code につながっていると、peer 側からは Hub のディスクが見えないので「ファイルが見つかりません」になっていた。新規 `POST /api/peers/:peerId/upload/image` を追加してアクティブな pane が属する peer に multipart を proxy 転送し、peer 側の `/tmp/cchub-images/` に保存して peer-local な path を返すよう変更。フォーカス中の pane の peerId を `useSessions` → `OpenSession` → `Terminal` → `InputBar` の経路で伝搬し、`DesktopLayout` の paste / file pick、および mobile path (`TerminalPage`) の Terminal にも peerId を渡すよう揃えた (`backend/src/routes/peers.ts`, `backend/src/routes/upload.ts`, `frontend/src/utils/upload-image.ts`, `frontend/src/components/InputBar.tsx`, `frontend/src/components/Terminal.tsx`, `frontend/src/components/DesktopLayout.tsx`, `frontend/src/pages/TerminalPage.tsx`)
+
 ## [0.1.150] - 2026-05-22
 
 ### Added

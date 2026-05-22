@@ -108,6 +108,8 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 		const { peers } = usePeers();
 		const { sessions: apiSessions } = useSessions();
 		const peerConn = usePeerConnection(sessionId, apiSessions, peers);
+		// peerId of the session we're rendering; used to route image uploads.
+		const sessionPeerId = apiSessions.find((s) => s.id === sessionId)?.peerId;
 
 		const controlTerminal = useMultiplexedTerminal({
 			sessionId,
@@ -390,6 +392,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 					<TerminalComponent
 						ref={ref}
 						sessionId={sessionId}
+						peerId={sessionPeerId}
 						onError={(err) => setError(err)}
 						overlayContent={overlayContent}
 						onOverlayTap={onOverlayTap}

@@ -270,7 +270,9 @@ export function DesktopLayout({
 	const { sessions: apiSessions } = useSessions();
 
 	// Merge prop sessions with API sessions to get latest theme info
-	// propSessionsにないセッションもapiSessionsから追加する（分割ペイン用）
+	// propSessionsにないセッションもapiSessionsから追加する（分割ペイン用）。
+	// `peerId` は session が属する host を表す不変属性なので、apiSessions 側を
+	// 真の値として常に採用する (propSession 側は古いキャッシュ/未設定のことがある)。
 	const sessions =
 		apiSessions.length > 0
 			? apiSessions.map((apiSession) => {
@@ -284,6 +286,7 @@ export function DesktopLayout({
 								agent: apiSession.agent,
 								agentSessionId: apiSession.agentSessionId,
 								panes: apiSession.panes,
+								peerId: apiSession.peerId ?? propSession.peerId,
 							}
 						: {
 								id: apiSession.id,
@@ -296,6 +299,7 @@ export function DesktopLayout({
 								currentCommand: apiSession.currentCommand,
 								theme: apiSession.theme,
 								panes: apiSession.panes,
+								peerId: apiSession.peerId,
 							};
 				})
 			: propSessions;

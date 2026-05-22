@@ -76,6 +76,9 @@ export interface ControlModeConfig {
 
 interface TerminalProps {
 	sessionId: string;
+	/** Peer this session belongs to. Routes image uploads to the right host
+	 *  so the Claude Code instance can actually read the file. */
+	peerId?: string;
 	onConnect?: () => void;
 	onDisconnect?: () => void;
 	onError?: (error: string) => void;
@@ -116,6 +119,7 @@ export const TerminalComponent = memo(
 	forwardRef<TerminalRef, TerminalProps>(function TerminalComponent(
 		{
 			sessionId,
+			peerId,
 			onConnect,
 			onDisconnect,
 			onError,
@@ -1428,6 +1432,7 @@ export const TerminalComponent = memo(
 					onOverlayTap={onOverlayTap}
 					showOverlay={showOverlay}
 					hideKeyboard={hideKeyboard}
+					peerId={peerId}
 				/>
 
 				{/* Bottom overlay when keyboard is hidden (mobile only) */}

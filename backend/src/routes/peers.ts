@@ -30,6 +30,7 @@ import { loginToPeer, verifyPeer, peerFetch, PeerAuthError } from '../services/p
 import { discoverPeers } from '../services/peer-discovery';
 import { buildSessionsList, sessionHistoryService, codexHistoryService } from './sessions';
 import { buildDashboard } from './dashboard';
+import { saveUploadedImage } from './upload';
 import type { DashboardResponse } from '../../../shared/types';
 
 export const peers = new Hono();
@@ -395,6 +396,66 @@ peers.post('/:peerId/files/mkdir', async (c) => {
   const data = await res.json().catch(() => ({}));
   if (res.ok) return c.json(data as Record<string, unknown>);
   return c.json(data as Record<string, unknown>, (res.status >= 400 && res.status < 600 ? res.status : 502) as 400 | 404 | 500 | 502);
+});
+
+// POST /api/peers/:peerId/upload/image
+// 画像アップロードを peer 側に転送し、peer のローカル絶対パスを返す。
+// peer 上で動いている Claude Code が、そのパスを直接読めるようにするため必須。
+peers.post('/:peerId/upload/image', async (c) => {
+  const peerId = c.req.param('peerId');
+  const peer = (await listPeers()).find(p => p.id === peerId);
+  if (!peer) return c.json({ error: 'Peer not found' }, 404);
+
+  // ── local: ハブ自身に保存
+  if (peer.url === SELF_PEER_URL) {
+    try {
+      const formData = await c.req.formData();
+      const file = formData.get('image');
+      if (!file || !(file instanceof File)) {
+        return c.json({ error: 'No image file provided' }, 400);
+      }
+      const result = await saveUploadedImage(file);
+      return c.json({ success: true, ...result });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to upload image';
+      const status = /Invalid file type|too large/.test(message) ? 400 : 500;
+      if (status === 500) console.error('Upload error (self):', err);
+      return c.json({ error: message }, status);
+    }
+  }
+
+  // ── remote: peer の /api/upload/image に multipart を中継
+  let incoming: FormData;
+  try {
+    incoming = await c.req.formData();
+  } catch {
+    return c.json({ error: 'Invalid multipart body' }, 400);
+  }
+  const file = incoming.get('image');
+  if (!file || !(file instanceof File)) {
+    return c.json({ error: 'No image file provided' }, 400);
+  }
+
+  // 新しい FormData に詰め直して peer に転送 (元の FormData をそのまま fetch
+  // body に渡すと boundary 制御が安定しないことがあるため)
+  const outgoing = new FormData();
+  outgoing.append('image', file, file.name);
+
+  try {
+    const res = await peerFetch(peer.id, peer.url, peer.wsToken, '/api/upload/image', {
+      method: 'POST',
+      body: outgoing,
+    });
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) {
+      const status = (res.status >= 400 && res.status < 600 ? res.status : 502) as 400 | 401 | 404 | 500 | 502;
+      return c.json(data, status);
+    }
+    return c.json(data);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Upload to peer failed';
+    return c.json({ error: message }, 502);
+  }
 });
 
 // GET /api/peers/:peerId/dashboard - peer (or self) の dashboard を返す

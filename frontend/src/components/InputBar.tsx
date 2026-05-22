@@ -15,7 +15,7 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { authFetch } from "../services/api";
+import { uploadImage } from "../utils/upload-image";
 import { Keyboard } from "./Keyboard";
 
 export type InputMode = "hidden" | "shortcuts" | "input";
@@ -34,6 +34,8 @@ interface InputBarProps {
 	onOverlayTap?: () => void;
 	showOverlay?: boolean;
 	hideKeyboard?: boolean;
+	/** Peer this terminal targets; used to route image uploads. Unset = local. */
+	peerId?: string;
 }
 
 export const InputBar = memo(
@@ -48,6 +50,7 @@ export const InputBar = memo(
 			onOverlayTap,
 			showOverlay = true,
 			hideKeyboard,
+			peerId,
 		},
 		ref,
 	) {
@@ -94,8 +97,6 @@ export const InputBar = memo(
 		const inputBarSwipeRef = useRef<{ startX: number; startY: number } | null>(
 			null,
 		);
-
-		const API_BASE = import.meta.env.VITE_API_URL || "";
 
 		// Auto-hide position toggle
 		const resetPositionToggleTimer = useCallback(() => {
@@ -170,14 +171,8 @@ export const InputBar = memo(
 			e.target.value = "";
 			setIsUploading(true);
 			try {
-				const formData = new FormData();
-				formData.append("image", file);
-				const response = await authFetch(`${API_BASE}/api/upload/image`, {
-					method: "POST",
-					body: formData,
-				});
-				const result = await response.json();
-				if (response.ok && result.path) {
+				const result = await uploadImage(file, peerId);
+				if (result.ok && result.path) {
 					sendRef.current(result.path);
 				} else {
 					console.error("Upload failed:", result.error);
@@ -185,9 +180,6 @@ export const InputBar = memo(
 						`\r\n[Upload error: ${result.error || "Unknown error"}]\r\n`,
 					);
 				}
-			} catch (err) {
-				console.error("Upload error:", err);
-				sendRef.current("\r\n[Upload error: Network error]\r\n");
 			} finally {
 				setIsUploading(false);
 			}

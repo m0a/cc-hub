@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.152] - 2026-05-22
+
+### Fixed
+- **リモート peer セッションでファイルブラウザが「Access denied」になる問題を修正**: FileViewer は常に Hub の `/api/files/*` を叩いていたため、pane が remote peer 上の Claude Code につながっているとき Hub から peer のファイルシステムが見えず 403 を返していた。新規 `/api/peers/:peerId/files/*` 汎用 proxy を追加して `list / read / raw / changes / git-changes / git-diff / language / download / upload / images` を peer の `/api/files` にストリーミング転送する (binary streaming を切らないよう `peerFetch` の 5s timeout は経由しない)。フロントは `useFileViewer(sessionWorkingDir, peerId?)` で URL prefix を切り替え、`DesktopLayout` / `App.tsx` (mobile path) どちらも `{ dir, peerId }` ペアで FileViewer を mount し直すよう揃えた。Mobile 経路では `apiSessions` からの peerId フォールバック lookup を追加して、reload 直後に `openSessions` がまだ peer session を含まない瞬間でも peer URL に解決できるようにした (`backend/src/routes/peers.ts`, `frontend/src/hooks/useFileViewer.ts`, `frontend/src/components/files/FileViewer.tsx`, `frontend/src/components/DesktopLayout.tsx`, `frontend/src/components/PaneContainer.tsx`, `frontend/src/App.tsx`)
+- **DesktopLayout が propSessions と apiSessions をマージするときに peerId を落としていた問題を修正**: pane の sessionId が `apiSessions` だけに存在する状態 (= reload 直後で `openSessions` に未追加) で `sessions.find(...).peerId` が undefined になり、画像 upload / FileViewer の URL が Hub local に流れてしまっていた。マージ結果に `peerId: apiSession.peerId ?? propSession.peerId` を常に付ける (`frontend/src/components/DesktopLayout.tsx`)
+
 ## [0.1.151] - 2026-05-22
 
 ### Fixed

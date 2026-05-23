@@ -56,6 +56,34 @@ printf '\x03' | base64 | cchub send local:my-session:%5 --stdin --base64   # Ctr
 | `--submit` | `\r\r` 2回 | **Claude Code TUI 専用** — paste mode を抜けて submit |
 | `--stdin` | -- | 引数の代わりに stdin から payload を読む |
 | `--base64` | -- | payload は base64 文字列扱い (制御文字/バイナリを送る用) |
+| `--wait` | -- | 送信後に peer の pane viewport を取得して stdout に出す (色付き)。`detectedState` も併記される |
+| `--wait-ms <N>` | -- | `--wait` のスナップショット待ち時間 (ms, default 800)。Claude TUI の再描画完了を待つ |
+| `--lines <N>` | -- | viewport で返す末尾行数 (default 20) |
+
+## 状態を見る — `cchub peek` と `cchub send --wait`
+
+「送ったけど相手どうなってる？」を **UI を開かずに** 確認するための仕組み。`/api/sessions/:id/panes/:paneId/viewport` を叩いて pane の最新画面を取得し、内蔵ヒューリスティクスで状態を判定する。
+
+```bash
+# 送信せず現状だけ覗く
+cchub peek 🏠Studio:cc-hub:%6 --lines 15
+
+# 送って返事を待たずに、その直後の peer 画面を見る
+cchub send 🏠Studio:cc-hub:%6 "ステータス報告" --submit --wait
+cchub send 🏠Studio:cc-hub:%6 "巨大プロンプト" --submit --wait --wait-ms 1500 --lines 30
+```
+
+返値の `detectedState` は次のいずれか:
+
+| state | 意味 | 対処 |
+|-------|------|------|
+| `idle` | プロンプト待機中 (`✻/✳` マーカー or 空入力箱) | 送信OK |
+| `processing` | ツール実行中 (`(esc to interrupt)` / `· Verb… (… tokens …)` スピナー) | 完了を待つ |
+| `permission_prompt` | 権限ダイアログ表示中 (`Do you want to ...?`, `Yes, and don't ask again`) | **追加で `cchub send` しても飲まれない**。peer 側で承認するか、`Bash(cchub send:*)` 等を事前許可しておくこと |
+| `ask_user_question` | `AskUserQuestion` の番号選択待ち | 番号 (`1`/`2`/...) を `--newline` で送る |
+| `unknown` | 上記いずれも当てはまらず | 念のため `cchub peek --lines 30` で生画面を確認 |
+
+⚠️ 判定はあくまで viewport 文字列パターンマッチ。Claude Code TUI の表記が変わると外れる可能性あり (`backend/src/services/pane-viewport.ts` の `detectPaneState`)。判定が `unknown` でも実際の画面 (`text` フィールド or 色付き出力) は信頼できる。
 
 ## 双方向で対話する (peer から返事させる)
 
@@ -106,7 +134,8 @@ printf '\x03' | base64 | cchub send local:my-session:%5 --stdin --base64   # Ctr
 
 `/api/sessions` の `indicatorState` / `waitingToolName` は hook 駆動で**反応が遅れる/止まることがある**。送ったテキストが相手に届いたか、submit されたか、permission で止まってないかを正しく判断するには:
 
-- **peer の UI を実際に開いて目視確認** — これが一番確実
+- **`cchub send --wait` / `cchub peek` を使う** — viewport 取得 + 状態判定が一発で返るので、UI を開かなくても「届いてる/止まってる」が分かる (推奨)
+- それでも判定が怪しいときは **peer の UI を実際に開いて目視確認**
 - `indicatorState=completed` + `waitingToolName=UserInput` を「idle」と判断するのは危険。permission prompt 中も同じ表示になる可能性あり
 - 返信側に「処理開始 / 終了マーカー」を別送させる ⇒ 相手側 Claude Code が動いてる証拠になる
 

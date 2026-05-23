@@ -9,7 +9,7 @@ const isDev = process.argv.some(arg => arg.includes('--watch'));
 const DEFAULT_PORT = isDev ? 3456 : 5923;
 
 interface CliOptions {
-  command: 'serve' | 'setup' | 'uninstall' | 'update' | 'status' | 'notify' | 'help' | 'version' | 'debug' | 'send';
+  command: 'serve' | 'setup' | 'uninstall' | 'update' | 'status' | 'notify' | 'help' | 'version' | 'debug' | 'send' | 'peek';
   port: number;
   host: string;
   password?: string;
@@ -24,6 +24,10 @@ interface CliOptions {
   sendNewline?: boolean;
   sendSubmit?: boolean;
   sendBase64?: boolean;
+  sendWait?: boolean;
+  sendWaitMs?: number;
+  sendLines?: number;
+  peekTarget?: string;
 }
 
 function printHelp(): void {
@@ -40,6 +44,9 @@ ${t('cli.usage')}
   cchub send <target> [text]  Send input to a pane on a peer or local server
                               target: <peer>:<session>:<paneId>
                               (peer can be 'local', a peer id, or a nickname)
+  cchub peek <target>       Snapshot a pane's current viewport (last 20 rows
+                            by default) — useful for checking peer state
+                            without opening the peer UI.
   cchub debug <sub>         Toggle Bun inspector mode on the running service
                             sub: enable | disable | profile | status
 
@@ -62,6 +69,14 @@ send options:
   --submit               Append \\r\\r — Claude Code TUI needs two CRs to exit
                          paste mode and actually send the message
   --base64               Treat payload as base64 (binary-safe)
+  --wait                 After sending, snapshot the peer pane viewport and
+                         print it (with detected state: idle / processing /
+                         permission_prompt / ask_user_question / unknown).
+  --wait-ms <n>          Delay before snapshot when --wait is set (default 800)
+  --lines <n>            Trailing rows to include in viewport (default 20)
+
+peek options:
+  --lines <n>            Trailing rows to include in viewport (default 20)
 
 ${t('cli.examples')}
   ${t('cli.exampleStart')}
@@ -116,6 +131,15 @@ export function parseArgs(args: string[]): CliOptions {
         }
         break;
       }
+      case 'peek': {
+        options.command = 'peek';
+        const next = args[i + 1];
+        if (next && !next.startsWith('-')) {
+          options.peekTarget = next;
+          i++;
+        }
+        break;
+      }
       case '--stdin':
         options.sendStdin = true;
         break;
@@ -127,6 +151,25 @@ export function parseArgs(args: string[]): CliOptions {
         break;
       case '--base64':
         options.sendBase64 = true;
+        break;
+      case '--wait':
+        options.sendWait = true;
+        break;
+      case '--wait-ms':
+        i++;
+        options.sendWaitMs = parseInt(args[i], 10);
+        if (Number.isNaN(options.sendWaitMs) || options.sendWaitMs < 0) {
+          console.error('❌ --wait-ms must be a non-negative integer');
+          process.exit(1);
+        }
+        break;
+      case '--lines':
+        i++;
+        options.sendLines = parseInt(args[i], 10);
+        if (Number.isNaN(options.sendLines) || options.sendLines < 0) {
+          console.error('❌ --lines must be a non-negative integer');
+          process.exit(1);
+        }
         break;
       case 'debug': {
         options.command = 'debug';
@@ -236,6 +279,10 @@ export async function runCli(options: CliOptions): Promise<'serve' | 'exit'> {
       await runSend(options);
       return 'exit';
 
+    case 'peek':
+      await runPeek(options);
+      return 'exit';
+
     case 'debug':
       await runDebug(options);
       return 'exit';
@@ -279,6 +326,27 @@ async function runSend(options: CliOptions): Promise<void> {
       newline: options.sendNewline ?? false,
       submit: options.sendSubmit ?? false,
       base64: options.sendBase64 ?? false,
+      localPort: options.port,
+      wait: options.sendWait ?? false,
+      waitMs: options.sendWaitMs ?? 800,
+      lines: options.sendLines ?? 20,
+    });
+  } catch (err) {
+    console.error(`❌ ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+}
+
+async function runPeek(options: CliOptions): Promise<void> {
+  if (!options.peekTarget) {
+    console.error('❌ target is required: cchub peek <peer>:<session>:<paneId>');
+    process.exit(1);
+  }
+  const { runPeek: runPeekImpl } = await import('./commands/send');
+  try {
+    await runPeekImpl({
+      target: options.peekTarget,
+      lines: options.sendLines ?? 20,
       localPort: options.port,
     });
   } catch (err) {

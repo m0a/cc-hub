@@ -14,6 +14,8 @@ import { getAllSessionMetadata, setSessionTheme, setSessionTitle, getSessionOrde
 import { computeSessionMetrics } from '../services/session-metrics';
 import { getIndicatorOverride } from './notify';
 import { pushSessionsNow } from './terminal-mux';
+import { captureViewport, detectPaneState, stripAnsi, type DetectedPaneState } from '../services/pane-viewport';
+import type { TmuxControlSession } from '../services/tmux-control';
 
 const tmuxService = new TmuxService();
 const claudeCodeService = new ClaudeCodeService();
@@ -49,6 +51,41 @@ export function findDuplicateAgentWorkingDirSession<T extends { agent?: string; 
 /** Notify mux clients of session changes after mutations */
 function notifySessionChange(): void {
   pushSessionsNow();
+}
+
+/**
+ * Capture a pane viewport for peer-dialog tooling (cchub send --wait, peek).
+ * Returns the trailing `lines` rows (0 = all), with both ANSI-preserved and
+ * stripped variants plus a heuristic `detectedState`.
+ */
+async function captureViewportSnapshot(
+  cs: TmuxControlSession,
+  paneId: string,
+  lines: number,
+): Promise<{
+  paneId: string;
+  cols: number;
+  rows: number;
+  totalLines: number;
+  lines: string[];
+  text: string;
+  cursor: { x: number; y: number; visible: boolean };
+  detectedState: DetectedPaneState;
+} | null> {
+  const vp = await captureViewport(cs, paneId, 0);
+  if (!vp) return null;
+  const slice = lines > 0 ? vp.lines.slice(-lines) : vp.lines;
+  const stripped = slice.map(stripAnsi);
+  return {
+    paneId: vp.paneId,
+    cols: vp.cols,
+    rows: vp.rows,
+    totalLines: vp.lines.length,
+    lines: slice,
+    text: stripped.join('\n'),
+    cursor: vp.cursor,
+    detectedState: detectPaneState(vp.lines),
+  };
 }
 
 export const sessions = new Hono();
@@ -837,6 +874,12 @@ const PaneInputSchema = z.object({
   paneId: PaneIdSchema,
   data: z.string(),
   encoding: z.enum(['utf-8', 'base64']).optional().default('utf-8'),
+  // peer-dialog helpers: if `wait` is true the response includes a viewport
+  // snapshot captured `waitMs` after the input is delivered. `lines` is how
+  // many trailing rows to return (0 = all). Defaults match the CLI defaults.
+  wait: z.boolean().optional().default(false),
+  waitMs: z.number().int().min(0).max(10000).optional().default(800),
+  lines: z.number().int().min(0).max(500).optional().default(20),
 });
 
 // POST /sessions/:id/panes/focus - Focus a specific pane
@@ -1015,9 +1058,55 @@ sessions.post('/:id/panes/input', async (c) => {
       : Buffer.from(parsed.data.data, 'utf-8');
     await controlSession.sendInput(parsed.data.paneId, buffer);
 
-    return c.json({ success: true, paneId: parsed.data.paneId, bytes: buffer.length });
+    if (!parsed.data.wait) {
+      return c.json({ success: true, paneId: parsed.data.paneId, bytes: buffer.length });
+    }
+
+    // Give the TUI time to render before snapshotting.
+    if (parsed.data.waitMs > 0) {
+      await new Promise(resolve => setTimeout(resolve, parsed.data.waitMs));
+    }
+    const viewport = await captureViewportSnapshot(controlSession, parsed.data.paneId, parsed.data.lines);
+    return c.json({
+      success: true,
+      paneId: parsed.data.paneId,
+      bytes: buffer.length,
+      viewport,
+    });
   } catch (_error) {
     return c.json({ error: 'Failed to send input' }, 500);
+  }
+});
+
+// GET /sessions/:id/panes/:paneId/viewport - Snapshot a pane's current viewport
+sessions.get('/:id/panes/:paneId/viewport', async (c) => {
+  const id = c.req.param('id');
+  const paneId = c.req.param('paneId');
+  const linesParam = c.req.query('lines');
+  const lines = linesParam ? Math.max(0, Math.min(500, Number.parseInt(linesParam, 10) || 0)) : 20;
+
+  if (!paneId.startsWith('%')) {
+    return c.json({ error: 'paneId must start with %' }, 400);
+  }
+
+  const exists = await tmuxService.sessionExists(id);
+  if (!exists) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+
+  try {
+    const controlSession = controlSessions.get(id) || await getOrCreateControlSession(id);
+    const panes = await controlSession.listPanes();
+    if (!panes.find(p => p.paneId === paneId)) {
+      return c.json({ error: 'Pane not found' }, 404);
+    }
+    const viewport = await captureViewportSnapshot(controlSession, paneId, lines);
+    if (!viewport) {
+      return c.json({ error: 'Failed to capture viewport' }, 500);
+    }
+    return c.json(viewport);
+  } catch (_error) {
+    return c.json({ error: 'Failed to capture viewport' }, 500);
   }
 });
 

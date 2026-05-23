@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.153] - 2026-05-23
+
+### Added
+- **`cchub peek` / `cchub send --wait` で peer pane の状態を覗けるように**: peer に送ったあと「届いてるのか？permission prompt で止まってないか？」を UI を開かずに確認するための仕組み。pane viewport を取得して `idle / processing / permission_prompt / ask_user_question / unknown` のいずれかにヒューリスティック判定する。`POST /api/sessions/:id/panes/input` に `{wait, waitMs, lines}` を追加 (送信後に viewport を返す)、新規 `GET /api/sessions/:id/panes/:paneId/viewport` を peek のバックエンドとして追加。CLI 側は `cchub send --wait/--wait-ms/--lines` と新規 `cchub peek <peer>:<session>:<paneId>`。判定ロジックは `backend/src/services/pane-viewport.ts` の `detectPaneState()` (`(esc to interrupt)` / `tokens)` スピナーで processing、`Do you want to ...?` / `Yes, and don't ask again` で permission_prompt、`✻/✳/✶` マーカー or 空入力箱で idle 等を検知)。cchub-send スキルのドキュメントも更新済み (`backend/src/cli.ts`, `backend/src/commands/send.ts`, `backend/src/routes/sessions.ts`, `backend/src/services/pane-viewport.ts`, `.claude/skills/cchub-send/SKILL.md`)
+
 ## [0.1.152] - 2026-05-22
 
 ### Fixed

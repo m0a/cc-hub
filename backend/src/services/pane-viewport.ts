@@ -20,6 +20,11 @@
 
 import type { PaneViewport, PaneCursor, PaneModes } from '../../../shared/types';
 import type { TmuxControlSession } from './tmux-control';
+import {
+  computeCursorPadShift,
+  resolveViewportCursor,
+  type ViewportCursorPolicy,
+} from './viewport-cursor-policy';
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escapes by design.
 const ANSI_RE = /\x1b\[[\d;?]*[a-zA-Z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
@@ -139,25 +144,23 @@ export async function captureViewport(
   cs: TmuxControlSession,
   paneId: string,
   offset: number,
+  cursorPolicy: ViewportCursorPolicy = 'default',
 ): Promise<PaneViewport | null> {
   let metaRaw: string;
   try {
     metaRaw = await cs.sendCommand(
-      `display-message -t ${paneId} -p '#{pane_width},#{pane_height},#{cursor_x},#{cursor_y},#{cursor_flag},#{alternate_on},#{history_size}'`,
+      `display-message -t ${paneId} -p '#{pane_width},#{pane_height},#{alternate_on},#{history_size}'`,
     );
   } catch {
     return null;
   }
 
   const parts = metaRaw.trim().split(',');
-  if (parts.length < 7) return null;
+  if (parts.length < 4) return null;
   const cols = Number.parseInt(parts[0], 10);
   const rows = Number.parseInt(parts[1], 10);
-  const cx = Number.parseInt(parts[2], 10);
-  const cy = Number.parseInt(parts[3], 10);
-  const cursorVisible = parts[4] === '1';
-  const altScreen = parts[5] === '1';
-  const historySize = Number.parseInt(parts[6], 10) || 0;
+  const altScreen = parts[2] === '1';
+  const historySize = Number.parseInt(parts[3], 10) || 0;
 
   if (!Number.isFinite(cols) || !Number.isFinite(rows) || cols <= 0 || rows <= 0) {
     return null;
@@ -181,6 +184,29 @@ export async function captureViewport(
     linesRaw = await cs.sendCommand(`capture-pane -e -p -t ${paneId} -S ${start} -E ${end}`);
   } catch {
     return null;
+  }
+
+  let cx = 0;
+  let cy = 0;
+  let cursorVisible = false;
+  if (clampedOffset === 0) {
+    // Fetch cursor metadata after capture so the rendered cursor is based on
+    // the freshest possible position. This reduces visible drift on panes
+    // that redraw quickly (Codex tends to do this more than the shell UI).
+    try {
+      const cursorRaw = await cs.sendCommand(
+        `display-message -t ${paneId} -p '#{cursor_x},#{cursor_y},#{cursor_flag}'`,
+      );
+      const cursorParts = cursorRaw.trim().split(',');
+      if (cursorParts.length >= 3) {
+        cx = Number.parseInt(cursorParts[0], 10);
+        cy = Number.parseInt(cursorParts[1], 10);
+        cursorVisible = cursorParts[2] === '1';
+      }
+    } catch {
+      // Fall back to a hidden cursor if tmux is busy or the pane vanished
+      // between the viewport capture and the cursor query.
+    }
   }
 
   // tmux always returns exactly `end - start + 1` rows when both bounds are
@@ -232,7 +258,7 @@ export async function captureViewport(
         if (fetched.length > 0) {
           const prepend = fetched.slice(-padNeeded);
           lines = [...prepend, ...lines];
-          cursorPadShift = prepend.length;
+          cursorPadShift = computeCursorPadShift(cursorPolicy, prepend.length);
         }
       } else if (padStart >= -historySize) {
         try {
@@ -261,13 +287,16 @@ export async function captureViewport(
   }
 
   const atTail = clampedOffset === 0;
-  const cursor: PaneCursor = atTail
-    ? {
-        x: Math.max(0, Math.min(cols - 1, cx)),
-        y: Math.max(0, Math.min(rows - 1, cy + cursorPadShift)),
-        visible: cursorVisible,
-      }
-    : { x: 0, y: 0, visible: false };
+  const cursor: PaneCursor = resolveViewportCursor(cursorPolicy, {
+    cols,
+    rows,
+    cursorX: cx,
+    cursorY: cy,
+    cursorVisible,
+    cursorPadShift,
+    renderedLines: lines,
+    atTail,
+  });
   const modes: PaneModes = { altScreen };
 
   return {

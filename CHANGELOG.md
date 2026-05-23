@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.155] - 2026-05-23
+
+### Fixed
+- **ソフトウェアキーボードの Shift+Tab が効かなかった問題を修正**: `Keyboard.tsx` の `sendKeyPress` に Shift+Tab の専用処理がなく、フォールバックで `"\t".toUpperCase()` = `"\t"` となって Shift が落ちて素の Tab が送られていた。既存の Shift+Enter 分岐と同じパターンで `\x1b[Z` (CSI Z = VT back-tab、xterm が Shift+Tab で送るシーケンス) を返すよう追加。Claude Code の `shift+tab to cycle` (auto-mode / plan-mode / accept-edits の切り替え) がモバイル/タブレットの仮想キーボードからも使えるようになる (`frontend/src/components/Keyboard.tsx`)
+
 ## [0.1.154] - 2026-05-23
 
 ### Fixed

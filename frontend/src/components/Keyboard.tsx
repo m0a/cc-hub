@@ -212,6 +212,17 @@ export function Keyboard({
 				return;
 			}
 
+			// Handle Shift+Tab as VT back-tab (CSI Z). Claude Code uses this
+			// to cycle auto-mode / plan-mode / accept-edits (the "shift+tab to
+			// cycle" hint in its status line). The fallthrough below would
+			// otherwise resolve to "\t".toUpperCase() === "\t" and lose the
+			// Shift entirely.
+			if (shiftPressed && keyDef.key === "\t") {
+				onSend("\x1b[Z");
+				setShiftPressed(false);
+				return;
+			}
+
 			// Determine the character to send
 			let char = shiftPressed
 				? keyDef.shiftKey || keyDef.key.toUpperCase()

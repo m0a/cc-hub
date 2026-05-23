@@ -22,6 +22,38 @@ export interface SendOptions {
   submit: boolean;
   base64: boolean;
   localPort: number;
+  // --wait: after sending, snapshot the pane viewport and print it. Useful so
+  // the sender can see what landed on the peer's screen (and whether the peer
+  // is mid-permission-prompt) without opening the peer UI.
+  wait: boolean;
+  waitMs: number;   // delay before snapshot
+  lines: number;    // trailing rows to print (0 = whole viewport)
+}
+
+interface ViewportResponse {
+  cols: number;
+  rows: number;
+  totalLines: number;
+  lines: string[];      // ANSI preserved
+  text: string;          // ANSI stripped
+  cursor: { x: number; y: number; visible: boolean };
+  detectedState: 'permission_prompt' | 'ask_user_question' | 'processing' | 'idle' | 'unknown';
+}
+
+function printViewport(target: ParsedTarget, vp: ViewportResponse): void {
+  const stateLabel: Record<ViewportResponse['detectedState'], string> = {
+    permission_prompt: '⚠️  permission_prompt (peer is waiting for Yes/No)',
+    ask_user_question: '❓ ask_user_question (peer is waiting for a numbered choice)',
+    processing: '⏳ processing (peer is running a tool)',
+    idle: '✳  idle (peer is at the prompt)',
+    unknown: '?  unknown',
+  };
+  console.error(`\n── ${target.peer}:${target.sessionId}:${target.paneId} (${vp.cols}x${vp.rows}) — ${stateLabel[vp.detectedState]}`);
+  // Print viewport WITH ANSI escapes preserved so colors come through.
+  for (const line of vp.lines) {
+    console.log(line);
+  }
+  console.error(`── end ─ cursor (${vp.cursor.x},${vp.cursor.y})`);
 }
 
 interface ParsedTarget {
@@ -87,11 +119,16 @@ export async function runSend(options: SendOptions): Promise<void> {
   const peer = await resolvePeer(target.peer, options.localPort);
 
   // base64 指定時は payload は既に base64 文字列のはず。utf-8 のときはそのまま渡す
-  const body = {
+  const body: Record<string, unknown> = {
     paneId: target.paneId,
     data: payload,
     encoding: options.base64 ? 'base64' : 'utf-8',
   };
+  if (options.wait) {
+    body.wait = true;
+    body.waitMs = options.waitMs;
+    body.lines = options.lines;
+  }
 
   // Tailscale 証明書は localhost 名と一致しないので TLS 検証を切る (notify.ts と同じ運用)
   if (peer.url.startsWith('https://')) {
@@ -115,6 +152,40 @@ export async function runSend(options: SendOptions): Promise<void> {
     throw new Error(`send 失敗: HTTP ${res.status} ${errText}`);
   }
 
-  const json = (await res.json().catch(() => ({}))) as { bytes?: number };
-  console.log(`✅ sent ${json.bytes ?? payload.length} bytes to ${target.peer}:${target.sessionId}:${target.paneId}`);
+  const json = (await res.json().catch(() => ({}))) as { bytes?: number; viewport?: ViewportResponse };
+  console.error(`✅ sent ${json.bytes ?? payload.length} bytes to ${target.peer}:${target.sessionId}:${target.paneId}`);
+  if (json.viewport) {
+    printViewport(target, json.viewport);
+  }
+}
+
+export interface PeekOptions {
+  target: string;
+  lines: number;
+  localPort: number;
+}
+
+export async function runPeek(options: PeekOptions): Promise<void> {
+  const target = parseTarget(options.target);
+  const peer = await resolvePeer(target.peer, options.localPort);
+
+  if (peer.url.startsWith('https://')) {
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  }
+
+  const headers: Record<string, string> = {};
+  if (peer.token) {
+    headers.Authorization = `Bearer ${peer.token}`;
+  }
+
+  const url = `${peer.url}/api/sessions/${encodeURIComponent(target.sessionId)}/panes/${encodeURIComponent(target.paneId)}/viewport?lines=${options.lines}`;
+  const res = await fetch(url, { headers });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`peek 失敗: HTTP ${res.status} ${errText}`);
+  }
+
+  const vp = (await res.json()) as ViewportResponse;
+  printViewport(target, vp);
 }

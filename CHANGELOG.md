@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.154] - 2026-05-23
+
+### Fixed
+- **macOS で tmux ペインが突然 1〜2 行の CSV だけになる / 文章の途中に空白が抜ける問題を修正**: `TmuxControlSession.sendCommand` の `pendingQueue` を同じセッションを共有する複数の呼び出し (ライブ WebSocket viewport + `cchub peek` / `cchub send --wait`) が共有していたため、10s タイムアウト時の `pendingQueue.splice` で FIFO がズレ、`display-message` メタデータの応答 (例: `277,74,2,70,0,0,8452` = `cols,rows,cx,cy,cflag,alt,hist`) が後続の `capture-pane` 応答に化けてペインの内容として描画されていた。`commandTail` プロミスチェーンによる直列化で stdin への書き込みを前コマンドの settle 後に限定し、タイムアウト時 (30s に延長) は単体 pending の splice ではなくセッション全体を `destroy()` するよう変更。遅延応答による silent corruption を根絶 (`backend/src/services/tmux-control.ts`, `backend/src/services/__tests__/tmux-control-serialize.test.ts`)
+
 ## [0.1.153] - 2026-05-23
 
 ### Added

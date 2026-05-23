@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.157] - 2026-05-24
+
+### Fixed
+- **`cchub peek` / `cchub send --wait` の `detectedState` 判定精度を向上**: 狭ペイン (≤60 cols) で `(esc to interrupt)` が `esc to int…` に truncate されるケース、Claude busy 中の `Press up to edit queued messages`、`tokens…)` の末尾に追加情報が続くケース、スピナーマーカー (`✻ Channeling…` の marker + verb-ing + 三点リーダ構造) など、これまで `idle` と誤判定されていたシナリオを `processing` として正しく判定するよう `detectPaneState` を強化した。スピナー verb は release ごとに変わるため verb 名ではなく構造でマッチする。過去形 `✻ Sautéed for 1m` は idle のまま維持 (`backend/src/services/pane-viewport.ts`)
+
+### Docs
+- **`cchub-send` スキルに実機学習を反映**: 改行なしの単一行でも 500 bytes 以上の payload は bracketed paste 扱いで `--submit` の `\r\r` が吸収され入力欄に残る (実機確認: 単一行 979 bytes で発生)。長文 send は原則 `--submit --wait` で submit 確認すべきと明記。`cchub peek` の stdout/stderr 出力フォーマット、rtk 環境下で `curl | python3` が truncate される回避策、TUI rating overlay を `cchub send "0"` (改行なし) や Esc で dismiss する手順も追加 (`.claude/skills/cchub-send/SKILL.md`)
+
 ## [0.1.156] - 2026-05-23
 
 ### Fixed

@@ -9,6 +9,7 @@ import type {
   ConversationMessage,
 } from '../../../shared/types';
 import { buildSessionsList } from './sessions';
+import { resolveViewportCursorPolicy, type ViewportCursorPolicy } from '../services/viewport-cursor-policy';
 
 // Output → push debounce. Wait this long after the last %output for a pane
 // before recapturing. Shorter = lower latency; longer = fewer captures.
@@ -43,6 +44,7 @@ interface MuxSubscription {
   // Pane IDs the subscription has ever touched (request-viewport, push).
   // Used by resize to re-push known panes after tmux reflows.
   knownPanes: Set<string>;
+  cursorPolicy: ViewportCursorPolicy;
 }
 
 export interface MuxData {
@@ -242,6 +244,8 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     controlSession.addClient();
 
     const cleanupFns: Array<() => void> = [];
+    const sessions = await tmuxService.listSessions();
+    const session = sessions.find(s => s.id === sessionId);
     const sub: MuxSubscription = {
       controlSession,
       cleanupFns,
@@ -250,6 +254,7 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
       pushTimers: new Map(),
       lastPushAt: new Map(),
       knownPanes: new Set(),
+      cursorPolicy: resolveViewportCursorPolicy(session?.agent ?? session?.currentCommand),
     };
 
     // %output → schedule a push for any pane this subscription is viewing
@@ -383,7 +388,7 @@ async function pushViewport(
   if (sub.controlSession.isDestroyed) return;
   let viewport: Awaited<ReturnType<typeof captureViewport>> = null;
   try {
-    viewport = await captureViewport(sub.controlSession, paneId, offset);
+    viewport = await captureViewport(sub.controlSession, paneId, offset, sub.cursorPolicy);
   } catch (err) {
     console.warn(`[mux] captureViewport failed for ${paneId}:`, err);
     return;

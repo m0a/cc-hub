@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.156] - 2026-05-23
+
+### Fixed
+- **tmux viewport の cursor 補正を session metadata ベースに整理**: これまで `pane-viewport.ts` に散っていた cursor 補正を `viewport-cursor-policy.ts` に切り出し、`agent=currentCommand` が `codex` のときだけ footer 専用の cursor policy を使うように変更した。shell 系は従来の padFill ベースの補正を維持しつつ、最後の表示行を超えないように軽くクランプして `haskel` などの空行ズレを抑えた (`backend/src/services/pane-viewport.ts`, `backend/src/services/viewport-cursor-policy.ts`, `backend/src/routes/terminal-mux.ts`, `backend/src/routes/sessions.ts`)
+
 ## [0.1.155] - 2026-05-23
 
 ### Fixed

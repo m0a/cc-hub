@@ -15,6 +15,7 @@ import { computeSessionMetrics } from '../services/session-metrics';
 import { getIndicatorOverride } from './notify';
 import { pushSessionsNow } from './terminal-mux';
 import { captureViewport, detectPaneState, stripAnsi, type DetectedPaneState } from '../services/pane-viewport';
+import { resolveViewportCursorPolicy } from '../services/viewport-cursor-policy';
 import type { TmuxControlSession } from '../services/tmux-control';
 
 const tmuxService = new TmuxService();
@@ -62,6 +63,7 @@ async function captureViewportSnapshot(
   cs: TmuxControlSession,
   paneId: string,
   lines: number,
+  cursorPolicy: ReturnType<typeof resolveViewportCursorPolicy> = 'default',
 ): Promise<{
   paneId: string;
   cols: number;
@@ -72,7 +74,7 @@ async function captureViewportSnapshot(
   cursor: { x: number; y: number; visible: boolean };
   detectedState: DetectedPaneState;
 } | null> {
-  const vp = await captureViewport(cs, paneId, 0);
+  const vp = await captureViewport(cs, paneId, 0, cursorPolicy);
   if (!vp) return null;
   const slice = lines > 0 ? vp.lines.slice(-lines) : vp.lines;
   const stripped = slice.map(stripAnsi);
@@ -86,6 +88,12 @@ async function captureViewportSnapshot(
     cursor: vp.cursor,
     detectedState: detectPaneState(vp.lines),
   };
+}
+
+async function resolveSessionCursorPolicy(sessionId: string): Promise<ReturnType<typeof resolveViewportCursorPolicy>> {
+  const sessions = await tmuxService.listSessions();
+  const session = sessions.find(s => s.id === sessionId);
+  return resolveViewportCursorPolicy(session?.agent ?? session?.currentCommand);
 }
 
 export const sessions = new Hono();
@@ -1066,7 +1074,8 @@ sessions.post('/:id/panes/input', async (c) => {
     if (parsed.data.waitMs > 0) {
       await new Promise(resolve => setTimeout(resolve, parsed.data.waitMs));
     }
-    const viewport = await captureViewportSnapshot(controlSession, parsed.data.paneId, parsed.data.lines);
+    const cursorPolicy = await resolveSessionCursorPolicy(id);
+    const viewport = await captureViewportSnapshot(controlSession, parsed.data.paneId, parsed.data.lines, cursorPolicy);
     return c.json({
       success: true,
       paneId: parsed.data.paneId,
@@ -1100,7 +1109,8 @@ sessions.get('/:id/panes/:paneId/viewport', async (c) => {
     if (!panes.find(p => p.paneId === paneId)) {
       return c.json({ error: 'Pane not found' }, 404);
     }
-    const viewport = await captureViewportSnapshot(controlSession, paneId, lines);
+    const cursorPolicy = await resolveSessionCursorPolicy(id);
+    const viewport = await captureViewportSnapshot(controlSession, paneId, lines, cursorPolicy);
     if (!viewport) {
       return c.json({ error: 'Failed to capture viewport' }, 500);
     }

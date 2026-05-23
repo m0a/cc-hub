@@ -70,15 +70,22 @@ export function detectPaneState(lines: string[]): DetectedPaneState {
     return 'ask_user_question';
   }
 
-  // Processing — Claude Code spinner has these signatures, in priority order:
-  //  - explicit "(esc to interrupt)" hint
-  //  - the "· <Verb>… (<time> · ↓/↑ <n> tokens · ...)" spinner line. The
-  //    spinner verb changes per release (Kneading, Brewing, Pondering, …),
-  //    so we anchor on the stable "tokens" keyword followed by ")" on the
-  //    same line — this is uniquely emitted by the spinner.
+  // Processing — Claude Code spinner has these signatures, in priority order.
+  // The spinner verb changes per release (Kneading, Brewing, Channeling, …);
+  // we match its structure rather than the verb itself.
+  //
+  // Watch out for narrow panes (≤60 cols): Claude truncates "(esc to
+  // interrupt)" to "esc to int…", so we also accept the truncated form.
   if (
-    /\(esc to interrupt\)/i.test(joined) ||
-    /tokens(?:\s*·[^)]*)?\)\s*$/m.test(joined)
+    // "esc to interrupt" — with or without parens, full or truncated to "int…"
+    /esc\s+to\s+int/i.test(joined) ||
+    // Queued input shows up when you send while Claude is busy.
+    /Press up to edit queued messages/i.test(joined) ||
+    /tokens(?:\s*·[^)]*)?\)/m.test(joined) ||
+    // "✻ Channeling…" / "✳ Pondering…" — marker + verb-ing + ellipsis on the
+    // same line means the spinner is animating (current task in progress).
+    // Stop at the ellipsis to avoid swallowing past-tense "✻ Sautéed for 1m".
+    /^\s*[✳✻✶✴]\s+\S+…/m.test(joined)
   ) {
     return 'processing';
   }

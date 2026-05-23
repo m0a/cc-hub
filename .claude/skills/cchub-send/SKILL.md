@@ -85,6 +85,22 @@ cchub send 🏠Studio:cc-hub:%6 "巨大プロンプト" --submit --wait --wait-m
 
 ⚠️ 判定はあくまで viewport 文字列パターンマッチ。Claude Code TUI の表記が変わると外れる可能性あり (`backend/src/services/pane-viewport.ts` の `detectPaneState`)。判定が `unknown` でも実際の画面 (`text` フィールド or 色付き出力) は信頼できる。
 
+### `cchub peek` の出力フォーマット
+
+stdout と stderr を意図的に分けてる:
+
+```
+[stderr] ── <peer>:<session>:<paneId> (cols x rows) — <icon> <detectedState>
+[stdout] <ANSI escape 込みの viewport 行群>
+[stdout] ...
+[stderr] ── end ─ cursor (x,y)
+```
+
+- **detectedState はヘッダ行 (1 行目, stderr) の末尾** に出る。`✳ idle` / `⏳ processing` / `⚠️ permission_prompt` 等。**ここを最初に見る**
+- viewport 本文は **ANSI escape を保持したまま** stdout に流れる。色は付くが grep / jq には不向き
+- パイプ処理したい時は viewport endpoint を直接叩く: `curl -sk https://<host>:5923/api/sessions/<id>/panes/<paneId>/viewport?lines=20 -o /tmp/v.json && jq -r '.detectedState, .text' /tmp/v.json`
+- `--lines 0` で全 viewport を取得 (default 20)
+
 ## 双方向で対話する (peer から返事させる)
 
 「こちらから送る」だけでなく、相手側の Claude Code に **`cchub send` で返事させる** ことで両端 Claude Code 同士の対話が成立する。
@@ -128,7 +144,7 @@ cchub send 🏠Studio:cc-hub:%6 "巨大プロンプト" --submit --wait --wait-m
 - 返事が複数ターン続く場合に備えて、終了マーカー (`[reply-done]` 等) を最後に別送するよう指示すると追跡しやすい (※実際には相手の Claude Code が本文末尾に連結して1回の send で済ませてくることが多いので、マーカーは本文末尾でも追跡可能な文字列にしておく)
 - 受信側 (= こちらの pane) に返事が届くと、それは「ユーザーからの新しい入力」として Claude Code TUI に流し込まれる。すなわち相手の応答が次のターンのプロンプトになる
 - **届いた返事が submit されないまま入力欄に溜まることがある** (相手側で `--submit` が抜けた / paste mode が抜けてない)。peer に対しては自分の tmux から手出しできないので、追い打ちで `cchub send <target> "" --submit` (空 payload + `\r\r` だけ 2 bytes) を送ると確定する。同じ pane なら `tmux send-keys -t <自分のpane> Enter` でもよい
-- **複数行 payload は `--submit` だけでは submit されないことがある** — 改行を含む本文を `cchub send ... "<multi-line>" --submit` や `--stdin --submit` で送ると、TUI の paste mode が末尾の `\r\r` を吸収しきれず入力欄に残ることがある。送信成功 (`✅ sent ...`) を見たあとに peer 側の indicator が動かなかったら、追い打ちで `cchub send <target> "" --submit` を送る (これだけ 2 bytes で `\r\r`)
+- ⚠️ **長い payload は `--submit` だけでは submit されないことがある — 改行の有無に関係なく**。複数行はもちろん、**改行なしの単一行でも 500 bytes 以上くらいになると** TUI が bracketed paste と判定して末尾の `\r\r` を paste 内に吸収し、入力欄に溜まったままになる (実機確認: 単一行 979 bytes で発生)。`✅ sent ...` は HTTP POST が成功しただけで TUI submit を保証しない。**長文を送るときは原則 `--wait` を付ける** (`cchub send ... --submit --wait --wait-ms 1500`) — 返ってきた viewport で「自分の本文が入力欄に残ってないか」「`detectedState` が `processing` になってるか」を必ず確認する。残ってたら追い打ちで `cchub send <target> "" --submit` (2 bytes だけ `\r\r`) を送って確定させる
 
 ### デバッグ: 「届いてるのか?」を確かめる
 
@@ -185,11 +201,45 @@ TOKEN=$(python3 -c "import json; print(json.load(open('$HOME/.cc-hub/peers.json'
 curl -sk -H "Authorization: Bearer $TOKEN" https://<peer-host>:5923/api/sessions
 ```
 
+> ⚠️ **rtk 環境下では `curl | python3` が壊れる**: rtk が長い stdout を truncate して末尾に `[full output: ~/.local/share/rtk/tee/<id>_curl.log]` を追記するため、JSON が中途半端で `json.load` がエラーになる。回避策:
+> ```bash
+> # (a) tee log を直接読む — rtk が出力した path をそのまま使う
+> curl -sk https://localhost:5923/api/sessions  # → "[full output: <log_path>]"
+> cat <log_path> | jq -r '.sessions[] | "\(.id): \(.panes | map(.paneId) | join(","))"'
+>
+> # (b) rtk バイパス
+> rtk proxy curl -sk https://localhost:5923/api/sessions | jq .
+>
+> # (c) 一旦ファイルに落とす (`-o`)
+> curl -sk https://localhost:5923/api/sessions -o /tmp/sess.json && jq -r '.sessions[] | "\(.id): \(.panes | map(.paneId) | join(","))"' /tmp/sess.json
+> ```
+> 一番素直なのは (c)。長い API レスポンスを扱うとき汎用的に使える。
+
+## TUI overlay を dismiss する (rating dialog 等)
+
+Claude Code は不定期に `How is Claude doing this session? 1:Bad 2:Fine 3:Good 0:Dismiss` のようなフィードバック overlay を出す。これが出てる pane に `cchub send "プロンプト" --submit` を送っても overlay が先に keystroke を吸うので本文が届かない。先に overlay を畳む必要がある:
+
+```bash
+# 1) Esc を送る (\x1b = 1 byte) — overlay の標準的な閉じ方
+printf '\x1b' | base64 | cchub send <target> --stdin --base64
+
+# 2) 数字キーだけを送る (改行なし) — "0: Dismiss" 系
+cchub send <target> "0"   # --newline / --submit は付けない、生の "0" だけ
+
+# 3) Ctrl+C (\x03) — 強制リセット
+printf '\x03' | base64 | cchub send <target> --stdin --base64
+```
+
+⚠️ `cchub send <target> "0" --newline` は **動かない** ことが実機確認済み。overlay は menu モードで raw keypress を待つので、`0\r` だと "0" → Enter という 2 操作扱いになり menu の選択ロジックに乗らないことがある。生 `"0"` か Esc を試す。
+
+dismiss できたかは `cchub peek <target>` で確認 (`detectedState` が `idle` に戻れば OK)。
+
 ## 注意
 
 - `cchub send` はデフォルトで `-p 5923` (本番ポート) を見にいく。dev サーバ (3456) に送りたいときは `-p 3456` を付ける
 - `--newline` を忘れるとシェルに入力されてもコマンドが実行されない (画面に文字列だけが残る)
 - **Claude Code TUI に送るときは `--submit`** を使う。paste mode を抜けるために `\r\r` (CR 2回) が必要。`--newline` (CR 1回) では multi-line として扱われ submit されないことがある
+- **長文 (~500 bytes 以上) を Claude TUI に送るときは `--submit --wait` を原則とする**。`--submit` だけだと bracketed paste 判定で末尾 `\r\r` が吸収され入力欄に溜まる事故が起きる (改行なし単一行でも発生確認)。`--wait` の viewport で入力欄に本文が残ってないか必ず目視確認
 - peer の paneId はその peer の tmux サーバから見た id なので、ローカルで `tmux list-panes` しても出てこない。peer の `/api/sessions` を叩いて確認すること
 - `peers.json` は `~/.cc-hub/peers.json` (`CC_HUB_DATA_DIR` で上書き可)。CLI は peer-registry 経由で読むので環境変数があれば自動で従う
 
@@ -205,8 +255,10 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://<peer-host>:5923/api/sessions
 | `peer に接続できません` | peer の URL/port 違い、サーバ停止 | URL と起動状態を確認 |
 | 文字列は届くが Claude Code が応答しない | paste mode で submit されていない | `--submit` を付ける (末尾に `\r\r` を付与) |
 | `--newline` だと長文で submit されない | CR 1回だと paste mode の改行扱い | `--newline` を `--submit` に置き換える |
-| `--submit` 付きでも複数行 payload が submit されない | 改行を含む paste で末尾 `\r\r` が吸収される | 続けて `cchub send <target> "" --submit` を 1 発撃って `\r\r` だけ単独で送る |
+| `--submit` 付きでも payload が submit されない (入力欄に残る) | 長い payload (改行有無問わず、概ね 500 bytes 以上) が bracketed paste 扱いになり末尾 `\r\r` が paste 内に吸収される。`✅ sent ...` は HTTP 成功のみで submit を保証しない | 長文 send は原則 `--wait` で submit 確認 (`--submit --wait --wait-ms 1500`)。残ってたら追い打ちで `cchub send <target> "" --submit` (空 payload + `\r\r` 2 bytes だけ) |
 | 相手から返事が来ない | 相手側 peers.json にこちらが未登録 / 名前ミス | 相手側 `POST /api/peers` で登録、返信指示文に正確な nickname/id を書く |
+| プロンプト送ったのに画面に出ない / Claude が反応しない | rating/feedback overlay が出てて keystroke を吸収中 | `cchub peek` で overlay 確認 → 「TUI overlay を dismiss する」セクションの手順で畳む |
+| `cchub send "0" --newline` で overlay が dismiss できない | overlay は menu モードで raw keypress を待つので `0\r` が乗らない | 生 `"0"` (`--newline` なし) か `printf '\x1b' | base64 \| cchub send --stdin --base64` (Esc) |
 | **相手の Claude Code が `cchub send` を実行しない** | Bash permission prompt で停止 | 返信側に `Bash(cchub send:*)` を事前許可 (settings.local.json or `--dangerously-skip-permissions`) |
 | `indicatorState` 上は idle なのに submit が効いてない | hook 状態の遅延 / permission prompt 中も idle 表示 | UI を目視確認、または相手に「開始マーカーを別送」させる |
 

@@ -58,6 +58,12 @@ export class TmuxControlSession {
   private pendingQueue: PendingCommand[] = [];
   private currentBeginNum: number | null = null;
   private currentOutput: string[] = [];
+  // Serializes sendCommand so concurrent callers (e.g. live WebSocket viewport
+  // updates + `cchub peek` / `cchub send --wait`) cannot interleave through a
+  // shared FIFO. Without this, a timed-out pending could be spliced out and a
+  // late tmux response would be attributed to the next command — causing
+  // `display-message` metadata to be rendered as pane content.
+  private commandTail: Promise<unknown> = Promise.resolve();
 
   // Ready state: resolves after the initial %begin/%end block from tmux attach
   private resolveReady: (() => void) | null = null;
@@ -523,26 +529,60 @@ export class TmuxControlSession {
    * Send a raw tmux command and wait for response.
    */
   async sendCommand(command: string): Promise<string> {
+    // Serialize through commandTail so the next stdin.write only happens
+    // after the previous command has fully settled (resolved, rejected, or
+    // forced the session to be destroyed by timing out). FIFO between
+    // pendingQueue and the bytes on tmux's stdin can no longer drift.
+    const prev = this.commandTail;
+    let releaseSlot!: () => void;
+    const slot = new Promise<void>((res) => {
+      releaseSlot = res;
+    });
+    this.commandTail = prev.then(
+      () => slot,
+      () => slot,
+    );
+
+    try {
+      await prev;
+    } catch {
+      // Previous command's failure doesn't block our turn.
+    }
+
     const stdin = this.proc?.stdin;
     if (!stdin || this.destroyed) {
+      releaseSlot();
       throw new Error('Control session not active');
     }
 
     return new Promise<string>((resolve, reject) => {
-      const pending: PendingCommand = { resolve, reject, output: [] };
+      const pending: PendingCommand = {
+        resolve: (value) => {
+          releaseSlot();
+          resolve(value);
+        },
+        reject: (err) => {
+          releaseSlot();
+          reject(err);
+        },
+        output: [],
+      };
       this.pendingQueue.push(pending);
 
       // Write command via stdin pipe
       stdin.write(`${command}\n`);
 
-      // Timeout after 10 seconds
+      // If a command hangs (tmux wedged, response never arrives), tear down
+      // the whole control session. Splicing a single pending out of the FIFO
+      // would let tmux's eventual late response be attributed to the next
+      // command and silently corrupt every subsequent response.
       setTimeout(() => {
-        const idx = this.pendingQueue.indexOf(pending);
-        if (idx !== -1) {
-          this.pendingQueue.splice(idx, 1);
-          reject(new Error(`Command timed out: ${command}`));
-        }
-      }, 10_000);
+        if (!this.pendingQueue.includes(pending)) return;
+        console.warn(
+          `[tmux-control] Command timed out, tearing down session ${this.sessionId}: ${command}`,
+        );
+        this.destroy();
+      }, 30_000);
     });
   }
 

@@ -262,7 +262,18 @@ export class TmuxControlSession {
    * as UTF-8 string since they contain only ASCII or complete UTF-8.
    */
   private processRawLine(rawLine: Buffer): void {
-    if (rawLine.length === 0) return;
+    if (rawLine.length === 0) {
+      // Blank line. Inside a command response block this is a literal blank
+      // row in the response data (e.g. blank scrollback rows in
+      // `capture-pane -p` output). Dropping it shortens the response and
+      // surfaces downstream as missing rows / shifted viewports / void at
+      // the bottom of rendered panes. Outside a block, blank lines are
+      // protocol whitespace we can safely ignore.
+      if (this.currentBeginNum !== null) {
+        this.currentOutput.push('');
+      }
+      return;
+    }
 
     try {
       // Fast check: %output lines are the most frequent and must be

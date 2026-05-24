@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.160] - 2026-05-24
+
+### Fixed
+- **viewport 下部の void が画面全体に広がる不具合 (v0.1.159 リグレッション + 真の root cause) を解消**: v0.1.159 の修正は方針自体が誤りで、`cs.sendCommand` の戻り値が trailing `\n` artifact を持たない事実を見落とし、本物の trailing 空行を pop して状況を悪化させていた。さらに調査の結果、より深層の bug が判明 — `TmuxControlSession.processRawLine` は空 `Buffer` を early return しており、`capture-pane -p` 応答内の **literal blank rows がパーサ層で完全に消えていた** (55 行のキャプチャが 32 行に縮む等)。`pane-viewport.ts` の下流処理が短くなった応答を見て padFill で `''` を bottom に埋めるため、scroll を進めるほど void が広がって見えていた。真の修正は `processRawLine` で `%begin`/`%end` block 内に居る場合のみ空行を `currentOutput` に push するようにした。v0.1.159 の `parseCaptureOutput` 改変は revert し、`split('\n')` に戻した。dev 環境で 4 pane (cchub-work-1, orchestrator, linux, cchub-work-2/node) に対し offset 0..500 で実機検証 — 全 offset で trailing void = 0 を確認 (`backend/src/services/tmux-control.ts`, `backend/src/services/pane-viewport.ts`, `backend/src/services/__tests__/tmux-control-serialize.test.ts`)
+
 ## [0.1.159] - 2026-05-24
 
 ### Fixed

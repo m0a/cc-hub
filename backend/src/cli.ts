@@ -66,8 +66,8 @@ debug options:
 send options:
   --stdin                Read payload from stdin instead of arg
   --newline              Append \\r to payload (acts like pressing Enter once)
-  --submit               Append \\r\\r — Claude Code TUI needs two CRs to exit
-                         paste mode and actually send the message
+  --submit               Wrap payload in bracketed paste markers + Enter for
+                         Claude Code / Codex TUI submit (works at any length)
   --base64               Treat payload as base64 (binary-safe)
   --wait                 After sending, snapshot the peer pane viewport and
                          print it (with detected state: idle / processing /

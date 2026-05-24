@@ -16,9 +16,9 @@ export interface SendOptions {
   text?: string;
   stdin: boolean;
   newline: boolean;
-  // Append `\r\r` so Claude Code's TUI exits paste mode and submits the input.
-  // Plain `--newline` is `\r` only, which Claude Code treats as a newline
-  // inside multi-line paste and never submits.
+  // Wrap payload in bracketed paste markers + a single CR, so the TUI submits
+  // the input deterministically regardless of payload size. See `runSend` for
+  // the rationale and `\r\r` fallback's failure mode.
   submit: boolean;
   base64: boolean;
   localPort: number;
@@ -113,7 +113,25 @@ export async function runSend(options: SendOptions): Promise<void> {
     payload = `${payload}\r`;
   }
   if (options.submit) {
-    payload = `${payload}\r\r`;
+    // Bracketed paste-and-submit protocol: wrap the body in DECSET 2004
+    // markers and follow with a single CR. The TUI treats everything
+    // between \x1b[200~ and \x1b[201~ as a literal paste (so any CR
+    // inside becomes a newline in the input box), then the CR AFTER the
+    // closing marker is interpreted as a real Enter keypress, which
+    // submits the input.
+    //
+    // The previous naive `\r\r` strategy works for short payloads but
+    // breaks once the payload reaches ~300 bytes: when the TUI reads a
+    // large batch of bytes in one go, its auto-paste-detection treats
+    // the entire batch as a paste and absorbs our trailing CRs as
+    // literal newlines in the input box — leaving the text sitting
+    // unsubmitted. Explicit paste markers make the boundary unambiguous
+    // and fix the long-payload submit bug.
+    //
+    // Assumes the receiving TUI supports bracketed paste (\x1b[?2004h);
+    // Claude Code TUI and Codex TUI both do. Use --newline for plain
+    // shells that don't.
+    payload = `\x1b[200~${payload}\x1b[201~\r`;
   }
 
   const peer = await resolvePeer(target.peer, options.localPort);

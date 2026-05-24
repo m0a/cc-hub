@@ -129,4 +129,56 @@ describe('TmuxControlSession.sendCommand serialization', () => {
     respond(session, 2, 'ok-result');
     expect(await p2).toBe('ok-result');
   });
+
+  // Regression for the v0.1.159 viewport corruption: capture-pane responses
+  // contain literal blank rows (every-other-row dev log spacing, Claude TUI
+  // partial paint, etc.). If the protocol parser drops those blank lines,
+  // `pane-viewport` sees fewer rows than tmux actually captured, padFill
+  // pads the bottom with `''` rows, and the user sees a void at the bottom
+  // of the rendered viewport that fluctuates as they scroll.
+  test('blank lines inside a command response block are preserved in the FIFO output', async () => {
+    const session = new TmuxControlSession('test');
+    attachFakeProc(session);
+    consumeReady(session);
+
+    const p = session.sendCommand('capture-pane -e -p -t %1 -S 0 -E 4');
+    await flushMicrotasks();
+
+    // Replay a 5-row capture where rows 1 and 3 are literal blank lines.
+    feed(session, '%begin 0 1 0');
+    feed(session, 'row0-content');
+    feed(session, '');
+    feed(session, 'row2-content');
+    feed(session, '');
+    feed(session, 'row4-content');
+    feed(session, '%end 0 1 0');
+
+    const result = await p;
+    expect(result.split('\n')).toEqual([
+      'row0-content',
+      '',
+      'row2-content',
+      '',
+      'row4-content',
+    ]);
+  });
+
+  test('trailing blank line inside a command response block survives', async () => {
+    const session = new TmuxControlSession('test');
+    attachFakeProc(session);
+    consumeReady(session);
+
+    const p = session.sendCommand('capture-pane -e -p -t %1 -S 0 -E 2');
+    await flushMicrotasks();
+
+    // Last captured row is a literal blank — must NOT be silently dropped.
+    feed(session, '%begin 0 1 0');
+    feed(session, 'row0');
+    feed(session, 'row1');
+    feed(session, '');
+    feed(session, '%end 0 1 0');
+
+    const result = await p;
+    expect(result.split('\n')).toEqual(['row0', 'row1', '']);
+  });
 });

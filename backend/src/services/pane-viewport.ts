@@ -112,35 +112,18 @@ function isVisuallyBlank(s: string): boolean {
 }
 
 /**
- * Parse a `tmux capture-pane -e -p` raw result into row strings.
- *
- * tmux always emits a trailing `\n` so `split('\n')` produces one extra
- * empty string at the end which is a parse artifact, not a real row.
- * We pop exactly that artifact and preserve every other element — including
- * `''` rows that correspond to actually-blank lines in the captured range.
- *
- * Critical: do NOT loop-pop visually-blank trailing rows. Blank rows in
- * tmux scrollback represent real content (e.g. dev-log spacers) and
- * dropping them shortens prepend slices used by padFill, surfacing as a
- * void whose size fluctuates with scroll position.
- */
-export function parseCaptureOutput(raw: string): string[] {
-  const lines = raw.split('\n');
-  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
-  return lines;
-}
-
-/**
  * Fetch up to `wanted` rows of scrollback ending just above the visible
  * region (`-S -wanted -E -1`). Returns the literal rows or [] on failure.
  *
- * We only strip the trailing-`\n` artifact from `split('\n')`. We must NOT
- * trim further visually-blank rows: those represent actual blank lines in
- * the scrollback at that position. Dropping them produces fewer than `wanted`
- * rows, which downstream gets padded with `''` at the BOTTOM of the rendered
- * viewport — surfacing as a void whose size fluctuates with scroll position
- * (any pane whose scrollback interleaves content and blanks, e.g. dev logs,
- * exhibits a moving void as the user scrolls).
+ * IMPORTANT: do NOT trim trailing blank rows here. `cs.sendCommand` already
+ * returns the lines joined with `\n` and WITHOUT any trailing newline
+ * artifact (see `TmuxControlSession.handleEnd` → `currentOutput.join('\n')`).
+ * So `split('\n')` gives exactly the captured rows. A trailing `''` element
+ * means the last captured row is a literal blank line in the scrollback —
+ * popping it loses that real row and surfaces as a void at the BOTTOM of
+ * the rendered viewport whose size fluctuates with scroll position (any
+ * pane whose scrollback interleaves content and blanks, e.g. dev-server
+ * logs, exhibits the bug clearly).
  */
 async function captureScrollback(
   cs: TmuxControlSession,
@@ -152,7 +135,7 @@ async function captureScrollback(
     const raw = await cs.sendCommand(
       `capture-pane -e -p -t ${paneId} -S -${wanted} -E -1`,
     );
-    return parseCaptureOutput(raw);
+    return raw.split('\n');
   } catch {
     return [];
   }
@@ -244,7 +227,7 @@ export async function captureViewport(
   // tmux always returns exactly `end - start + 1` rows when both bounds are
   // in-range; pad with blanks defensively in case it returned fewer (e.g.
   // racing with a resize).
-  let lines = parseCaptureOutput(linesRaw);
+  let lines = linesRaw.split('\n');
   if (lines.length > rows) {
     lines = lines.slice(0, rows);
   }
@@ -297,7 +280,12 @@ export async function captureViewport(
           const padRaw = await cs.sendCommand(
             `capture-pane -e -p -t ${paneId} -S ${padStart} -E ${padEnd}`,
           );
-          const padLines = parseCaptureOutput(padRaw);
+          // Plain split. Do NOT trim trailing rows: see the comment on
+          // `captureScrollback` for why. A trailing `''` here means the
+          // row immediately above the visible window is a literal blank
+          // in the scrollback; popping it shortens the prepend and
+          // surfaces as a void at the bottom of the rendered viewport.
+          const padLines = padRaw.split('\n');
           if (padLines.length > 0) {
             const prepend = padLines.slice(-padNeeded);
             lines = [...prepend, ...lines];

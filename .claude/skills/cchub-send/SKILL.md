@@ -53,7 +53,7 @@ printf '\x03' | base64 | cchub send local:my-session:%5 --stdin --base64   # Ctr
 |--------|-----------|------|
 | (なし) | -- | 純粋にバイト列だけ送る (画面に表示するだけ等) |
 | `--newline` | `\r` 1回 | シェル/通常 TUI で Enter 相当 |
-| `--submit` | `\r\r` 2回 | **Claude Code TUI 専用** — paste mode を抜けて submit |
+| `--submit` | `\x1b[200~…\x1b[201~\r` | **Claude Code / Codex TUI 専用** — bracketed paste でラップ + Enter。長さ無関係に submit される (v0.1.158 以降) |
 | `--stdin` | -- | 引数の代わりに stdin から payload を読む |
 | `--base64` | -- | payload は base64 文字列扱い (制御文字/バイナリを送る用) |
 | `--wait` | -- | 送信後に peer の pane viewport を取得して stdout に出す (色付き)。`detectedState` も併記される |
@@ -143,8 +143,8 @@ stdout と stderr を意図的に分けてる:
 - 返信は `--submit` を使うよう明示。`--newline` 1回だと長文では submit されない
 - 返事が複数ターン続く場合に備えて、終了マーカー (`[reply-done]` 等) を最後に別送するよう指示すると追跡しやすい (※実際には相手の Claude Code が本文末尾に連結して1回の send で済ませてくることが多いので、マーカーは本文末尾でも追跡可能な文字列にしておく)
 - 受信側 (= こちらの pane) に返事が届くと、それは「ユーザーからの新しい入力」として Claude Code TUI に流し込まれる。すなわち相手の応答が次のターンのプロンプトになる
-- **届いた返事が submit されないまま入力欄に溜まることがある** (相手側で `--submit` が抜けた / paste mode が抜けてない)。peer に対しては自分の tmux から手出しできないので、追い打ちで `cchub send <target> "" --submit` (空 payload + `\r\r` だけ 2 bytes) を送ると確定する。同じ pane なら `tmux send-keys -t <自分のpane> Enter` でもよい
-- ⚠️ **長い payload は `--submit` だけでは submit されないことがある — 改行の有無に関係なく**。複数行はもちろん、**改行なしの単一行でも 500 bytes 以上くらいになると** TUI が bracketed paste と判定して末尾の `\r\r` を paste 内に吸収し、入力欄に溜まったままになる (実機確認: 単一行 979 bytes で発生)。`✅ sent ...` は HTTP POST が成功しただけで TUI submit を保証しない。**長文を送るときは原則 `--wait` を付ける** (`cchub send ... --submit --wait --wait-ms 1500`) — 返ってきた viewport で「自分の本文が入力欄に残ってないか」「`detectedState` が `processing` になってるか」を必ず確認する。残ってたら追い打ちで `cchub send <target> "" --submit` (2 bytes だけ `\r\r`) を送って確定させる
+- **届いた返事が submit されないまま入力欄に溜まることがある** (相手側で `--submit` が抜けた / 古い cchub バイナリ)。peer に対しては自分の tmux から手出しできないので、追い打ちで `cchub send <target> "" --submit` を送ると確定する。同じ pane なら `tmux send-keys -t <自分のpane> Enter` でもよい
+- ✅ **v0.1.158 以降: `--submit` は bracketed paste でラップして送るので長さ無関係に submit される**。`\r\r` 末尾追加だった ~v0.1.157 までは ~300 bytes 以上の payload が paste 内に吸収されて入力欄に溜まる事故が出ていたが、根本対応済み。古い cchub と通信する場合 (相手側 cchub が v0.1.157 以下) は依然として長文で submit が吸収される可能性があるので、念のため `--wait` で viewport 確認すると安全
 
 ### デバッグ: 「届いてるのか?」を確かめる
 
@@ -238,8 +238,7 @@ dismiss できたかは `cchub peek <target>` で確認 (`detectedState` が `id
 
 - `cchub send` はデフォルトで `-p 5923` (本番ポート) を見にいく。dev サーバ (3456) に送りたいときは `-p 3456` を付ける
 - `--newline` を忘れるとシェルに入力されてもコマンドが実行されない (画面に文字列だけが残る)
-- **Claude Code TUI に送るときは `--submit`** を使う。paste mode を抜けるために `\r\r` (CR 2回) が必要。`--newline` (CR 1回) では multi-line として扱われ submit されないことがある
-- **長文 (~500 bytes 以上) を Claude TUI に送るときは `--submit --wait` を原則とする**。`--submit` だけだと bracketed paste 判定で末尾 `\r\r` が吸収され入力欄に溜まる事故が起きる (改行なし単一行でも発生確認)。`--wait` の viewport で入力欄に本文が残ってないか必ず目視確認
+- **Claude Code / Codex TUI に送るときは `--submit`** を使う。v0.1.158 以降は bracketed paste markers (`\x1b[200~…\x1b[201~\r`) でラップするので、長さ無関係に確実に submit される。`--newline` (CR 1回) は shell コマンド実行用 — TUI に送ると multi-line として扱われ submit されない
 - peer の paneId はその peer の tmux サーバから見た id なので、ローカルで `tmux list-panes` しても出てこない。peer の `/api/sessions` を叩いて確認すること
 - `peers.json` は `~/.cc-hub/peers.json` (`CC_HUB_DATA_DIR` で上書き可)。CLI は peer-registry 経由で読むので環境変数があれば自動で従う
 
@@ -253,9 +252,9 @@ dismiss できたかは `cchub peek <target>` で確認 (`detectedState` が `id
 | `HTTP 404 Session not found` | tmux に session 自体が無い | `tmux ls` または UI で確認 |
 | `HTTP 401` | peer の token 期限切れ/不正 | UI で peer を作り直して再ログイン |
 | `peer に接続できません` | peer の URL/port 違い、サーバ停止 | URL と起動状態を確認 |
-| 文字列は届くが Claude Code が応答しない | paste mode で submit されていない | `--submit` を付ける (末尾に `\r\r` を付与) |
+| 文字列は届くが Claude Code が応答しない | submit されていない | `--submit` を付ける (bracketed paste でラップ + Enter) |
 | `--newline` だと長文で submit されない | CR 1回だと paste mode の改行扱い | `--newline` を `--submit` に置き換える |
-| `--submit` 付きでも payload が submit されない (入力欄に残る) | 長い payload (改行有無問わず、概ね 500 bytes 以上) が bracketed paste 扱いになり末尾 `\r\r` が paste 内に吸収される。`✅ sent ...` は HTTP 成功のみで submit を保証しない | 長文 send は原則 `--wait` で submit 確認 (`--submit --wait --wait-ms 1500`)。残ってたら追い打ちで `cchub send <target> "" --submit` (空 payload + `\r\r` 2 bytes だけ) |
+| `--submit` 付きでも payload が submit されない (入力欄に残る) | 相手の cchub が v0.1.157 以下で長文 `\r\r` 吸収バグ持ち、または相手側で `--submit` が抜けた | 相手側 cchub を v0.1.158 以上に更新。それでも残ってたら追い打ちで `cchub send <target> "" --submit` |
 | 相手から返事が来ない | 相手側 peers.json にこちらが未登録 / 名前ミス | 相手側 `POST /api/peers` で登録、返信指示文に正確な nickname/id を書く |
 | プロンプト送ったのに画面に出ない / Claude が反応しない | rating/feedback overlay が出てて keystroke を吸収中 | `cchub peek` で overlay 確認 → 「TUI overlay を dismiss する」セクションの手順で畳む |
 | `cchub send "0" --newline` で overlay が dismiss できない | overlay は menu モードで raw keypress を待つので `0\r` が乗らない | 生 `"0"` (`--newline` なし) か `printf '\x1b' | base64 \| cchub send --stdin --base64` (Esc) |

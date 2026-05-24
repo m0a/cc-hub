@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.159] - 2026-05-24
+
+### Fixed
+- **スクロール時に viewport 下部の void エリアが offset に応じて変動する不具合を解消**: `pane-viewport.ts` の padFill ロジック (`captureScrollback` と scrolled-mode の pad capture 両方) が pad capture の trailing visually-blank rows を多段 `pop` で削っており、scrollback に空行を含む pane (e.g., dev server logs は 1 行おきに空行) で `prepend` が `padNeeded` に届かず、後段の `lines.push('')` が rendered viewport の **bottom** に void を埋めていた。scroll offset によって content/blank の parity が変わるので void サイズが 0〜数行で変動して見えた。修正は tmux capture-pane が必ず付ける trailing `\n` artifact のみを 1 回 pop するシンプルな `parseCaptureOutput()` helper に置き換え、scrollback 内の本物の空行を保持するようにした。実機 sim では修正前 odd offset で 1 行 void → 修正後全 offset で void = 0 (`backend/src/services/pane-viewport.ts`, `backend/src/services/__tests__/pane-viewport-capture.test.ts`)
+
 ## [0.1.158] - 2026-05-24
 
 ### Fixed

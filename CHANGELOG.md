@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.158] - 2026-05-24
+
+### Fixed
+- **`cchub send --submit` で長文 payload (~300 bytes 以上) が submit されず入力欄に貼り付く root cause を解消**: 従来の末尾 `\r\r` 追加方式は、TUI が大きな入力バッチを auto-paste と判定したときに trailing CR を paste 内に吸収してしまい、本文が submit されないバグがあった。`\x1b[200~${payload}\x1b[201~\r` で bracketed paste markers を明示的に付けて wrap する方式に変更し、payload サイズ無関係に確実に submit されるようにした (`/api/sessions/:id/prompt` で既に確立された方式と同じ)。空 payload (`cchub send <target> "" --submit`) による flush も引き続き動作する。dev 環境の Claude TUI で 507 bytes / 43 bytes / flush 全 case の動作確認済 (`backend/src/commands/send.ts`)
+- CLI help と `cchub-send` スキル docs を新挙動 (長さ無関係に submit、~v0.1.157 までの workaround 不要) に追随 (`backend/src/cli.ts`, `.claude/skills/cchub-send/SKILL.md`)
+
 ## [0.1.157] - 2026-05-24
 
 ### Fixed

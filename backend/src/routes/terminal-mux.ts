@@ -8,6 +8,7 @@ import type {
   MuxClientMessage,
   ConversationMessage,
 } from '../../../shared/types';
+import { MuxClientMessageSchema } from '../../../shared/types';
 import { buildSessionsList } from './sessions';
 import { resolveViewportCursorPolicy, type ViewportCursorPolicy } from '../services/viewport-cursor-policy';
 
@@ -160,12 +161,19 @@ export async function muxOpen(ws: ServerWebSocket<MuxData>) {
 export async function muxMessage(ws: ServerWebSocket<MuxData>, message: string | Buffer) {
   if (typeof message !== 'string') return;
 
-  let msg: MuxClientMessage;
+  let raw: unknown;
   try {
-    msg = JSON.parse(message);
+    raw = JSON.parse(message);
   } catch {
     return;
   }
+
+  // Validate the frame before any field reaches a tmux control-mode command.
+  // Invalid/unknown frames (incl. paneId or cols/rows injection attempts) are
+  // dropped here. #231.
+  const parsed = MuxClientMessageSchema.safeParse(raw);
+  if (!parsed.success) return;
+  const msg = parsed.data as MuxClientMessage;
 
   if (msg.type === 'subscribe') {
     await handleSubscribe(ws, msg.sessionId);

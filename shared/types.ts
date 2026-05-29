@@ -663,6 +663,40 @@ export type MuxClientMessage =
   | { type: 'unsubscribe-conversation'; sessionId: string }
   | (ControlClientMessage & { sessionId: string });
 
+// Runtime validation for client→server /ws/mux frames. The unions above are
+// compile-time only; the WS handler receives untrusted JSON and interpolates
+// paneId/cols/rows into tmux control-mode command strings, so every frame is
+// validated here before dispatch (#231). Unknown keys are stripped (zod
+// default), so forward-compatible clients are unaffected.
+const WsPaneDim = z.number().int().min(1).max(2000);
+const WsAmount = z.number().int().min(1).max(2000);
+const WsOffset = z.number().int().min(0).max(10_000_000);
+
+const controlClientMessageOptions = [
+  z.object({ type: z.literal('input'), paneId: PaneIdSchema, data: z.string() }),
+  z.object({ type: z.literal('resize'), cols: WsPaneDim, rows: WsPaneDim }),
+  z.object({ type: z.literal('split'), paneId: PaneIdSchema, direction: z.enum(['h', 'v']) }),
+  z.object({ type: z.literal('close-pane'), paneId: PaneIdSchema }),
+  z.object({ type: z.literal('resize-pane'), paneId: PaneIdSchema, cols: WsPaneDim, rows: WsPaneDim }),
+  z.object({ type: z.literal('select-pane'), paneId: PaneIdSchema }),
+  z.object({ type: z.literal('ping'), timestamp: z.number() }),
+  z.object({ type: z.literal('client-info'), deviceType: z.enum(['mobile', 'tablet', 'desktop']) }),
+  z.object({ type: z.literal('adjust-pane'), paneId: PaneIdSchema, direction: z.enum(['L', 'R', 'U', 'D']), amount: WsAmount }),
+  z.object({ type: z.literal('equalize-panes'), direction: z.enum(['horizontal', 'vertical']) }),
+  z.object({ type: z.literal('zoom-pane'), paneId: PaneIdSchema }),
+  z.object({ type: z.literal('respawn-pane'), paneId: PaneIdSchema }),
+  z.object({ type: z.literal('request-viewport'), paneId: PaneIdSchema, offset: WsOffset }),
+] as const;
+
+export const MuxClientMessageSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('subscribe'), sessionId: z.string().min(1) }),
+  z.object({ type: z.literal('unsubscribe'), sessionId: z.string().min(1) }),
+  z.object({ type: z.literal('subscribe-conversation'), sessionId: z.string().min(1) }),
+  z.object({ type: z.literal('unsubscribe-conversation'), sessionId: z.string().min(1) }),
+  // Control frames carry a sessionId in the mux protocol (ping may send "").
+  ...controlClientMessageOptions.map((o) => o.extend({ sessionId: z.string() })),
+]);
+
 // Server → Client messages for /ws/mux
 export type MuxServerMessage =
   | { type: 'subscribed'; sessionId: string }

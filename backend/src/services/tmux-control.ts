@@ -34,6 +34,30 @@ const RESIZE_DEBOUNCE_MS = 50;
 // listSessions / dashboard fan-out).
 const GRACE_PERIOD_MS = 30_000;
 
+// Defense-in-depth guards for values interpolated into tmux control-mode
+// command strings. tmux parses its stdin line-by-line, so an argument
+// containing a newline injects an arbitrary command (run-shell etc. = host
+// RCE). Every command method validates its identifiers/numbers before
+// building the command, regardless of how it was reached (WS, REST, future
+// callers). The /ws/mux dispatch also validates frames up front (#231), but
+// these sink-level checks are the authoritative backstop.
+const PANE_ID_RE = /^%\d+$/;
+const PANE_DIRECTIONS = new Set(['L', 'R', 'U', 'D']);
+
+export function assertPaneId(paneId: string): void {
+  if (typeof paneId !== 'string' || !PANE_ID_RE.test(paneId)) {
+    throw new Error(`Invalid pane id: ${JSON.stringify(paneId)}`);
+  }
+}
+
+function toSafeInt(value: unknown, min: number, max: number, label: string): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(n) || n < min || n > max) {
+    throw new Error(`Invalid ${label}: ${JSON.stringify(value)}`);
+  }
+  return n;
+}
+
 interface PendingCommand {
   resolve: (output: string) => void;
   reject: (error: Error) => void;
@@ -602,6 +626,7 @@ export class TmuxControlSession {
    * Data is a Buffer of raw bytes to send.
    */
   async sendInput(paneId: string, data: Buffer): Promise<void> {
+    assertPaneId(paneId);
     // Chunk data for send-keys -H
     for (let offset = 0; offset < data.length; offset += SEND_KEYS_CHUNK_SIZE) {
       const chunk = data.subarray(offset, offset + SEND_KEYS_CHUNK_SIZE);
@@ -618,6 +643,7 @@ export class TmuxControlSession {
    * Split a pane.
    */
   async splitPane(paneId: string, direction: 'h' | 'v'): Promise<void> {
+    assertPaneId(paneId);
     const flag = direction === 'h' ? '-h' : '-v';
     await this.sendCommand(`split-window ${flag} -t ${paneId}`);
   }
@@ -626,6 +652,7 @@ export class TmuxControlSession {
    * Close a pane. Refuses to close the last remaining pane.
    */
   async closePane(paneId: string): Promise<void> {
+    assertPaneId(paneId);
     const panes = await this.listPanes();
     if (panes.length <= 1) {
       throw new Error('Cannot close the last pane');
@@ -637,6 +664,7 @@ export class TmuxControlSession {
    * Respawn a dead pane (restart the process).
    */
   async respawnPane(paneId: string): Promise<void> {
+    assertPaneId(paneId);
     await this.sendCommand(`respawn-pane -t ${paneId}`);
   }
 
@@ -644,14 +672,22 @@ export class TmuxControlSession {
    * Resize a specific pane.
    */
   async resizePane(paneId: string, cols: number, rows: number): Promise<void> {
-    await this.sendCommand(`resize-pane -t ${paneId} -x ${cols} -y ${rows}`);
+    assertPaneId(paneId);
+    const c = toSafeInt(cols, 1, 2000, 'cols');
+    const r = toSafeInt(rows, 1, 2000, 'rows');
+    await this.sendCommand(`resize-pane -t ${paneId} -x ${c} -y ${r}`);
   }
 
   /**
    * Adjust pane size relatively (L=narrower, R=wider, U=shorter, D=taller).
    */
   async adjustPaneSize(paneId: string, direction: 'L' | 'R' | 'U' | 'D', amount: number): Promise<void> {
-    await this.sendCommand(`resize-pane -t ${paneId} -${direction} ${amount}`);
+    assertPaneId(paneId);
+    if (!PANE_DIRECTIONS.has(direction)) {
+      throw new Error(`Invalid pane direction: ${JSON.stringify(direction)}`);
+    }
+    const amt = toSafeInt(amount, 1, 2000, 'amount');
+    await this.sendCommand(`resize-pane -t ${paneId} -${direction} ${amt}`);
   }
 
   /**
@@ -666,6 +702,7 @@ export class TmuxControlSession {
    * Select (focus) a pane.
    */
   async selectPane(paneId: string): Promise<void> {
+    assertPaneId(paneId);
     await this.sendCommand(`select-pane -t ${paneId}`);
   }
 
@@ -676,6 +713,7 @@ export class TmuxControlSession {
    * - If not zoomed: zoom the target pane
    */
   async zoomPane(paneId: string): Promise<void> {
+    assertPaneId(paneId);
     const zoomFlag = await this.sendCommand('display-message -p "#{window_zoomed_flag}"');
     const isZoomed = zoomFlag.trim() === '1';
     if (isZoomed) {
@@ -702,14 +740,16 @@ export class TmuxControlSession {
    */
   private async applyClientSize(cols: number, rows: number): Promise<void> {
     try {
+      const c = toSafeInt(cols, 1, 2000, 'cols');
+      const r = toSafeInt(rows, 1, 2000, 'rows');
       // Sequential, not Promise.all: tmux -CC has a single FIFO for command
       // responses, and overlapping sends corrupt the parsing (the second
       // command's bytes can interleave with the first command's response
       // window, producing "unknown command" errors).
-      await this.sendCommand(`refresh-client -C ${cols}x${rows}`);
-      await this.sendCommand(`resize-window -t ${this.sessionId} -x ${cols} -y ${rows}`);
+      await this.sendCommand(`refresh-client -C ${c}x${r}`);
+      await this.sendCommand(`resize-window -t ${this.sessionId} -x ${c} -y ${r}`);
     } catch {
-      // Ignore resize errors
+      // Ignore resize errors (incl. rejected out-of-range dimensions)
     }
   }
 

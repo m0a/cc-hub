@@ -570,6 +570,13 @@ async function proxyPeerFiles(c: Context): Promise<Response> {
   if (peer.wsToken) headers.set('Authorization', `Bearer ${peer.wsToken}`);
   const ct = c.req.header('Content-Type');
   if (ct) headers.set('Content-Type', ct);
+  // Forward range/conditional headers so peer-hosted media (video/audio) can be
+  // seeked and large files stream as ranged 206s instead of full-body 200s —
+  // the peer's /files/raw supports Range only when the header reaches it. #237
+  for (const h of ['Range', 'If-Range', 'If-None-Match', 'If-Modified-Since']) {
+    const v = c.req.header(h);
+    if (v) headers.set(h, v);
+  }
 
   const init: RequestInit = { method: c.req.method, headers };
   if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {

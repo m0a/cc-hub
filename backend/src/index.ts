@@ -12,7 +12,7 @@ import { notify } from './routes/notify';
 import { peers } from './routes/peers';
 import { muxOpen, muxMessage, muxClose, type MuxData } from './routes/terminal-mux';
 import { parseArgs, runCli, VERSION } from './cli';
-import { conditionalAuthMiddleware, isAuthRequired, getJwtSecret } from './middleware/auth';
+import { conditionalAuthMiddleware, isAuthRequired, getJwtSecret, initJwtSecret } from './middleware/auth';
 import { AuthService } from './services/auth';
 import { getDataDir } from './utils/storage';
 import { t } from './i18n';
@@ -311,6 +311,11 @@ if (resolvedPassword) {
 } else {
   console.log(`⚠️  ${t('server.passwordNotSet')}`);
 }
+
+// Resolve the JWT signing secret (generates + persists a random one on first
+// run). Must run before any request is served so no token is ever signed with
+// a guessable default.
+await initJwtSecret();
 
 // Start server
 const port = args.port;

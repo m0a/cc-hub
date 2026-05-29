@@ -289,6 +289,19 @@ export class TmuxService {
             const parts = line.split(SEP);
             if (parts.length >= 9) {
               const [sessionName, paneId, command, title, tty, active, dead, pidStr, ...pathParts] = parts;
+              // Defense-in-depth against SEP collisions in session names:
+              // CreateSessionSchema rejects names containing the sentinel, but
+              // pre-existing sessions can still poison the split and shift
+              // every field by one or more positions. paneId is always
+              // `%<digits>` (tmux contract). If the slot doesn't match, the
+              // line is suspect — skip rather than misattribute the pane to
+              // a phantom session. #250
+              if (!paneId || !/^%\d+$/.test(paneId)) {
+                console.warn(
+                  `[tmux] dropping list-panes line with malformed pane id (likely session-name SEP collision): ${line}`,
+                );
+                return;
+              }
               // Path might contain SEP (extremely unlikely), so join the rest
               const panePath = pathParts.join(SEP);
               const isActive = active === '1';

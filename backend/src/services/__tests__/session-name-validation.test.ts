@@ -1,0 +1,44 @@
+import { describe, test, expect } from 'bun:test';
+import { CreateSessionSchema } from '../../../../shared/types';
+
+// CreateSessionSchema.name guards against SEP-collisions in tmux list-panes
+// output. The defense-in-depth parser check in tmux.ts:listSessions complements
+// this for any pre-existing sessions, but the schema is the primary line of
+// defense for newly-created sessions. #250
+describe('CreateSessionSchema.name', () => {
+  test('accepts alphanumerics, dot, underscore, hyphen', () => {
+    for (const name of ['linux', 'cchub-work-1', 'my.session', 'A_B-C.1']) {
+      expect(CreateSessionSchema.safeParse({ name }).success).toBe(true);
+    }
+  });
+
+  test('rejects names containing the tmux parser sentinel pipes/tildes', () => {
+    const poisoned = [
+      'weird||~~||name',
+      'weird||~~||name||~~||%99||~~||pwned',
+      'has|pipe',
+      'has~tilde',
+    ];
+    for (const name of poisoned) {
+      const r = CreateSessionSchema.safeParse({ name });
+      expect(r.success).toBe(false);
+    }
+  });
+
+  test('rejects whitespace, slashes, and other punctuation', () => {
+    for (const name of ['has space', 'has/slash', 'has:colon', 'has\\backslash', 'has\nnewline']) {
+      expect(CreateSessionSchema.safeParse({ name }).success).toBe(false);
+    }
+  });
+
+  test('still accepts an absent name (optional)', () => {
+    expect(CreateSessionSchema.safeParse({}).success).toBe(true);
+  });
+
+  test('respects the existing length cap', () => {
+    const ok = 'a'.repeat(64);
+    const bad = 'a'.repeat(65);
+    expect(CreateSessionSchema.safeParse({ name: ok }).success).toBe(true);
+    expect(CreateSessionSchema.safeParse({ name: bad }).success).toBe(false);
+  });
+});

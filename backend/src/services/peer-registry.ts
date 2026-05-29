@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { readFile, writeFile, chmod } from 'node:fs/promises';
+import { readFile, writeFile, chmod, rename, unlink } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { ensureDataDir } from '../utils/storage';
 import {
@@ -9,6 +9,20 @@ import {
 } from '../../../shared/types';
 
 const PEERS_FILE = 'peers.json';
+
+// Module-level mutex serialising every load→mutate→save sequence against
+// peers.json. routes/peers.ts fans out per-peer fetches with Promise.all and
+// each completion calls recordPeerSuccess / recordPeerFailure; without this
+// chain, interleaved load/save calls clobbered each other's lastSeenAt and
+// could even reset a freshly-issued wsToken to a stale value. #251
+let mutationQueue: Promise<unknown> = Promise.resolve();
+function withMutationLock<T>(fn: () => Promise<T>): Promise<T> {
+  const next = mutationQueue.then(fn, fn);
+  // Don't propagate failures into the queue's success chain — the next caller
+  // must still get to run even if this one rejected.
+  mutationQueue = next.catch(() => undefined);
+  return next;
+}
 
 // peer 追加時にラウンドロビンで割り当てる palette。
 // ユーザーが手動で色を選ばなければ、追加順に PALETTE から拾う。
@@ -62,14 +76,27 @@ async function load(): Promise<PeersStore> {
 
 async function save(store: PeersStore): Promise<void> {
   const filePath = await getFilePath();
-  // wsToken を含むので owner read/write のみに制限。
-  // writeFile の mode は新規作成時のみ適用される ─ 既存ファイル上書き時は
-  // umask の名残で 0644 のままになりうるので、毎回 chmod で強制する。
-  await writeFile(filePath, JSON.stringify(store, null, 2), { mode: 0o600 });
+  // Write to a sibling temp file and rename atomically so a crash mid-write
+  // can't truncate peers.json (which would lose every peer's wsToken). #251
+  const tempPath = `${filePath}.tmp.${process.pid}.${randomBytes(4).toString('hex')}`;
   try {
-    await chmod(filePath, 0o600);
-  } catch {
-    /* permissions might already be correct, or fs doesn't support chmod */
+    // wsToken を含むので owner read/write のみに制限。writeFile の mode は新規
+    // 作成時のみ適用される ─ 既存ファイル上書き時は umask の名残で 0644 のまま
+    // になりうるので、毎回 chmod で強制する。
+    await writeFile(tempPath, JSON.stringify(store, null, 2), { mode: 0o600 });
+    try {
+      await chmod(tempPath, 0o600);
+    } catch {
+      /* permissions might already be correct, or fs doesn't support chmod */
+    }
+    await rename(tempPath, filePath);
+  } catch (err) {
+    try {
+      await unlink(tempPath);
+    } catch {
+      /* best-effort cleanup if rename never happened */
+    }
+    throw err;
   }
 }
 
@@ -120,24 +147,26 @@ export interface CreatePeerArgs {
 }
 
 export async function createPeer(args: CreatePeerArgs): Promise<StoredPeer> {
-  const store = await load();
-  const id = generateId();
-  const existing = await listPeers();
-  const order = existing.reduce((max, p) => Math.max(max, p.order), 0) + 1;
+  return withMutationLock(async () => {
+    const store = await load();
+    const id = generateId();
+    const existing = await listPeers();
+    const order = existing.reduce((max, p) => Math.max(max, p.order), 0) + 1;
 
-  const peer: StoredPeer = {
-    id,
-    nickname: args.nickname,
-    url: args.url,
-    color: args.color ?? pickColor(existing),
-    order,
-    wsToken: args.wsToken,
-    lastSeenAt: new Date().toISOString(),
-  };
+    const peer: StoredPeer = {
+      id,
+      nickname: args.nickname,
+      url: args.url,
+      color: args.color ?? pickColor(existing),
+      order,
+      wsToken: args.wsToken,
+      lastSeenAt: new Date().toISOString(),
+    };
 
-  store.peers.push(peer);
-  await save(store);
-  return peer;
+    store.peers.push(peer);
+    await save(store);
+    return peer;
+  });
 }
 
 export interface UpdatePeerArgs {
@@ -147,78 +176,88 @@ export interface UpdatePeerArgs {
 }
 
 export async function updatePeer(id: string, args: UpdatePeerArgs): Promise<StoredPeer | null> {
-  if (id === LOCAL_PEER_ID) {
-    // local peer は nickname/color のみ編集可。 token は持たない
-    const store = await load();
-    let local = store.peers.find(p => p.id === LOCAL_PEER_ID);
-    if (!local) {
-      local = localPeer();
-      store.peers.push(local);
+  return withMutationLock(async () => {
+    if (id === LOCAL_PEER_ID) {
+      // local peer は nickname/color のみ編集可。 token は持たない
+      const store = await load();
+      let local = store.peers.find(p => p.id === LOCAL_PEER_ID);
+      if (!local) {
+        local = localPeer();
+        store.peers.push(local);
+      }
+      if (args.nickname !== undefined) local.nickname = args.nickname;
+      if (args.color !== undefined) local.color = args.color;
+      await save(store);
+      return local;
     }
-    if (args.nickname !== undefined) local.nickname = args.nickname;
-    if (args.color !== undefined) local.color = args.color;
+
+    const store = await load();
+    const peer = store.peers.find(p => p.id === id);
+    if (!peer) return null;
+
+    if (args.nickname !== undefined) peer.nickname = args.nickname;
+    if (args.color !== undefined) peer.color = args.color;
+    if (args.wsToken !== undefined) {
+      peer.wsToken = args.wsToken;
+      peer.lastSeenAt = new Date().toISOString();
+      peer.lastErrorAt = undefined;
+      peer.lastErrorMessage = undefined;
+    }
+
     await save(store);
-    return local;
-  }
-
-  const store = await load();
-  const peer = store.peers.find(p => p.id === id);
-  if (!peer) return null;
-
-  if (args.nickname !== undefined) peer.nickname = args.nickname;
-  if (args.color !== undefined) peer.color = args.color;
-  if (args.wsToken !== undefined) {
-    peer.wsToken = args.wsToken;
-    peer.lastSeenAt = new Date().toISOString();
-    peer.lastErrorAt = undefined;
-    peer.lastErrorMessage = undefined;
-  }
-
-  await save(store);
-  return peer;
+    return peer;
+  });
 }
 
 export async function deletePeer(id: string): Promise<boolean> {
-  if (id === LOCAL_PEER_ID) return false; // self は削除不可
-  const store = await load();
-  const before = store.peers.length;
-  store.peers = store.peers.filter(p => p.id !== id);
-  if (store.peers.length === before) return false;
-  await save(store);
-  return true;
+  return withMutationLock(async () => {
+    if (id === LOCAL_PEER_ID) return false; // self は削除不可
+    const store = await load();
+    const before = store.peers.length;
+    store.peers = store.peers.filter(p => p.id !== id);
+    if (store.peers.length === before) return false;
+    await save(store);
+    return true;
+  });
 }
 
 export async function setPeerOrder(orderedIds: string[]): Promise<void> {
-  const store = await load();
-  const indexById = new Map(orderedIds.map((id, i) => [id, i]));
-  // 配列に含まれない peer は末尾に追いやる
-  const maxIndex = orderedIds.length;
-  for (const peer of store.peers) {
-    const idx = indexById.get(peer.id);
-    peer.order = idx !== undefined ? idx : maxIndex + peer.order;
-  }
-  await save(store);
+  return withMutationLock(async () => {
+    const store = await load();
+    const indexById = new Map(orderedIds.map((id, i) => [id, i]));
+    // 配列に含まれない peer は末尾に追いやる
+    const maxIndex = orderedIds.length;
+    for (const peer of store.peers) {
+      const idx = indexById.get(peer.id);
+      peer.order = idx !== undefined ? idx : maxIndex + peer.order;
+    }
+    await save(store);
+  });
 }
 
 export async function recordPeerSuccess(id: string): Promise<void> {
   if (id === LOCAL_PEER_ID) return;
-  const store = await load();
-  const peer = store.peers.find(p => p.id === id);
-  if (!peer) return;
-  peer.lastSeenAt = new Date().toISOString();
-  peer.lastErrorAt = undefined;
-  peer.lastErrorMessage = undefined;
-  await save(store);
+  return withMutationLock(async () => {
+    const store = await load();
+    const peer = store.peers.find(p => p.id === id);
+    if (!peer) return;
+    peer.lastSeenAt = new Date().toISOString();
+    peer.lastErrorAt = undefined;
+    peer.lastErrorMessage = undefined;
+    await save(store);
+  });
 }
 
 export async function recordPeerFailure(id: string, message: string): Promise<void> {
   if (id === LOCAL_PEER_ID) return;
-  const store = await load();
-  const peer = store.peers.find(p => p.id === id);
-  if (!peer) return;
-  peer.lastErrorAt = new Date().toISOString();
-  peer.lastErrorMessage = message;
-  await save(store);
+  return withMutationLock(async () => {
+    const store = await load();
+    const peer = store.peers.find(p => p.id === id);
+    if (!peer) return;
+    peer.lastErrorAt = new Date().toISOString();
+    peer.lastErrorMessage = message;
+    await save(store);
+  });
 }
 
 /**
@@ -231,9 +270,11 @@ export async function getCrossPeerSessionOrder(): Promise<string[]> {
 }
 
 export async function setCrossPeerSessionOrder(order: string[]): Promise<void> {
-  const store = await load();
-  store.sessionOrder = order;
-  await save(store);
+  return withMutationLock(async () => {
+    const store = await load();
+    store.sessionOrder = order;
+    await save(store);
+  });
 }
 
 export type { StoredPeer };

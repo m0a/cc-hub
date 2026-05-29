@@ -1,3 +1,6 @@
+import { randomBytes } from 'node:crypto';
+import { readFile, writeFile, mkdir, chmod } from 'node:fs/promises';
+import { join } from 'node:path';
 import { createMiddleware } from 'hono/factory';
 import type { Context, Next } from 'hono';
 import { AuthService, type JwtPayload } from '../services/auth';
@@ -10,7 +13,34 @@ declare module 'hono' {
   }
 }
 
-const jwtSecret = process.env.JWT_SECRET || 'development-secret-change-in-production';
+// The JWT signing secret. Resolved at startup by initJwtSecret(): an explicit
+// JWT_SECRET env var wins, otherwise a random 32-byte secret is generated once
+// and persisted (0600) in the data dir. There is intentionally NO usable
+// default — a hardcoded fallback would let anyone with the source forge tokens
+// and bypass password auth entirely.
+let jwtSecret: string | null = process.env.JWT_SECRET || null;
+
+// Resolve (and if necessary generate + persist) the JWT signing secret.
+// Must be awaited once at server startup before any request is served.
+export async function initJwtSecret(): Promise<void> {
+  if (jwtSecret) return;
+  const dataDir = getDataDir();
+  const secretPath = join(dataDir, 'jwt-secret');
+  try {
+    const existing = (await readFile(secretPath, 'utf-8')).trim();
+    if (existing) {
+      jwtSecret = existing;
+      return;
+    }
+  } catch {
+    // Not yet persisted — fall through to generate.
+  }
+  const generated = randomBytes(32).toString('hex');
+  await mkdir(dataDir, { recursive: true });
+  await writeFile(secretPath, generated, { mode: 0o600 });
+  await chmod(secretPath, 0o600);
+  jwtSecret = generated;
+}
 
 // Check if password auth is enabled
 export function isAuthRequired(): boolean {
@@ -38,7 +68,7 @@ export const conditionalAuthMiddleware = createMiddleware(async (c: Context, nex
   }
 
   const token = authHeader.slice(7);
-  const authService = new AuthService(getDataDir(), jwtSecret);
+  const authService = new AuthService(getDataDir(), getJwtSecret());
 
   try {
     const payload = await authService.verifyToken(token);
@@ -58,7 +88,7 @@ export const authMiddleware = createMiddleware(async (c: Context, next: Next) =>
   }
 
   const token = authHeader.slice(7);
-  const authService = new AuthService(getDataDir(), jwtSecret);
+  const authService = new AuthService(getDataDir(), getJwtSecret());
 
   try {
     const payload = await authService.verifyToken(token);
@@ -70,5 +100,8 @@ export const authMiddleware = createMiddleware(async (c: Context, next: Next) =>
 });
 
 export function getJwtSecret(): string {
+  if (!jwtSecret) {
+    throw new Error('JWT secret not initialized — call initJwtSecret() at startup');
+  }
   return jwtSecret;
 }

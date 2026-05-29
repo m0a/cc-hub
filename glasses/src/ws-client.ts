@@ -80,6 +80,10 @@ export class CcHubWsClient {
 
     this.ws.onclose = () => {
       console.log('[ws] closed')
+      // The reconnected socket is a brand-new server session with no
+      // subscriptions. Reset our local view so onReady's subscribe() sends
+      // a fresh 'subscribe' instead of the early-return dedup. #265
+      this.subscribedSession = null
       this.scheduleReconnect()
     }
 

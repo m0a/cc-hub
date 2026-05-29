@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ConversationMessage } from "../../../shared/types";
 import { authFetch } from "../services/api";
 
@@ -29,10 +29,12 @@ export function useCodexConversation({
 }: UseCodexConversationOptions): UseCodexConversationResult {
 	const [messages, setMessages] = useState<ConversationMessage[]>([]);
 	const [isReady, setIsReady] = useState(false);
-	const cancelledRef = useRef(false);
 
 	useEffect(() => {
-		cancelledRef.current = false;
+		// Per-effect cancellation flag. A shared ref would be reset when the
+		// next effect run sets it back to false, letting a late response from
+		// the previous threadId overwrite the new thread's messages. #257
+		let cancelled = false;
 		setMessages([]);
 		setIsReady(false);
 
@@ -46,13 +48,13 @@ export function useCodexConversation({
 				const response = await authFetch(url, { cache: "no-store" });
 				if (!response.ok) throw new Error(`status ${response.status}`);
 				const data = await response.json();
-				if (cancelledRef.current) return;
+				if (cancelled) return;
 				setMessages(data.messages ?? []);
 			} catch (err) {
-				if (!cancelledRef.current)
+				if (!cancelled)
 					console.error("Failed to fetch codex conversation:", err);
 			} finally {
-				if (!cancelledRef.current) setIsReady(true);
+				if (!cancelled) setIsReady(true);
 			}
 		};
 
@@ -60,7 +62,7 @@ export function useCodexConversation({
 		const id = window.setInterval(fetchOnce, pollIntervalMs);
 
 		return () => {
-			cancelledRef.current = true;
+			cancelled = true;
 			window.clearInterval(id);
 		};
 	}, [threadId, enabled, pollIntervalMs]);

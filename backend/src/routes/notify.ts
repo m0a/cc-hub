@@ -86,6 +86,24 @@ const notify = new Hono();
 const stateOverrides = new Map<string, { state: IndicatorState; expiresAt: number; toolName?: string }>();
 // TTLは安全弁。StopやPostToolUse/PreToolUseで明示的に上書きされる。
 const OVERRIDE_TTL = 24 * 60 * 60_000; // 24時間
+// `/api/notify` is intentionally unauthenticated (local hooks call into it),
+// so a network attacker can flood the endpoint with arbitrary session_ids to
+// blow up `stateOverrides`. Validate the id format and bound the Map size so a
+// flood costs O(MAX) memory rather than O(requests). #254
+const SESSION_ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
+const MAX_OVERRIDE_ENTRIES = 500;
+
+function evictStateOverrides(): void {
+  const now = Date.now();
+  for (const [key, entry] of stateOverrides) {
+    if (entry.expiresAt <= now) stateOverrides.delete(key);
+  }
+  while (stateOverrides.size > MAX_OVERRIDE_ENTRIES) {
+    const oldest = stateOverrides.keys().next().value;
+    if (oldest === undefined) break;
+    stateOverrides.delete(oldest);
+  }
+}
 
 function hookEventToState(event: string, toolName?: string): IndicatorState | null {
   switch (event) {
@@ -141,11 +159,15 @@ notify.post('/', async (c) => {
     const transcriptPath = body.transcript_path as string | undefined;
 
     // indicatorStateオーバーライドを保存
-    if (sessionId) {
+    // session_id must look like a real agent session id (Claude/Codex UUIDs,
+    // tmux session names). Reject anything that doesn't and bound the Map so
+    // an unauth flood costs O(MAX) memory, not O(requests). #254
+    if (sessionId && SESSION_ID_RE.test(sessionId)) {
       const toolName = body.tool_name as string | undefined;
       const newState = hookEventToState(event, toolName);
       if (newState) {
         const ttl = OVERRIDE_TTL;
+        evictStateOverrides();
         stateOverrides.set(sessionId, { state: newState, expiresAt: Date.now() + ttl, toolName: event === 'PreToolUse' ? toolName : undefined });
       }
     }

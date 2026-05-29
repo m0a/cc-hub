@@ -90,7 +90,12 @@ export function agentSupportsConversationMetadata(agent: string | undefined): bo
 
 export function agentResumeCommand(agent: AgentProvider, sessionId?: string): string {
   const base = AGENT_PROVIDERS[agent].resumeCommand;
-  return sessionId ? `${base} ${sessionId}` : base;
+  if (!sessionId) return base;
+  // The command is typed into an interactive shell via tmux send-keys, so the
+  // session id is single-quoted to guarantee it cannot break out of the
+  // argument — defense-in-depth on top of SessionIdSchema at the routes. #234
+  const quoted = `'${sessionId.replace(/'/g, `'\\''`)}'`;
+  return `${base} ${quoted}`;
 }
 
 export interface SessionResponse {
@@ -126,6 +131,11 @@ export const LoginSchema = z.object({
 
 // Pane ID validation (e.g., "%0", "%1")
 export const PaneIdSchema = z.string().regex(/^%\d+$/, 'Invalid pane ID');
+
+// Agent session id validation. Claude/Codex session ids are UUID-like; this
+// also bounds them to shell-safe characters because the id is typed into an
+// interactive shell via `claude -r <id>` / `codex resume <id>` (#234).
+export const SessionIdSchema = z.string().regex(/^[A-Za-z0-9._-]+$/, 'Invalid session id');
 
 export interface PaneInfo {
   paneId: string;          // "%0", "%1"

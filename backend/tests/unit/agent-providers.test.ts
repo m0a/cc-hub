@@ -88,8 +88,9 @@ describe('Agent provider registry', () => {
 
   test('builds resume commands per agent', () => {
     expect(agentResumeCommand('claude')).toBe('claude -r');
-    expect(agentResumeCommand('claude', 'abc-123')).toBe('claude -r abc-123');
+    // session id is single-quoted (typed into an interactive shell) — #234
+    expect(agentResumeCommand('claude', 'abc-123')).toBe("claude -r 'abc-123'");
     expect(agentResumeCommand('codex')).toBe('codex resume');
-    expect(agentResumeCommand('codex', 'thread-xyz')).toBe('codex resume thread-xyz');
+    expect(agentResumeCommand('codex', 'thread-xyz')).toBe("codex resume 'thread-xyz'");
   });
 });

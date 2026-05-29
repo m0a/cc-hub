@@ -285,15 +285,19 @@ export const FloatingKeyboard = forwardRef<
 
 	// Send text to terminal
 	const sendText = (text: string) => {
+		// onSend can return false when the terminal is mid-reconnect or there is
+		// no active pane. Treat undefined as success (legacy callers). If the
+		// send didn't land, keep inputValue and skip addToHistory / clear so the
+		// user can retry instead of silently losing the message. #264
 		if (text) {
+			const textRes = text.includes("\n")
+				? onSend(`\x1b[200~${text}\x1b[201~`)
+				: onSend(text);
+			if (textRes === false) return;
 			addToHistory(text);
-			if (text.includes("\n")) {
-				onSend(`\x1b[200~${text}\x1b[201~`);
-			} else {
-				onSend(text);
-			}
 		}
-		onSend("\r");
+		const enterRes = onSend("\r");
+		if (enterRes === false) return;
 		setInputValue("");
 		historyIndexRef.current = -1;
 		savedInputRef.current = "";

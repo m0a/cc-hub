@@ -24,7 +24,9 @@ import type {
 	FileInfo,
 	GitFileChange,
 } from "../../../../shared/types";
+import { useAuthBlobUrl } from "../../hooks/useAuthBlobUrl";
 import { useFileViewer } from "../../hooks/useFileViewer";
+import { authFetch } from "../../services/api";
 import { stripHomeProjectPrefix, toHomeShortPath } from "../../utils/path";
 import { CodeViewer } from "./CodeViewer";
 import { DiffViewer } from "./DiffViewer";
@@ -173,6 +175,15 @@ export function FileViewer({
 	const filesApiBase =
 		peerId && peerId !== "local" ? `/api/peers/${peerId}/files` : "/api/files";
 
+	// `<img src>` / `<video src>` / `<audio src>` cannot send the Bearer auth
+	// header, so /files/raw 401s when CCHUB_PASSWORD is set. Fetch the bytes via
+	// authFetch and present them as a same-origin blob: URL instead. #260
+	const rawUrl =
+		selectedFile && (isImageFile(selectedFile.path) || isMediaFile(selectedFile.path))
+			? `${filesApiBase}/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`
+			: null;
+	const rawBlobUrl = useAuthBlobUrl(rawUrl);
+
 	const [viewMode, setViewMode] = useState<ViewMode>("browser");
 	const [listMode, setListMode] = useState<ListMode>("browser");
 	const [previewMode, setPreviewMode] = useState(false);
@@ -230,10 +241,14 @@ export function FileViewer({
 					);
 				}
 				console.log("[upload] sending POST /api/files/upload");
-				const res = await fetch(`${filesApiBase}/upload`, {
-					method: "POST",
-					body: formData,
-				});
+				// authFetch attaches the Bearer token while letting the browser set
+				// the multipart Content-Type itself. Plain fetch() would 401 whenever
+				// CCHUB_PASSWORD is set. #259
+				const res = await authFetch(
+					`${filesApiBase}/upload`,
+					{ method: "POST", body: formData },
+					300_000,
+				);
 				console.log(`[upload] response: ${res.status}`);
 				if (!res.ok) {
 					const err = await res
@@ -264,17 +279,42 @@ export function FileViewer({
 		[currentPath, sessionWorkingDir, listDirectory],
 	);
 
-	const handleDownloadFile = useCallback(() => {
+	const handleDownloadFile = useCallback(async () => {
 		if (!selectedFile) return;
 		const url = `${filesApiBase}/download?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`;
-		// Use a temporary anchor to trigger download with proper filename from Content-Disposition
-		const a = document.createElement("a");
-		a.href = url;
-		a.rel = "noopener";
-		document.body.appendChild(a);
-		a.click();
-		document.body.removeChild(a);
-	}, [selectedFile, sessionWorkingDir]);
+		// <a href> cannot send the Bearer header, so /files/download 401s when
+		// CCHUB_PASSWORD is set. Fetch via authFetch, materialise into a blob,
+		// and trigger the anchor against the object URL. #260
+		try {
+			const res = await authFetch(url, {}, 300_000);
+			if (!res.ok) return;
+			const cd = res.headers.get("content-disposition") ?? "";
+			const dispMatch = cd.match(
+				/filename\*?=(?:UTF-8''|")?([^";]+)"?/i,
+			);
+			const fallback = selectedFile.path.split("/").pop() ?? "download";
+			let filename = fallback;
+			if (dispMatch?.[1]) {
+				try {
+					filename = decodeURIComponent(dispMatch[1]);
+				} catch {
+					filename = dispMatch[1];
+				}
+			}
+			const blob = await res.blob();
+			const objectUrl = URL.createObjectURL(blob);
+			const a = document.createElement("a");
+			a.href = objectUrl;
+			a.download = filename;
+			a.rel = "noopener";
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+		} catch {
+			// best-effort download — surface nothing extra to the user
+		}
+	}, [selectedFile, sessionWorkingDir, filesApiBase]);
 
 	// View history stack for back navigation
 	// Use module-level array to survive React strict mode and re-renders
@@ -787,7 +827,7 @@ export function FileViewer({
 													mimeType={selectedFile.mimeType}
 													fileName={getFileName(selectedFile.path)}
 													size={selectedFile.size}
-													srcUrl={`${filesApiBase}/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
+													srcUrl={rawBlobUrl ?? undefined}
 												/>
 											) : isMediaFile(selectedFile.path) ? (
 												<div className="flex flex-col h-full bg-th-bg">
@@ -799,7 +839,7 @@ export function FileViewer({
 																playsInline
 																preload="metadata"
 																className="w-full h-full object-contain rounded"
-																src={`${filesApiBase}/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
+																src={rawBlobUrl ?? undefined}
 															/>
 														) : (
 															// biome-ignore lint/a11y/useMediaCaption: arbitrary user files; no caption track available
@@ -807,7 +847,7 @@ export function FileViewer({
 																controls
 																preload="metadata"
 																className="w-full max-w-md"
-																src={`${filesApiBase}/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
+																src={rawBlobUrl ?? undefined}
 															/>
 														)}
 													</div>
@@ -933,7 +973,7 @@ export function FileViewer({
 								mimeType={selectedFile.mimeType}
 								fileName={getFileName(selectedFile.path)}
 								size={selectedFile.size}
-								srcUrl={`${filesApiBase}/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
+								srcUrl={rawBlobUrl ?? undefined}
 							/>
 						) : isMediaFile(selectedFile.path) ? (
 							<div className="flex flex-col items-center justify-center h-full p-4 bg-th-bg">
@@ -942,14 +982,14 @@ export function FileViewer({
 									<video
 										controls
 										className="max-w-full max-h-full rounded"
-										src={`${filesApiBase}/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
+										src={rawBlobUrl ?? undefined}
 									/>
 								) : (
 									// biome-ignore lint/a11y/useMediaCaption: arbitrary user files; no caption track available
 									<audio
 										controls
 										className="w-full max-w-md"
-										src={`${filesApiBase}/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`}
+										src={rawBlobUrl ?? undefined}
 									/>
 								)}
 								<div className="mt-2 text-xs text-th-text-muted">

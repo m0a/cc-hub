@@ -195,6 +195,16 @@ export async function muxMessage(ws: ServerWebSocket<MuxData>, message: string |
     return;
   }
 
+  // Keepalive. Handle before the sessionId/subscription gate below: the client
+  // pings with sessionId="" whenever no terminal is selected (dashboard, file
+  // viewer, history). If those pings were dropped, the client never gets a
+  // pong, force-closes after the timeout, and reconnect-storms. #236
+  if (msg.type === 'ping') {
+    ws.data.lastPingAt = Date.now();
+    ws.send(JSON.stringify({ type: 'pong', timestamp: msg.timestamp }));
+    return;
+  }
+
   const sessionId = (msg as { sessionId?: string }).sessionId;
   if (!sessionId) return;
 
@@ -612,11 +622,6 @@ async function handleControlMessage(
       case 'request-viewport': {
         sub.liveOffset.set(msg.paneId, Math.max(0, msg.offset | 0));
         await pushViewport(ws, sessionId, sub, msg.paneId, msg.offset);
-        break;
-      }
-      case 'ping': {
-        ws.data.lastPingAt = Date.now();
-        ws.send(JSON.stringify({ type: 'pong', timestamp: msg.timestamp }));
         break;
       }
       case 'client-info': {

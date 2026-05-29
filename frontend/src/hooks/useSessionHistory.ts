@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
 	ConversationMessage,
 	HistorySession,
@@ -6,7 +6,7 @@ import type {
 	PeerHistoryProjectsResponse,
 } from "../../../shared/types";
 import { LOCAL_PEER_ID } from "../../../shared/types";
-import { authFetch, isTransientNetworkError } from "../services/api";
+import { authFetch, getAuthToken, isTransientNetworkError } from "../services/api";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
@@ -214,50 +214,90 @@ export function useSessionHistory(): UseSessionHistoryResult {
 		[],
 	);
 
-	// Search は Hub の SSE をそのまま使用 (Phase: peer 横断 search は未実装)
+	// Search は Hub の SSE をそのまま使用 (Phase: peer 横断 search は未実装)。
+	// EventSource は Authorization ヘッダを送れず、password 認証時に 401 で無言失敗
+	// する。fetch + ReadableStream で Bearer を付与し SSE を手動パースする。
+	// AbortController で重複検索/アンマウント時に前のストリームを確実に閉じる。#238
+	const searchAbortRef = useRef<AbortController | null>(null);
 	const searchSessions = useCallback(async (query: string) => {
 		setSearchQuery(query);
+		searchAbortRef.current?.abort();
 		if (!query.trim()) {
 			setSearchResults([]);
+			setIsSearching(false);
 			return;
 		}
 
 		setIsSearching(true);
 		setSearchResults([]);
 
+		const controller = new AbortController();
+		searchAbortRef.current = controller;
 		try {
 			const url = `${API_BASE}/api/sessions/history/search/stream?q=${encodeURIComponent(query)}`;
-			const eventSource = new EventSource(url);
+			const token = getAuthToken();
+			const headers: Record<string, string> = {};
+			if (token) headers.Authorization = `Bearer ${token}`;
+			const res = await fetch(url, { headers, signal: controller.signal });
+			if (!res.ok || !res.body) {
+				console.error(`Session search failed: HTTP ${res.status}`);
+				return;
+			}
 
-			eventSource.onmessage = (event) => {
-				try {
-					const session = JSON.parse(event.data) as HistorySession;
-					setSearchResults((prev) => [...prev, session]);
-				} catch {
-					/* Ignore parse errors */
+			const reader = res.body.getReader();
+			const decoder = new TextDecoder();
+			let buffer = "";
+			let streaming = true;
+			while (streaming) {
+				const { done, value } = await reader.read();
+				if (done) break;
+				buffer += decoder.decode(value, { stream: true });
+				let sep = buffer.indexOf("\n\n");
+				while (sep !== -1) {
+					const frame = buffer.slice(0, sep);
+					buffer = buffer.slice(sep + 2);
+					let eventType = "message";
+					const dataLines: string[] = [];
+					for (const line of frame.split("\n")) {
+						if (line.startsWith("event:")) eventType = line.slice(6).trim();
+						else if (line.startsWith("data:"))
+							dataLines.push(line.slice(5).replace(/^ /, ""));
+					}
+					const data = dataLines.join("\n");
+					if (eventType === "done") {
+						streaming = false;
+						break;
+					}
+					if (eventType === "error") {
+						console.error("Session search stream reported an error");
+					} else if (data) {
+						try {
+							setSearchResults((prev) => [
+								...prev,
+								JSON.parse(data) as HistorySession,
+							]);
+						} catch {
+							/* Ignore parse errors */
+						}
+					}
+					sep = buffer.indexOf("\n\n");
 				}
-			};
-
-			eventSource.addEventListener("done", () => {
-				setIsSearching(false);
-				eventSource.close();
-			});
-
-			eventSource.addEventListener("error", () => {
-				setIsSearching(false);
-				eventSource.close();
-			});
-
-			eventSource.onerror = () => {
-				setIsSearching(false);
-				eventSource.close();
-			};
+			}
 		} catch (err) {
-			console.error("Failed to search sessions:", err);
-			setSearchResults([]);
-			setIsSearching(false);
+			if (!(err instanceof DOMException && err.name === "AbortError")) {
+				console.error("Failed to search sessions:", err);
+			}
+		} finally {
+			if (searchAbortRef.current === controller) {
+				searchAbortRef.current = null;
+				setIsSearching(false);
+			}
 		}
 	}, []);
+
+	// Abort any in-flight search stream on unmount (also closes the stream
+	// across repeated searches, fixing the old EventSource leak). #238
+	useEffect(() => () => searchAbortRef.current?.abort(), []);
 
 	const clearSearch = useCallback(() => {
 		setSearchQuery("");

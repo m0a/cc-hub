@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { homedir } from 'node:os';
-import { AGENT_PROVIDERS, AGENT_PROVIDER_IDS, CreateSessionSchema, DEFAULT_AGENT_PROVIDER, PaneIdSchema, agentResumeCommand, agentSupportsConversationMetadata, type AgentProvider, type IndicatorState, type PaneInfo, type ExtendedSessionResponse, type SessionState } from '../../../shared/types';
+import { AGENT_PROVIDERS, AGENT_PROVIDER_IDS, CreateSessionSchema, DEFAULT_AGENT_PROVIDER, PaneIdSchema, SessionIdSchema, agentResumeCommand, agentSupportsConversationMetadata, type AgentProvider, type IndicatorState, type PaneInfo, type ExtendedSessionResponse, type SessionState } from '../../../shared/types';
 import { TmuxService } from '../services/tmux';
 import { controlSessions, getOrCreateControlSession } from '../services/tmux-control';
 import { ClaudeCodeService } from '../services/claude-code';
@@ -382,8 +382,8 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
 
 
 const ResumeSessionSchema = z.object({
-  ccSessionId: z.string().optional(),
-  sessionId: z.string().optional(),
+  ccSessionId: SessionIdSchema.optional(),
+  sessionId: SessionIdSchema.optional(),
   agent: z.enum(AGENT_PROVIDER_IDS).optional(),
 });
 
@@ -634,7 +634,7 @@ sessions.get('/prompts/search', async (c) => {
 // POST /sessions/history/resume - Resume a session from history (creates new tmux session)
 // NOTE: Must be defined BEFORE /:id routes
 const ResumeHistorySchema = z.object({
-  sessionId: z.string(),
+  sessionId: SessionIdSchema,
   projectPath: z.string(),
   agent: z.enum(AGENT_PROVIDER_IDS).optional(),
 });

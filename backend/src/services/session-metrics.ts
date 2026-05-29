@@ -3,13 +3,13 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { createInterface } from 'node:readline';
 import type { SessionMetrics } from '../../../shared/types';
+import { claudeProjectDirName } from '../utils/claude-project-path';
 import { getMaxInputTokens } from './anthropic-models';
 
 const CONTEXT_MAX_DEFAULT = 200_000;
 
 function pathToProjectDir(workingDir: string): string {
-  const dirName = workingDir.replace(/\//g, '-');
-  return path.join(os.homedir(), '.claude', 'projects', dirName);
+  return path.join(os.homedir(), '.claude', 'projects', claudeProjectDirName(workingDir));
 }
 
 interface ProcessTable {

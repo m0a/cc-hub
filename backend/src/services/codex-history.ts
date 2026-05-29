@@ -4,6 +4,7 @@ import { createInterface } from 'node:readline';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { ConversationMessage, HistorySession } from '../../../shared/types';
+import { claudeProjectDirName } from '../utils/claude-project-path';
 import { CodexConversationService } from './codex-conversation';
 import type { ProjectInfo } from './session-history';
 
@@ -21,7 +22,7 @@ interface RolloutInfo {
  * sessions for the same project bucket share one ProjectInfo entry.
  */
 function encodeCwd(cwd: string): string {
-  return cwd.replace(/\//g, '-');
+  return claudeProjectDirName(cwd);
 }
 
 /**

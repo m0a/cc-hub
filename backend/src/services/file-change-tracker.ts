@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import type { FileChange } from '../../../shared/types';
+import { claudeProjectDirName } from '../utils/claude-project-path';
 
 interface ToolUseBlock {
   type: 'tool_use';
@@ -36,7 +37,7 @@ export class FileChangeTracker {
    * e.g., /home/m0a/cchub -> -home-m0a-cchub
    */
   private pathToProjectName(path: string): string {
-    return path.replace(/\//g, '-');
+    return claudeProjectDirName(path);
   }
 
   /**

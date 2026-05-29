@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { SessionHistoryService } from './session-history';
 import { ClaudeCodeService } from './claude-code';
 import type { ConversationMessage } from '../../../shared/types';
+import { claudeProjectDirName } from '../utils/claude-project-path';
 
 type ConversationListener = (newMessages: ConversationMessage[]) => void;
 
@@ -13,7 +14,7 @@ const claudeCodeService = new ClaudeCodeService();
 const claudeProjectsDir = join(homedir(), '.claude', 'projects');
 
 function pathToProjectName(path: string): string {
-  return path.replace(/\//g, '-');
+  return claudeProjectDirName(path);
 }
 
 export class ConversationWatcher {

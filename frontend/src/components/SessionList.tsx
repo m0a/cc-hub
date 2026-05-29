@@ -1455,12 +1455,17 @@ export function SessionList({
 			direction?: "h" | "v",
 		) => {
 			try {
-				const endpoint =
+				// Peer sessions are merged into the same list (flattenPeerSessions),
+				// so the action could target a remote peer's session. Route through
+				// sessionFetch so the request reaches the owning Hub/peer with the
+				// right token, not always the local Hub origin. #258
+				const session = sessions.find((s) => s.id === sessionId);
+				const path =
 					action === "split"
-						? `${API_BASE}/api/sessions/${sessionId}/panes/split`
-						: `${API_BASE}/api/sessions/${sessionId}/panes/${action}`;
+						? `/api/sessions/${sessionId}/panes/split`
+						: `/api/sessions/${sessionId}/panes/${action}`;
 				const body = action === "split" ? { paneId, direction } : { paneId };
-				const response = await authFetch(endpoint, {
+				const response = await sessionFetch(session, peers, path, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify(body),
@@ -1472,7 +1477,7 @@ export function SessionList({
 				console.error(`Pane ${action} failed:`, err);
 			}
 		},
-		[],
+		[sessions, peers],
 	);
 
 	// Drag-to-reorder handler. Session order is a cross-peer merged list stored
@@ -1910,8 +1915,17 @@ export function SessionList({
 								type="button"
 								onClick={async () => {
 									try {
-										await authFetch(
-											`${API_BASE}/api/sessions/${encodeURIComponent(paneToClose.sessionId)}/panes/close`,
+										// Route to the owning Hub/peer instead of always the
+										// local Hub — otherwise closing a pane on a remote
+										// peer's session silently fails (or, on id collision,
+										// closes the wrong pane). #258
+										const session = sessions.find(
+											(s) => s.id === paneToClose.sessionId,
+										);
+										await sessionFetch(
+											session,
+											peers,
+											`/api/sessions/${encodeURIComponent(paneToClose.sessionId)}/panes/close`,
 											{
 												method: "POST",
 												headers: { "Content-Type": "application/json" },

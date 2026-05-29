@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PaneViewport, TmuxLayoutNode } from "../../../shared/types";
+import { authFetch, fetchWithTimeout } from "../services/api";
 import { reportWsLatency } from "../services/latency-store";
 import { appendWsToken } from "../services/peer-ws";
 import { getDeviceId } from "../utils/device-id";
@@ -10,6 +11,10 @@ interface UseMultiplexedTerminalOptions {
 	// Multi-server: アクティブな peer の WS base URL ("wss://host:port") を指定。
 	// 省略時は Hub (window.location.host) を使う。
 	peerWsBase?: string | null;
+	// REST API base URL for the peer that owns this session ("" for Hub, e.g.
+	// "https://peer:port" for a remote peer). Used by REST fallbacks when the
+	// mux WebSocket is closed. #256
+	peerApiBase?: string | null;
 	onPaneViewport?: (paneId: string, viewport: PaneViewport) => void;
 	onLayoutChange?: (layout: TmuxLayoutNode) => void;
 	onNewSession?: (sessionId: string, sessionName: string) => void;
@@ -535,7 +540,7 @@ export function dispatchInputEcho(
 export function useMultiplexedTerminal(
 	options: UseMultiplexedTerminalOptions,
 ): UseMultiplexedTerminalReturn {
-	const { sessionId, token, peerWsBase } = options;
+	const { sessionId, token, peerWsBase, peerApiBase } = options;
 	const [isConnected, setIsConnected] = useState(false);
 	const [deadPanes, setDeadPanes] = useState<Set<string>>(new Set());
 
@@ -666,25 +671,34 @@ export function useMultiplexedTerminal(
 			});
 			if (sharedWs?.readyState === WebSocket.OPEN) {
 				sendSessionMessage({ type: "respawn-pane", paneId });
-			} else {
-				const apiBase = import.meta.env.VITE_API_URL || "";
-				fetch(
-					`${apiBase}/api/sessions/${encodeURIComponent(sessionId)}/panes/respawn`,
-					{
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({ paneId }),
-					},
-				)
-					.then(() => {
-						setTimeout(() => ensureConnection(), 500);
-					})
-					.catch(() => {
-						setTimeout(() => ensureConnection(), 500);
-					});
+				return;
 			}
+			// WS is down — fall back to REST. The old fallback used plain fetch()
+			// against the Hub origin: it 401'd under password auth (no Bearer
+			// header) and POSTed to the wrong server for peer sessions. Route
+			// through authFetch for local and the peer base+token for remote. #256
+			const path = `/api/sessions/${encodeURIComponent(sessionId)}/panes/respawn`;
+			const body = JSON.stringify({ paneId });
+			const headers: HeadersInit = { "Content-Type": "application/json" };
+			const isRemotePeer = peerApiBase && peerApiBase.length > 0;
+			const request = isRemotePeer
+				? (() => {
+						const peerHeaders = new Headers(headers);
+						if (token) peerHeaders.set("Authorization", `Bearer ${token}`);
+						return fetchWithTimeout(`${peerApiBase}${path}`, {
+							method: "POST",
+							headers: peerHeaders,
+							body,
+						});
+					})()
+				: authFetch(
+						`${import.meta.env.VITE_API_URL || ""}${path}`,
+						{ method: "POST", headers, body },
+					);
+			const reconnect = () => setTimeout(() => ensureConnection(), 500);
+			request.then(reconnect).catch(reconnect);
 		},
-		[sessionId],
+		[sessionId, token, peerApiBase],
 	);
 
 	return {

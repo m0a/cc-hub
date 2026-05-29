@@ -504,6 +504,7 @@ export function DesktopLayout({
 	const controlTerminal = useMultiplexedTerminal({
 		sessionId: controlSessionId || "",
 		peerWsBase: peerConn.wsBase,
+		peerApiBase: peerConn.apiBase,
 		token: peerConn.token,
 		onPaneViewport: (paneId, viewport) => {
 			lastViewportRef.current.set(paneId, viewport);

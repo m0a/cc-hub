@@ -7,6 +7,24 @@ import type { HistorySession } from '../../../shared/types';
 
 export type { HistorySession };
 
+/**
+ * A Claude/Codex project dir name and session id are always single flat path
+ * segments (no separators). Client-supplied values are joined under
+ * ~/.claude/projects, so anything containing a separator or `..` could escape
+ * that base and enumerate/read arbitrary host files. Reject those. (#233)
+ */
+export function isFlatSegment(value: string): boolean {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value !== '.' &&
+    value !== '..' &&
+    !value.includes('/') &&
+    !value.includes('\\') &&
+    !value.includes('\0')
+  );
+}
+
 interface SessionMetadata {
   startTime?: string;
   endTime?: string;
@@ -330,6 +348,7 @@ export class SessionHistoryService {
    */
   async getProjectSessions(projectDirName: string): Promise<HistorySession[]> {
     const sessions: HistorySession[] = [];
+    if (!isFlatSegment(projectDirName)) return sessions;
     const projectDir = join(this.projectsDir, projectDirName);
 
     try {
@@ -427,9 +446,12 @@ export class SessionHistoryService {
   }
 
   async getConversation(sessionId: string, projectDirName?: string): Promise<ConversationMessage[]> {
+    // sessionId is interpolated into `${sessionId}.jsonl` under projectsDir;
+    // reject anything that isn't a flat segment so it can't traverse. (#233)
+    if (!isFlatSegment(sessionId)) return [];
     try {
       // If projectDirName is provided, look directly in that directory
-      if (projectDirName) {
+      if (projectDirName && isFlatSegment(projectDirName)) {
         const projectDir = join(this.projectsDir, projectDirName);
         const directPath = join(projectDir, `${sessionId}.jsonl`);
         const messages = await this.parseJsonlFile(directPath);
@@ -492,6 +514,9 @@ export class SessionHistoryService {
       const projectDirs = await readdir(this.projectsDir);
 
       for (const sessionId of sessionIds) {
+        // sessionId is interpolated into `${sessionId}.jsonl`; skip any that
+        // isn't a flat segment so it can't traverse out of projectsDir. (#233)
+        if (!isFlatSegment(sessionId)) continue;
         // Find the session file
         for (const dir of projectDirs) {
           const indexPath = join(this.projectsDir, dir, 'sessions-index.json');

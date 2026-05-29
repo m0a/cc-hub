@@ -29,10 +29,14 @@ export function HtmlViewer({ content, fileName }: HtmlViewerProps) {
 
 			{/* Content */}
 			<div className="flex-1 bg-white">
+				{/* sandbox="allow-scripts" without allow-same-origin gives the
+				    frame a unique opaque origin, so a malicious preview HTML cannot
+				    reach window.parent.localStorage (auth token) or hit the cchub
+				    API as the logged-in user. #261 */}
 				<iframe
 					src={blobUrl}
 					className="w-full h-full border-0"
-					sandbox="allow-scripts allow-same-origin"
+					sandbox="allow-scripts"
 					title={fileName}
 				/>
 			</div>

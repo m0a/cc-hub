@@ -65,10 +65,17 @@ jobs:
           name: cchub-macos-arm64
           path: dist
 
+      # Publish per-asset SHA-256 hashes so `cchub update` can verify the
+      # downloaded binary's integrity before replacing the running service. #255
+      - name: Generate SHA256SUMS
+        working-directory: dist
+        run: sha256sum cchub-linux-x64 cchub-macos-arm64 > SHA256SUMS
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/cchub-linux-x64
             dist/cchub-macos-arm64
+            dist/SHA256SUMS
           generate_release_notes: true

@@ -1,11 +1,61 @@
 // cchub update command - check and apply updates from GitHub Releases
 
-import { copyFile, rename, chmod, readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { copyFile, rename, chmod, readFile, unlink } from 'node:fs/promises';
 import { platform } from 'node:os';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { VERSION } from '../cli';
 import { t } from '../i18n';
+
+const SHA256SUMS_ASSET = 'SHA256SUMS';
+
+/**
+ * Verify the first bytes of the downloaded buffer look like a real executable
+ * for our target platform. Defense in depth against a tampered/corrupted
+ * download even before the SHA-256 check runs. #255
+ */
+export function isExecutableMagic(bytes: Uint8Array, binaryName: string): boolean {
+  if (bytes.length < 4) return false;
+  const b0 = bytes[0] as number;
+  const b1 = bytes[1] as number;
+  const b2 = bytes[2] as number;
+  const b3 = bytes[3] as number;
+  if (binaryName.includes('linux')) {
+    // ELF: 0x7f 'E' 'L' 'F'
+    return b0 === 0x7f && b1 === 0x45 && b2 === 0x4c && b3 === 0x46;
+  }
+  if (binaryName.includes('macos') || binaryName.includes('darwin')) {
+    // Mach-O thin (64-bit LE on disk = cf fa ed fe), 32-bit (ce fa ed fe),
+    // or Universal/fat (cafebabe / cafebabf).
+    if (b0 === 0xcf && b1 === 0xfa && b2 === 0xed && b3 === 0xfe) return true;
+    if (b0 === 0xce && b1 === 0xfa && b2 === 0xed && b3 === 0xfe) return true;
+    if (b0 === 0xca && b1 === 0xfe && b2 === 0xba && (b3 === 0xbe || b3 === 0xbf)) return true;
+    return false;
+  }
+  // Unknown platform — be permissive rather than block updates we don't
+  // recognise. The SHA-256 check still applies.
+  return true;
+}
+
+/**
+ * Parse a SHA256SUMS file (one "<hex>  <name>" per line, optional '*' before
+ * the name for binary mode) and return the lowercase hash for `binaryName`,
+ * or null if absent. #255
+ */
+export function parseSha256Sums(text: string, binaryName: string): string | null {
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const m = line.match(/^([0-9a-fA-F]{64})\s+\*?(\S.*)$/);
+    if (m && m[2] === binaryName) return m[1].toLowerCase();
+  }
+  return null;
+}
+
+function sha256Hex(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
 
 /** Read the binary path registered in the systemd/launchd service file */
 async function getServiceBinaryPath(): Promise<string | null> {
@@ -143,7 +193,35 @@ function isNewerVersion(latest: string, current: string): boolean {
   return false;
 }
 
-async function downloadBinary(url: string, destPath: string): Promise<boolean> {
+async function fetchExpectedSha256(
+  release: GitHubRelease,
+  binaryName: string,
+): Promise<string | null> {
+  const asset = release.assets.find((a) => a.name === SHA256SUMS_ASSET);
+  if (!asset) return null;
+  try {
+    const res = await fetch(asset.browser_download_url);
+    if (!res.ok) return null;
+    return parseSha256Sums(await res.text(), binaryName);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Download the binary into `destPath` and verify it before returning. Verifies
+ * (a) the byte count against Content-Length when the server provided one,
+ * (b) the executable magic bytes for the target platform, and
+ * (c) the SHA-256 against the value published in the release's SHA256SUMS.
+ * Any failure deletes `destPath` and returns false so the caller never renames
+ * an unverified file over the running service binary. #255
+ */
+async function downloadBinary(
+  url: string,
+  destPath: string,
+  expectedSha256: string,
+  binaryName: string,
+): Promise<boolean> {
   try {
     console.log('📥 ダウンロード中...');
     const response = await fetch(url);
@@ -153,12 +231,40 @@ async function downloadBinary(url: string, destPath: string): Promise<boolean> {
     }
 
     const buffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+
+    const declared = response.headers.get('content-length');
+    if (declared !== null) {
+      const expected = Number.parseInt(declared, 10);
+      if (Number.isFinite(expected) && expected !== bytes.byteLength) {
+        throw new Error(
+          `Length mismatch: got ${bytes.byteLength} bytes but Content-Length was ${expected}`,
+        );
+      }
+    }
+
+    if (!isExecutableMagic(bytes, binaryName)) {
+      throw new Error('Downloaded file is not a recognised executable for this platform');
+    }
+
+    const actualSha = sha256Hex(bytes);
+    if (actualSha !== expectedSha256) {
+      throw new Error(
+        `Checksum mismatch: expected ${expectedSha256}, got ${actualSha}. Aborting to avoid running an untrusted binary.`,
+      );
+    }
+
     await Bun.write(destPath, buffer);
     await chmod(destPath, 0o755);
 
     return true;
   } catch (error) {
     console.error('❌ ダウンロードに失敗しました:', error);
+    try {
+      await unlink(destPath);
+    } catch {
+      // best-effort cleanup of the partial file
+    }
     return false;
   }
 }
@@ -217,11 +323,28 @@ export async function checkAndUpdate(checkOnly: boolean, autoMode: boolean): Pro
     console.log(`📋 サービス登録パス: ${servicePath}`);
   }
 
+  // Verify the release publishes a SHA256SUMS file and that it contains an
+  // entry for our binary BEFORE downloading. Older releases (<= v0.1.161) do
+  // not have this; users on those versions are upgrading to the first version
+  // that publishes one, so the next update naturally succeeds. #255
+  const expectedSha256 = await fetchExpectedSha256(release, binaryName);
+  if (!expectedSha256) {
+    console.error(
+      `❌ SHA256SUMS が見つかりません (${binaryName}) — 整合性検証に失敗するため更新を中止します`,
+    );
+    return;
+  }
+
   // Download to temp location
   const tempPath = `${currentPath}.new`;
   const backupPath = `${currentPath}.bak`;
 
-  const success = await downloadBinary(asset.browser_download_url, tempPath);
+  const success = await downloadBinary(
+    asset.browser_download_url,
+    tempPath,
+    expectedSha256,
+    binaryName,
+  );
   if (!success) {
     return;
   }

@@ -485,15 +485,45 @@ files.get('/raw', async (c) => {
     const mime = file.type || 'application/octet-stream';
     const totalSize = stats.size;
 
-    // Support Range requests for video/audio seeking and progressive playback
+    // Support Range requests for video/audio seeking and progressive playback.
+    // Validate and clamp: Bun.file().slice happily returns a BunFile whose
+    // declared .size is the requested chunk but streams fewer bytes if the
+    // range goes past EOF, so an un-clamped Content-Length would lie and
+    // keep-alive clients would hang waiting for promised bytes. #253
     const rangeHeader = c.req.header('Range');
     if (rangeHeader) {
-      const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+      const match = rangeHeader.match(/^bytes=(\d+)-(\d*)$/);
       if (match) {
-        const start = parseInt(match[1], 10);
-        const end = match[2] ? parseInt(match[2], 10) : totalSize - 1;
+        const start = Number.parseInt(match[1] as string, 10);
+        const requestedEnd = match[2]
+          ? Number.parseInt(match[2], 10)
+          : totalSize - 1;
+        const unsatisfiable =
+          !Number.isFinite(start) ||
+          !Number.isFinite(requestedEnd) ||
+          start < 0 ||
+          start >= totalSize ||
+          start > requestedEnd;
+        if (unsatisfiable) {
+          return new Response(null, {
+            status: 416,
+            headers: {
+              'Content-Range': `bytes */${totalSize}`,
+              'Accept-Ranges': 'bytes',
+            },
+          });
+        }
+        const end = Math.min(requestedEnd, totalSize - 1);
         const chunkSize = end - start + 1;
-        return new Response(file.slice(start, end + 1), {
+        // Materialise the slice into an ArrayBuffer. Passing the BunFile slice
+        // directly to Response makes Bun's HTTP layer fall back to chunked
+        // encoding *and* stream the entire underlying file (the slice bound is
+        // dropped at the transport layer), so Content-Length doesn't match the
+        // body and the response is unusable for video seeking. Buffering the
+        // chunk (capped at totalSize - start by the clamp above) gives Bun a
+        // sized body it streams correctly. #253
+        const chunk = await file.slice(start, end + 1).arrayBuffer();
+        return new Response(chunk, {
           status: 206,
           headers: {
             'Content-Type': mime,

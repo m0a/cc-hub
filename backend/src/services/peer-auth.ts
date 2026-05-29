@@ -7,6 +7,7 @@
  */
 
 import { recordPeerFailure, recordPeerSuccess } from './peer-registry';
+import { isSafePeerUrl } from './peer-url';
 
 const VERIFY_TIMEOUT_MS = 5_000;
 
@@ -21,11 +22,21 @@ function normalizePeerUrl(url: string): string {
   return url.replace(/\/+$/, '');
 }
 
+// SSRF guard: every outbound peer request goes through here. Reject non-https
+// or loopback/link-local/private targets before fetching (covers freshly
+// supplied URLs at creation and already-stored URLs). #235
+function assertSafePeerUrl(url: string): void {
+  if (!isSafePeerUrl(url)) {
+    throw new PeerAuthError(0, 'peer URL は https かつ非ローカルなホストである必要があります');
+  }
+}
+
 /**
  * peer の /api/auth/required を叩いて、認証が有効か確認する。
  * 接続失敗時は throw する (PeerAuthError)。
  */
 async function isPeerAuthRequired(url: string): Promise<boolean> {
+  assertSafePeerUrl(url);
   const base = normalizePeerUrl(url);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS);
@@ -60,6 +71,7 @@ async function isPeerAuthRequired(url: string): Promise<boolean> {
  *   - peer 側 auth 無効なら 400 が返るので空トークンとして扱う
  */
 export async function loginToPeer(url: string, password?: string): Promise<string> {
+  assertSafePeerUrl(url);
   const base = normalizePeerUrl(url);
 
   // password 未指定: まず peer 側の auth 設定を確認
@@ -116,6 +128,7 @@ export async function verifyPeer(
   url: string,
   token: string | undefined,
 ): Promise<{ ok: true; latencyMs: number } | { ok: false; status: number; message: string }> {
+  assertSafePeerUrl(url);
   const base = normalizePeerUrl(url);
 
   const controller = new AbortController();
@@ -161,6 +174,7 @@ export async function peerFetch(
   path: string,
   init?: RequestInit,
 ): Promise<Response> {
+  assertSafePeerUrl(url);
   const base = normalizePeerUrl(url);
 
   const headers = new Headers(init?.headers);

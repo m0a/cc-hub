@@ -241,7 +241,18 @@ export interface PeerDiscoverResponse {
 
 export const PeerCreateSchema = z.object({
   nickname: z.string().min(1).max(64),
-  url: z.url(),
+  // Must be https. The backend additionally rejects loopback/link-local/
+  // private hosts at fetch time to block SSRF (Tailscale ranges stay allowed). #235
+  url: z.url().refine(
+    (u) => {
+      try {
+        return new URL(u).protocol === 'https:';
+      } catch {
+        return false;
+      }
+    },
+    { message: 'peer URL は https である必要があります' },
+  ),
   // peer 側で auth が無効 (パスワード未設定) ならクライアントは password を
   // 送らなくて良い。loginToPeer 側で 400 = "auth disabled" を空トークンで処理する
   password: z.string().optional(),

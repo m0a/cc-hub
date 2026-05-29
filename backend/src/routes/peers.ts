@@ -27,6 +27,7 @@ import {
   type StoredPeer,
 } from '../services/peer-registry';
 import { loginToPeer, verifyPeer, peerFetch, PeerAuthError } from '../services/peer-auth';
+import { isSafePeerUrl } from '../services/peer-url';
 import { discoverPeers } from '../services/peer-discovery';
 import { buildSessionsList, sessionHistoryService, codexHistoryService } from './sessions';
 import { buildDashboard } from './dashboard';
@@ -552,6 +553,9 @@ async function proxyPeerFiles(c: Context): Promise<Response> {
   if (!peer) return c.json({ error: 'Peer not found' }, 404);
   if (peer.url === SELF_PEER_URL) {
     return c.json({ error: 'Use /api/files/* for local peer' }, 400);
+  }
+  if (!isSafePeerUrl(peer.url)) {
+    return c.json({ error: 'Unsafe peer URL' }, 400);
   }
 
   // /api/peers/:peerId/files/<rest>?<query>  →  peer's /api/files/<rest>?<query>

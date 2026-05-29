@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.161] - 2026-05-30
+
+全コードベースのマルチエージェントレビューで検出した Critical/High の脆弱性 9 件を修正。各修正はユニットテスト追加 + dev 実機（回帰＋攻撃の両面）検証済み。
+
+### Security
+- **JWT 署名鍵のハードコード公開定数を廃止 (#230, Critical)**: `JWT_SECRET` がどのデプロイ経路でも設定されず、公開定数 `development-secret-change-in-production` にフォールバックしていたため、誰でもトークンを偽造して `CCHUB_PASSWORD` 認証を完全回避できた。起動時にランダム 32byte 秘密鍵を生成し data dir に永続化 (0600)、使える既定値を排除 (`backend/src/middleware/auth.ts`, `backend/src/index.ts`)
+- **WebSocket 制御経路の tmux コマンドインジェクション (RCE) を修正 (#231, Critical)**: `/ws/mux` が `paneId`/`cols`/`rows` を無検証で tmux control-mode コマンドへ生補間しており、改行入り `paneId` で任意 tmux コマンド (= ホスト RCE) を注入できた。`MuxClientMessageSchema` (zod) で全フレームを検証 + 各コマンド sink に `assertPaneId`/整数ガードを追加 (`shared/types.ts`, `backend/src/routes/terminal-mux.ts`, `backend/src/services/tmux-control.ts`, `backend/src/services/pane-viewport.ts`)
+- **file ルートの client 指定 base 信頼による任意ファイル read/write を修正 (#232, Critical)**: `/list`/`/read`/`/raw`/`/download`/`/upload` が client の `sessionWorkingDir` を信頼 base にしていたため、`base=/etc&path=/etc/passwd` 等でセッションサンドボックス外の任意ファイルを read/write できた。`sessionWorkingDir` を実ライブセッションの作業ディレクトリと realpath 照合してから使用 (`backend/src/routes/files.ts`)
+- **session-history のパストラバーサルを修正 (#233, High)**: `projectDirName`/`sessionId` を無検証で `~/.claude/projects` 配下に join しており、`../../../etc` (percent-encode でルータ制約も回避) で任意ディレクトリ列挙と `*.jsonl` 読取ができた。フラットセグメント検証を追加 (`backend/src/services/session-history.ts`)
+- **resume sessionId の shell インジェクションを修正 (#234, High)**: `sessionId` が bare string で `claude -r <id>` として対話シェルに入力されており、`x; rm -rf ~ #` で任意コマンドを実行できた。`SessionIdSchema` で制約 + `agentResumeCommand` で quote (`shared/types.ts`, `backend/src/routes/sessions.ts`)
+- **peer URL の SSRF を修正 (#235, High)**: `PeerCreateSchema.url` が任意 scheme/host を許可し、保存 URL を credential 付きでサーバ側 fetch していたため、loopback/`169.254.169.254`/RFC1918 を指す peer で SSRF できた。https 必須 + 非ローカル限定 (Tailscale 範囲は許可) のガードを全 outbound peer fetch に追加 (`backend/src/services/peer-url.ts`, `backend/src/services/peer-auth.ts`, `backend/src/routes/peers.ts`, `shared/types.ts`)
+
+### Fixed
+- **ping keepalive の再接続ストームを修正 (#236, High)**: ターミナル未選択時 (`sessionId=""`) の ping が subscription gate で drop され pong が返らず、~25s ごとに切断/再接続を繰り返していた。`ping` を gate より前で処理 (`backend/src/routes/terminal-mux.ts`)
+- **peer file proxy が Range/条件付きヘッダを非転送 (#237, High)**: peer ホストのメディアをシークできず大ファイルが全転送されていた。`Range`/`If-Range`/`If-None-Match`/`If-Modified-Since` を上流へ転送 (`backend/src/routes/peers.ts`)
+- **password 認証時に履歴検索が無言失敗する問題を修正 (#238, High)**: 検索が生 `EventSource` で Authorization ヘッダを送れず 401 → 無言で「結果なし」になっていた。`fetch` + `ReadableStream` で Bearer を付与し SSE を手動パース、AbortController で旧 EventSource リークも解消 (`frontend/src/hooks/useSessionHistory.ts`)
+
 ## [0.1.160] - 2026-05-24
 
 ### Fixed

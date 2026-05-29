@@ -4,10 +4,44 @@ import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { FileService } from '../services/file-service';
 import { FileChangeTracker } from '../services/file-change-tracker';
+import { TmuxService } from '../services/tmux';
 import type { FileListResponse, FileReadResponse, FileChangesResponse, FileInfo, GitChangesResponse, GitDiffResponse, GitFileChange, GitChangeStatus } from '../../../shared/types';
 
 const fileService = new FileService();
 const changeTracker = new FileChangeTracker();
+const tmuxService = new TmuxService();
+
+/**
+ * The client supplies `sessionWorkingDir` as the base for file access. It MUST
+ * be the working directory of an actual live session/pane (or a directory
+ * below one); otherwise a client could set base=/etc (or ~/.ssh, /) and the
+ * only confinement check (requested path startsWith base) would happily read
+ * or write arbitrary host files. We resolve the candidate against the
+ * authoritative live-session list and compare realpaths so a symlinked base
+ * can't smuggle an off-tree path. (#232)
+ */
+async function isAllowedSessionDir(sessionWorkingDir: string): Promise<boolean> {
+  let target: string;
+  try {
+    target = await realpath(sessionWorkingDir);
+  } catch {
+    return false;
+  }
+  const sessions = await tmuxService.listSessions();
+  for (const s of sessions) {
+    for (const cand of [s.currentPath, ...(s.panes ?? []).map((p) => p.path)]) {
+      if (!cand) continue;
+      let base: string;
+      try {
+        base = await realpath(cand);
+      } catch {
+        continue;
+      }
+      if (target === base || target.startsWith(`${base}/`)) return true;
+    }
+  }
+  return false;
+}
 
 export const files = new Hono();
 
@@ -23,6 +57,10 @@ files.get('/list', async (c) => {
 
   if (!path || !sessionWorkingDir) {
     return c.json({ error: 'Missing path or sessionWorkingDir parameter' }, 400);
+  }
+
+  if (!(await isAllowedSessionDir(sessionWorkingDir))) {
+    return c.json({ error: 'Access denied' }, 403);
   }
 
   try {
@@ -59,6 +97,10 @@ files.get('/read', async (c) => {
 
   if (!path || !sessionWorkingDir) {
     return c.json({ error: 'Missing path or sessionWorkingDir parameter' }, 400);
+  }
+
+  if (!(await isAllowedSessionDir(sessionWorkingDir))) {
+    return c.json({ error: 'Access denied' }, 403);
   }
 
   try {
@@ -424,6 +466,10 @@ files.get('/raw', async (c) => {
     return c.json({ error: 'Missing path or sessionWorkingDir parameter' }, 400);
   }
 
+  if (!(await isAllowedSessionDir(sessionWorkingDir))) {
+    return c.json({ error: 'Access denied' }, 403);
+  }
+
   try {
     const validPath = await fileService.validatePath(path, sessionWorkingDir);
     if (!validPath) {
@@ -490,6 +536,10 @@ files.get('/download', async (c) => {
     return c.json({ error: 'Missing path or sessionWorkingDir parameter' }, 400);
   }
 
+  if (!(await isAllowedSessionDir(sessionWorkingDir))) {
+    return c.json({ error: 'Access denied' }, 403);
+  }
+
   try {
     const validPath = await fileService.validatePath(path, sessionWorkingDir);
     if (!validPath) {
@@ -539,6 +589,10 @@ files.post('/upload', async (c) => {
 
     if (typeof destPath !== 'string' || typeof sessionWorkingDir !== 'string') {
       return c.json({ error: 'Missing path or sessionWorkingDir' }, 400);
+    }
+
+    if (!(await isAllowedSessionDir(sessionWorkingDir))) {
+      return c.json({ error: 'Access denied' }, 403);
     }
 
     const validDir = await fileService.validatePath(destPath, sessionWorkingDir);

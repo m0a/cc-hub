@@ -19,7 +19,7 @@
  */
 
 import type { PaneViewport, PaneCursor, PaneModes } from '../../../shared/types';
-import type { TmuxControlSession } from './tmux-control';
+import { type TmuxControlSession, assertPaneId } from './tmux-control';
 import {
   computeCursorPadShift,
   resolveViewportCursor,
@@ -131,6 +131,7 @@ async function captureScrollback(
   wanted: number,
 ): Promise<string[]> {
   if (wanted <= 0) return [];
+  assertPaneId(paneId);
   try {
     const raw = await cs.sendCommand(
       `capture-pane -e -p -t ${paneId} -S -${wanted} -E -1`,
@@ -161,6 +162,7 @@ export async function captureViewport(
   offset: number,
   cursorPolicy: ViewportCursorPolicy = 'default',
 ): Promise<PaneViewport | null> {
+  assertPaneId(paneId);
   let metaRaw: string;
   try {
     metaRaw = await cs.sendCommand(

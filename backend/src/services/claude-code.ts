@@ -98,6 +98,28 @@ export class ClaudeCodeService {
   private pathResultCache = new Map<string, { data: unknown; timestamp: number }>();
   private static readonly PATH_RESULT_CACHE_TTL = 3_000; // 3 seconds
 
+  // Hard cap on each cache: long-lived ClaudeCodeService singletons used to leak
+  // an entry per ever-seen JSONL/path/tty — every distinct session a self-hosted
+  // server ever saw would stay resident forever. Evict on insert by sweeping
+  // expired entries first, then dropping the oldest (Map insertion order) until
+  // size <= cap. #249
+  private static readonly CACHE_MAX_ENTRIES = 1000;
+
+  private static evictAndCap<V extends { timestamp: number }>(
+    cache: Map<string, V>,
+    ttlMs: number,
+  ): void {
+    const now = Date.now();
+    for (const [key, value] of cache) {
+      if (now - value.timestamp >= ttlMs) cache.delete(key);
+    }
+    while (cache.size > ClaudeCodeService.CACHE_MAX_ENTRIES) {
+      const oldest = cache.keys().next().value;
+      if (oldest === undefined) break;
+      cache.delete(oldest);
+    }
+  }
+
   constructor() {
     this.claudeDir = join(homedir(), '.claude', 'projects');
   }
@@ -133,11 +155,13 @@ export class ClaudeCodeService {
     for (const line of args) {
       const match = line.match(/claude\s+-r\s+([a-f0-9-]{36})/i);
       if (match) {
+        ClaudeCodeService.evictAndCap(this.ttySessionCache, ClaudeCodeService.TTY_SESSION_CACHE_TTL);
         this.ttySessionCache.set(ttyName, { sessionId: match[1], timestamp: Date.now() });
         return match[1];
       }
     }
 
+    ClaudeCodeService.evictAndCap(this.ttySessionCache, ClaudeCodeService.TTY_SESSION_CACHE_TTL);
     this.ttySessionCache.set(ttyName, { sessionId: null, timestamp: Date.now() });
     return null;
   }
@@ -612,6 +636,7 @@ export class ClaudeCodeService {
         lastRecap: lastRecap || undefined,
       };
 
+      ClaudeCodeService.evictAndCap(this.sessionDataCache, ClaudeCodeService.SESSION_DATA_CACHE_TTL);
       this.sessionDataCache.set(filePath, {
         data,
         fileMtime: fileStat.mtimeMs,
@@ -666,6 +691,7 @@ export class ClaudeCodeService {
   }
 
   private setPathCached(key: string, data: unknown): void {
+    ClaudeCodeService.evictAndCap(this.pathResultCache, ClaudeCodeService.PATH_RESULT_CACHE_TTL);
     this.pathResultCache.set(key, { data, timestamp: Date.now() });
   }
 

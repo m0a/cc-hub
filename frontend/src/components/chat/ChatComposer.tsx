@@ -29,13 +29,15 @@ export function ChatComposer({
 	const send = useCallback(() => {
 		const text = value;
 		if (!text.trim() || !paneId) return;
-		if (text.includes("\n")) {
-			sendTerminalInput(sessionId, paneId, `\x1b[200~${text}\x1b[201~`);
-		} else {
-			sendTerminalInput(sessionId, paneId, text);
-		}
-		sendTerminalInput(sessionId, paneId, "\r");
-		setValue("");
+		// During reconnect / disconnect sendTerminalInput returns false without
+		// throwing. Clearing the textarea regardless would silently drop the
+		// user's message. Only clear when both the text and the trailing \r
+		// landed on the WS. #263
+		const textOk = text.includes("\n")
+			? sendTerminalInput(sessionId, paneId, `\x1b[200~${text}\x1b[201~`)
+			: sendTerminalInput(sessionId, paneId, text);
+		const enterOk = textOk && sendTerminalInput(sessionId, paneId, "\r");
+		if (textOk && enterOk) setValue("");
 	}, [sessionId, paneId, value]);
 
 	const onKeyDown = useCallback(

@@ -162,8 +162,18 @@ export interface SessionMetrics {
   memoryRssBytes?: number;             // total RSS across session's panes
 }
 
+// Session names land in tmux and downstream parsers split list-panes output on
+// a multi-char sentinel ('||~~||'). Allowing arbitrary characters in `name`
+// lets a request like `weird||~~||name` shift every parsed field and silently
+// misattribute panes to phantom sessions. Tighten to the same alphabet used
+// by SessionIdSchema so the parser invariant holds. #250
 export const CreateSessionSchema = z.object({
-  name: z.string().min(1).max(64).optional(),
+  name: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[A-Za-z0-9._-]+$/, 'Session name must be alphanumerics, dot, underscore, or hyphen')
+    .optional(),
   workingDir: z.string().optional(),
   initialPrompt: z.string().max(1000).optional(),
   agent: z.enum(AGENT_PROVIDER_IDS).optional().default(DEFAULT_AGENT_PROVIDER),

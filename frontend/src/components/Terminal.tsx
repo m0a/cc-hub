@@ -336,6 +336,10 @@ export const TerminalComponent = memo(
 			const container = containerRef.current;
 			const initialFontSize = loadFontSize(sessionId);
 			const themeColors = getTerminalThemes()[sessionTheme || "default"];
+			// Captured in the effect closure so the cleanup can clear the WebGL
+			// context-loss reload timer if the effect tears down before it fires.
+			// #262
+			let webglReloadTimer: number | null = null;
 			const term = new Terminal({
 				fontSize: initialFontSize,
 				fontFamily:
@@ -420,7 +424,8 @@ export const TerminalComponent = memo(
 						"[Terminal] WebGL context lost, disposing and reloading",
 					);
 					webglAddon.dispose();
-					setTimeout(() => {
+					webglReloadTimer = window.setTimeout(() => {
+						webglReloadTimer = null;
 						try {
 							const newWebgl = new WebglAddon();
 							newWebgl.onContextLoss(() => {
@@ -1059,6 +1064,14 @@ export const TerminalComponent = memo(
 			return () => {
 				if (longPressTimer) clearTimeout(longPressTimer);
 				if (mouseLongPressTimer) clearTimeout(mouseLongPressTimer);
+				// Cancel rAF loops and the WebGL reload timer so they don't keep
+				// running against the disposed terminal — momentum scroll, touch
+				// coalesce, wheel flush, and the queued WebGL re-init all post
+				// scrollBy / setState back into the now-stale closure. #262
+				if (scrollRafId !== null) cancelAnimationFrame(scrollRafId);
+				if (momentumRafId !== null) cancelAnimationFrame(momentumRafId);
+				if (pendingScrollRafId !== null) cancelAnimationFrame(pendingScrollRafId);
+				if (webglReloadTimer !== null) clearTimeout(webglReloadTimer);
 				if (container) {
 					container.removeEventListener("touchstart", handleTouchStart);
 					container.removeEventListener("touchmove", handleTouchMove);

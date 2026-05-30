@@ -55,7 +55,7 @@ export function HistoryRowV2({
 	return (
 		<div
 			onClick={onTap}
-			className="group px-3 py-2.5 hover:bg-white/[0.04] cursor-pointer transition-colors border-b border-white/[0.04]"
+			className="group h-full px-3 py-2.5 rounded-md border border-white/[0.06] hover:bg-white/[0.04] cursor-pointer transition-colors"
 			style={
 				showPeer && session.peerColor
 					? { borderLeft: `3px solid ${session.peerColor}`, paddingLeft: 9 }

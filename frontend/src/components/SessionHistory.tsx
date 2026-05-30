@@ -64,8 +64,13 @@ function HistoryItem({
 	isActive: boolean;
 }) {
 	const { t, i18n } = useTranslation();
+	// Prefer lastPrompt; firstPrompt is the legacy fallback for entries coming
+	// from older peers that don't send lastPrompt yet.
 	const displayText =
-		session.firstPrompt || session.summary || "No description";
+		session.lastPrompt ||
+		session.firstPrompt ||
+		session.summary ||
+		"No description";
 	const truncatedText =
 		displayText.length > 60
 			? `${displayText.substring(0, 60)}...`
@@ -88,9 +93,20 @@ function HistoryItem({
 		>
 			<div className="flex items-start justify-between gap-3">
 				<div className="flex-1 min-w-0">
-					<p className="text-[13px] text-zinc-300 leading-snug truncate">
-						{truncatedText}
-					</p>
+					{session.recap ? (
+						<p className="text-[12.5px] text-amber-200 leading-relaxed line-clamp-3">
+							{session.recap}
+							{session.recapAt && (
+								<span className="ml-2 text-[10px] text-zinc-500">
+									{formatRelativeTime(session.recapAt, t, i18n.language)}
+								</span>
+							)}
+						</p>
+					) : (
+						<p className="text-[13px] text-zinc-300 leading-snug truncate">
+							{truncatedText}
+						</p>
+					)}
 					<div className="flex items-center gap-3 mt-1.5 text-[11px] text-zinc-600">
 						<span
 							className={`inline-flex items-center px-1.5 py-px rounded border text-[10px] font-medium ${agentBadge.className}`}
@@ -564,7 +580,10 @@ export function SessionHistory({
 			{selectedSession && (
 				<ConversationViewer
 					title={
-						selectedSession.summary || selectedSession.firstPrompt || "No title"
+						selectedSession.summary ||
+						selectedSession.lastPrompt ||
+						selectedSession.firstPrompt ||
+						"No title"
 					}
 					subtitle={selectedSession.projectName}
 					messages={conversation}

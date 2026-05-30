@@ -99,7 +99,8 @@
 		"bucketToday": "Today",
 		"bucketYesterday": "Yesterday",
 		"bucketThisWeek": "This week",
-		"bucketEarlier": "Earlier"
+		"bucketEarlier": "Earlier",
+		"noTitle": "(no title)"
 	},
 	"dashboard": {
 		"title": "Dashboard",

@@ -1,51 +1,48 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useRef } from "react";
 import type { HistorySession } from "../../../../shared/types";
-import { sessionDedupeKey } from "../../hooks/useFlatHistoryItems";
+import type { HistoryListRow } from "../../utils/historyBuckets";
 import { HistoryRowV2 } from "./HistoryRowV2";
 
 interface VirtualizedHistoryListProps {
-	items: HistorySession[];
+	rows: HistoryListRow[];
 	activeCcSessionIds: Set<string>;
 	resumingId: string | null;
 	onTap: (session: HistorySession, projectDirName?: string) => void;
 	onResume: (session: HistorySession) => void;
 	onNavigate: (session: HistorySession) => void;
-	/** Maps a session's dedupe key to its project dir, so taps can scope the
-	 * conversation fetch. Undefined in search mode (results span projects). */
-	dirNameBySession?: Map<string, string>;
 }
 
 /**
- * Virtualized flat list of history rows. Uses an internal scroll container as
- * the scrollElement (same pattern as ConversationViewer). measureElement is NOT
- * corrected for the SessionList contentScale transform: ResizeObserver reports
- * the pre-transform layout size, so the virtualizer's math stays correct under
- * pinch-zoom.
+ * Virtualized history list with inline date-bucket headers. Uses an internal
+ * scroll container as the scrollElement (same pattern as ConversationViewer).
+ * measureElement is NOT corrected for the SessionList contentScale transform:
+ * ResizeObserver reports the pre-transform layout size, so the virtualizer's
+ * math stays correct under pinch-zoom.
  */
 export function VirtualizedHistoryList({
-	items,
+	rows,
 	activeCcSessionIds,
 	resumingId,
 	onTap,
 	onResume,
 	onNavigate,
-	dirNameBySession,
 }: VirtualizedHistoryListProps) {
 	const parentRef = useRef<HTMLDivElement>(null);
 
 	const virtualizer = useVirtualizer({
-		count: items.length,
+		count: rows.length,
 		getScrollElement: () => parentRef.current,
-		// Rows vary: a plain prompt row is ~66px, a 3-line recap row ~108px.
-		// measureElement corrects these; the estimates just minimize first-paint
-		// scroll jump.
-		estimateSize: (index) => (items[index]?.recap ? 108 : 66),
-		overscan: 12,
-		getItemKey: (index) => {
-			const s = items[index];
-			return s ? sessionDedupeKey(s) : index;
+		// header ~30px; plain prompt row ~66px; 3-line recap row ~108px.
+		// measureElement corrects these; estimates just minimize first-paint jump.
+		estimateSize: (index) => {
+			const row = rows[index];
+			if (!row) return 66;
+			if (row.kind === "header") return 30;
+			return row.session.recap ? 108 : 66;
 		},
+		overscan: 12,
+		getItemKey: (index) => rows[index]?.key ?? index,
 	});
 
 	return (
@@ -67,24 +64,29 @@ export function VirtualizedHistoryList({
 					}}
 				>
 					{virtualizer.getVirtualItems().map((virtualRow) => {
-						const session = items[virtualRow.index];
-						if (!session) return null;
+						const row = rows[virtualRow.index];
+						if (!row) return null;
 						return (
 							<div
 								key={virtualRow.key}
 								data-index={virtualRow.index}
 								ref={virtualizer.measureElement}
 							>
-								<HistoryRowV2
-									session={session}
-									isActive={activeCcSessionIds.has(session.sessionId)}
-									isResuming={resumingId === session.sessionId}
-									onTap={() =>
-										onTap(session, dirNameBySession?.get(sessionDedupeKey(session)))
-									}
-									onResume={() => onResume(session)}
-									onNavigate={() => onNavigate(session)}
-								/>
+								{row.kind === "header" ? (
+									<div className="flex items-center justify-between px-3 pt-2.5 pb-1 text-[10.5px] uppercase tracking-wider text-zinc-500">
+										<span>{row.label}</span>
+										<span className="tabular-nums">{row.count}</span>
+									</div>
+								) : (
+									<HistoryRowV2
+										session={row.session}
+										isActive={activeCcSessionIds.has(row.session.sessionId)}
+										isResuming={resumingId === row.session.sessionId}
+										onTap={() => onTap(row.session, row.dirName)}
+										onResume={() => onResume(row.session)}
+										onNavigate={() => onNavigate(row.session)}
+									/>
+								)}
 							</div>
 						);
 					})}

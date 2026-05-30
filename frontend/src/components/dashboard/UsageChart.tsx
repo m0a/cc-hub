@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { UsageSnapshot } from "../../../../shared/types";
+import { filterToCurrentCycle } from "../../../../shared/usage-cycle";
 
 function useIsLightMode() {
 	const [light, setLight] = useState(
@@ -90,20 +91,33 @@ export function UsageChart({
 		const cycleStart = resetTime - cycleDuration;
 		const nowRatio = (now - cycleStart) / cycleDuration;
 
-		const relevantSnapshots = snapshots
-			.filter((s) => {
-				const ts = new Date(s.timestamp).getTime();
-				return ts >= cycleStart && ts <= now;
-			})
-			.sort(
-				(a, b) =>
-					new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-			);
+		// Drop cross-cycle pollution: Anthropic returns the same resetsAt for old
+		// snapshots after a boundary rolls over, so the only signal is a drop in
+		// utilization. See shared/usage-cycle.ts.
+		const relevantSnapshots = filterToCurrentCycle(
+			snapshots,
+			field,
+			cycleStart,
+			now,
+		);
 
 		// --- Actual usage points ---
-		// Use only real samples so empty/low-history cycles do not render an
-		// artificial vertical spike from the cycle start.
+		// Anchor at (cycleStart, 0%) when the first real sample is more than
+		// FIRST_GAP_THRESHOLD into the cycle (or there are no samples at all).
+		// Utilization is cumulative and a fresh cycle always starts at 0%, so this
+		// is the correct "interpolation" for missing early-cycle data. If the
+		// first real sample is already near cycleStart, no anchor is added —
+		// avoiding the artificial vertical spike the original code worried about.
+		const FIRST_GAP_THRESHOLD = 0.02;
+		const firstSurvivingTs = relevantSnapshots[0]
+			? new Date(relevantSnapshots[0].timestamp).getTime()
+			: now;
+		const firstRatio = (firstSurvivingTs - cycleStart) / cycleDuration;
+
 		const actualPoints: { x: number; y: number }[] = [];
+		if (relevantSnapshots.length === 0 || firstRatio > FIRST_GAP_THRESHOLD) {
+			actualPoints.push({ x: ratioToX(0), y: utilToY(0) });
+		}
 		for (const snap of relevantSnapshots) {
 			const ts = new Date(snap.timestamp).getTime();
 			const ratio = (ts - cycleStart) / cycleDuration;

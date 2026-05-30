@@ -528,8 +528,15 @@ export interface HistorySession {
   sessionId: string;
   projectPath: string;
   projectName: string;
+  /** Historical misnomer: the backend populates this from the LAST user message, not the first. Prefer `lastPrompt` once it is populated (V2). Will be marked `@deprecated` after the frontend reads `lastPrompt` with a `firstPrompt` fallback, and removed after V2 ships. */
   firstPrompt?: string;
+  /** The most recent user message in the session, used as the preview when no recap exists. Replaces the misnamed `firstPrompt`. */
+  lastPrompt?: string;
   summary?: string;
+  /** Latest recap (auto `away_summary` or manual `/recap`), used as the preview when present. Claude-only; codex sessions leave this undefined. */
+  recap?: string;
+  /** ISO timestamp of the recap that produced `recap`. */
+  recapAt?: string;
   modified: string;
   // Phase 2 additions
   startTime?: string;
@@ -562,6 +569,8 @@ export interface PeerHistoryProject {
   peerId: string;
   peerNickname?: string;
   peerColor?: string;
+  /** Reserved for a future cwd-based grouping (resolves the `/` and `.` -> `-` encoding collision). Populated by the backend in a later PR; safe to ignore until then. */
+  cwdKey?: string;
 }
 
 export interface PeerHistoryProjectsResponse {

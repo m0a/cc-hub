@@ -173,6 +173,7 @@ export async function peerFetch(
   token: string | undefined,
   path: string,
   init?: RequestInit,
+  timeoutMs: number = VERIFY_TIMEOUT_MS,
 ): Promise<Response> {
   assertSafePeerUrl(url);
   const base = normalizePeerUrl(url);
@@ -183,7 +184,7 @@ export async function peerFetch(
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   let response: Response;
   try {

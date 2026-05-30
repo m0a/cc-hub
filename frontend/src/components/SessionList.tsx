@@ -7,6 +7,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+	ArrowRight,
 	ChevronLeft,
 	ChevronRight,
 	ExternalLink,
@@ -789,6 +790,7 @@ function SessionItem({
 	};
 
 	const [panesExpanded, setPanesExpanded] = useState(false);
+	const [showJumpMenu, setShowJumpMenu] = useState(false);
 
 	const handleClick = () => {
 		if (longPressFiredRef.current) {
@@ -796,6 +798,13 @@ function SessionItem({
 			return;
 		}
 		longPressFiredRef.current = false;
+
+		// Remote Control session: let the user choose between jumping to the CC Hub
+		// terminal and opening the matching session in the Claude app.
+		if (session.bridgeSessionId) {
+			setShowJumpMenu((prev) => !prev);
+			return;
+		}
 
 		// Multi-pane session: toggle pane list to show per-pane status
 		if (session.panes && session.panes.length > 1) {
@@ -1028,31 +1037,6 @@ function SessionItem({
 								</span>
 							);
 						})()}
-
-					{/* Remote Control: open the matching session in the Claude app */}
-					{extSession.bridgeSessionId && (
-						<button
-							type="button"
-							title={t("session.openInClaudeApp")}
-							aria-label={t("session.openInClaudeApp")}
-							onClick={(e) => {
-								e.stopPropagation();
-								const bridgeId = extSession.bridgeSessionId;
-								if (!bridgeId) return;
-								window.open(
-									`https://claude.ai/code/${encodeURIComponent(bridgeId)}`,
-									"_blank",
-									"noopener,noreferrer",
-								);
-							}}
-							onMouseDown={(e) => e.stopPropagation()}
-							onTouchStart={(e) => e.stopPropagation()}
-							className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] text-violet-300 bg-violet-500/15 hover:bg-violet-500/25 transition-colors shrink-0"
-						>
-							<ExternalLink className="w-3 h-3" />
-							{t("session.openInClaudeApp")}
-						</button>
-					)}
 				</div>
 
 				{/* Auto recap (away_summary) — timestamp shown inline at the tail */}
@@ -1152,6 +1136,45 @@ function SessionItem({
 					</div>
 				)}
 			</div>
+
+			{/* Jump menu (Remote Control): choose CC Hub terminal vs the Claude app */}
+			{showJumpMenu && extSession.bridgeSessionId && (
+				<div
+					className="mx-4 mb-3 pt-2 border-t border-white/[0.06] flex flex-col gap-1"
+					onClick={(e) => e.stopPropagation()}
+					onMouseDown={(e) => e.stopPropagation()}
+					onTouchStart={(e) => e.stopPropagation()}
+				>
+					<button
+						type="button"
+						onClick={() => {
+							setShowJumpMenu(false);
+							onSelect(session);
+						}}
+						className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-[13px] text-zinc-200 bg-white/[0.04] hover:bg-white/[0.08] transition-colors"
+					>
+						<ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
+						{t("session.goToTerminal")}
+					</button>
+					<button
+						type="button"
+						onClick={() => {
+							const bridgeId = extSession.bridgeSessionId;
+							if (!bridgeId) return;
+							setShowJumpMenu(false);
+							window.open(
+								`https://claude.ai/code/${encodeURIComponent(bridgeId)}`,
+								"_blank",
+								"noopener,noreferrer",
+							);
+						}}
+						className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-[13px] text-violet-200 bg-violet-500/15 hover:bg-violet-500/25 transition-colors"
+					>
+						<ExternalLink className="w-3.5 h-3.5" />
+						{t("session.openInClaudeApp")}
+					</button>
+				</div>
+			)}
 
 			{/* Pane list (expandable, shows per-pane status indicators) */}
 			{panesExpanded && extSession.panes && extSession.panes.length > 1 && (

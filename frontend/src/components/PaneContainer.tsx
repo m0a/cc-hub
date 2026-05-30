@@ -1,6 +1,10 @@
 /** biome-ignore-all lint/correctness/useExhaustiveDependencies: depends on refs and setters that React guarantees stable; adding them would cause unintended re-runs */
 /** biome-ignore-all lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: legacy click-on-div UI; keyboard navigation provided via main shortcuts */
-import { MessageSquare, Terminal as TerminalIcon } from "lucide-react";
+import {
+	ExternalLink,
+	MessageSquare,
+	Terminal as TerminalIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -35,6 +39,9 @@ interface ExtendedSession {
 	state: SessionState;
 	currentPath?: string;
 	ccSessionId?: string;
+	// Remote Control deep-link target (`session_…`). Present only while Remote
+	// Control is active; drives the "Open in Claude app" header button.
+	bridgeSessionId?: string;
 	agent?: AgentProvider;
 	agentSessionId?: string;
 	currentCommand?: string;
@@ -368,6 +375,30 @@ function TerminalPane({
 							</button>
 						);
 					})()}
+					{/* Open the matching Remote Control session in the Claude app */}
+					{session?.bridgeSessionId && (
+						<button
+							type="button"
+							onClick={(e) => {
+								e.stopPropagation();
+								const bridgeId = session.bridgeSessionId;
+								if (!bridgeId) return;
+								window.open(
+									`https://claude.ai/code/${encodeURIComponent(bridgeId)}`,
+									"_blank",
+									"noopener,noreferrer",
+								);
+							}}
+							className={`${isTablet ? "p-2" : "p-1"} rounded transition-colors text-violet-300/80 hover:text-violet-200 hover:bg-violet-500/10`}
+							title={t("session.openInClaudeApp")}
+							aria-label={t("session.openInClaudeApp")}
+						>
+							<ExternalLink
+								className={isTablet ? "w-4 h-4" : "w-[14px] h-[14px]"}
+							/>
+						</button>
+					)}
+
 					{/* File browser button (desktop only) */}
 					{!isTablet && session?.currentPath && !showConversation && (
 						<button

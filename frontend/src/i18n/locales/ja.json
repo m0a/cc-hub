@@ -99,7 +99,8 @@
 		"bucketToday": "今日",
 		"bucketYesterday": "昨日",
 		"bucketThisWeek": "今週",
-		"bucketEarlier": "それ以前"
+		"bucketEarlier": "それ以前",
+		"noTitle": "(タイトルなし)"
 	},
 	"dashboard": {
 		"title": "ダッシュボード",

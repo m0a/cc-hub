@@ -1,11 +1,22 @@
 import { Search, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HistorySession, SessionResponse } from "../../../../shared/types";
-import { useFlatHistoryItems } from "../../hooks/useFlatHistoryItems";
+import type { SessionResponse } from "../../../../shared/types";
+import {
+	sessionDedupeKey,
+	useFlatHistoryItems,
+} from "../../hooks/useFlatHistoryItems";
 import { useHistoryActions } from "../../hooks/useHistoryActions";
 import { useSessionHistory } from "../../hooks/useSessionHistory";
+import {
+	applyHistoryFilter,
+	bucketizeHistory,
+	EMPTY_HISTORY_FILTER,
+	type HistoryFilter,
+	isFilterActive,
+} from "../../utils/historyBuckets";
 import { ConversationViewer } from "../ConversationViewer";
+import { HistoryFacetBar } from "./HistoryFacetBar";
 import { VirtualizedHistoryList } from "./VirtualizedHistoryList";
 
 interface ActiveSession extends SessionResponse {
@@ -85,8 +96,51 @@ export function SessionHistoryV2({
 		return () => clearTimeout(handle);
 	}, [searchInput, searchSessions]);
 
+	// Client-side facet filter (agent / period / active).
+	const [filter, setFilter] = useState<HistoryFilter>(EMPTY_HISTORY_FILTER);
+
 	const isSearchMode = searchQuery.trim().length > 0;
-	const listItems: HistorySession[] = isSearchMode ? searchResults : items;
+	const sourceItems = isSearchMode ? searchResults : items;
+
+	// filter -> sort -> bucketize into header+session rows for the virtualizer.
+	const rows = useMemo(() => {
+		const now = Date.now();
+		const filtered = applyHistoryFilter(
+			sourceItems,
+			filter,
+			activeCcSessionIds,
+			now,
+		);
+		// The flat list is already modified-DESC, but search results arrive in SSE
+		// order (Codex first, then Claude dir-by-dir) — sort so bucket headers
+		// don't repeat / collide on keys.
+		const ordered = isSearchMode
+			? [...filtered].sort(
+					(a, b) =>
+						new Date(b.modified).getTime() - new Date(a.modified).getTime(),
+				)
+			: filtered;
+		return bucketizeHistory(
+			ordered,
+			isSearchMode ? undefined : dirNameBySession,
+			sessionDedupeKey,
+			t,
+			now,
+		);
+	}, [
+		sourceItems,
+		filter,
+		activeCcSessionIds,
+		isSearchMode,
+		dirNameBySession,
+		t,
+	]);
+
+	const filterActive = isFilterActive(filter);
+	const sessionCount = rows.reduce(
+		(n, r) => (r.kind === "session" ? n + 1 : n),
+		0,
+	);
 
 	if (isLoadingProjects) {
 		return (
@@ -129,6 +183,11 @@ export function SessionHistoryV2({
 				</div>
 			</div>
 
+			{/* Facet chips */}
+			<div className="px-3 pb-1 shrink-0">
+				<HistoryFacetBar filter={filter} onChange={setFilter} />
+			</div>
+
 			{/* Status line: search count or hydration progress */}
 			<div className="px-3 pb-1.5 shrink-0 text-[11px] text-zinc-500">
 				{isSearchMode ? (
@@ -137,13 +196,13 @@ export function SessionHistoryV2({
 					) : (
 						t("history.searchResults", {
 							query: searchQuery,
-							count: searchResults.length,
+							count: sessionCount,
 						})
 					)
 				) : isHydrating ? (
 					t("history.indexing", { done: hydratedCount, total: totalCount })
 				) : (
-					t("history.sessionsCount", { count: items.length })
+					t("history.sessionsCount", { count: sessionCount })
 				)}
 			</div>
 
@@ -162,25 +221,26 @@ export function SessionHistoryV2({
 
 			{/* Virtualized list */}
 			<div className="flex-1 min-h-0">
-				{listItems.length === 0 ? (
+				{rows.length === 0 ? (
 					<div className="p-4 text-center text-th-text-muted text-sm">
 						{isSearchMode
 							? t("history.noSearchResults")
-							: t("history.noSessions")}
+							: filterActive
+								? t("history.noFilterMatches")
+								: t("history.noSessions")}
 					</div>
 				) : (
 					<VirtualizedHistoryList
-						// Remount on mode flip so scrollTop + measurement cache reset;
-						// otherwise a stale offset can leave the list blank after the
-						// item set shrinks (flat -> search).
-						key={isSearchMode ? "search" : "flat"}
-						items={listItems}
+						// Remount on mode flip AND on filter change so scrollTop +
+						// measurement cache reset; otherwise a stale offset can leave the
+						// list blank after the row set shrinks (e.g. applying a facet).
+						key={isSearchMode ? "search" : `flat:${JSON.stringify(filter)}`}
+						rows={rows}
 						activeCcSessionIds={activeCcSessionIds}
 						resumingId={resumingId}
 						onTap={handleTap}
 						onResume={handleResume}
 						onNavigate={handleNavigate}
-						dirNameBySession={isSearchMode ? undefined : dirNameBySession}
 					/>
 				)}
 			</div>
@@ -191,7 +251,7 @@ export function SessionHistoryV2({
 						selectedSession.summary ||
 						selectedSession.lastPrompt ||
 						selectedSession.firstPrompt ||
-						"No title"
+						t("history.noTitle")
 					}
 					subtitle={selectedSession.projectName}
 					messages={conversation}

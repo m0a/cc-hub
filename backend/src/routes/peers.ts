@@ -207,6 +207,19 @@ async function buildLocalHistoryProjects(): Promise<HistoryProjectsResp['project
   return Array.from(byDir.values()).sort((a, b) => a.projectName.localeCompare(b.projectName));
 }
 
+// A peer that errored within this window is skipped on the next fanout so a
+// single offline peer doesn't make every history load wait the full peerFetch
+// timeout. An explicit verify (recordPeerSuccess) or the cooldown expiring lets
+// it back in.
+const PEER_ERROR_COOLDOWN_MS = 60_000;
+const PEER_LIST_TIMEOUT_MS = 2_500;
+
+function peerRecentlyFailed(peer: { lastErrorAt?: string }): boolean {
+  if (!peer.lastErrorAt) return false;
+  const ts = new Date(peer.lastErrorAt).getTime();
+  return !Number.isNaN(ts) && Date.now() - ts < PEER_ERROR_COOLDOWN_MS;
+}
+
 // GET /api/peers/history/projects - 全 peer のプロジェクトを merge
 peers.get('/history/projects', async (c) => {
   const allPeers = await listPeers();
@@ -217,8 +230,21 @@ peers.get('/history/projects', async (c) => {
       let projects: HistoryProjectsResp['projects'];
       if (peer.url === SELF_PEER_URL) {
         projects = await buildLocalHistoryProjects();
+      } else if (peerRecentlyFailed(peer)) {
+        // Known-down peer: don't block the local list on its timeout.
+        errors.push({ peerId: peer.id, message: peer.lastErrorMessage || 'offline (skipped)' });
+        return [];
       } else {
-        const res = await peerFetch(peer.id, peer.url, peer.wsToken, '/api/sessions/history/projects');
+        // Short timeout: the project list is interactive and must not hang on a
+        // peer that's gone unreachable since the cooldown window.
+        const res = await peerFetch(
+          peer.id,
+          peer.url,
+          peer.wsToken,
+          '/api/sessions/history/projects',
+          undefined,
+          PEER_LIST_TIMEOUT_MS,
+        );
         if (!res.ok) {
           errors.push({ peerId: peer.id, message: `HTTP ${res.status}` });
           return [];

@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.162] - 2026-05-30
+
+全コードベースのマルチエージェントレビュー由来の確定 medium 17 件を 14 PR で修正。Security 2 件、Auth bypass 2 件、Peer-routing 2 件、Silent message loss 2 件、Concurrency/Race 2 件、Resource leak 3 件、Correctness 4 件。確定 mediumの主要 4 件 (#259/#260/#261/#263) は agent-browser 経由で実機ブラウザ検証済み、他は unit test + lint + typecheck。
+
+### Security
+- **HTML preview iframe の sandbox から `allow-same-origin` を除去 (#261)**: `<iframe sandbox="allow-scripts allow-same-origin">` が同一 origin の blob: URL に対して MDN が禁ずる組み合わせになっており、プレビューした任意 HTML から `window.parent.localStorage.getItem('cc-hub-token')` で JWT を窃取できた。`sandbox="allow-scripts"` のみにして unique opaque origin を強制 (`frontend/src/components/files/HtmlViewer.tsx`)
+- **`cchub update` の整合性検証を追加 (#255)**: 旧実装はリリースアセットを取得して renameするだけで checksum/signature/magic-byte いずれもチェックしていなかった。release workflow に `SHA256SUMS` 生成を追加し、`cchub update` でファイル必須化 + ELF/Mach-O magic + Content-Length + SHA-256 検証して `rename()` 直前で abort 可能に。`backend/src/commands/__tests__/update-integrity.test.ts` で 11 ケース検証 (`backend/src/commands/update.ts`, `.github/workflows/release.yml`)
+
+### Fixed
+- **password 認証時に FileViewer の upload/download/raw が無言 401 する問題を修正 (#259, #260)**: `handleUploadFiles` が `fetch` を直叩き、`<a href>`/`<img>`/`<video>`/`<audio>` が `/api/files/raw|download` を Bearer ヘッダ無しで開いていた。新規 `useAuthBlobUrl` フックで raw URL を authFetch → blob URL → src に注入、download は authFetch → Blob → `URL.createObjectURL` → anchor click → revoke、upload は authFetch (`frontend/src/hooks/useAuthBlobUrl.ts`, `frontend/src/components/files/FileViewer.tsx`)
+- **WS 再接続後の respawnPane REST フォールバック / SessionList の pane action / 確認ダイアログが peer routing を無視する問題を修正 (#256, #258)**: いずれも常に Hub origin + auth ヘッダ無しで叩いており、password 認証で 401 か、peer session で別マシンの誤った session id に当たっていた。`useMultiplexedTerminal` に `peerApiBase` を追加して fallback を authFetch / peer URL+token に振り分け、`SessionList.handlePaneAction` と確認ダイアログを `sessionFetch` 経由に (`frontend/src/hooks/useMultiplexedTerminal.ts`, `frontend/src/components/SessionList.tsx`, `frontend/src/components/DesktopLayout.tsx`, `frontend/src/pages/TerminalPage.tsx`)
+- **ChatComposer/FloatingKeyboard の送信失敗時メッセージ消失を修正 (#263, #264)**: `sendTerminalInput`/`onSend` が WS 切断時に false を返すのに無視して textarea をクリアしていたため、reconnect window 中の送信内容が無言で消えていた。返り値を捕捉して成功時のみクリア + `addToHistory` に変更。agent-browser で `WebSocket.prototype.readyState=CLOSED` を patch して実機確認 (`frontend/src/components/chat/ChatComposer.tsx`, `frontend/src/components/FloatingKeyboard.tsx`)
+- **glasses の WS 再接続後に subscribe が no-op になる問題を修正 (#265)**: `onclose` で `subscribedSession` を clear せず、再接続後の `subscribe(sessionId)` が dedup ガードに引っかかって viewport が止まっていた。`onclose` で `null` に reset (`glasses/src/ws-client.ts`)
+- **`useCodexConversation` の cancellation race を修正 (#257)**: 共有 `cancelledRef` が次の effect 実行で false にリセットされ、A スレッドの遅延 response が B スレッドの messages を上書きしていた。per-effect の `let cancelled = false` に置換 (`frontend/src/hooks/useCodexConversation.ts`)
+- **Terminal の rAF / WebGL reload timer leak を修正 (#262)**: momentum scroll / touch coalesce / wheel flush の 3 つの requestAnimationFrame と WebGL context-loss の `setTimeout` が cleanup でキャンセルされず、sessionTheme 変更や session 切替時に旧クロージャが新ターミナルへ `scrollBy`/`setState` を飛ばしていた。全てキャンセル (`frontend/src/components/Terminal.tsx`)
+- **ClaudeCodeService の 3 つの長寿命 Map が無制限に肥大化する問題を修正 (#249)**: `sessionDataCache`/`pathResultCache`/`ttySessionCache` が TTL を「再利用判定」にしか使わず evict していなかった。静的 `evictAndCap` ヘルパで TTL sweep + 1000 entries cap (FIFO) を全 `cache.set` 直前に実行。5 ケースのテスト追加 (`backend/src/services/claude-code.ts`)
+- **未認証の `/api/notify` 経由で `stateOverrides` Map が無制限に肥大化する問題を修正 (#254)**: arbitrary `session_id` で 24h 残る entry を作れたため flood DoS が可能。`/^[A-Za-z0-9._-]{1,128}$/` で形式検証 + 500 entries cap (FIFO) + insert 前の TTL sweep (`backend/src/routes/notify.ts`)
+- **`peers.json` の concurrent mutation TOCTOU を修正 (#251)**: `Promise.all` で fan-out した peer fetch の completion が `recordPeerSuccess/Failure` を同時に load→mutate→save し、相互上書きで `lastSeenAt` や fresh wsToken が消えていた。module-level promise queue で全 mutator を直列化 + temp file + atomic rename で save。2 ケースのテスト追加 (`backend/src/services/peer-registry.ts`)
+- **`session-metrics`/`file-change-tracker`/`conversation-watcher`/`codex-history` の Claude project dir 名生成がドット入りパスで壊れていた問題を修正 (#252)**: 4 ファイルがそれぞれ `replace(/\//g, '-')` をしていたが、Claude Code は `[/.]/g` で両方潰す。`github.com/m0a/cc-hub` 等で metrics 等が無言失敗していた。共有 helper `claudeProjectDirName` を utils に切り出し全 5 callers (claude-code 含む) を統一。4 ケースのテスト追加 (`backend/src/utils/claude-project-path.ts`, etc.)
+- **`/files/raw` の Range request 検証/クランプ不足を修正 (#253)**: start/end の境界チェックがなく `bytes=10000-20000` を 905-byte ファイルに投げると bogus 206 を返し、Content-Length 嘘で keep-alive クライアントがハングしていた。さらに Bun の `Response(file.slice(...))` が transport で slice 境界を捨てて full file を chunked で流すため Content-Length も合っていなかった。416 / clamp + slice を `arrayBuffer()` 化で実 transport 整合。dev curl で 5 ケース実機確認 (`backend/src/routes/files.ts`)
+- **session 名の SEP sentinel ('||~~||') 含み許可によるパン misattribution を修正 (#250)**: `tmux list-panes` 出力を `||~~||` で split 9 fields にしていたが session 名に sentinel を含めると全 field がシフトして別 session の pane として登録されていた。`CreateSessionSchema.name` を `/^[A-Za-z0-9._-]+$/` で制約 + パーサ側で paneId を `/^%\d+$/` で defensiveに検証して不正行は drop (`shared/types.ts`, `backend/src/services/tmux.ts`)
+
 ## [0.1.161] - 2026-05-30
 
 全コードベースのマルチエージェントレビューで検出した Critical/High の脆弱性 9 件を修正。各修正はユニットテスト追加 + dev 実機（回帰＋攻撃の両面）検証済み。

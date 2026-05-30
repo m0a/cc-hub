@@ -370,27 +370,47 @@ export function UsageChart({
 					strokeWidth="1"
 				/>
 
-				{/* "Now" label */}
-				<text
-					x={currentPoint.x}
-					y={CHART_HEIGHT - 2}
-					textAnchor="middle"
-					fill={isLight ? "#6b7280" : "#9ca3af"}
-					fontSize="6"
-				>
-					{t("dashboard.chartNow")}
-				</text>
-
-				{/* "Reset" label */}
-				<text
-					x={PADDING.left + INNER_W}
-					y={CHART_HEIGHT - 2}
-					textAnchor="end"
-					fill="#6b7280"
-					fontSize="6"
-				>
-					{t("dashboard.chartReset")}
-				</text>
+				{/* "Now" + "Reset" labels — collapse to a combined label when the
+				    current point is near the right edge to avoid overlap. */}
+				{(() => {
+					const chartRight = PADDING.left + INNER_W;
+					const distFromLeft = currentPoint.x - PADDING.left;
+					const distFromRight = chartRight - currentPoint.x;
+					const minDist = 28;
+					const nowAnchor =
+						distFromLeft < minDist
+							? "start"
+							: distFromRight < minDist
+								? "end"
+								: "middle";
+					const showResetLabel = distFromRight >= minDist;
+					return (
+						<>
+							<text
+								x={currentPoint.x}
+								y={CHART_HEIGHT - 2}
+								textAnchor={nowAnchor}
+								fill={isLight ? "#6b7280" : "#9ca3af"}
+								fontSize="6"
+							>
+								{showResetLabel
+									? t("dashboard.chartNow")
+									: `${t("dashboard.chartNow")} / ${t("dashboard.chartReset")}`}
+							</text>
+							{showResetLabel && (
+								<text
+									x={chartRight}
+									y={CHART_HEIGHT - 2}
+									textAnchor="end"
+									fill="#6b7280"
+									fontSize="6"
+								>
+									{t("dashboard.chartReset")}
+								</text>
+							)}
+						</>
+					);
+				})()}
 			</svg>
 			<div className={`text-[10px] mt-0.5 ${getStatusTextColor(status)}`}>
 				{statusMessage}

@@ -228,6 +228,9 @@ export class CodexHistoryService {
       projectPath: r.cwd,
       projectName: r.cwd.replace(/^\/home\/[^/]+\//, '~/'),
       firstPrompt: r.firstPrompt,
+      lastPrompt: r.firstPrompt,
+      // Codex transcripts have no recap (Claude-only feature).
+      recap: undefined,
       modified: r.modified,
       agent: 'codex',
     };

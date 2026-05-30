@@ -4,6 +4,8 @@ import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { HistorySession } from '../../../shared/types';
+import { readLastLines } from '../utils/read-last-lines';
+import { scanLastRecap } from '../utils/recap-scanner';
 
 export type { HistorySession };
 
@@ -31,6 +33,18 @@ interface SessionMetadata {
   messageCount: number;
   gitBranch?: string;
   firstMessageUuid?: string;  // For session matching
+}
+
+/**
+ * Recaps are used as a one-line preview in the history list, so the full
+ * (often multi-paragraph) text doesn't need to ship in list responses. Cap it
+ * to keep `/history/projects/:dir` payloads small even for big projects.
+ */
+const RECAP_PREVIEW_MAX = 300;
+function truncateRecap(content: string): string {
+  return content.length > RECAP_PREVIEW_MAX
+    ? `${content.slice(0, RECAP_PREVIEW_MAX)}…`
+    : content;
 }
 
 export interface ToolUseInfo {
@@ -93,13 +107,10 @@ export class SessionHistoryService {
    */
   private async readLastUserMessage(filePath: string): Promise<string | null> {
     try {
-      const proc = Bun.spawn(['tail', '-n', '500', filePath], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      const text = await new Response(proc.stdout).text();
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) return null;
+      // readLastLines (no subprocess, split-UTF-8 safe) replaces the old
+      // `tail -n 500` spawn — same window, shell-independent.
+      const text = await readLastLines(filePath, 500);
+      if (!text) return null;
 
       const lines = text.trim().split('\n').reverse();
       for (const line of lines) {
@@ -355,22 +366,33 @@ export class SessionHistoryService {
       const files = await readdir(projectDir);
       const jsonlFiles = files.filter(f => f.endsWith('.jsonl'));
 
-      for (const file of jsonlFiles) {
-        const jsonlPath = join(projectDir, file);
-        const basicInfo = await this.scanJsonlForBasicInfo(jsonlPath);
+      // Process files concurrently: each does a header scan + a recap tail read.
+      // Serial awaits here blocked the request for ~2 reads × N sessions.
+      const built = await Promise.all(
+        jsonlFiles.map(async (file): Promise<HistorySession | null> => {
+          const jsonlPath = join(projectDir, file);
+          const basicInfo = await this.scanJsonlForBasicInfo(jsonlPath);
 
-        // Skip sessions with no user messages
-        if (basicInfo?.lastPrompt) {
+          // Skip sessions with no user messages
+          if (!basicInfo?.lastPrompt) return null;
+
           const projectName = basicInfo.projectPath.replace(/^\/home\/[^/]+\//, '~/');
+          const recap = await scanLastRecap(jsonlPath);
 
-          sessions.push({
+          return {
             sessionId: basicInfo.sessionId,
             projectPath: basicInfo.projectPath,
             projectName,
             firstPrompt: basicInfo.lastPrompt,
+            lastPrompt: basicInfo.lastPrompt,
+            recap: recap ? truncateRecap(recap.content) : undefined,
+            recapAt: recap?.timestamp,
             modified: basicInfo.modified,
-          });
-        }
+          };
+        }),
+      );
+      for (const s of built) {
+        if (s) sessions.push(s);
       }
 
       // Sort by modified date (newest first)
@@ -384,6 +406,9 @@ export class SessionHistoryService {
   async getRecentSessions(limit: number = 20, includeMetadata: boolean = false): Promise<HistorySession[]> {
     const sessions: HistorySession[] = [];
     const seenSessionIds = new Set<string>();
+    // Track each session's jsonl path so recap can be fetched only for the
+    // final sliced set (avoids a second tail read across every scanned file).
+    const sessionPaths = new Map<string, string>();
 
     try {
       const projectDirs = await readdir(this.projectsDir);
@@ -402,6 +427,7 @@ export class SessionHistoryService {
             // Skip sessions with no user messages (empty/abandoned sessions)
             if (basicInfo?.lastPrompt && !seenSessionIds.has(basicInfo.sessionId)) {
               seenSessionIds.add(basicInfo.sessionId);
+              sessionPaths.set(basicInfo.sessionId, jsonlPath);
 
               const projectName = basicInfo.projectPath.replace(/^\/home\/[^/]+\//, '~/');
 
@@ -409,7 +435,8 @@ export class SessionHistoryService {
                 sessionId: basicInfo.sessionId,
                 projectPath: basicInfo.projectPath,
                 projectName,
-                firstPrompt: basicInfo.lastPrompt,  // Now using lastPrompt
+                firstPrompt: basicInfo.lastPrompt,
+                lastPrompt: basicInfo.lastPrompt,
                 modified: basicInfo.modified,
               };
 
@@ -439,7 +466,22 @@ export class SessionHistoryService {
       }
 
       sessions.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
-      return sessions.slice(0, limit);
+      const top = sessions.slice(0, limit);
+
+      // Attach recap only to the returned set, in parallel.
+      await Promise.all(
+        top.map(async (session) => {
+          const path = sessionPaths.get(session.sessionId);
+          if (!path) return;
+          const recap = await scanLastRecap(path);
+          if (recap) {
+            session.recap = truncateRecap(recap.content);
+            session.recapAt = recap.timestamp;
+          }
+        }),
+      );
+
+      return top;
     } catch {
       return [];
     }
@@ -797,11 +839,14 @@ export class SessionHistoryService {
               const searchText = `${projectName} ${basicInfo.lastPrompt}`.toLowerCase();
 
               if (searchText.includes(normalizedQuery)) {
+                // recap intentionally omitted on both search paths — avoid an
+                // extra tail-read per result. Search matches title/prompt only.
                 results.push({
                   sessionId: basicInfo.sessionId,
                   projectPath: basicInfo.projectPath,
                   projectName,
                   firstPrompt: basicInfo.lastPrompt,
+                  lastPrompt: basicInfo.lastPrompt,
                   modified: basicInfo.modified,
                 });
               }
@@ -902,6 +947,7 @@ export class SessionHistoryService {
                   projectPath: basicInfo.projectPath,
                   projectName,
                   firstPrompt: matchSnippet,
+                  lastPrompt: matchSnippet,
                   modified: basicInfo.modified,
                 };
               }

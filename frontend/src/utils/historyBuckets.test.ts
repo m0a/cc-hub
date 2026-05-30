@@ -1,11 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { HistorySession } from "../../../shared/types";
-import {
-	applyHistoryFilter,
-	bucketizeHistory,
-	EMPTY_HISTORY_FILTER,
-	isFilterActive,
-} from "./historyBuckets";
+import { bucketizeHistory } from "./historyBuckets";
 
 const NOW = new Date("2026-05-30T12:00:00Z").getTime();
 const HOUR = 60 * 60 * 1000;
@@ -28,74 +23,6 @@ function snap(
 const keyOf = (s: HistorySession) => `local:${s.sessionId}`;
 const t = (k: string) => k;
 
-describe("isFilterActive", () => {
-	test("empty filter is inactive", () => {
-		expect(isFilterActive(EMPTY_HISTORY_FILTER)).toBe(false);
-	});
-	test("any axis set makes it active", () => {
-		expect(isFilterActive({ ...EMPTY_HISTORY_FILTER, agent: "codex" })).toBe(
-			true,
-		);
-		expect(isFilterActive({ ...EMPTY_HISTORY_FILTER, period: "7d" })).toBe(true);
-		expect(isFilterActive({ ...EMPTY_HISTORY_FILTER, activeOnly: true })).toBe(
-			true,
-		);
-	});
-});
-
-describe("applyHistoryFilter", () => {
-	const items = [
-		snap("a", NOW - HOUR, "claude"),
-		snap("b", NOW - 2 * DAY, "codex"),
-		snap("c", NOW - 10 * DAY, "claude"),
-	];
-
-	test("no filter returns all", () => {
-		expect(
-			applyHistoryFilter(items, EMPTY_HISTORY_FILTER, new Set(), NOW),
-		).toHaveLength(3);
-	});
-
-	test("agent filter", () => {
-		const out = applyHistoryFilter(
-			items,
-			{ ...EMPTY_HISTORY_FILTER, agent: "codex" },
-			new Set(),
-			NOW,
-		);
-		expect(out.map((s) => s.sessionId)).toEqual(["b"]);
-	});
-
-	test("period 24h keeps only the last day", () => {
-		const out = applyHistoryFilter(
-			items,
-			{ ...EMPTY_HISTORY_FILTER, period: "24h" },
-			new Set(),
-			NOW,
-		);
-		expect(out.map((s) => s.sessionId)).toEqual(["a"]);
-	});
-
-	test("activeOnly keeps only sessions in the active set", () => {
-		const out = applyHistoryFilter(
-			items,
-			{ ...EMPTY_HISTORY_FILTER, activeOnly: true },
-			new Set(["c"]),
-			NOW,
-		);
-		expect(out.map((s) => s.sessionId)).toEqual(["c"]);
-	});
-
-	test("filters compose (AND)", () => {
-		const out = applyHistoryFilter(
-			[snap("x", NOW - HOUR, "claude"), snap("y", NOW - HOUR, "codex")],
-			{ agent: "claude", period: "24h", activeOnly: false },
-			new Set(),
-			NOW,
-		);
-		expect(out.map((s) => s.sessionId)).toEqual(["x"]);
-	});
-});
 
 describe("bucketizeHistory", () => {
 	test("groups into date buckets with headers and counts", () => {

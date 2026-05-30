@@ -195,6 +195,7 @@ export class SessionHistoryService {
     lastPrompt?: string;
     modified: string;
     firstUserUuid?: string;
+    gitBranch?: string;
   } | null> {
     try {
       const fileStat = await stat(filePath);
@@ -209,6 +210,7 @@ export class SessionHistoryService {
       let sessionId: string | undefined;
       let projectPath: string | undefined;
       let firstUserUuid: string | undefined;
+      let gitBranch: string | undefined;
       let linesRead = 0;
       const maxLines = 30; // Only need header info
 
@@ -227,11 +229,20 @@ export class SessionHistoryService {
             projectPath = entry.cwd;
           }
 
+          // gitBranch is written into the header entries — capture it cheaply
+          // here (no extra read) so the Branch facet has data.
+          if (!gitBranch && typeof entry.gitBranch === 'string' && entry.gitBranch) {
+            gitBranch = entry.gitBranch;
+          }
+
           // Get first user UUID for active session matching
           if (!firstUserUuid && entry.type === 'user' && entry.uuid) {
             firstUserUuid = entry.uuid;
           }
 
+          // gitBranch is captured opportunistically above but excluded from the
+          // break: many sessions never emit it, so requiring it would defeat the
+          // early short-circuit and scan all 30 lines every time.
           if (sessionId && projectPath && firstUserUuid) break;
         } catch {
           // Skip invalid JSON lines
@@ -261,6 +272,7 @@ export class SessionHistoryService {
         lastPrompt: lastPrompt || undefined,
         modified,
         firstUserUuid,
+        gitBranch,
       };
     } catch {
       return null;
@@ -387,6 +399,7 @@ export class SessionHistoryService {
             lastPrompt: basicInfo.lastPrompt,
             recap: recap ? truncateRecap(recap.content) : undefined,
             recapAt: recap?.timestamp,
+            gitBranch: basicInfo.gitBranch,
             modified: basicInfo.modified,
           };
         }),
@@ -437,6 +450,7 @@ export class SessionHistoryService {
                 projectName,
                 firstPrompt: basicInfo.lastPrompt,
                 lastPrompt: basicInfo.lastPrompt,
+                gitBranch: basicInfo.gitBranch,
                 modified: basicInfo.modified,
               };
 
@@ -847,6 +861,7 @@ export class SessionHistoryService {
                   projectName,
                   firstPrompt: basicInfo.lastPrompt,
                   lastPrompt: basicInfo.lastPrompt,
+                  gitBranch: basicInfo.gitBranch,
                   modified: basicInfo.modified,
                 });
               }
@@ -948,6 +963,7 @@ export class SessionHistoryService {
                   projectName,
                   firstPrompt: matchSnippet,
                   lastPrompt: matchSnippet,
+                  gitBranch: basicInfo.gitBranch,
                   modified: basicInfo.modified,
                 };
               }

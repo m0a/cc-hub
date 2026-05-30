@@ -4,43 +4,8 @@ import { homedir } from 'node:os';
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { claudeProjectDirName } from '../utils/claude-project-path';
-
-/**
- * Read last N lines from a file without spawning a subprocess.
- * Reads from the end of the file in chunks, retrying with larger chunks
- * when initial estimate doesn't capture enough lines (Claude Code JSONL
- * lines can be 2KB+ when they contain large tool results).
- */
-async function readLastLines(filePath: string, lineCount: number): Promise<string> {
-  try {
-    const file = Bun.file(filePath);
-    const size = file.size;
-    if (size === 0) return '';
-
-    let bytesPerLine = 2048;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const chunkSize = Math.min(size, lineCount * bytesPerLine);
-      const buffer = await file.slice(size - chunkSize, size).text();
-      const lines = buffer.split('\n');
-      // Drop incomplete first line unless we read the entire file
-      if (chunkSize < size) lines.shift();
-      if (lines.length >= lineCount || chunkSize >= size) {
-        return lines.slice(-lineCount).join('\n');
-      }
-      bytesPerLine *= 4; // 2K → 8K → 32K
-    }
-    // Last resort: read entire file
-    const buffer = await file.text();
-    return buffer.split('\n').slice(-lineCount).join('\n');
-  } catch {
-    return '';
-  }
-}
-
-interface RecapEntry {
-  content: string;
-  timestamp: string;
-}
+import { readLastLines } from '../utils/read-last-lines';
+import { type RecapEntry, scanLastRecap } from '../utils/recap-scanner';
 
 interface ClaudeCodeSession {
   sessionId: string;
@@ -300,76 +265,6 @@ export class ClaudeCodeService {
   }
 
   /**
-   * Read the latest recap from a jsonl file. Two sources:
-   *   1. system/away_summary — auto-emitted by Claude Code after the terminal has been
-   *      unfocused for ≥3 minutes.
-   *   2. system/local_command — output of a manual `/recap` slash command. Detected by
-   *      checking that the preceding user entry contains <command-name>/recap</command-name>.
-   * Returns whichever is most recent.
-   */
-  private async readLastRecap(filePath: string): Promise<RecapEntry | null> {
-    try {
-      const text = await readLastLines(filePath, 300);
-      if (!text) return null;
-
-      const lines = text.trim().split('\n');
-      let pendingRecapTrigger = false; // true when the most recent user entry was /recap
-      let lastRecap: RecapEntry | null = null;
-
-      for (const line of lines) {
-        let entry: Record<string, unknown>;
-        try {
-          entry = JSON.parse(line);
-        } catch {
-          continue;
-        }
-
-        // Track /recap slash command triggers from user entries.
-        if (entry.type === 'user') {
-          const message = entry.message as { content?: unknown } | undefined;
-          const content = message?.content;
-          let text = '';
-          if (typeof content === 'string') {
-            text = content;
-          } else if (Array.isArray(content)) {
-            const block = content.find((b): b is { type: string; text: string } =>
-              typeof b === 'object' && b !== null && (b as { type?: string }).type === 'text'
-            );
-            text = block?.text || '';
-          }
-          pendingRecapTrigger = /<command-name>\/?recap<\/command-name>/.test(text);
-          continue;
-        }
-
-        if (entry.type !== 'system') continue;
-        const content = entry.content;
-        if (typeof content !== 'string' || content.length === 0) continue;
-        const timestamp = (entry.timestamp as string) || '';
-
-        if (entry.subtype === 'away_summary') {
-          // Strip the trailing "(disable recaps in /config)" hint Claude Code appends.
-          const cleaned = content.replace(/\s*\(disable recaps in \/config\)\s*$/, '').trim();
-          if (cleaned) lastRecap = { content: cleaned, timestamp };
-        } else if (entry.subtype === 'local_command' && pendingRecapTrigger) {
-          const cleaned = content
-            .replace(/^<local-command-stdout>/, '')
-            .replace(/<\/local-command-stdout>$/, '')
-            .trim();
-          // Skip error outputs (e.g. "API Error: 529 ..." when the recap call fails)
-          if (cleaned && !cleaned.startsWith('API Error')) {
-            lastRecap = { content: cleaned, timestamp };
-          }
-          pendingRecapTrigger = false;
-        }
-      }
-
-      return lastRecap;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
    * Check if the session is waiting for user input by reading the jsonl file
    * Returns the tool name if waiting, null otherwise
    */
@@ -619,7 +514,7 @@ export class ClaudeCodeService {
         this.readLastUserMessage(filePath),
         this.checkWaitingState(filePath),
         this.readFirstMessageId(filePath),
-        this.readLastRecap(filePath),
+        scanLastRecap(filePath),
       ]);
 
       const data: ClaudeCodeSession = {
@@ -768,7 +663,7 @@ export class ClaudeCodeService {
                 this.checkWaitingState(filePath),
                 this.readLastUserMessage(filePath),
                 this.readFirstMessageId(filePath),
-                this.readLastRecap(filePath),
+                scanLastRecap(filePath),
               ]);
 
               return {
@@ -793,7 +688,7 @@ export class ClaudeCodeService {
               this.readLastUserMessage(filePath),
               this.checkWaitingState(filePath),
               this.readFirstMessageId(filePath),
-              this.readLastRecap(filePath),
+              scanLastRecap(filePath),
             ]);
 
             return {
@@ -924,7 +819,7 @@ export class ClaudeCodeService {
                 this.readLastUserMessage(filePath),
                 this.checkWaitingState(filePath),
                 this.readFirstMessageId(filePath),
-                this.readLastRecap(filePath),
+                scanLastRecap(filePath),
               ]);
 
               return {

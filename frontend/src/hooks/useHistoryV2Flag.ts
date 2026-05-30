@@ -4,9 +4,11 @@ const STORAGE_KEY = "cchub-history-v2";
 
 function readFlag(): boolean {
 	try {
-		return localStorage.getItem(STORAGE_KEY) === "true";
+		// Default ON: V2 is the canonical history view. Only an explicit "false"
+		// opts back into the legacy V1 list (escape hatch while V2 bakes).
+		return localStorage.getItem(STORAGE_KEY) !== "false";
 	} catch {
-		return false;
+		return true;
 	}
 }
 
@@ -17,7 +19,8 @@ function readFlag(): boolean {
  * faceted/virtualized history UI should be shown. Listens for the storage
  * event so toggling the flag in another tab updates this one live.
  *
- * Default is `false` (opt-in). PR6 will flip the unset default to `true`.
+ * Default is ON; setting `cchub-history-v2` to "false" opts back into the
+ * legacy V1 list during the V2 bake-in.
  */
 export function useHistoryV2Flag(): boolean {
 	const [enabled, setEnabled] = useState<boolean>(() => readFlag());

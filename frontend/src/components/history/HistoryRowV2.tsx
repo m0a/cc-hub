@@ -101,11 +101,11 @@ export function HistoryRowV2({
 
 					<div className="flex items-center gap-3 mt-1.5 text-[11px] text-zinc-600">
 						<span>
-							{formatRelativeTime(
-								session.recapAt || session.modified,
-								t,
-								i18n.language,
-							)}
+							{/* Show `modified` — the same key the list is sorted and
+							    bucketed by. Using recapAt here made the times look
+							    out of order (a recap can be days older than the last
+							    activity). */}
+							{formatRelativeTime(session.modified, t, i18n.language)}
 						</span>
 						{duration && (
 							<span className="inline-flex items-center gap-1">

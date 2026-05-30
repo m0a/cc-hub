@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.164] - 2026-05-31
+
+セッション履歴UIを全面刷新。プロジェクト階層を辿る旧UIから、全プロジェクト横断のフラットな仮想化リスト + ファセット絞り込みサイドバー（B案）へ移行。「網羅的に見づらい・検索しづらい」を解消し、各セッションに最新 recap プレビューを表示。さらに履歴ロードを 10秒超 → 約 0.8 秒に短縮。全 PR を adversarial review + dev 実機（agent-browser）で検証済み。
+
+### Added
+- **V2 履歴ビュー: 仮想化フラットリスト + ファセットサイドバー (#290〜#296, #298)**: プロジェクト階層を開いて辿る旧UIを廃し、全プロジェクトのセッションを `modified` 降順の単一リストに統合。`@tanstack/react-virtual` で仮想化し、日付バケット（今日/昨日/今週/それ以前）ヘッダーをインライン挿入。左サイドバー（狭幅では下からのドロワー）でプロジェクト/エージェント/ブランチ/期間のファセット絞り込み（軸内 OR・軸間 AND、件数表示付き）と選択チップ + クリアを提供。インクリメンタル検索（既存 SSE 検索を 150ms デバウンス）対応。`useHistoryV2Flag` で localStorage gating し、デフォルト ON（`cchub-history-v2` に `"false"` でオプトアウト可）。`SIDEBAR_MIN_WIDTH=760` のレスポンシブ切替はコールバック ref で loading early-return を跨いでも安定 (`frontend/src/components/history/SessionHistoryV2.tsx`, `HistoryFacetSidebar.tsx`, `HistoryFacetDrawer.tsx`, `HistoryActiveChips.tsx`, `VirtualizedHistoryList.tsx`, `HistoryRowV2.tsx`, `frontend/src/utils/historyBuckets.ts`, `historyFacets.ts`, `frontend/src/hooks/useFlatHistoryItems.ts`, `useHistoryActions.ts`, `useHistoryV2Flag.ts`)
+- **各セッションに最新 recap プレビューを表示 (#291, #292)**: `.jsonl` 末尾を `readLastLines` で読み、純粋関数 `parseRecapFromLines` で直近の recap を抽出（300字 truncate、`away_summary` で pending リセット）。`HistorySession` に `lastPrompt`/`recap`/`recapAt`、`PeerHistoryProject` に `cwdKey` を追加。V1 リストにも recap の amber 行を追加し、表示プロンプトは「最後に入力したプロンプト」(`lastPrompt`) を優先（旧来の `firstPrompt` フォールバック） (`shared/types.ts`, `backend/src/utils/read-last-lines.ts`, `backend/src/utils/recap-scanner.ts`, `backend/src/services/session-history.ts`, `backend/src/services/codex-history.ts`, `frontend/src/components/SessionHistory.tsx`)
+
+### Fixed
+- **履歴ロードがオフライン peer で 10秒超ハングする問題を修正 (#299)**: `/api/peers/history/projects` の peer fan-out が `Promise.all` 内でオフライン peer の 5秒タイムアウトを待ち、履歴タブ全体のロードが 10秒以上かかっていた。`peerRecentlyFailed`（60秒クールダウン）で直近失敗 peer をスキップし、`peerFetch` に短い `timeoutMs`（2.5秒）を渡せるよう拡張。実測 10秒超 → 約 783ms (`backend/src/routes/peers.ts`, `backend/src/services/peer-auth.ts`)
+- **V2 リストの表示時刻が recapAt と modified で食い違う問題を修正 (#296)**: リストは `modified` 降順ソートなのに行には `recapAt` を表示しており、recap が古いセッション（実測で 6 日ずれ）で並び順と表示時刻が矛盾していた。`session.modified` を表示するよう統一 (`frontend/src/components/history/HistoryRowV2.tsx`)
+
+### Changed
+- **`getProjectSessions` の N+1 I/O を並列化 (#291)**: セッションごとの逐次 `.jsonl` 読みを `Promise.all` 化、`tail` サブプロセスを `readLastLines(500)` に置換。検索結果は SSE 順で届くため、バケットヘッダーの重複/key 衝突を避けるよう `modified` 降順で明示ソートしてから bucketize (`backend/src/services/session-history.ts`, `frontend/src/components/history/SessionHistoryV2.tsx`)
+
 ## [0.1.163] - 2026-05-30
 
 ダッシュボードの「使用量リミット」グラフの表示バグを2件修正。

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.163] - 2026-05-30
+
+ダッシュボードの「使用量リミット」グラフの表示バグを2件修正。
+
+### Fixed
+- **使用量グラフが途中で減少して見える + サイクル中央から始まる問題を修正 (#288)**: 7日サイクルの線が `18 → 7 → 8 → ...` のように下がって描画され、さらに左半分に何も描かれていなかった。Anthropic API はリセット境界をまたいだ旧サイクルのスナップショットにも新しい `resetsAt` を返すため `resetsAt` 一致では旧サイクル除外できず、utilization の drop パターンが唯一の手がかりとなる。`shared/usage-cycle.ts` に純粋関数 `filterToCurrentCycle()` を新規追加（時系列順に最後の drop > CYCLE_DROP_TOLERANCE=2 を検出してそれ以降だけ返す）し、`UsageChart` で濾過 + 最初のサンプルが cycleStart から 2% 以上奥なら `(cycleStart, 0%)` アンカーを prepend。monotonic envelope は使わず生データを正しく描画。ユニットテスト 10 ケース追加 (`shared/usage-cycle.ts`, `frontend/src/components/dashboard/UsageChart.tsx`)
+- **使用量グラフの「現在」と「リセット」ラベルが重なる問題を修正 (#287)**: `currentPoint.x` がチャート右端から 28px 以内に来るとラベルが衝突し判読不能だった。閾値以内なら「現在 / リセット」統合ラベル 1 つに切り替え、左右端寄りなら textAnchor を start/end に動的調整 (`frontend/src/components/dashboard/UsageChart.tsx`)
+
 ## [0.1.162] - 2026-05-30
 
 全コードベースのマルチエージェントレビュー由来の確定 medium 17 件を 14 PR で修正。Security 2 件、Auth bypass 2 件、Peer-routing 2 件、Silent message loss 2 件、Concurrency/Race 2 件、Resource leak 3 件、Correctness 4 件。確定 mediumの主要 4 件 (#259/#260/#261/#263) は agent-browser 経由で実機ブラウザ検証済み、他は unit test + lint + typecheck。

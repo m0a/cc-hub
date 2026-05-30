@@ -19,3 +19,20 @@ export function formatRelativeTime(
 	const dateLocale = locale === "ja" ? "ja-JP" : "en-US";
 	return new Date(ts).toLocaleDateString(dateLocale);
 }
+
+/**
+ * Format a duration in minutes into a localized "Xm" / "Xh Ym" / "Xh" string.
+ * Returns null for zero/undefined so callers can omit the field entirely.
+ */
+export function formatDuration(
+	minutes: number | undefined,
+	t: TFunction,
+): string | null {
+	if (!minutes || minutes <= 0) return null;
+	if (minutes < 60) return t("time.minutes", { count: minutes });
+	const hours = Math.floor(minutes / 60);
+	const mins = minutes % 60;
+	return mins > 0
+		? t("time.hoursMinutes", { hours, minutes: mins })
+		: t("time.hours", { count: hours });
+}

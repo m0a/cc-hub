@@ -2,54 +2,6 @@ import type { HistorySession } from "../../../shared/types";
 
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
 
-export type HistoryAgentFilter = "claude" | "codex" | null;
-export type HistoryPeriodFilter = "24h" | "7d" | "30d" | null;
-
-export interface HistoryFilter {
-	agent: HistoryAgentFilter;
-	period: HistoryPeriodFilter;
-	activeOnly: boolean;
-}
-
-export const EMPTY_HISTORY_FILTER: HistoryFilter = {
-	agent: null,
-	period: null,
-	activeOnly: false,
-};
-
-export function isFilterActive(f: HistoryFilter): boolean {
-	return f.agent !== null || f.period !== null || f.activeOnly;
-}
-
-const PERIOD_MS: Record<NonNullable<HistoryPeriodFilter>, number> = {
-	"24h": 24 * 60 * 60 * 1000,
-	"7d": 7 * 24 * 60 * 60 * 1000,
-	"30d": 30 * 24 * 60 * 60 * 1000,
-};
-
-/**
- * Apply the client-side facet filter (agent / period / active-only) to a list
- * of sessions. Pure; `now` is injected for testability.
- */
-export function applyHistoryFilter(
-	items: HistorySession[],
-	filter: HistoryFilter,
-	activeCcSessionIds: Set<string>,
-	now: number,
-): HistorySession[] {
-	if (!isFilterActive(filter)) return items;
-	return items.filter((s) => {
-		if (filter.agent && (s.agent ?? "claude") !== filter.agent) return false;
-		if (filter.activeOnly && !activeCcSessionIds.has(s.sessionId)) return false;
-		if (filter.period) {
-			const ts = new Date(s.modified).getTime();
-			if (Number.isNaN(ts)) return true; // unparseable date: don't hide
-			if (now - ts > PERIOD_MS[filter.period]) return false;
-		}
-		return true;
-	});
-}
-
 export type HistoryListRow =
 	| { kind: "header"; key: string; label: string; count: number }
 	| {

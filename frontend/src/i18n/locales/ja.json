@@ -21,7 +21,8 @@
 		"yes": "はい",
 		"no": "いいえ",
 		"new": "新規",
-		"none": "なし"
+		"none": "なし",
+		"showLess": "− 閉じる"
 	},
 	"session": {
 		"title": "セッション",
@@ -100,7 +101,8 @@
 		"bucketYesterday": "昨日",
 		"bucketThisWeek": "今週",
 		"bucketEarlier": "それ以前",
-		"noTitle": "(タイトルなし)"
+		"noTitle": "(タイトルなし)",
+		"facetMore": "+ {{count}} 件"
 	},
 	"dashboard": {
 		"title": "ダッシュボード",

@@ -1,5 +1,5 @@
-import { Search, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Search, SlidersHorizontal, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SessionResponse } from "../../../../shared/types";
 import {
@@ -8,15 +8,20 @@ import {
 } from "../../hooks/useFlatHistoryItems";
 import { useHistoryActions } from "../../hooks/useHistoryActions";
 import { useSessionHistory } from "../../hooks/useSessionHistory";
+import { bucketizeHistory } from "../../utils/historyBuckets";
 import {
-	applyHistoryFilter,
-	bucketizeHistory,
-	EMPTY_HISTORY_FILTER,
-	type HistoryFilter,
-	isFilterActive,
-} from "../../utils/historyBuckets";
+	type ActiveChip,
+	activeChips,
+	applyFacets,
+	computeFacetData,
+	emptyFacetState,
+	type FacetState,
+	isFacetActive,
+} from "../../utils/historyFacets";
 import { ConversationViewer } from "../ConversationViewer";
-import { HistoryFacetBar } from "./HistoryFacetBar";
+import { HistoryActiveChips } from "./HistoryActiveChips";
+import { HistoryFacetDrawer } from "./HistoryFacetDrawer";
+import { HistoryFacetSidebar } from "./HistoryFacetSidebar";
 import { VirtualizedHistoryList } from "./VirtualizedHistoryList";
 
 interface ActiveSession extends SessionResponse {
@@ -29,10 +34,22 @@ interface SessionHistoryV2Props {
 	activeSessions?: ActiveSession[];
 }
 
+const SIDEBAR_MIN_WIDTH = 760;
+
+function facetKey(s: FacetState): string {
+	return JSON.stringify({
+		p: [...s.projects].sort(),
+		a: [...s.agents].sort(),
+		b: [...s.branches].sort(),
+		pe: [...s.peers].sort(),
+		period: s.period,
+	});
+}
+
 /**
- * V2 history view: one virtualized, cross-project flat list with incremental
- * search. Facets / sort / date buckets land in a later PR; this is the
- * flag-gated foundation (cchub-history-v2).
+ * V2 history view: a cross-project flat list (virtualized, date-bucketed, with
+ * recap previews and incremental search) plus a faceted filter sidebar that
+ * collapses to a bottom-sheet drawer on narrow screens.
  */
 export function SessionHistoryV2({
 	onSessionResumed,
@@ -84,9 +101,6 @@ export function SessionHistoryV2({
 	});
 
 	// Incremental search: debounce keystrokes into the existing SSE search.
-	// Always route through searchSessions (it handles the empty-query case by
-	// aborting the in-flight stream + clearing results + isSearching=false);
-	// calling clearSearch() here would leak the SSE stream and pin isSearching.
 	const [searchInput, setSearchInput] = useState("");
 	useEffect(() => {
 		const q = searchInput.trim();
@@ -96,24 +110,47 @@ export function SessionHistoryV2({
 		return () => clearTimeout(handle);
 	}, [searchInput, searchSessions]);
 
-	// Client-side facet filter (agent / period / active).
-	const [filter, setFilter] = useState<HistoryFilter>(EMPTY_HISTORY_FILTER);
+	// Faceted filter state + responsive sidebar/drawer.
+	const [facet, setFacet] = useState<FacetState>(() => emptyFacetState());
+	const [drawerOpen, setDrawerOpen] = useState(false);
+	const [wide, setWide] = useState(false);
+	// Callback ref so the observer attaches whenever the root actually mounts —
+	// the loading/error early-returns render a ref-less node first, so a
+	// once-only effect would never see the real root and `wide` would stay false.
+	const roRef = useRef<ResizeObserver | null>(null);
+	const setRootRef = useCallback((el: HTMLDivElement | null) => {
+		roRef.current?.disconnect();
+		roRef.current = null;
+		if (!el) return;
+		const compute = () => setWide(el.clientWidth >= SIDEBAR_MIN_WIDTH);
+		compute();
+		const ro = new ResizeObserver(compute);
+		ro.observe(el);
+		roRef.current = ro;
+	}, []);
+
+	// Close the drawer when we switch to the inline sidebar so it doesn't
+	// ghost-reopen if the viewport narrows again.
+	useEffect(() => {
+		if (wide) setDrawerOpen(false);
+	}, [wide]);
 
 	const isSearchMode = searchQuery.trim().length > 0;
 	const sourceItems = isSearchMode ? searchResults : items;
 
-	// filter -> sort -> bucketize into header+session rows for the virtualizer.
+	// Facet value lists + counts are derived from the full loaded set.
+	const facetData = useMemo(() => computeFacetData(items, t), [items, t]);
+	const chips: ActiveChip[] = useMemo(
+		() => activeChips(facet, facetData, t),
+		[facet, facetData, t],
+	);
+
+	// facet -> sort -> bucketize into header+session rows for the virtualizer.
 	const rows = useMemo(() => {
 		const now = Date.now();
-		const filtered = applyHistoryFilter(
-			sourceItems,
-			filter,
-			activeCcSessionIds,
-			now,
-		);
+		const filtered = applyFacets(sourceItems, facet, now);
 		// The flat list is already modified-DESC, but search results arrive in SSE
-		// order (Codex first, then Claude dir-by-dir) — sort so bucket headers
-		// don't repeat / collide on keys.
+		// order — sort so bucket headers don't repeat / collide on keys.
 		const ordered = isSearchMode
 			? [...filtered].sort(
 					(a, b) =>
@@ -127,20 +164,26 @@ export function SessionHistoryV2({
 			t,
 			now,
 		);
-	}, [
-		sourceItems,
-		filter,
-		activeCcSessionIds,
-		isSearchMode,
-		dirNameBySession,
-		t,
-	]);
+	}, [sourceItems, facet, isSearchMode, dirNameBySession, t]);
 
-	const filterActive = isFilterActive(filter);
+	const facetActive = isFacetActive(facet);
 	const sessionCount = rows.reduce(
 		(n, r) => (r.kind === "session" ? n + 1 : n),
 		0,
 	);
+
+	const removeChip = (chip: ActiveChip) => {
+		if (chip.axis === "period") {
+			setFacet((s) => ({ ...s, period: null }));
+			return;
+		}
+		setFacet((s) => {
+			const next = new Set(s[chip.axis]);
+			next.delete(chip.value);
+			return { ...s, [chip.axis]: next };
+		});
+	};
+	const clearAll = () => setFacet(emptyFacetState());
 
 	if (isLoadingProjects) {
 		return (
@@ -158,11 +201,15 @@ export function SessionHistoryV2({
 		);
 	}
 
+	const sidebar = (
+		<HistoryFacetSidebar data={facetData} state={facet} onChange={setFacet} />
+	);
+
 	return (
-		<div className="flex flex-col h-full">
-			{/* Search */}
-			<div className="px-3 pt-3 pb-2 shrink-0">
-				<div className="relative max-w-sm">
+		<div ref={setRootRef} className="flex flex-col h-full">
+			{/* Header: search + (narrow) Filters button */}
+			<div className="px-3 pt-3 pb-2 shrink-0 flex items-center gap-2">
+				<div className="relative flex-1 max-w-sm">
 					<Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-600" />
 					<input
 						type="text"
@@ -181,69 +228,108 @@ export function SessionHistoryV2({
 						</button>
 					)}
 				</div>
-			</div>
-
-			{/* Facet chips */}
-			<div className="px-3 pb-1 shrink-0">
-				<HistoryFacetBar filter={filter} onChange={setFilter} />
-			</div>
-
-			{/* Status line: search count or hydration progress */}
-			<div className="px-3 pb-1.5 shrink-0 text-[11px] text-zinc-500">
-				{isSearchMode ? (
-					isSearching ? (
-						t("history.searching")
-					) : (
-						t("history.searchResults", {
-							query: searchQuery,
-							count: sessionCount,
-						})
-					)
-				) : isHydrating ? (
-					t("history.indexing", { done: hydratedCount, total: totalCount })
-				) : (
-					t("history.sessionsCount", { count: sessionCount })
+				{!wide && (
+					<button
+						type="button"
+						onClick={() => setDrawerOpen(true)}
+						className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-white/[0.06] hover:bg-white/[0.1] text-[12px] text-zinc-200"
+					>
+						<SlidersHorizontal className="w-3.5 h-3.5" />
+						{t("history.filters")}
+						{chips.length > 0 && (
+							<span className="px-1 rounded-full bg-blue-400/30 text-blue-100 text-[10px] tabular-nums">
+								{chips.length}
+							</span>
+						)}
+					</button>
 				)}
 			</div>
 
-			{resumeError && (
-				<div className="mx-3 mb-2 px-3 py-2 bg-red-900/50 text-red-300 text-xs flex items-center justify-between rounded shrink-0">
-					<span>{resumeError}</span>
-					<button
-						type="button"
-						onClick={dismissError}
-						className="text-red-400 hover:text-red-200 ml-2"
-					>
-						×
-					</button>
+			{/* Active facet chips */}
+			{chips.length > 0 && (
+				<div className="px-3 pb-2 shrink-0">
+					<HistoryActiveChips
+						chips={chips}
+						onRemove={removeChip}
+						onClearAll={clearAll}
+					/>
 				</div>
 			)}
 
-			{/* Virtualized list */}
-			<div className="flex-1 min-h-0">
-				{rows.length === 0 ? (
-					<div className="p-4 text-center text-th-text-muted text-sm">
-						{isSearchMode
-							? t("history.noSearchResults")
-							: filterActive
-								? t("history.noFilterMatches")
-								: t("history.noSessions")}
-					</div>
-				) : (
-					<VirtualizedHistoryList
-						// Remount on mode flip AND on filter change so scrollTop +
-						// measurement cache reset; otherwise a stale offset can leave the
-						// list blank after the row set shrinks (e.g. applying a facet).
-						key={isSearchMode ? "search" : `flat:${JSON.stringify(filter)}`}
-						rows={rows}
-						activeCcSessionIds={activeCcSessionIds}
-						resumingId={resumingId}
-						onTap={handleTap}
-						onResume={handleResume}
-						onNavigate={handleNavigate}
-					/>
+			{/* Body: sidebar (wide) + list */}
+			<div className="flex-1 min-h-0 flex">
+				{wide && (
+					<aside className="w-[240px] shrink-0 overflow-y-auto border-r border-white/[0.06] px-3 py-3">
+						{sidebar}
+					</aside>
 				)}
+				<div className="flex-1 min-h-0 flex flex-col">
+					{/* Status line */}
+					<div className="px-3 py-1.5 shrink-0 text-[11px] text-zinc-500 border-b border-white/[0.04]">
+						{isSearchMode ? (
+							isSearching ? (
+								t("history.searching")
+							) : (
+								t("history.searchResults", {
+									query: searchQuery,
+									count: sessionCount,
+								})
+							)
+						) : isHydrating ? (
+							t("history.indexing", { done: hydratedCount, total: totalCount })
+						) : (
+							t("history.sessionsCount", { count: sessionCount })
+						)}
+					</div>
+
+					{resumeError && (
+						<div className="mx-3 mt-2 px-3 py-2 bg-red-900/50 text-red-300 text-xs flex items-center justify-between rounded shrink-0">
+							<span>{resumeError}</span>
+							<button
+								type="button"
+								onClick={dismissError}
+								className="text-red-400 hover:text-red-200 ml-2"
+							>
+								×
+							</button>
+						</div>
+					)}
+
+					<div className="flex-1 min-h-0">
+						{rows.length === 0 ? (
+							<div className="p-4 text-center text-th-text-muted text-sm">
+								{isSearchMode
+									? t("history.noSearchResults")
+									: facetActive
+										? t("history.noFilterMatches")
+										: t("history.noSessions")}
+							</div>
+						) : (
+							<VirtualizedHistoryList
+								// Remount on mode flip AND facet change so scrollTop +
+								// measurement cache reset; otherwise a stale offset can leave
+								// the list blank after the row set shrinks.
+								key={isSearchMode ? "search" : `flat:${facetKey(facet)}`}
+								rows={rows}
+								activeCcSessionIds={activeCcSessionIds}
+								resumingId={resumingId}
+								onTap={handleTap}
+								onResume={handleResume}
+								onNavigate={handleNavigate}
+							/>
+						)}
+					</div>
+				</div>
 			</div>
+
+			{!wide && (
+				<HistoryFacetDrawer
+					open={drawerOpen}
+					onClose={() => setDrawerOpen(false)}
+				>
+					{sidebar}
+				</HistoryFacetDrawer>
+			)}
 
 			{selectedSession && (
 				<ConversationViewer

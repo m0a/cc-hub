@@ -21,7 +21,8 @@
 		"yes": "Yes",
 		"no": "No",
 		"new": "New",
-		"none": "None"
+		"none": "None",
+		"showLess": "− Show less"
 	},
 	"session": {
 		"title": "Sessions",
@@ -100,7 +101,8 @@
 		"bucketYesterday": "Yesterday",
 		"bucketThisWeek": "This week",
 		"bucketEarlier": "Earlier",
-		"noTitle": "(no title)"
+		"noTitle": "(no title)",
+		"facetMore": "+ {{count}} more"
 	},
 	"dashboard": {
 		"title": "Dashboard",

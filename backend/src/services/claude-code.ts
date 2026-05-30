@@ -91,6 +91,44 @@ export class ClaudeCodeService {
   }
 
   /**
+   * Read `~/.claude/sessions/<pid>.json` state files and build a map from the
+   * Claude Code session id (the `.jsonl` UUID) to its Remote Control
+   * `bridgeSessionId` (`session_…`). Only sessions with Remote Control active
+   * carry a non-null `bridgeSessionId`; others are skipped. Used to surface an
+   * "Open in Claude app" deep link (`https://claude.ai/code/<bridgeSessionId>`).
+   */
+  async getBridgeSessionIds(): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    const dir = join(homedir(), '.claude', 'sessions');
+    let files: string[];
+    try {
+      files = await readdir(dir);
+    } catch {
+      return map; // dir may not exist (Remote Control never used)
+    }
+    await Promise.all(
+      files
+        .filter((f) => f.endsWith('.json'))
+        .map(async (f) => {
+          try {
+            const raw = await readFile(join(dir, f), 'utf-8');
+            const data = JSON.parse(raw) as { sessionId?: unknown; bridgeSessionId?: unknown };
+            if (
+              typeof data.sessionId === 'string' &&
+              typeof data.bridgeSessionId === 'string' &&
+              data.bridgeSessionId.length > 0
+            ) {
+              map.set(data.sessionId, data.bridgeSessionId);
+            }
+          } catch {
+            // ignore unreadable / malformed individual files
+          }
+        }),
+    );
+    return map;
+  }
+
+  /**
    * Convert a path to Claude Code project directory name
    * e.g., /home/m0a/cchub -> -home-m0a-cchub
    */

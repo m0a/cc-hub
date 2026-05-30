@@ -9,6 +9,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
 	ChevronLeft,
 	ChevronRight,
+	ExternalLink,
 	Folder,
 	GripVertical,
 	Play,
@@ -1027,6 +1028,31 @@ function SessionItem({
 								</span>
 							);
 						})()}
+
+					{/* Remote Control: open the matching session in the Claude app */}
+					{extSession.bridgeSessionId && (
+						<button
+							type="button"
+							title={t("session.openInClaudeApp")}
+							aria-label={t("session.openInClaudeApp")}
+							onClick={(e) => {
+								e.stopPropagation();
+								const bridgeId = extSession.bridgeSessionId;
+								if (!bridgeId) return;
+								window.open(
+									`https://claude.ai/code/${encodeURIComponent(bridgeId)}`,
+									"_blank",
+									"noopener,noreferrer",
+								);
+							}}
+							onMouseDown={(e) => e.stopPropagation()}
+							onTouchStart={(e) => e.stopPropagation()}
+							className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] text-violet-300 bg-violet-500/15 hover:bg-violet-500/25 transition-colors shrink-0"
+						>
+							<ExternalLink className="w-3 h-3" />
+							{t("session.openInClaudeApp")}
+						</button>
+					)}
 				</div>
 
 				{/* Auto recap (away_summary) — timestamp shown inline at the tail */}

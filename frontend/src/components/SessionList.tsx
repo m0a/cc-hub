@@ -96,10 +96,12 @@ function formatTokenCount(n: number): string {
 	return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
+import { useHistoryV2Flag } from "../hooks/useHistoryV2Flag";
 import { useSessionHistory } from "../hooks/useSessionHistory";
 import { authFetch } from "../services/api";
 import { ConversationViewer } from "./ConversationViewer";
 import { SessionHistory } from "./SessionHistory";
+import { SessionHistoryV2 } from "./history/SessionHistoryV2";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
@@ -1283,6 +1285,7 @@ export function SessionList({
 	const [activeTab, setActiveTab] = useState<"sessions" | "history">(
 		"sessions",
 	);
+	const historyV2 = useHistoryV2Flag();
 	const [showSearch, setShowSearch] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [hookConfigured, setHookConfigured] = useState<boolean | null>(null);
@@ -1872,17 +1875,30 @@ export function SessionList({
 						</div>
 					)}
 
-					{activeTab === "history" && (
-						<div className="h-full overflow-y-auto overscroll-contain">
-							<SessionHistory
-								onSelectSession={onSelectSession}
-								onSessionResumed={() => {
-									setActiveTab("sessions");
-								}}
-								activeSessions={sessions}
-							/>
-						</div>
-					)}
+					{activeTab === "history" &&
+						(historyV2 ? (
+							// V2 owns its own internal scroll container, so the host
+							// wrapper must not add a second one.
+							<div className="h-full overflow-hidden">
+								<SessionHistoryV2
+									onSelectSession={onSelectSession}
+									onSessionResumed={() => {
+										setActiveTab("sessions");
+									}}
+									activeSessions={sessions}
+								/>
+							</div>
+						) : (
+							<div className="h-full overflow-y-auto overscroll-contain">
+								<SessionHistory
+									onSelectSession={onSelectSession}
+									onSessionResumed={() => {
+										setActiveTab("sessions");
+									}}
+									activeSessions={sessions}
+								/>
+							</div>
+						))}
 				</div>
 			</div>
 

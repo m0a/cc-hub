@@ -4,6 +4,7 @@ import type { ApiClient } from '../api/client';
 import { killSession, resumeSession } from '../api/sessions';
 import { useSessions } from '../hooks/useSessions';
 import type { ListAction, TuiSession } from '../types';
+import { Help } from './Help';
 import { SessionList } from './SessionList';
 import { StatusBar } from './StatusBar';
 
@@ -19,11 +20,21 @@ export function App({
   const { sessions, error } = useSessions(client);
   const [selected, setSelected] = useState(0);
   const [confirmKill, setConfirmKill] = useState<TuiSession | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   const count = sessions.length;
   const clamped = count === 0 ? 0 : Math.min(selected, count - 1);
 
   useInput((input, key) => {
+    // ヘルプ表示中は何かキーで閉じる
+    if (showHelp) {
+      setShowHelp(false);
+      return;
+    }
+    if (input === '?') {
+      setShowHelp(true);
+      return;
+    }
     // 終了確認モード
     if (confirmKill) {
       if (input === 'y') void killSession(client, confirmKill.id).catch(() => {});
@@ -73,13 +84,13 @@ export function App({
       <Text bold color="cyan">
         CC Hub TUI — セッション一覧
       </Text>
-      <SessionList sessions={sessions} selectedIndex={clamped} />
+      {showHelp ? <Help /> : <SessionList sessions={sessions} selectedIndex={clamped} />}
       {confirmKill ? (
         <Text color="red">「{confirmKill.customTitle || confirmKill.name}」を終了しますか？ y / n</Text>
       ) : null}
       <StatusBar
         baseUrl={baseUrl}
-        keys="↑↓ Enter:入室 n:新規 x:終了 r:再開 /:履歴 q:終了"
+        keys="↑↓ Enter:入室 n:新規 x:終了 r:再開 /:履歴 ?:ヘルプ q:終了"
         sessionCount={count}
         error={error}
       />

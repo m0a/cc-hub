@@ -250,10 +250,16 @@ cchub status            # Show service status
 # Hook notification
 cchub notify            # Send hook event (reads JSON from stdin)
 
+# Local terminal UI (tui/ workspace, Ink)
+cchub tui               # Launch the local TUI (session list + history search)
+cchub tui -p 3456       # Connect to a dev server
+
 # Help
 cchub --help
 cchub --version
 ```
+
+The `cchub tui` subcommand is a local-only terminal UI implemented in the `tui/` workspace (Ink + React on Bun). It is a **client of the running CC Hub server** (reuses `/api/sessions`, history search, lifecycle endpoints) and hands off to native `tmux attach` for "entering" a session — it does not transport the terminal over the network. Requires a real raw-mode TTY (not a pipe/wrapper). See `tui/README.md`.
 
 ### CLI Options
 

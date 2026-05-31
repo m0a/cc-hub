@@ -100,11 +100,11 @@ description: "Task list for CC Hub TUI implementation"
 
 ## Phase 6: Polish & Cross-Cutting
 
-- [ ] T032 [P] キーヘルプ overlay（`?`）（`tui/src/components/Help.tsx`）
-- [ ] T033 [P] エラー整形/接続状態 UX の一貫性（4xx/5xx メッセージ化・再接続・`unauthorized` 表示）（`tui/src/api/client.ts`）
-- [ ] T034 [P] `tui/README.md` 作成 + `cchub tui` を CLAUDE.md の CLI Commands 節に追記（`tui/README.md`, `CLAUDE.md`）
-- [ ] T035 カバレッジ確認 ≥80%（純粋ロジック + 各コンポーネントの最低1 render テスト: SessionList/HistorySearch/App）（`bun run --filter tui test --coverage`、憲章 原則I）
-- [ ] T036 `build:binary` に `cchub tui` が含まれ起動することを確認（`scripts/build.sh`）
+- [x] T032 [P] キーヘルプ overlay（`?`）（`tui/src/components/Help.tsx`）
+- [x] T033 [P] エラー整形/接続状態 UX の一貫性（4xx/5xx メッセージ化・再接続・`unauthorized` 表示）（`tui/src/api/client.ts`）
+- [x] T034 [P] `tui/README.md` 作成 + `cchub tui` を CLAUDE.md の CLI Commands 節に追記（`tui/README.md`, `CLAUDE.md`）
+- [x] T035 カバレッジ確認 ≥80%（純粋ロジック + 各コンポーネントの最低1 render テスト: SessionList/HistorySearch/App）（`bun run --filter tui test --coverage`、憲章 原則I）
+- [x] T036 `build:binary` に `cchub tui` が含まれ起動することを確認（`scripts/build.sh`）
 
 ---
 

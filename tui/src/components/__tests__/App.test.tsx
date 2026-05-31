@@ -77,4 +77,19 @@ describe('App (US1 list)', () => {
     expect(lastFrame() ?? '').toContain('終了しますか');
     unmount();
   });
+
+  test('? でヘルプを開閉', async () => {
+    const client = fakeClient([{ id: '1', name: 'alpha' }]);
+    const { stdin, lastFrame, unmount } = render(
+      <App client={client} baseUrl="https://h:5923" onAction={() => {}} />,
+    );
+    await tick();
+    stdin.write('?');
+    await tick(10);
+    expect(lastFrame() ?? '').toContain('キーバインド');
+    stdin.write('x'); // 何かキーで閉じる
+    await tick(10);
+    expect(lastFrame() ?? '').not.toContain('キーバインド');
+    unmount();
+  });
 });

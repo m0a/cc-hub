@@ -36,6 +36,7 @@ import {
 	type SessionResponse,
 	type SessionTheme,
 } from "../../../shared/types";
+import { openClaudeAppSession } from "../utils/claude-app";
 import { usePeers } from "../hooks/usePeers";
 import {
 	applyLocalSessionOrder,
@@ -1162,11 +1163,7 @@ function SessionItem({
 							const bridgeId = extSession.bridgeSessionId;
 							if (!bridgeId) return;
 							setShowJumpMenu(false);
-							window.open(
-								`https://claude.ai/code/${encodeURIComponent(bridgeId)}`,
-								"_blank",
-								"noopener,noreferrer",
-							);
+							openClaudeAppSession(bridgeId);
 						}}
 						className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-[13px] text-violet-200 bg-violet-500/15 hover:bg-violet-500/25 transition-colors"
 					>

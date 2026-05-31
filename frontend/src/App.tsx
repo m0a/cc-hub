@@ -2,6 +2,7 @@
 import {
 	BarChart3,
 	ChevronDown,
+	ExternalLink,
 	FileText,
 	MessageSquare,
 	RotateCw,
@@ -29,6 +30,7 @@ import { Onboarding, useOnboarding } from "./components/Onboarding";
 import { SessionList } from "./components/SessionList";
 import type { TerminalRef } from "./components/Terminal";
 import { getTerminalThemes } from "./components/terminal-themes";
+import { openClaudeAppSession } from "./utils/claude-app";
 import { useAuth } from "./hooks/useAuth";
 import { useSessions } from "./hooks/useSessions";
 import { TerminalPage } from "./pages/TerminalPage";
@@ -96,6 +98,9 @@ interface OpenSession {
 	state: SessionState;
 	currentPath?: string;
 	ccSessionId?: string;
+	// Remote Control deep-link target (`session_…`). Present only while Remote
+	// Control is active; drives the "Open in Claude app" button.
+	bridgeSessionId?: string;
 	agent?: AgentProvider;
 	agentSessionId?: string;
 	currentCommand?: string;
@@ -113,6 +118,7 @@ function apiToOpenSession(s: ExtendedSessionResponse): OpenSession {
 		state: s.state,
 		currentPath: s.currentPath,
 		ccSessionId: s.ccSessionId,
+		bridgeSessionId: s.bridgeSessionId,
 		agent: s.agent,
 		agentSessionId: s.agentSessionId,
 		currentCommand: s.currentCommand,
@@ -430,6 +436,7 @@ export function App() {
 					theme: apiSession.theme,
 					currentCommand: apiSession.currentCommand,
 					ccSessionId: apiSession.ccSessionId,
+					bridgeSessionId: apiSession.bridgeSessionId,
 					agent: apiSession.agent,
 					agentSessionId: apiSession.agentSessionId,
 					panes: apiSession.panes,
@@ -1006,6 +1013,20 @@ export function App() {
 							<MessageSquare className="w-5 h-5" />
 						</button>
 					))}
+				{activeSession?.bridgeSessionId && (
+					<button
+						type="button"
+						onClick={() => {
+							const id = activeSession.bridgeSessionId;
+							if (id) openClaudeAppSession(id);
+						}}
+						className="p-2.5 text-violet-400/80 hover:text-violet-300 active:text-violet-200 transition-colors"
+						title={t("session.openInClaudeApp")}
+						aria-label={t("session.openInClaudeApp")}
+					>
+						<ExternalLink className="w-5 h-5" />
+					</button>
+				)}
 				<button
 					type="button"
 					onClick={() => {

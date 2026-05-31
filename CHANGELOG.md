@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.165] - 2026-05-31
+
+Remote Control が有効なセッションから、対応する Claude アプリのクラウドセッションへジャンプする導線を追加。
+
+### Added
+- **「Claudeアプリで開く」導線を追加 (#301)**: Remote Control を有効化したセッションについて、対応するクラウドセッション (`https://claude.ai/code/<bridgeSessionId>`) を Claude アプリ/ブラウザで開けるようにした。backend は `~/.claude/sessions/<pid>.json` を読んで Claude Code の `sessionId`（.jsonl UUID）→ `bridgeSessionId`（`session_…`）の対応を構築し、`buildSessionsList()` で各セッションに `bridgeSessionId` を付与（`sessionId` 完全一致のみ。cwd フォールバックは誤紐付け回避のため不採用）。Remote Control 非アクティブなセッションには付かない。UI は2箇所: (1) セッションリストで bridge ありのセッションを**タップ**すると「このターミナルへ移動 / Claudeアプリで開く」の**選択メニュー**を表示（bridge 無しは従来通り直接移動）、(2) **ターミナルのペインヘッダー**に「Claudeアプリで開く」アイコンボタンを追加（bridge ありのアクティブセッションのみ、desktop/tablet 両対応）。URL は `encodeURIComponent` を通す。`ExtendedSessionResponse.bridgeSessionId?` を追加、`session.openInClaudeApp`/`session.goToTerminal` を i18n（en/ja）に追加 (`backend/src/services/claude-code.ts`, `backend/src/routes/sessions.ts`, `shared/types.ts`, `frontend/src/components/SessionList.tsx`, `frontend/src/components/PaneContainer.tsx`, `frontend/src/components/DesktopLayout.tsx`)
+  - 既知の制約: Claude Code 側のネイティブ・アプリディープリンクは未実装（issue #48220）のため、現状モバイルでもタップ時は一旦システムブラウザで claude.ai/code が開く。将来 `claude://` スキーム等が入れば URL 差し替えだけで対応可能。
+
 ## [0.1.164] - 2026-05-31
 
 セッション履歴UIを全面刷新。プロジェクト階層を辿る旧UIから、全プロジェクト横断のフラットな仮想化リスト + ファセット絞り込みサイドバー（B案）へ移行。「網羅的に見づらい・検索しづらい」を解消し、各セッションに最新 recap プレビューを表示。さらに履歴ロードを 10秒超 → 約 0.8 秒に短縮。全 PR を adversarial review + dev 実機（agent-browser）で検証済み。

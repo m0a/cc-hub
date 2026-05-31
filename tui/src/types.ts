@@ -43,4 +43,5 @@ export interface DerivedRow {
 export type ListAction =
   | { type: 'quit' }
   | { type: 'attach'; sessionName: string }
-  | { type: 'search' };
+  | { type: 'search' }
+  | { type: 'create' };

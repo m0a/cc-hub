@@ -52,4 +52,29 @@ describe('App (US1 list)', () => {
     expect(actions[0]).toEqual({ type: 'quit' });
     unmount();
   });
+
+  test('n で create アクションを返す', async () => {
+    const actions: ListAction[] = [];
+    const client = fakeClient([]);
+    const { stdin, unmount } = render(
+      <App client={client} baseUrl="https://h:5923" onAction={(a) => actions.push(a)} />,
+    );
+    await tick();
+    stdin.write('n');
+    await tick(10);
+    expect(actions[0]).toEqual({ type: 'create' });
+    unmount();
+  });
+
+  test('x で終了確認プロンプトを表示', async () => {
+    const client = fakeClient([{ id: '1', name: 'alpha' }]);
+    const { stdin, lastFrame, unmount } = render(
+      <App client={client} baseUrl="https://h:5923" onAction={() => {}} />,
+    );
+    await tick();
+    stdin.write('x');
+    await tick(10);
+    expect(lastFrame() ?? '').toContain('終了しますか');
+    unmount();
+  });
 });

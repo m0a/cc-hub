@@ -90,10 +90,10 @@ description: "Task list for CC Hub TUI implementation"
 
 **Independent Test**: `n` で作成 → 一覧に出現。`x` で終了 → 消える。`r` で resume。
 
-- [ ] T027 [P] [US3] [test] 作成ペイロードの単体テスト（`CreateSessionSchema` 準拠: name/workingDir/agent）（`tui/src/api/__tests__/sessions.create.test.ts`）
-- [ ] T028 [US3] セッション操作 API（`createSession()`/`killSession()`/`resumeSession()`）（`tui/src/api/sessions.ts` を拡張）
-- [ ] T029 [US3] `CreateSessionForm`（agent 選択 + workingDir 入力）（`tui/src/components/CreateSessionForm.tsx`）
-- [ ] T030 [US3] list アクションを結線（`n`=作成・`x`=終了(確認)・`r`=resume）（`tui/src/components/SessionList.tsx` / `App.tsx`）
+- [x] T027 [P] [US3] [test] 作成ペイロードの単体テスト（`CreateSessionSchema` 準拠: name/workingDir/agent）（`tui/src/api/__tests__/sessions.create.test.ts`）
+- [x] T028 [US3] セッション操作 API（`createSession()`/`killSession()`/`resumeSession()`）（`tui/src/api/sessions.ts` を拡張）
+- [x] T029 [US3] `CreateSessionForm`（agent 選択 + workingDir 入力）（`tui/src/components/CreateSessionForm.tsx`）
+- [x] T030 [US3] list アクションを結線（`n`=作成・`x`=終了(確認)・`r`=resume）（`tui/src/components/SessionList.tsx` / `App.tsx`）
 - [ ] T031 [US3] 手動受け入れ確認: 作成/終了/resume が一覧へ反映（`specs/002-cchub-tui/quickstart.md` 手順）
 
 ---

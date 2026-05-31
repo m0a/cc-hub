@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.166] - 2026-05-31
+
+v0.1.165 で追加した「Claudeアプリで開く」がモバイルで表示されない/開けない不具合を修正。
+
+### Fixed
+- **「Claudeアプリで開く」がモバイルで動作しない問題を修正 (#303)**: モバイルは desktop/tablet とは別レイアウト（`App.tsx` の overlayBar / `openSessions`）を使うが、そこへ `bridgeSessionId` を流しておらずボタンも未設置だった（v0.1.165 は `DesktopLayout`+`PaneContainer` 経路のみ対応）。加えて `window.open(url, "_blank", "noopener,noreferrer")` の windowFeatures 文字列がモバイル Safari でポップアップ扱いとなりブロックされ、開けなかった。`App.tsx` の `OpenSession` 型 / `apiToOpenSession` / モバイル live-update マージに `bridgeSessionId` を追加し、モバイルのターミナルツールバー（overlayBar）に「Claudeアプリで開く」アイコンボタンを追加。共有ユーティリティ `openClaudeAppSession()` を新設して `window.open(url, "_blank")`（features 文字列なし）+ `opener=null` に統一し、`SessionList`/`PaneContainer` のインライン実装も置換。dev 実機（390×844 モバイルビューポート）でツールバー・リストのタップ選択メニュー双方が正しい URL を開くことを確認 (`frontend/src/App.tsx`, `frontend/src/utils/claude-app.ts`, `frontend/src/components/SessionList.tsx`, `frontend/src/components/PaneContainer.tsx`)
+
 ## [0.1.165] - 2026-05-31
 
 Remote Control が有効なセッションから、対応する Claude アプリのクラウドセッションへジャンプする導線を追加。

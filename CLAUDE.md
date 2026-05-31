@@ -371,3 +371,8 @@ When running the dev server from within a tmux session (e.g., from a CC Hub term
 ```bash
 nohup env -u TMUX bun run dev > /tmp/cchub-dev.log 2>&1 &
 ```
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+<!-- SPECKIT END -->

@@ -36,13 +36,13 @@ CC Hub のローカル専用 TUI を、既存 CLI の新サブコマンド `cchu
 |------|------|------|
 | **I. Test-First (TDD)【非交渉】** | ✅ 遵守 | 純粋ロジック（API クライアント / トークン発行 / tmux コマンド構築 / `$TMUX` 検知 / 整形）は Red-Green-Refactor で先にテスト。対話部は ink-testing-library。カバレッジ目標 80%。テストなしコードはマージ不可 |
 | **II. Simplicity & YAGNI** | ✅ 強く整合 | 「サーバのクライアント」方式は最小解。集約・hook 状態・履歴検索ロジックを再実装せず再利用。端末も attach 委譲で viewport 再実装を回避。v1 スコープを一覧/入室/履歴/基本操作に限定（会話ビュー等は将来） |
-| **III. Web-First Architecture** | ⚠️ 意図的逸脱 | 本機能はブラウザではなくローカル端末で動く。**Complexity Tracking で正当化**。Web UI は引き続き多デバイスの主経路であり、TUI は同一マシン向けの**補完的**インターフェース。原則III は【非交渉事項】ではない |
+| **III. Web-First Architecture** | ✅ 準拠 | 憲章 v1.6.0 で「Web を補完するローカル/非Web インターフェース」が正式許容。本 TUI は条件 (a) 中核機能を Web 維持 (b) サーバ状態を再利用 (c) 同一ホスト補完 をすべて満たす |
 | **IV. Multi-Device Accessibility** | ◐ 部分整合 | TUI 自体は単一デバイス（ローカル）。ただしセッション永続化（tmux）と状態はサーバ側で共有され、Web の多デバイス性を損なわない（むしろ同じ実体を別フロントから見る） |
 | **V. Incremental Delivery** | ✅ 強く整合 | P1/P2/P3 は独立してテスト・デプロイ可能。MVP（P1: 一覧+入室）を最優先 |
 
-**Technology Stack 整合**: 既存スタックは React+TypeScript+Vite+Tailwind（ブラウザ）。TUI は **Ink**（React+TypeScript on Bun、ターミナル向け）を追加導入する。Bun ランタイム・React/TS 志向とは一貫しており、描画ターゲットがブラウザ→端末に変わるのみ。Complexity Tracking に記録。
+**Technology Stack 整合**: TUI は **Ink**（React+TypeScript on Bun、ターミナル向け）を追加導入する。憲章 v1.6.0 の Technology Stack に「ローカル TUI クライアント（Ink + ネイティブ tmux attach）」が補完手段として明記されたため整合。
 
-**ゲート結果**: 逸脱（原則III・Ink 追加）はいずれも正当化可能 → **PASS（justified）**。未正当化の違反なし。
+**ゲート結果**: 原則III は憲章 v1.6.0 で準拠、Ink 追加は Technology Stack に明記済み → **PASS**。未正当化の違反なし。
 
 ## Project Structure
 
@@ -98,12 +98,11 @@ backend/src/
 
 ## Complexity Tracking
 
-> Constitution Check の逸脱を正当化する。
+> Constitution Check は PASS（原則III は憲章 v1.6.0 で準拠）。以下は未正当化の違反ではなく、主要な設計判断の記録。
 
-| 逸脱 | なぜ必要か | 棄却した単純案とその理由 |
-|------|-----------|------------------------|
-| **原則III（Web-First）からの逸脱: 非ブラウザのローカル TUI** | ユーザ要件そのものが「cchub が動く環境で動くローカルな tmux ラッパー TUI」。端末転送が不要なローカル文脈では、ネイティブ attach により Web 版の viewport プロトコル（最大の複雑性）を完全に排除でき、忠実度も最高になる | 「Web UI のみ維持」: ローカルでブラウザを開かず素早く一覧→入室したいという本要件を満たせない。TUI は Web を**置換せず補完**するため、Web-First の核心価値（多デバイス）は維持される |
-| **Ink（ターミナル React）の新規導入**（既存スタックは React+Vite+Tailwind=ブラウザ） | 端末描画には端末向けレンダラが必要。Ink は React+TS を Bun 上で使え、チームの React 知見をそのまま流用できる | 「blessed/低レベル ANSI」: React と別パラダイムで知見流用が効かず保守コスト増。「Web 技術の流用」: 端末では動作しない |
+| 設計判断 | なぜ必要か | 棄却した単純案とその理由 |
+|---------|-----------|------------------------|
+| **Ink（ターミナル React）の導入** | 端末描画には端末向けレンダラが必要。Ink は React+TS を Bun 上で使え、チームの React 知見を流用できる（憲章 v1.6.0 Technology Stack に補完手段として明記済み） | 「blessed/低レベル ANSI」: React と別パラダイムで知見流用が効かず保守コスト増。「Web 技術の流用」: 端末では動作しない |
 | **`tmux attach` への子プロセスハンドオフ** | 端末の完全な忠実度（マウス/コピー/TUI アプリ）をゼロ再実装で得るため | 「viewport プロトコルの TUI 再実装」: Web 版で最も重い部分の再発明であり、ローカルでは attach で代替できるため不要 |
 
 ## Testing Strategy（原則I 準拠）

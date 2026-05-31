@@ -53,7 +53,7 @@ description: "Task list for CC Hub TUI implementation"
 
 **Independent Test**: サーバ稼働下で起動 → 一覧に agent/state/cwd/title/pane 数が出る → `Enter` で入室 → detach で一覧復帰（内容保持）。ネスト端末でも入室成功。
 
-- [ ] T012 [P] [US1] [test] セッション→行の導出ロジックの単体テスト（代表 `indicatorState` 選択、pane 数、agent バッジ）（`tui/src/components/__tests__/sessionRow.test.ts`）
+- [ ] T012 [P] [US1] [test] 行導出ロジックの単体テスト（代表 `indicatorState` 選択、pane 数、agent バッジ）+ `SessionList` の render/空状態テスト（ink-testing-library）（`tui/src/components/__tests__/sessionRow.test.ts`, `tui/src/components/__tests__/SessionList.test.tsx`）
 - [ ] T013 [P] [US1] [test] attach コマンド構築の単体テスト（`$TMUX` 無→`attach` / 有→`switch-client` or `env -u TMUX attach`）（`tui/src/tmux/__tests__/attach.test.ts`）
 - [ ] T014 [US1] セッション一覧 API（`getSessions()` → `SessionResponse[]`）（`tui/src/api/sessions.ts`）
 - [ ] T015 [US1] `useSessions` フック（`GET /api/sessions` を 2–3s ポーリング、選択 index 保持）（`tui/src/hooks/useSessions.ts`）
@@ -73,8 +73,8 @@ description: "Task list for CC Hub TUI implementation"
 
 **Independent Test**: `/` で検索 → キーワードで逐次結果 → `Enter` で resume → 入室。該当なしは空状態。
 
-- [ ] T021 [P] [US2] [test] SSE 結果パース/重複排除 + 入力デバウンスの単体テスト（`tui/src/hooks/__tests__/historySearch.test.ts`）
-- [ ] T022 [US2] 履歴 API（`searchStream()` SSE / `resume()`）（`tui/src/api/history.ts`）
+- [ ] T021 [P] [US2] [test] SSE 結果パース/重複排除 + 入力デバウンスの単体テスト + `HistorySearch` の render/空状態テスト（ink-testing-library）（`tui/src/hooks/__tests__/historySearch.test.ts`, `tui/src/components/__tests__/HistorySearch.test.tsx`）
+- [ ] T022 [US2] 履歴 API（`searchStream()` SSE / `resume()`）（`tui/src/api/history.ts`）。**着手前に M1**: `backend/src/routes/sessions.ts` の `history/search` 応答スキーマを確認し `data-model.md` の `SessionHistoryEntry` を確定値に更新
 - [ ] T023 [US2] `useHistorySearch` フック（デバウンス + SSE 購読・逐次追加）（`tui/src/hooks/useHistorySearch.ts`）
 - [ ] T024 [US2] `HistorySearch` コンポーネント（入力 + ストリーミング結果 + 空状態）（`tui/src/components/HistorySearch.tsx`）
 - [ ] T025 [US2] search ビューを App へ結線（`/`遷移・`Esc`戻る・`Enter`→resume→入室）（`tui/src/components/App.tsx`）
@@ -103,7 +103,7 @@ description: "Task list for CC Hub TUI implementation"
 - [ ] T032 [P] キーヘルプ overlay（`?`）（`tui/src/components/Help.tsx`）
 - [ ] T033 [P] エラー整形/接続状態 UX の一貫性（4xx/5xx メッセージ化・再接続・`unauthorized` 表示）（`tui/src/api/client.ts`）
 - [ ] T034 [P] `tui/README.md` 作成 + `cchub tui` を CLAUDE.md の CLI Commands 節に追記（`tui/README.md`, `CLAUDE.md`）
-- [ ] T035 カバレッジ確認 ≥80%（純粋ロジック）（`bun run --filter tui test --coverage`、憲章 原則I）
+- [ ] T035 カバレッジ確認 ≥80%（純粋ロジック + 各コンポーネントの最低1 render テスト: SessionList/HistorySearch/App）（`bun run --filter tui test --coverage`、憲章 原則I）
 - [ ] T036 `build:binary` に `cchub tui` が含まれ起動することを確認（`scripts/build.sh`）
 
 ---
@@ -142,6 +142,6 @@ Setup(T001-T004) → Foundational(T005-T011) → US1(T012-T020) → US2(T021-T02
 
 - **総タスク数**: 36（+ Deferred）
 - **内訳**: Setup 4 / Foundational 7 / US1 9 / US2 6 / US3 5 / Polish 5
-- **テストタスク**: 6（TDD 先行、憲章 原則I）
+- **テストタスク**: 6（TDD 先行、憲章 原則I。UI は SessionList/HistorySearch/App の render テストを含む）
 - **MVP スコープ**: Phase 1–3（T001–T020）
 - **並列機会**: 各フェーズのテスト/別ファイル実装、Polish の独立タスク

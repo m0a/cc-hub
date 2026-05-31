@@ -373,6 +373,6 @@ nohup env -u TMUX bun run dev > /tmp/cchub-dev.log 2>&1 &
 ```
 
 <!-- SPECKIT START -->
-For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan
+Active feature plan: `specs/002-cchub-tui/plan.md` (CC Hub TUI — local `cchub tui` subcommand).
+For technologies, project structure, and constraints of in-flight feature work, read the current plan.
 <!-- SPECKIT END -->

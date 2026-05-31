@@ -1,16 +1,26 @@
 // `cchub tui` / `bun run --filter tui dev` の入口。
-// 接続・認証を解決して接続状態を作り、Ink アプリを起動する。JSX は含めない
-// （backend の typecheck から JSX を切り離すため、root は React.createElement で生成）。
+// 接続・認証を解決し、alt-screen 上で一覧を描画 → Enter で tmux attach にハンドオフ →
+// detach で復帰、のループを回す。JSX は含めない（backend の typecheck から切り離すため、
+// root は React.createElement で生成）。
 import { render } from 'ink';
 import React from 'react';
-import { createClient } from './api/client';
 import { resolveToken } from './api/auth';
+import { type ApiClient, createClient } from './api/client';
+import { getSessions } from './api/sessions';
 import { App } from './components/App';
-import type { ConnectionInfo } from './types';
+import { attachSession } from './tmux/attach';
+import type { ListAction } from './types';
+
+const ALT_ON = '\x1b[?1049h';
+const ALT_OFF = '\x1b[?1049l';
 
 export interface StartTuiOptions {
   port: number;
   host: string;
+}
+
+function isLocalHost(host: string): boolean {
+  return host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '0.0.0.0';
 }
 
 function serverDownHint(baseUrl: string, detail: string): string {
@@ -21,59 +31,74 @@ function serverDownHint(baseUrl: string, detail: string): string {
   ].join('\n');
 }
 
-async function buildConnection(baseUrl: string): Promise<ConnectionInfo> {
-  let token: string | null;
-  try {
-    token = await resolveToken(baseUrl);
-  } catch (e) {
-    const msg = (e as Error).message;
-    if (msg.includes('トークンを発行できません')) {
-      return { state: 'unauthorized', baseUrl, error: msg };
-    }
-    return { state: 'server-down', baseUrl, error: serverDownHint(baseUrl, msg) };
-  }
-
-  try {
-    const client = createClient({ baseUrl, token });
-    // GET /api/sessions は SessionListResponse（{ sessions: SessionResponse[] }）を返す。
-    const data = await client.get<{ sessions?: unknown[] }>('/api/sessions');
-    const list = Array.isArray(data?.sessions) ? data.sessions : [];
-    return {
-      state: 'connected',
-      baseUrl,
-      sessionCount: list.length,
-    };
-  } catch (e) {
-    const status = (e as { status?: number }).status;
-    if (status === 401) {
-      return { state: 'unauthorized', baseUrl, error: '認証に失敗しました（トークンが拒否されました）' };
-    }
-    return { state: 'server-down', baseUrl, error: serverDownHint(baseUrl, (e as Error).message) };
-  }
+/** 接続を確立してクライアントを返す。失敗時は分類された Error を投げる。 */
+async function connect(baseUrl: string): Promise<ApiClient> {
+  const token = await resolveToken(baseUrl); // server-down / unauthorized で throw
+  const client = createClient({ baseUrl, token });
+  await getSessions(client); // 疎通プローブ（401 等はここで ApiError）
+  return client;
 }
 
-function isLocalHost(host: string): boolean {
-  return host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '0.0.0.0';
+/** Ink で一覧を 1 回描画し、ユーザ操作（attach / quit）で解決して unmount する。 */
+function renderListOnce(client: ApiClient, baseUrl: string): Promise<ListAction> {
+  return new Promise((resolve) => {
+    const instance = render(
+      React.createElement(App, {
+        client,
+        baseUrl,
+        onAction: (action: ListAction) => {
+          instance.unmount();
+          resolve(action);
+        },
+      }),
+    );
+  });
 }
 
 export async function startTui(opts: StartTuiOptions): Promise<void> {
   // CC Hub は Tailscale 証明書で HTTPS を話す。localhost では証明書のホスト名が一致しないため、
   // ローカル接続に限り TLS 検証を無効化する（web の --ignore-certificate-errors 相当）。
-  // Tailscale IP/ホスト名で接続する場合は正規証明書が一致するので検証は維持する。
   if (isLocalHost(opts.host) && process.env.NODE_TLS_REJECT_UNAUTHORIZED === undefined) {
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
   }
   const baseUrl = `https://${opts.host}:${opts.port}`;
-  const connection = await buildConnection(baseUrl);
 
-  // server-down は Ink を起動せず、案内を出して非ゼロ終了（非対話でも機能する / FR-012）。
-  if (connection.state === 'server-down') {
-    console.error(`\n${connection.error}\n`);
+  let client: ApiClient;
+  try {
+    client = await connect(baseUrl);
+  } catch (e) {
+    const msg = (e as Error).message;
+    const status = (e as { status?: number }).status;
+    if (status === 401 || msg.includes('トークンを発行できません')) {
+      console.error(`\n認証に失敗しました: ${msg}\n`);
+    } else {
+      console.error(`\n${serverDownHint(baseUrl, msg)}\n`);
+    }
     process.exit(1);
   }
 
-  const instance = render(React.createElement(App, { connection }));
-  await instance.waitUntilExit();
+  // alt-screen ループ: 一覧 → Enter で入室（alt 退出 → tmux attach 子プロセス → alt 復帰）→ q で終了。
+  process.on('exit', () => {
+    try {
+      process.stdout.write(ALT_OFF);
+    } catch {
+      // 終了時のベストエフォート
+    }
+  });
+  process.stdout.write(ALT_ON);
+  try {
+    for (;;) {
+      const action = await renderListOnce(client, baseUrl);
+      if (action.type === 'quit') break;
+      if (action.type === 'attach') {
+        process.stdout.write(ALT_OFF);
+        attachSession(action.sessionName);
+        process.stdout.write(ALT_ON);
+      }
+    }
+  } finally {
+    process.stdout.write(ALT_OFF);
+  }
 }
 
 // `bun run src/index.ts [-p <port>] [-H <host>]` で直接起動された場合の引数処理。

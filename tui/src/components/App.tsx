@@ -1,39 +1,53 @@
-import { Box, Text, useApp, useInput } from 'ink';
-import type { ConnectionInfo } from '../types';
+import { Box, Text, useInput } from 'ink';
+import { useState } from 'react';
+import type { ApiClient } from '../api/client';
+import { useSessions } from '../hooks/useSessions';
+import type { ListAction } from '../types';
+import { SessionList } from './SessionList';
 import { StatusBar } from './StatusBar';
 
-export function App({ connection }: { connection: ConnectionInfo }) {
-  const { exit } = useApp();
+export function App({
+  client,
+  baseUrl,
+  onAction,
+}: {
+  client: ApiClient;
+  baseUrl: string;
+  onAction: (action: ListAction) => void;
+}) {
+  const { sessions, error } = useSessions(client);
+  const [selected, setSelected] = useState(0);
+
+  const count = sessions.length;
+  const clamped = count === 0 ? 0 : Math.min(selected, count - 1);
 
   useInput((input, key) => {
     if (input === 'q' || (key.ctrl && input === 'c')) {
-      exit();
+      onAction({ type: 'quit' });
+      return;
+    }
+    if (key.upArrow || input === 'k') {
+      setSelected(Math.max(0, clamped - 1));
+    } else if (key.downArrow || input === 'j') {
+      setSelected(Math.min(Math.max(0, count - 1), clamped + 1));
+    } else if (key.return && count > 0) {
+      const target = sessions[clamped];
+      if (target) onAction({ type: 'attach', sessionName: target.name });
     }
   });
 
   return (
     <Box flexDirection="column" padding={1}>
       <Text bold color="cyan">
-        CC Hub TUI
+        CC Hub TUI — セッション一覧
       </Text>
-
-      {connection.state === 'connected' ? (
-        <Box flexDirection="column" marginTop={1}>
-          <Text color="green">接続済み</Text>
-          <Text>
-            稼働中セッション: <Text bold>{connection.sessionCount ?? 0}</Text> 件
-          </Text>
-          <Text dimColor>（セッション一覧の描画・入室は次フェーズ US1 で実装）</Text>
-        </Box>
-      ) : (
-        <Box flexDirection="column" marginTop={1}>
-          <Text color="yellow">{connection.error ?? '接続に問題があります'}</Text>
-        </Box>
-      )}
-
-      <Box marginTop={1}>
-        <StatusBar connection={connection} keys="q: 終了" />
-      </Box>
+      <SessionList sessions={sessions} selectedIndex={clamped} />
+      <StatusBar
+        baseUrl={baseUrl}
+        keys="↑↓/jk 選択 · Enter 入室 · q 終了"
+        sessionCount={count}
+        error={error}
+      />
     </Box>
   );
 }

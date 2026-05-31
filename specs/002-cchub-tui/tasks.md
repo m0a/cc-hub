@@ -53,14 +53,14 @@ description: "Task list for CC Hub TUI implementation"
 
 **Independent Test**: サーバ稼働下で起動 → 一覧に agent/state/cwd/title/pane 数が出る → `Enter` で入室 → detach で一覧復帰（内容保持）。ネスト端末でも入室成功。
 
-- [ ] T012 [P] [US1] [test] 行導出ロジックの単体テスト（代表 `indicatorState` 選択、pane 数、agent バッジ）+ `SessionList` の render/空状態テスト（ink-testing-library）（`tui/src/components/__tests__/sessionRow.test.ts`, `tui/src/components/__tests__/SessionList.test.tsx`）
-- [ ] T013 [P] [US1] [test] attach コマンド構築の単体テスト（`$TMUX` 無→`attach` / 有→`switch-client` or `env -u TMUX attach`）（`tui/src/tmux/__tests__/attach.test.ts`）
-- [ ] T014 [US1] セッション一覧 API（`getSessions()` → `SessionResponse[]`）（`tui/src/api/sessions.ts`）
-- [ ] T015 [US1] `useSessions` フック（`GET /api/sessions` を 2–3s ポーリング、選択 index 保持）（`tui/src/hooks/useSessions.ts`）
-- [ ] T016 [US1] 行導出ロジック + `SessionRow`（`tui/src/components/SessionRow.tsx`）
-- [ ] T017 [US1] `SessionList`（描画・選択移動・空状態 FR-015）（`tui/src/components/SessionList.tsx`）
-- [ ] T018 [US1] 入室ハンドオフ（alt-screen 退出 → `tmux attach` 子プロセス、`$TMUX` フォールバック、復帰・再描画。コマンド構築は純粋関数）（`tui/src/tmux/attach.ts`）
-- [ ] T019 [US1] list ビューを App へ結線（`Enter`→入室、復帰時に一覧再取得）（`tui/src/components/App.tsx`）
+- [x] T012 [P] [US1] [test] 行導出ロジックの単体テスト（代表 `indicatorState` 選択、pane 数、agent バッジ）+ `SessionList` の render/空状態テスト（ink-testing-library）（`tui/src/components/__tests__/sessionRow.test.ts`, `tui/src/components/__tests__/SessionList.test.tsx`）
+- [x] T013 [P] [US1] [test] attach コマンド構築の単体テスト（`$TMUX` 無→`attach` / 有→`switch-client` or `env -u TMUX attach`）（`tui/src/tmux/__tests__/attach.test.ts`）
+- [x] T014 [US1] セッション一覧 API（`getSessions()` → `SessionResponse[]`）（`tui/src/api/sessions.ts`）
+- [x] T015 [US1] `useSessions` フック（`GET /api/sessions` を 2–3s ポーリング、選択 index 保持）（`tui/src/hooks/useSessions.ts`）
+- [x] T016 [US1] 行導出ロジック + `SessionRow`（`tui/src/components/SessionRow.tsx`）
+- [x] T017 [US1] `SessionList`（描画・選択移動・空状態 FR-015）（`tui/src/components/SessionList.tsx`）
+- [x] T018 [US1] 入室ハンドオフ（alt-screen 退出 → `tmux attach` 子プロセス、`$TMUX` フォールバック、復帰・再描画。コマンド構築は純粋関数）（`tui/src/tmux/attach.ts`）
+- [x] T019 [US1] list ビューを App へ結線（`Enter`→入室、復帰時に一覧再取得）（`tui/src/components/App.tsx`）
 - [ ] T020 [US1] 手動受け入れ確認: SC-001/002/003/005/007・ネスト入室（`specs/002-cchub-tui/quickstart.md` 手順）
 
 **Checkpoint**: ここまでで MVP として単体デリバリ可能。

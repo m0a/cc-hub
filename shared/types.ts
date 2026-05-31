@@ -499,6 +499,13 @@ export interface DashboardResponse {
 export interface ExtendedSessionResponse extends SessionResponse {
   indicatorState?: IndicatorState;
   ccSessionId?: string;
+  /**
+   * Remote Control bridge session id (`session_…`) read from
+   * `~/.claude/sessions/<pid>.json`. Present only while Remote Control is active
+   * for this session. The frontend builds `https://claude.ai/code/<id>` from it
+   * for the "Open in Claude app" link.
+   */
+  bridgeSessionId?: string;
   agentSessionId?: string;
   currentCommand?: string;
   paneTitle?: string;

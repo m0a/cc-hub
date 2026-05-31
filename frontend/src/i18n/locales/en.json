@@ -38,6 +38,8 @@
 		"resume": "Resume",
 		"resuming": "Resuming...",
 		"navigate": "Go to",
+		"goToTerminal": "Go to this terminal",
+		"openInClaudeApp": "Open in Claude app",
 		"colorTheme": "Color Theme",
 		"customTitle": "Custom Title",
 		"customTitlePlaceholder": "Enter title (empty for auto)",

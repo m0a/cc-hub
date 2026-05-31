@@ -135,6 +135,10 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
     .map(s => s.currentPath);
   const codexThreadsByPath = await codexService.getThreadsForPaths(codexPaths);
 
+  // Remote Control deep-link map: Claude Code sessionId -> bridgeSessionId.
+  // Read once per build (cheap: a handful of small ~/.claude/sessions/*.json).
+  const bridgeSessionIds = await claudeCodeService.getBridgeSessionIds();
+
   const order = await getSessionOrder();
 
   const results = await Promise.all(tmuxSessions.map(async (s) => {
@@ -252,6 +256,10 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       ccRecapAt: includeClaudeInfo && isExactPathMatch ? ccSession?.lastRecap?.timestamp : undefined,
       indicatorState: sessionIndicatorState,
       ccSessionId: includeClaudeInfo ? ccSession?.sessionId : undefined,
+      bridgeSessionId:
+        includeClaudeInfo && ccSession?.sessionId
+          ? bridgeSessionIds.get(ccSession.sessionId)
+          : undefined,
       agentSessionId: includeCodexInfo ? codexThread?.sessionId : undefined,
       messageCount: includeClaudeInfo ? ccSession?.messageCount : undefined,
       gitBranch: includeClaudeInfo ? ccSession?.gitBranch : includeCodexInfo ? codexThread?.gitBranch : undefined,
@@ -330,6 +338,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       ccRecapAt: undefined,
       indicatorState: undefined,
       ccSessionId: lost.ccSessionId,
+      bridgeSessionId: undefined,
       agentSessionId: lost.agentSessionId,
       messageCount: undefined,
       gitBranch: undefined,

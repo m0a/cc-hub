@@ -287,6 +287,7 @@ export function DesktopLayout({
 								agentSessionId: apiSession.agentSessionId,
 								panes: apiSession.panes,
 								peerId: apiSession.peerId ?? propSession.peerId,
+								bridgeSessionId: apiSession.bridgeSessionId,
 							}
 						: {
 								id: apiSession.id,
@@ -300,6 +301,7 @@ export function DesktopLayout({
 								theme: apiSession.theme,
 								panes: apiSession.panes,
 								peerId: apiSession.peerId,
+								bridgeSessionId: apiSession.bridgeSessionId,
 							};
 				})
 			: propSessions;

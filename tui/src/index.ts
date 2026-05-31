@@ -55,7 +55,29 @@ function renderListOnce(client: ApiClient, baseUrl: string): Promise<ListAction>
   });
 }
 
+function ensureInteractiveTty(): void {
+  // Ink の useInput は raw mode を要求する。stdin が TTY でない（パイプ/リダイレクト、
+  // RTK 等のラッパ経由、raw mode 非対応の端末）と Ink が内部で例外を投げ、react-reconciler の
+  // 難解なスタックになる。事前に検知して分かりやすく案内する。
+  const stdin = process.stdin as NodeJS.ReadStream & { setRawMode?: unknown };
+  if (!stdin.isTTY || typeof stdin.setRawMode !== 'function') {
+    console.error(
+      [
+        '',
+        'cchub tui は対話的な実ターミナル（raw mode 対応）が必要です。',
+        '  stdin が TTY ではありません（パイプ/リダイレクト、RTK 等のラッパ経由、',
+        '  または raw mode 非対応の端末での実行が原因の可能性）。',
+        '  → 実ターミナルで直接実行してください（ラッパを挟まず）。',
+        '',
+      ].join('\n'),
+    );
+    process.exit(1);
+  }
+}
+
 export async function startTui(opts: StartTuiOptions): Promise<void> {
+  ensureInteractiveTty();
+
   // CC Hub は Tailscale 証明書で HTTPS を話す。localhost では証明書のホスト名が一致しないため、
   // ローカル接続に限り TLS 検証を無効化する（web の --ignore-certificate-errors 相当）。
   if (isLocalHost(opts.host) && process.env.NODE_TLS_REJECT_UNAUTHORIZED === undefined) {

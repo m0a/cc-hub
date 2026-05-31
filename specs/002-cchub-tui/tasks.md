@@ -73,11 +73,11 @@ description: "Task list for CC Hub TUI implementation"
 
 **Independent Test**: `/` で検索 → キーワードで逐次結果 → `Enter` で resume → 入室。該当なしは空状態。
 
-- [ ] T021 [P] [US2] [test] SSE 結果パース/重複排除 + 入力デバウンスの単体テスト + `HistorySearch` の render/空状態テスト（ink-testing-library）（`tui/src/hooks/__tests__/historySearch.test.ts`, `tui/src/components/__tests__/HistorySearch.test.tsx`）
-- [ ] T022 [US2] 履歴 API（`searchStream()` SSE / `resume()`）（`tui/src/api/history.ts`）。**着手前に M1**: `backend/src/routes/sessions.ts` の `history/search` 応答スキーマを確認し `data-model.md` の `SessionHistoryEntry` を確定値に更新
-- [ ] T023 [US2] `useHistorySearch` フック（デバウンス + SSE 購読・逐次追加）（`tui/src/hooks/useHistorySearch.ts`）
-- [ ] T024 [US2] `HistorySearch` コンポーネント（入力 + ストリーミング結果 + 空状態）（`tui/src/components/HistorySearch.tsx`）
-- [ ] T025 [US2] search ビューを App へ結線（`/`遷移・`Esc`戻る・`Enter`→resume→入室）（`tui/src/components/App.tsx`）
+- [x] T021 [P] [US2] [test] SSE 結果パース/重複排除 + 入力デバウンスの単体テスト + `HistorySearch` の render/空状態テスト（ink-testing-library）（`tui/src/hooks/__tests__/historySearch.test.ts`, `tui/src/components/__tests__/HistorySearch.test.tsx`）
+- [x] T022 [US2] 履歴 API（`searchStream()` SSE / `resume()`）（`tui/src/api/history.ts`）。**着手前に M1**: `backend/src/routes/sessions.ts` の `history/search` 応答スキーマを確認し `data-model.md` の `SessionHistoryEntry` を確定値に更新
+- [x] T023 [US2] `useHistorySearch` フック（デバウンス + SSE 購読・逐次追加）（`tui/src/hooks/useHistorySearch.ts`）
+- [x] T024 [US2] `HistorySearch` コンポーネント（入力 + ストリーミング結果 + 空状態）（`tui/src/components/HistorySearch.tsx`）
+- [x] T025 [US2] search ビューを App へ結線（`/`遷移・`Esc`戻る・`Enter`→resume→入室）（`tui/src/components/App.tsx`）
 - [ ] T026 [US2] 手動受け入れ確認: SC-004・該当なし（`specs/002-cchub-tui/quickstart.md` 手順）
 
 **Checkpoint**: US1 と独立して検証可能。

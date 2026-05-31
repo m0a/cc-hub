@@ -39,5 +39,8 @@ export interface DerivedRow {
   path: string;
 }
 
-/** 一覧ビューがループ側へ返すアクション */
-export type ListAction = { type: 'quit' } | { type: 'attach'; sessionName: string };
+/** ビューがループ側へ返すアクション */
+export type ListAction =
+  | { type: 'quit' }
+  | { type: 'attach'; sessionName: string }
+  | { type: 'search' };

@@ -26,7 +26,9 @@ export function App({
       onAction({ type: 'quit' });
       return;
     }
-    if (key.upArrow || input === 'k') {
+    if (input === '/') {
+      onAction({ type: 'search' });
+    } else if (key.upArrow || input === 'k') {
       setSelected(Math.max(0, clamped - 1));
     } else if (key.downArrow || input === 'j') {
       setSelected(Math.min(Math.max(0, count - 1), clamped + 1));
@@ -44,7 +46,7 @@ export function App({
       <SessionList sessions={sessions} selectedIndex={clamped} />
       <StatusBar
         baseUrl={baseUrl}
-        keys="↑↓/jk 選択 · Enter 入室 · q 終了"
+        keys="↑↓/jk 選択 · Enter 入室 · / 履歴検索 · q 終了"
         sessionCount={count}
         error={error}
       />

@@ -7,7 +7,7 @@ import React from 'react';
 import { resolveToken } from './api/auth';
 import { type ApiClient, createClient } from './api/client';
 import { getSessions } from './api/sessions';
-import { App } from './components/App';
+import { Root } from './components/Root';
 import { attachSession } from './tmux/attach';
 import type { ListAction } from './types';
 
@@ -31,21 +31,22 @@ function serverDownHint(baseUrl: string, detail: string): string {
   ].join('\n');
 }
 
-/** 接続を確立してクライアントを返す。失敗時は分類された Error を投げる。 */
-async function connect(baseUrl: string): Promise<ApiClient> {
+/** 接続を確立してクライアント＋トークンを返す。失敗時は分類された Error を投げる。 */
+async function connect(baseUrl: string): Promise<{ client: ApiClient; token: string | null }> {
   const token = await resolveToken(baseUrl); // server-down / unauthorized で throw
   const client = createClient({ baseUrl, token });
   await getSessions(client); // 疎通プローブ（401 等はここで ApiError）
-  return client;
+  return { client, token };
 }
 
-/** Ink で一覧を 1 回描画し、ユーザ操作（attach / quit）で解決して unmount する。 */
-function renderListOnce(client: ApiClient, baseUrl: string): Promise<ListAction> {
+/** Ink で Root（一覧/履歴検索）を 1 回描画し、ユーザ操作（attach / quit）で解決して unmount する。 */
+function renderRootOnce(client: ApiClient, baseUrl: string, token: string | null): Promise<ListAction> {
   return new Promise((resolve) => {
     const instance = render(
-      React.createElement(App, {
+      React.createElement(Root, {
         client,
         baseUrl,
+        token,
         onAction: (action: ListAction) => {
           instance.unmount();
           resolve(action);
@@ -86,8 +87,9 @@ export async function startTui(opts: StartTuiOptions): Promise<void> {
   const baseUrl = `https://${opts.host}:${opts.port}`;
 
   let client: ApiClient;
+  let token: string | null;
   try {
-    client = await connect(baseUrl);
+    ({ client, token } = await connect(baseUrl));
   } catch (e) {
     const msg = (e as Error).message;
     const status = (e as { status?: number }).status;
@@ -110,7 +112,7 @@ export async function startTui(opts: StartTuiOptions): Promise<void> {
   process.stdout.write(ALT_ON);
   try {
     for (;;) {
-      const action = await renderListOnce(client, baseUrl);
+      const action = await renderRootOnce(client, baseUrl, token);
       if (action.type === 'quit') break;
       if (action.type === 'attach') {
         process.stdout.write(ALT_OFF);

@@ -14,6 +14,7 @@ import type {
 	SessionTheme,
 } from "../../../shared/types";
 import { authFetch } from "../services/api";
+import { openClaudeAppSession } from "../utils/claude-app";
 import { toHomeShortPath } from "../utils/path";
 import { ChatView } from "./chat/ChatView";
 import type { ControlModeConfig } from "./Terminal";
@@ -383,11 +384,7 @@ function TerminalPane({
 								e.stopPropagation();
 								const bridgeId = session.bridgeSessionId;
 								if (!bridgeId) return;
-								window.open(
-									`https://claude.ai/code/${encodeURIComponent(bridgeId)}`,
-									"_blank",
-									"noopener,noreferrer",
-								);
+								openClaudeAppSession(bridgeId);
 							}}
 							className={`${isTablet ? "p-2" : "p-1"} rounded transition-colors text-violet-300/80 hover:text-violet-200 hover:bg-violet-500/10`}
 							title={t("session.openInClaudeApp")}

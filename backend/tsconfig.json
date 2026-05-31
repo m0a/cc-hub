@@ -8,7 +8,8 @@
     "skipLibCheck": true,
     "declaration": true,
     "outDir": "dist",
-    "types": ["bun"],
+    "jsx": "react-jsx",
+    "types": ["bun", "react"],
     "resolveJsonModule": true,
     "paths": {
       "shared": ["../shared/types.ts"]

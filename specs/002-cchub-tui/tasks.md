@@ -26,10 +26,10 @@ description: "Task list for CC Hub TUI implementation"
 
 ## Phase 1: Setup（プロジェクト初期化）
 
-- [ ] T001 `tui/` ワークスペースを作成（`tui/package.json`: deps `ink`,`react` / `"shared"` 参照、`tui/tsconfig.json`）
-- [ ] T002 ルート `package.json` の `workspaces` に `tui` を追加し、`dev`/`test`/`lint`/`build` のフィルタ済みスクリプトを追加（`package.json`）
-- [ ] T003 [P] `tui/` の Bun test + Biome 設定を整備（`tui/` 配下、`biome.json` 継承確認）
-- [ ] T004 `cchub tui` サブコマンドの骨組み: `CliOptions.command` union に `'tui'` 追加、`parseArgs` に `case 'tui'`、`runCli` に `case 'tui' → import('./commands/tui')`（`backend/src/cli.ts`）+ `runTui()` スタブ（`backend/src/commands/tui.ts`、`tui/` 入口を起動）
+- [x] T001 `tui/` ワークスペースを作成（`tui/package.json`: deps `ink`,`react` / `"shared"` 参照、`tui/tsconfig.json`）
+- [x] T002 ルート `package.json` の `workspaces` に `tui` を追加し、`dev`/`test`/`lint`/`build` のフィルタ済みスクリプトを追加（`package.json`）
+- [x] T003 [P] `tui/` の Bun test + Biome 設定を整備（`tui/` 配下、`biome.json` 継承確認）
+- [x] T004 `cchub tui` サブコマンドの骨組み: `CliOptions.command` union に `'tui'` 追加、`parseArgs` に `case 'tui'`、`runCli` に `case 'tui' → import('./commands/tui')`（`backend/src/cli.ts`）+ `runTui()` スタブ（`backend/src/commands/tui.ts`、`tui/` 入口を起動）
 
 ---
 
@@ -37,13 +37,13 @@ description: "Task list for CC Hub TUI implementation"
 
 **⚠️ 完了まで US1〜US3 に進めない**
 
-- [ ] T005 Ink × Bun スパイク: raw-mode 入力 → alt-screen 退出 → 子プロセス stdio 継承起動 → 復帰・再描画 を1本で検証（`tui/src/spike.tsx`）。**ゲート**: 失敗時は描画方式を再検討（research.md R3）
-- [ ] T006 [P] [test] API クライアントの単体テスト（base URL 組立・Bearer ヘッダ・エラー整形）（`tui/src/api/__tests__/client.test.ts`）
-- [ ] T007 API クライアント基盤を実装（`tui/src/api/client.ts`、Bun `fetch` ラッパ、host/port 既定 127.0.0.1:5923）
-- [ ] T008 [P] [test] 認証解決の単体テスト（パスワード無し=素通り / `jwt-secret`→ローカルトークン発行）（`tui/src/api/__tests__/auth.test.ts`）
-- [ ] T009 ゼロコンフィグ認証を実装（`tui/src/api/auth.ts`、`/api/auth/me` で要否判定、要時 `getDataDir()/jwt-secret` を読み `AuthService` でトークン自己発行）（research.md R6）
-- [ ] T010 Ink App シェル（view ルータ list/search、`ConnectionState`、グローバルキーバインド）+ StatusBar（`tui/src/components/App.tsx`, `tui/src/components/StatusBar.tsx`）
-- [ ] T011 入口: server URL + 認証解決 → `<App/>` render、`server-down` 画面で起動案内（FR-012）（`tui/src/index.tsx`）
+- [x] T005 Ink × Bun スパイク: raw-mode 入力 → alt-screen 退出 → 子プロセス stdio 継承起動 → 復帰・再描画 を1本で検証（`tui/src/spike.tsx`）。**ゲート**: 失敗時は描画方式を再検討（research.md R3）
+- [x] T006 [P] [test] API クライアントの単体テスト（base URL 組立・Bearer ヘッダ・エラー整形）（`tui/src/api/__tests__/client.test.ts`）
+- [x] T007 API クライアント基盤を実装（`tui/src/api/client.ts`、Bun `fetch` ラッパ、host/port 既定 127.0.0.1:5923）
+- [x] T008 [P] [test] 認証解決の単体テスト（パスワード無し=素通り / `jwt-secret`→ローカルトークン発行）（`tui/src/api/__tests__/auth.test.ts`）
+- [x] T009 ゼロコンフィグ認証を実装（`tui/src/api/auth.ts`、`/api/auth/me` で要否判定、要時 `getDataDir()/jwt-secret` を読み `AuthService` でトークン自己発行）（research.md R6）
+- [x] T010 Ink App シェル（view ルータ list/search、`ConnectionState`、グローバルキーバインド）+ StatusBar（`tui/src/components/App.tsx`, `tui/src/components/StatusBar.tsx`）
+- [x] T011 入口: server URL + 認証解決 → `<App/>` render、`server-down` 画面で起動案内（FR-012）（`tui/src/index.tsx`）
 
 ---
 

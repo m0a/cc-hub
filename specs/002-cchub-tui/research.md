@@ -20,6 +20,7 @@
 - **Rationale**: フロントの React 知見をそのまま流用でき、一覧・検索・詳細を宣言的に記述できる。更新頻度 1–5s なら性能は十分。
 - **Alternatives considered**: blessed/低レベル ANSI → React と別パラダイムで知見流用が効かない。生 ANSI → 低レベルすぎる。
 - **Risk / Spike**: Ink × Bun の raw-mode 入力・alt-screen 復帰・子プロセスハンドオフ時の stdin/stdout 制御に互換懸念。**実装着手前に最小スパイク1本**（キー入力受領 → alt-screen 退出 → 子プロセス起動 → 復帰 → 再描画）で確認する。
+- **Spike 結果（2026-05-31, PASS）**: `Bun 1.3.11` + `ink@7.0.5` + `react@19.2.6` で検証。① raw-mode キー入力 ② `Bun.spawnSync({stdio:'inherit'})` での子プロセスへの TTY 委譲 ③ 子終了後の Ink 再描画 ④ 後始末（alt-screen 復帰）すべて成立。ハンドオフ方式は alt-screen トグル（`\x1b[?1049h/l`）+ stdio 継承子プロセス。JSX は Bun が native トランスパイル（tsconfig 非依存）。→ 中核前提（attach 委譲）が実証済み。
 
 ## R4. 端末ハンドオフ（入室）
 

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.167] - 2026-06-04
+
+ローカル専用のターミナル UI `cchub tui` を新規追加。ブラウザを開かずに、稼働中の CC Hub サーバのセッション一覧・入室・履歴検索をターミナルから行える。
+
+### Added
+- **CC Hub TUI (`cchub tui`) を追加 (#306)**: 新規 `tui/` ワークスペース（Ink + React on Bun）。稼働中の CC Hub サーバを**データ源とするクライアント**として動作し、既存 API（`/api/sessions`・履歴検索・ライフサイクル）を再利用する。セッションへの「入室」は端末画面をネットワーク転送せず、ネイティブ `tmux attach` にハンドオフして完結（`$TMUX` ネスト時は子 env から TMUX を外して attach）。機能: セッション一覧（状態インジケータ ◐/●/○/✓・エージェント・作業ディレクトリ・ペイン数）、履歴検索（SSE 逐次表示）→ resume → 入室、新規作成（エージェント + 作業ディレクトリ）/ 終了（y/n 確認）/ 再開、ヘルプ（`?`）。ローカル限定（他ピア対象外）、HTTPS（Tailscale 証明書）の localhost は TLS 検証スキップ、認証はゼロコンフィグ（data-dir の `jwt-secret` からローカルトークン自己発行）。raw mode 非対応の端末（パイプ/ラッパ経由）では明確に案内して終了。`bun build --compile` で単一バイナリ `cchub` に同梱（`cchub tui` 実行時のみ遅延ロードのためサーバ実行経路には影響なし）。設計は Spec Kit で spec→plan→tasks→analyze を経て実装（`specs/002-cchub-tui/`、`tui/README.md`）。tui 56 / backend 258 テスト、行カバレッジ 82.56% (`tui/`, `backend/src/cli.ts`, `backend/src/commands/tui.ts`, `scripts/build.sh`)
+
+### Changed
+- **Spec Kit を v0.8.19 へ更新、憲章を v1.6.0 へ改訂 (#305)**: spec-kit を初期 init 時の版から最新へ更新（`.claude/commands/speckit.*` ドット形式 → `.claude/skills/speckit-*` ハイフン形式のスキル）。憲章の原則III「Web-First Architecture」を改訂し、Web を置換せず補完するローカル/非Web インターフェース（TUI/CLI）を条件付きで許容（`.specify/`, `.claude/skills/`, `.specify/memory/constitution.md`）
+
 ## [0.1.166] - 2026-05-31
 
 v0.1.165 で追加した「Claudeアプリで開く」がモバイルで表示されない/開けない不具合を修正。

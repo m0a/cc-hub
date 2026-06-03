@@ -9,7 +9,7 @@ const isDev = process.argv.some(arg => arg.includes('--watch'));
 const DEFAULT_PORT = isDev ? 3456 : 5923;
 
 interface CliOptions {
-  command: 'serve' | 'setup' | 'uninstall' | 'update' | 'status' | 'notify' | 'help' | 'version' | 'debug' | 'send' | 'peek';
+  command: 'serve' | 'setup' | 'uninstall' | 'update' | 'status' | 'notify' | 'help' | 'version' | 'debug' | 'send' | 'peek' | 'tui';
   port: number;
   host: string;
   password?: string;
@@ -47,6 +47,8 @@ ${t('cli.usage')}
   cchub peek <target>       Snapshot a pane's current viewport (last 20 rows
                             by default) — useful for checking peer state
                             without opening the peer UI.
+  cchub tui                 Launch the local terminal UI (session list +
+                            history search) for the running CC Hub server.
   cchub debug <sub>         Toggle Bun inspector mode on the running service
                             sub: enable | disable | profile | status
 
@@ -140,6 +142,9 @@ export function parseArgs(args: string[]): CliOptions {
         }
         break;
       }
+      case 'tui':
+        options.command = 'tui';
+        break;
       case '--stdin':
         options.sendStdin = true;
         break;
@@ -283,6 +288,10 @@ export async function runCli(options: CliOptions): Promise<'serve' | 'exit'> {
       await runPeek(options);
       return 'exit';
 
+    case 'tui':
+      await runTuiCommand(options);
+      return 'exit';
+
     case 'debug':
       await runDebug(options);
       return 'exit';
@@ -358,6 +367,11 @@ async function runPeek(options: CliOptions): Promise<void> {
 async function runStatus(): Promise<void> {
   const { showStatus } = await import('./commands/status');
   await showStatus();
+}
+
+async function runTuiCommand(options: CliOptions): Promise<void> {
+  const { runTui } = await import('./commands/tui');
+  await runTui({ port: options.port, host: options.host });
 }
 
 async function runDebug(options: CliOptions): Promise<void> {

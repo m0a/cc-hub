@@ -6,8 +6,6 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "declaration": true,
-    "outDir": "dist",
     "jsx": "react-jsx",
     "types": ["bun", "react"],
     "resolveJsonModule": true,
@@ -15,6 +13,6 @@
       "shared": ["../shared/types.ts"]
     }
   },
-  "include": ["src/**/*", "tests/**/*", "../shared/**/*"],
+  "include": ["src/**/*", "../shared/**/*"],
   "exclude": ["node_modules", "dist"]
 }

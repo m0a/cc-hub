@@ -979,7 +979,7 @@ export function App() {
 								: "bg-zinc-600"
 					}`}
 				/>
-				<span className="text-[13px] font-medium text-white truncate max-w-[140px]">
+				<span className="text-[13px] font-medium text-white truncate max-w-[84px]">
 					{activeSession?.name || "-"}
 				</span>
 				<ChevronDown className="w-3 h-3 text-zinc-500" />
@@ -988,13 +988,13 @@ export function App() {
 			<div className="flex-1" />
 
 			{/* Right: Core actions */}
-			<div className="flex items-center gap-1">
+			<div className="flex items-center gap-1 shrink-0">
 				{activeSession?.ccSessionId &&
 					(showConversation ? (
 						<button
 							type="button"
 							onClick={() => setShowConversation(false)}
-							className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
+							className="p-3 text-zinc-300 hover:text-white active:text-white transition-colors"
 							title="ターミナルに切替"
 							aria-label="Switch to Terminal"
 							data-onboarding="conversation"
@@ -1005,7 +1005,7 @@ export function App() {
 						<button
 							type="button"
 							onClick={handleShowConversation}
-							className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
+							className="p-3 text-zinc-300 hover:text-white active:text-white transition-colors"
 							title="会話履歴に切替"
 							aria-label="Switch to Chat"
 							data-onboarding="conversation"
@@ -1020,7 +1020,7 @@ export function App() {
 							const id = activeSession.bridgeSessionId;
 							if (id) openClaudeAppSession(id);
 						}}
-						className="p-2.5 text-violet-400/80 hover:text-violet-300 active:text-violet-200 transition-colors"
+						className="p-3 text-violet-400 hover:text-violet-300 active:text-violet-200 transition-colors"
 						title={t("session.openInClaudeApp")}
 						aria-label={t("session.openInClaudeApp")}
 					>
@@ -1038,7 +1038,7 @@ export function App() {
 							apiSessions.find((s) => s.id === activeSessionId)?.peerId;
 						openFileViewer(activeSession?.currentPath || "/", peerId);
 					}}
-					className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
+					className="p-3 text-zinc-300 hover:text-white active:text-white transition-colors"
 					title="ファイルブラウザ"
 					data-onboarding="file-browser"
 				>
@@ -1047,7 +1047,7 @@ export function App() {
 				<button
 					type="button"
 					onClick={() => setShowMobileDashboard(true)}
-					className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
+					className="p-3 text-zinc-300 hover:text-white active:text-white transition-colors"
 					title="ダッシュボード"
 				>
 					<BarChart3 className="w-5 h-5" />
@@ -1055,7 +1055,7 @@ export function App() {
 				<button
 					type="button"
 					onClick={handleReload}
-					className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
+					className="p-3 text-zinc-300 hover:text-white active:text-white transition-colors"
 					title="リロード"
 					data-onboarding="reload"
 				>

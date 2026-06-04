@@ -3,9 +3,11 @@ import { Box, Text } from 'ink';
 const BINDINGS: Array<[string, string]> = [
   ['↑↓ / j k', '選択を移動'],
   ['Enter', '選択セッションに入室（tmux attach）'],
+  ['F12（入室中）', '一覧へ戻る（prefix 不要）'],
   ['n', '新規セッションを作成'],
   ['x / d', '選択セッションを終了（y / n で確認）'],
   ['r', '選択セッションを再開（claude -r 等）'],
+  ['c', '選択セッションに /compact を送信'],
   ['/', '履歴検索'],
   ['q / Ctrl-C', '終了'],
   ['?', 'このヘルプの開閉'],

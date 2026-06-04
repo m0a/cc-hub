@@ -9,28 +9,25 @@ const sessions: TuiSession[] = [
     name: 'alpha',
     agent: 'claude',
     indicatorState: 'processing',
+    paneTitle: 'タスク実装中',
     panes: [{ paneId: '%0', isActive: true }],
   },
   { id: '2', name: 'beta', customTitle: 'Refactor', agent: 'codex', indicatorState: 'idle' },
 ];
 
-describe('SessionList', () => {
-  test('セッション名 / customTitle / agent を表示', () => {
+describe('SessionList (card)', () => {
+  test('カードに名前 / customTitle / agent / タスクを表示', () => {
     const { lastFrame } = render(<SessionList sessions={sessions} selectedIndex={0} />);
     const frame = lastFrame() ?? '';
     expect(frame).toContain('alpha');
     expect(frame).toContain('Refactor');
     expect(frame).toContain('claude');
     expect(frame).toContain('codex');
+    expect(frame).toContain('タスク実装中');
   });
 
   test('空配列は空状態メッセージ', () => {
     const { lastFrame } = render(<SessionList sessions={[]} selectedIndex={0} />);
     expect(lastFrame() ?? '').toContain('セッションがありません');
-  });
-
-  test('選択行に ❯ マーカー', () => {
-    const { lastFrame } = render(<SessionList sessions={sessions} selectedIndex={1} />);
-    expect(lastFrame() ?? '').toContain('❯');
   });
 });

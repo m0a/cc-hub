@@ -49,6 +49,30 @@ export function shortenPath(path: string | undefined): string {
   return path;
 }
 
+/** 分 → 人間向けの経過時間（"45m" / "18h" / "3d"）。 */
+export function formatDuration(minutes: number | undefined): string {
+  if (!minutes || minutes < 1) return '';
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+/** トークン数 → "12.3k" / "7.2M"。 */
+export function formatTokens(n: number | undefined): string {
+  if (!n || n <= 0) return '';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+/** カードに出す「いま何をしているか」のテキスト（paneTitle 優先、無ければ要約）。 */
+export function taskText(session: TuiSession): string {
+  const pane = (session.paneTitle ?? '').trim();
+  if (pane) return pane;
+  return (session.ccSummary ?? '').replace(/\s+/g, ' ').trim();
+}
+
 /** セッション → 表示用の行データ。 */
 export function deriveRow(session: TuiSession): DerivedRow {
   return {

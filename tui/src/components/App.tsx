@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { ApiClient } from '../api/client';
 import { killSession, resumeSession } from '../api/sessions';
 import { useSessions } from '../hooks/useSessions';
+import { RETURN_KEY } from '../tmux/attach';
 import type { ListAction, TuiSession } from '../types';
 import { Help } from './Help';
 import { SessionList } from './SessionList';
@@ -84,6 +85,7 @@ export function App({
       <Text bold color="cyan">
         CC Hub TUI — セッション一覧
       </Text>
+      <Text dimColor>Enter で入室 →『{RETURN_KEY}』で一覧へ戻る</Text>
       {showHelp ? <Help /> : <SessionList sessions={sessions} selectedIndex={clamped} />}
       {confirmKill ? (
         <Text color="red">「{confirmKill.customTitle || confirmKill.name}」を終了しますか？ y / n</Text>

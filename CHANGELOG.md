@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.169] - 2026-06-05
+
+モバイル Web UI: セッション操作バーのアイコンを押しやすく。
+
+### Fixed
+- **モバイル: セッション操作バー（overlayBar）のアイコンがタップしづらい問題を修正**: タップ領域を ~40px → ~44px（iOS 推奨最小）へ拡大し、アイコン色を明るく（zinc-500 → zinc-300）して視認性を改善。幅のはみ出し対策として右アクション群を `shrink-0`、セッション名の最大幅を 140px → 84px に調整（`frontend/src/App.tsx`）
+
 ## [0.1.168] - 2026-06-04
 
 `cchub tui` の改善: カード形式の一覧・縦スクロール・1キーで戻る・`/compact` 送信。

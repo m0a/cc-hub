@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import type { TuiSession } from '../../types';
-import { deriveIndicator, deriveRow, indicatorGlyph, shortenPath } from '../session-row';
+import {
+  deriveIndicator,
+  deriveRow,
+  formatDuration,
+  formatTokens,
+  indicatorGlyph,
+  shortenPath,
+  taskText,
+} from '../session-row';
 
 function session(overrides: Partial<TuiSession>): TuiSession {
   return { id: 's', name: 's', ...overrides };
@@ -76,5 +84,37 @@ describe('deriveRow', () => {
     );
     expect(row.agentLabel).toBe('claude');
     expect(row.paneCount).toBe(2);
+  });
+});
+
+describe('formatDuration', () => {
+  test('分/時/日に整形', () => {
+    expect(formatDuration(45)).toBe('45m');
+    expect(formatDuration(1114)).toBe('18h');
+    expect(formatDuration(1440)).toBe('1d');
+    expect(formatDuration(0)).toBe('');
+    expect(formatDuration(undefined)).toBe('');
+  });
+});
+
+describe('formatTokens', () => {
+  test('k / M に整形', () => {
+    expect(formatTokens(906)).toBe('906');
+    expect(formatTokens(12300)).toBe('12.3k');
+    expect(formatTokens(7236370)).toBe('7.2M');
+    expect(formatTokens(0)).toBe('');
+    expect(formatTokens(undefined)).toBe('');
+  });
+});
+
+describe('taskText', () => {
+  test('paneTitle を優先', () => {
+    expect(taskText(session({ paneTitle: 'タスクA', ccSummary: '要約B' }))).toBe('タスクA');
+  });
+  test('paneTitle が無ければ ccSummary を1行化', () => {
+    expect(taskText(session({ ccSummary: '要約\n  続き' }))).toBe('要約 続き');
+  });
+  test('どちらも無ければ空', () => {
+    expect(taskText(session({}))).toBe('');
   });
 });

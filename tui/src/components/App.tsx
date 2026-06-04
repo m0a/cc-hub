@@ -1,13 +1,15 @@
 import { Box, Text, useInput } from 'ink';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ApiClient } from '../api/client';
 import { killSession, resumeSession } from '../api/sessions';
 import { useSessions } from '../hooks/useSessions';
 import { RETURN_KEY } from '../tmux/attach';
+import { sendSubmit } from '../tmux/send';
 import type { ListAction, TuiSession } from '../types';
 import { Help } from './Help';
 import { SessionList } from './SessionList';
-import { StatusBar } from './StatusBar';
+
+const SHORTCUTS = `↑↓ 選択 · Enter 入室(${RETURN_KEY}で戻る) · n 新規 · x 終了 · r 再開 · c compact · / 履歴 · ? ヘルプ · q 終了`;
 
 export function App({
   client,
@@ -22,12 +24,18 @@ export function App({
   const [selected, setSelected] = useState(0);
   const [confirmKill, setConfirmKill] = useState<TuiSession | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 3000);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   const count = sessions.length;
   const clamped = count === 0 ? 0 : Math.min(selected, count - 1);
 
   useInput((input, key) => {
-    // ヘルプ表示中は何かキーで閉じる
     if (showHelp) {
       setShowHelp(false);
       return;
@@ -36,7 +44,6 @@ export function App({
       setShowHelp(true);
       return;
     }
-    // 終了確認モード
     if (confirmKill) {
       if (input === 'y') void killSession(client, confirmKill.id).catch(() => {});
       setConfirmKill(null);
@@ -68,6 +75,11 @@ export function App({
           .catch(() => {});
         return;
       }
+      if (input === 'c') {
+        sendSubmit(target.name, '/compact');
+        setNotice(`/compact を送信: ${target.customTitle || target.name}`);
+        return;
+      }
     }
 
     if (key.upArrow || input === 'k') {
@@ -81,21 +93,38 @@ export function App({
   });
 
   return (
-    <Box flexDirection="column" padding={1}>
-      <Text bold color="cyan">
-        CC Hub TUI — セッション一覧
-      </Text>
-      <Text dimColor>Enter で入室 →『{RETURN_KEY}』で一覧へ戻る</Text>
-      {showHelp ? <Help /> : <SessionList sessions={sessions} selectedIndex={clamped} />}
-      {confirmKill ? (
-        <Text color="red">「{confirmKill.customTitle || confirmKill.name}」を終了しますか？ y / n</Text>
-      ) : null}
-      <StatusBar
-        baseUrl={baseUrl}
-        keys="↑↓ Enter:入室 n:新規 x:終了 r:再開 /:履歴 ?:ヘルプ q:終了"
-        sessionCount={count}
-        error={error}
-      />
+    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
+      {/* ヘッダ */}
+      <Box justifyContent="space-between">
+        <Text bold color="cyan">
+          CC Hub TUI — セッション一覧
+        </Text>
+        <Text>
+          {error ? <Text color="red">● {error}</Text> : <Text color="green">● {count} sessions</Text>}
+          <Text dimColor> {baseUrl}</Text>
+        </Text>
+      </Box>
+
+      {/* 本体（カードの入れ子 / ヘルプ） */}
+      <Box marginTop={1} flexDirection="column">
+        {showHelp ? <Help /> : <SessionList sessions={sessions} selectedIndex={clamped} />}
+        {confirmKill ? (
+          <Text color="red">「{confirmKill.customTitle || confirmKill.name}」を終了しますか？ y / n</Text>
+        ) : null}
+        {notice ? <Text color="green">{notice}</Text> : null}
+      </Box>
+
+      {/* フッタ（外枠の操作ショートカット） */}
+      <Box
+        marginTop={1}
+        borderStyle="single"
+        borderColor="gray"
+        borderBottom={false}
+        borderLeft={false}
+        borderRight={false}
+      >
+        <Text dimColor>{SHORTCUTS}</Text>
+      </Box>
     </Box>
   );
 }

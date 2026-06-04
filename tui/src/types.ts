@@ -17,6 +17,13 @@ export interface ConnectionInfo {
  * GET /api/sessions の各要素。`shared` の SessionResponse は最小定義のため、
  * 実レスポンス（実機確認済み）で使うフィールドを明示した TUI 側の型。
  */
+export interface TuiSessionMetrics {
+  contextPercent?: number;
+  contextTokens?: number;
+  totalTokens?: number;
+  memoryRssBytes?: number;
+}
+
 export interface TuiSession {
   id: string;
   name: string;
@@ -28,6 +35,12 @@ export interface TuiSession {
   paneTitle?: string;
   indicatorState?: IndicatorState;
   panes?: PaneInfo[];
+  // カード表示用の追加フィールド（実機確認済み）
+  ccSummary?: string;
+  ccRecap?: string;
+  waitingToolName?: string;
+  durationMinutes?: number;
+  metrics?: TuiSessionMetrics;
 }
 
 /** 一覧 1 行ぶんの表示用導出データ（純粋関数で算出 → テスト対象） */

@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.168] - 2026-06-04
+
+`cchub tui` の改善: カード形式の一覧・縦スクロール・1キーで戻る・`/compact` 送信。
+
+### Added
+- **`cchub tui`: セッション一覧をカード形式に刷新**: 各セッションを枠付きカードで表示し、状態（◐/●/○/✓）・エージェント・コンテキスト使用率（ctx%）・経過時間・現在のタスク（paneTitle）・作業ディレクトリ・ペイン数・トークン数を表示（情報量を増やした）。全体を外枠フレームで囲み、フッタに操作ショートカットを常時表示（`tui/src/components/SessionCard.tsx`, `App.tsx`）
+- **`cchub tui`: 縦スクロール（選択追従ウィンドウ）**: 端末高さに収まる枚数だけ描画し、↑↓ で選択が端に来るとウィンドウがずれて実際にスクロールする（上下に残り件数を表示）。従来は全件描画で画面外が見えずスクロールにならなかった（`tui/src/components/SessionList.tsx`）
+- **`cchub tui`: `c` で選択セッションに `/compact` を送信**: コンテキストが膨らんだセッションを一覧から compact できる（bracketed paste + Enter で確実に submit）（`tui/src/tmux/send.ts`）
+
+### Fixed
+- **`cchub tui`: 入室後に一覧へ戻れない問題を修正**: tmux の detach（prefix+d）を知らないと戻れなかったため、prefix 不要の戻りキー（F12 → detach-client）を登録し、入室中は status バーに「F12 で cchub の一覧へ戻る」を常時表示（元の status-right は復帰後に戻す）。一覧/ヘルプにも F12 を案内（`tui/src/tmux/attach.ts`）
+- **`cchub tui`: 入室時に画面サイズが端末に追従しない問題を修正**: 入室セッションに `window-size latest` を設定し、入室した端末のサイズへ追従させる
+
 ## [0.1.167] - 2026-06-04
 
 ローカル専用のターミナル UI `cchub tui` を新規追加。ブラウザを開かずに、稼働中の CC Hub サーバのセッション一覧・入室・履歴検索をターミナルから行える。

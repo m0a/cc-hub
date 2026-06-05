@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.171] - 2026-06-05
+
+ファイルViewer の作り込み（Phase 1-4）。共通化による脱モノリス・重複解消に加え、Markdown画像の peer 対応・バイナリ表示ガード・i18n 配線を実施。
+
+### Changed
+- **ファイルViewer: ビューア共通フック/ユーティリティを抽出 (#311)**: CodeViewer/DiffViewer/MarkdownViewer に散在していた word-wrap・font-size 設定、ピンチズーム、スクロール位置復元、シンタックスハイライトのコピペを共通化（`useViewerSettings`/`usePinchZoom`/`useScrollRatio`/`utils/highlight`）。副作用として一貫性が揃い、DiffViewer に font-size・ピンチが付き、word-wrap デフォルトが3ビューアで統一（`frontend/src/hooks/`, `frontend/src/utils/highlight.ts`, `frontend/src/components/files/`）
+- **ファイルViewer: FileViewer.tsx 脱モノリス (#312)**: 1681行のモノリスを分解し、wide/mobile の二重 JSX を解消。描画スイッチを `FileContentView` に集約、`ChangesView`/`useViewHistory`/`file-types` を分離し、`FileViewer.tsx` はレイアウト＋状態のオーケストレーションに縮小（`frontend/src/components/files/`, `frontend/src/hooks/useViewHistory.ts`）
+- **ファイルViewer: ハードコード文字列を i18n キーへ配線 (#314)**: 散在していた日本語/英語UI文字列を `t()` 経由に統一し、不足キーを ja/en に追加。FileBrowser/CodeViewer/DiffViewer/MarkdownViewer/ImageViewer/PromptComposer に `useTranslation` を追加（`frontend/src/components/files/`, `frontend/src/i18n/locales/`）
+
+### Fixed
+- **ファイルViewer: Markdown内画像が remote peer で表示されない問題を修正 (#313)**: `MarkdownViewer.resolveImageSrc` が `/api/files/raw` を固定しており peer セッションで 404/401 になっていたため、`filesApiBase`（`/api/peers/<id>/files`）を渡して解決（`frontend/src/components/files/MarkdownViewer.tsx`, `FileContentView.tsx`）
+- **ファイルViewer: 非画像バイナリの base64 ダンプを防止 (#313)**: PDF/zip 等のバイナリが CodeViewer に base64 のまま流れ込んでいたのを、プレビュー不可プレースホルダ＋ダウンロード導線に置き換え（`frontend/src/components/files/FileContentView.tsx`）
+
 ## [0.1.170] - 2026-06-05
 
 `cchub tui` で attach 後にトラックパッドスクロールが入力履歴ナビになる問題を修正。

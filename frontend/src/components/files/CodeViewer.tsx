@@ -2,6 +2,7 @@
 import hljs from "highlight.js";
 import { Eye, WrapText } from "lucide-react";
 import { useMemo, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import "highlight.js/styles/github-dark.css";
 import { useLineSelection } from "../../hooks/useLineSelection";
 import { usePinchZoom } from "../../hooks/usePinchZoom";
@@ -41,6 +42,7 @@ export function CodeViewer({
 	initialScrollRatio = 0,
 	onScrollRatioChange,
 }: CodeViewerProps) {
+	const { t } = useTranslation();
 	const containerRef = useRef<HTMLDivElement>(null);
 	const {
 		wordWrap,
@@ -91,7 +93,7 @@ export function CodeViewer({
 			{/* Truncation warning */}
 			{truncated && (
 				<div className="px-3 py-1.5 bg-yellow-900/50 text-yellow-300 text-xs border-b border-yellow-800">
-					ファイルが大きすぎるため一部のみ表示しています
+					{t("files.fileTooLarge")}
 				</div>
 			)}
 
@@ -166,7 +168,7 @@ export function CodeViewer({
 						type="button"
 						onClick={onTogglePreview}
 						className="flex items-center gap-1 px-2.5 py-1.5 text-sm text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
-						title="Preview"
+						title={t("files.preview")}
 					>
 						<Eye className="w-4 h-4" />
 						Preview
@@ -176,7 +178,7 @@ export function CodeViewer({
 					type="button"
 					onClick={resetFontSize}
 					className="px-2.5 py-1.5 text-sm text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
-					title="フォントサイズをリセット (ピンチでズーム)"
+					title={t("files.resetFontSizeHint")}
 				>
 					{fontSize}px
 				</button>
@@ -184,7 +186,7 @@ export function CodeViewer({
 					type="button"
 					onClick={toggleWordWrap}
 					className={`p-2 rounded transition-colors ${wordWrap ? "bg-blue-600 text-th-text" : "text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover"}`}
-					title={wordWrap ? "折り返しOFF" : "折り返しON"}
+					title={wordWrap ? t("files.wrapOff") : t("files.wrapOn")}
 				>
 					<WrapText className="w-5 h-5" />
 				</button>

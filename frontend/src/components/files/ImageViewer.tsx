@@ -1,5 +1,6 @@
 import { Image, ZoomIn, ZoomOut } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 interface ImageViewerProps {
 	content: string; // base64 encoded (fallback for small images)
@@ -25,6 +26,7 @@ export function ImageViewer({
 	size,
 	srcUrl,
 }: ImageViewerProps) {
+	const { t } = useTranslation();
 	const [scale, setScale] = useState(1);
 	const [naturalSize, setNaturalSize] = useState<{
 		width: number;
@@ -64,7 +66,7 @@ export function ImageViewer({
 					type="button"
 					onClick={handleZoomOut}
 					className="p-1.5 hover:bg-th-surface-hover rounded transition-colors"
-					title="縮小"
+					title={t("files.zoomOut")}
 				>
 					<ZoomOut className="w-4 h-4" />
 				</button>
@@ -79,7 +81,7 @@ export function ImageViewer({
 					type="button"
 					onClick={handleZoomIn}
 					className="p-1.5 hover:bg-th-surface-hover rounded transition-colors"
-					title="拡大"
+					title={t("files.zoomIn")}
 				>
 					<ZoomIn className="w-4 h-4" />
 				</button>

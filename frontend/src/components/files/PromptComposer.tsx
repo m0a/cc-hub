@@ -1,5 +1,6 @@
 import { Copy, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 interface PromptComposerProps {
 	filePath: string;
@@ -20,6 +21,7 @@ export function PromptComposer({
 	onSubmit,
 	onClose,
 }: PromptComposerProps) {
+	const { t } = useTranslation();
 	const [comment, setComment] = useState("");
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -71,7 +73,7 @@ export function PromptComposer({
 					ref={textareaRef}
 					value={comment}
 					onChange={(e) => setComment(e.target.value)}
-					placeholder="コメントを追加..."
+					placeholder={t("files.addComment")}
 					rows={2}
 					className="w-full px-3 py-2 bg-th-bg border border-th-border rounded text-th-text placeholder-th-text-muted focus:outline-none focus:border-blue-500 resize-none text-sm"
 				/>
@@ -83,7 +85,7 @@ export function PromptComposer({
 						onClick={onClose}
 						className="px-3 py-1.5 text-sm text-th-text-secondary hover:text-th-text rounded transition-colors"
 					>
-						Cancel
+						{t("common.cancel")}
 					</button>
 					<button
 						type="button"
@@ -91,7 +93,7 @@ export function PromptComposer({
 						className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors"
 					>
 						<Copy className="w-3.5 h-3.5" />
-						Copy Prompt
+						{t("files.copyPrompt")}
 					</button>
 				</div>
 			</div>

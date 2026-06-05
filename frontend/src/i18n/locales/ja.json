@@ -176,7 +176,9 @@
 		"reload": "リロード",
 		"listView": "一覧表示",
 		"treeView": "ツリー表示",
-		"changedFiles": "変更ファイル"
+		"changedFiles": "変更ファイル",
+		"download": "ダウンロード",
+		"binaryNotSupported": "バイナリファイルはプレビューできません"
 	},
 	"conversation": {
 		"title": "会話",

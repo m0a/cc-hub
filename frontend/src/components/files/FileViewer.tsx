@@ -680,6 +680,8 @@ export function FileViewer({
 											onCopyPrompt={onCopyPrompt}
 											onEnablePreview={enablePreviewMode}
 											sessionWorkingDir={sessionWorkingDir}
+											filesApiBase={filesApiBase}
+											onDownload={handleDownloadFile}
 										/>
 									</div>
 								</>
@@ -752,6 +754,8 @@ export function FileViewer({
 							onCopyPrompt={onCopyPrompt}
 							onEnablePreview={enablePreviewMode}
 							sessionWorkingDir={sessionWorkingDir}
+							filesApiBase={filesApiBase}
+							onDownload={handleDownloadFile}
 						/>
 					)}
 

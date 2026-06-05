@@ -176,7 +176,9 @@
 		"reload": "Reload",
 		"listView": "List view",
 		"treeView": "Tree view",
-		"changedFiles": "Changed Files"
+		"changedFiles": "Changed Files",
+		"download": "Download",
+		"binaryNotSupported": "Binary file — preview not supported"
 	},
 	"conversation": {
 		"title": "Conversation",

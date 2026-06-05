@@ -9,11 +9,13 @@ import { startTui } from '../../../tui/src/index';
 export interface RunTuiOptions {
   port: number;
   host: string;
+  /** tmux の display-popup から呼ばれた場合の単発モード（switch-client → 終了）。 */
+  popup?: boolean;
 }
 
 export async function runTui(options: RunTuiOptions): Promise<void> {
   // `-H` の既定はサーバの bind 用 `0.0.0.0`。TUI は接続側なので localhost へ正規化する
   // （明示指定された host はそのまま尊重）。
   const host = options.host === '0.0.0.0' ? '127.0.0.1' : options.host;
-  await startTui({ port: options.port, host });
+  await startTui({ port: options.port, host, popup: options.popup ?? false });
 }

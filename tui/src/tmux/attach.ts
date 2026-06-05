@@ -38,6 +38,16 @@ export function preAttachCommands(sessionName: string, returnKey: string = RETUR
   ];
 }
 
+/**
+ * 入室中に表示する status-right 文字列（純粋関数）。
+ * `#[range=user|sessions]` でクリック可能領域を定義する。CCHUB_TMUX_CONFIG 側の
+ * `MouseDown1Status` バインドが mouse_status_range='sessions' を検知して popup を開く。
+ * 反転表示でボタンであることを明示し、F12 ヒントも併記する。
+ */
+export function attachStatusRight(returnKey: string = RETURN_KEY): string {
+  return `#[range=user|sessions,reverse] ≡ cchub #[norange,default]  ${returnKey} で一覧へ戻る `;
+}
+
 function runTmux(args: string[]): void {
   try {
     Bun.spawnSync(['tmux', ...args], { stdout: 'ignore', stderr: 'ignore' });
@@ -60,6 +70,37 @@ function captureOption(sessionName: string, name: string): string | null {
   }
 }
 
+/**
+ * popup モード用に流す tmux コマンド列（純粋関数）:
+ *   preAttachCommands（サイズ追従 + 戻りキー）+ `switch-client -t <name>`。
+ * 順序が大事。switch-client が呼ばれた瞬間に popup は閉じる（= 呼出元プロセスが
+ * 子の終了で消える）ので、事前 set-option は switch-client より前に出すこと。
+ */
+export function planSwitchClient(sessionName: string): string[][] {
+  return [...preAttachCommands(sessionName), ['switch-client', '-t', sessionName]];
+}
+
+/**
+ * popup モード用: 既存の tmux クライアントを `sessionName` に切替える。
+ * `display-popup` の中から呼ばれる想定で、`switch-client` 完了と同時に popup は
+ * 閉じる（呼出側プロセス＝popupコマンドが終了する）。
+ *
+ * 戻り値は最後の tmux コマンド（switch-client）の exit code（成功=0）。
+ */
+export function switchClient(sessionName: string): number {
+  const plan = planSwitchClient(sessionName);
+  let lastCode = 0;
+  for (const args of plan) {
+    try {
+      const proc = Bun.spawnSync(['tmux', ...args], { stdout: 'pipe', stderr: 'pipe' });
+      lastCode = proc.exitCode ?? 1;
+    } catch {
+      lastCode = 1;
+    }
+  }
+  return lastCode;
+}
+
 /** 子プロセスを stdio 継承で起動し、detach（= RETURN_KEY 等）まで同期的に待つ。 */
 export function attachSession(sessionName: string, tmuxEnv: string | undefined = process.env.TMUX): void {
   const plan = planAttach(sessionName, tmuxEnv);
@@ -72,9 +113,10 @@ export function attachSession(sessionName: string, tmuxEnv: string | undefined =
   // サイズ追従 + 戻りキーを準備。
   for (const args of preAttachCommands(sessionName)) runTmux(args);
 
-  // 入室中は status バーに戻り方を常時表示（元の値を退避して復帰後に戻す）。
+  // 入室中は status バーに「≡ cchub」ボタン + 戻り方ヒントを表示（クリックで popup）。
+  // 元の値は退避して detach 後に復帰する。
   const originalStatusRight = captureOption(sessionName, 'status-right');
-  runTmux(['set-option', '-t', sessionName, 'status-right', ` ${RETURN_KEY} で cchub の一覧へ戻る `]);
+  runTmux(['set-option', '-t', sessionName, 'status-right', attachStatusRight()]);
 
   // mouse を on にして、ホスト端末が alt-screen で wheel を ↑/↓ に変換して
   // Claude Code (Ink) の入力履歴ナビにすり替わるのを防ぐ。tmux がマウスを掴めば

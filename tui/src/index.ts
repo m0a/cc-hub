@@ -8,7 +8,7 @@ import { resolveToken } from './api/auth';
 import { type ApiClient, createClient } from './api/client';
 import { getSessions } from './api/sessions';
 import { Root } from './components/Root';
-import { attachSession } from './tmux/attach';
+import { attachSession, switchClient } from './tmux/attach';
 import type { ListAction } from './types';
 
 const ALT_ON = '\x1b[?1049h';
@@ -17,6 +17,12 @@ const ALT_OFF = '\x1b[?1049l';
 export interface StartTuiOptions {
   port: number;
   host: string;
+  /**
+   * popup モード: tmux の display-popup から呼ばれる前提。alt-screen はスキップし、
+   * Enter で `tmux switch-client` してそのまま 1 回で終了する（popup も同時に閉じる）。
+   * detach ループはしない。
+   */
+  popup?: boolean;
 }
 
 function isLocalHost(host: string): boolean {
@@ -101,7 +107,17 @@ export async function startTui(opts: StartTuiOptions): Promise<void> {
     process.exit(1);
   }
 
-  // alt-screen ループ: 一覧 → Enter で入室（alt 退出 → tmux attach 子プロセス → alt 復帰）→ q で終了。
+  // popup モード: display-popup 自身が overlay として描画される（独自の alt-screen 不要）。
+  // Enter で switch-client → popup は呼出側 client に紐付くので自動で閉じる。1 回で終了。
+  if (opts.popup) {
+    const action = await renderRootOnce(client, baseUrl, token);
+    if (action.type === 'attach') {
+      switchClient(action.sessionName);
+    }
+    return;
+  }
+
+  // 通常モード: alt-screen ループ。一覧 → Enter で入室（alt 退出 → tmux attach → alt 復帰）→ q で終了。
   process.on('exit', () => {
     try {
       process.stdout.write(ALT_OFF);
@@ -125,15 +141,17 @@ export async function startTui(opts: StartTuiOptions): Promise<void> {
   }
 }
 
-// `bun run src/index.ts [-p <port>] [-H <host>]` で直接起動された場合の引数処理。
+// `bun run src/index.ts [-p <port>] [-H <host>] [--popup]` で直接起動された場合の引数処理。
 if (import.meta.main) {
   const argv = process.argv.slice(2);
   let port = 5923;
   let host = '127.0.0.1';
+  let popup = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if ((a === '-p' || a === '--port') && argv[i + 1]) port = Number.parseInt(argv[++i], 10);
     else if ((a === '-H' || a === '--host') && argv[i + 1]) host = argv[++i];
+    else if (a === '--popup') popup = true;
   }
-  await startTui({ port, host });
+  await startTui({ port, host, popup });
 }

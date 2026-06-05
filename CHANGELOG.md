@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.172] - 2026-06-06
+
+モバイルのファイルViewer フッターのタップ性改善 ＋ アーキテクチャ情報の更新。
+
+### Fixed
+- **モバイル: ファイルViewer フッターのボタンが小さく操作しづらい問題を改善**: Row1 のアイコンボタン（戻る / アップロード / 隠しファイル / ダウンロード / 閉じる）を下段セッションバー並み（`p-1.5`→`p-2.5`、アイコン 16px→20px）に拡大し、タブ・Source/Preview を `text-sm` 化。横幅対策にタイトル幅を 120px→84px に詰め、overflow なしを実機確認（`frontend/src/components/files/FileViewer.tsx`）
+
+### Changed
+- **architecture: ファイルViewer 脱モノリス (#311-#314) を反映**: 新規 `FileContentView` / `ChangesView` コンポーネントと `useViewerSettings` / `usePinchZoom` / `useScrollRatio` / `useViewHistory` フックを追加し、FileViewer / CodeViewer / DiffViewer / MarkdownViewer の説明と親子関係を更新（`architecture.json`, `architecture.html`）
+
 ## [0.1.171] - 2026-06-05
 
 ファイルViewer の作り込み（Phase 1-4）。共通化による脱モノリス・重複解消に加え、Markdown画像の peer 対応・バイナリ表示ガード・i18n 配線を実施。

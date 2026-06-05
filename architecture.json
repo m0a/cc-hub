@@ -1,7 +1,7 @@
 {
   "name": "CC Hub",
-  "version": "0.1.171",
-  "generated": "2026-06-05",
+  "version": "0.1.172",
+  "generated": "2026-06-06",
   "summary": "Web-based terminal session manager for Claude Code. Runs Claude Code instances in tmux sessions and provides a web UI for remote access from tablets/mobile devices.",
   "stack": {
     "backend": "Bun runtime + Hono",
@@ -749,9 +749,10 @@
       {
         "name": "FileViewer",
         "file": "frontend/src/components/files/FileViewer.tsx",
-        "summary": "ファイルブラウザ + コンテンツビューアのコンテナ。Claude 変更 / Git 変更トグル、ブラウザ履歴ナビ、アップロード / ダウンロード、動画 / 音声再生。v0.1.108 で選択ファイル highlight + スクロール保持を実装",
+        "summary": "ファイルブラウザ + コンテンツビューアのコンテナ。脱モノリスでレイアウト + 状態のオーケストレーションに縮小し、描画分岐は FileContentView、変更一覧は ChangesView、戻るナビは useViewHistory に分離 (#312)。Claude / Git 変更トグル、アップロード / ダウンロード、wide(2ペイン) / mobile(1ペイン) の 2 レイアウト",
         "hooks": [
-          "useFileViewer"
+          "useFileViewer",
+          "useViewHistory"
         ],
         "parents": [
           "DesktopLayout",
@@ -768,21 +769,46 @@
         ]
       },
       {
-        "name": "CodeViewer",
-        "file": "frontend/src/components/files/CodeViewer.tsx",
-        "summary": "シンタックスハイライト付きコード表示",
+        "name": "FileContentView",
+        "file": "frontend/src/components/files/FileContentView.tsx",
+        "summary": "image / media / markdown / html / code / diff の描画スイッチを 1 箇所に集約し、wide / mobile 両レイアウトから呼ぶ。非画像バイナリ (encoding=base64) はプレビュー不可プレースホルダ + ダウンロードに振り分け (#312 / #313)",
         "hooks": [],
         "parents": [
           "FileViewer"
         ]
       },
       {
-        "name": "DiffViewer",
-        "file": "frontend/src/components/files/DiffViewer.tsx",
-        "summary": "ファイル変更のサイドバイサイド diff 表示",
+        "name": "ChangesView",
+        "file": "frontend/src/components/files/ChangesView.tsx",
+        "summary": "Claude 変更 / Git 変更の一覧 (list / tree 表示)。TreeView / buildTree / gitStatusLabel を内包し、FileViewer 末尾から分離 (#312)",
         "hooks": [],
         "parents": [
           "FileViewer"
+        ]
+      },
+      {
+        "name": "CodeViewer",
+        "file": "frontend/src/components/files/CodeViewer.tsx",
+        "summary": "シンタックスハイライト付きコード表示。設定 (word-wrap / font-size)・ピンチズーム・スクロール復元を共通フックに、ハイライトを utils/highlight に委譲 (#311)",
+        "hooks": [
+          "useViewerSettings",
+          "usePinchZoom",
+          "useScrollRatio"
+        ],
+        "parents": [
+          "FileContentView"
+        ]
+      },
+      {
+        "name": "DiffViewer",
+        "file": "frontend/src/components/files/DiffViewer.tsx",
+        "summary": "ファイル変更のサイドバイサイド diff 表示。共通化に伴い font-size / ピンチズームを追加し、word-wrap・ハイライトを 3 ビューアで統一 (#311)",
+        "hooks": [
+          "useViewerSettings",
+          "usePinchZoom"
+        ],
+        "parents": [
+          "FileContentView"
         ]
       },
       {
@@ -791,16 +817,20 @@
         "summary": "画像プレビュー + ズーム (/files/raw ストリーミング利用)",
         "hooks": [],
         "parents": [
-          "FileViewer"
+          "FileContentView"
         ]
       },
       {
         "name": "MarkdownViewer",
         "file": "frontend/src/components/files/MarkdownViewer.tsx",
-        "summary": "Markdown レンダリング",
-        "hooks": [],
+        "summary": "Markdown レンダリング。共通フックで font-size / ピンチズーム / スクロール復元を統一 (#311)。画像 src は filesApiBase 経由で remote peer に対応 (#313)",
+        "hooks": [
+          "useViewerSettings",
+          "usePinchZoom",
+          "useScrollRatio"
+        ],
         "parents": [
-          "FileViewer"
+          "FileContentView"
         ]
       },
       {
@@ -809,7 +839,7 @@
         "summary": "HTML ファイルを iframe でレンダリング",
         "hooks": [],
         "parents": [
-          "FileViewer"
+          "FileContentView"
         ]
       },
       {
@@ -818,7 +848,8 @@
         "summary": "コードビューアで選択した行をプロンプトとしてフォーマットして送信する UI パネル",
         "hooks": [],
         "parents": [
-          "FileViewer"
+          "CodeViewer",
+          "DiffViewer"
         ]
       },
       {
@@ -874,6 +905,26 @@
         "name": "useFileViewer",
         "file": "frontend/src/hooks/useFileViewer.ts",
         "summary": "ファイルビューア状態管理 (listDirectory / readFile / getGitDiff 等の API 呼び出しラップ)"
+      },
+      {
+        "name": "useViewerSettings",
+        "file": "frontend/src/hooks/useViewerSettings.ts",
+        "summary": "ファイル別 word-wrap + グローバル font-size を localStorage 永続化で一元管理 (3 ビューア共通) (#311)"
+      },
+      {
+        "name": "usePinchZoom",
+        "file": "frontend/src/hooks/usePinchZoom.ts",
+        "summary": "2 本指ピンチでフォントサイズを変更 (リスナーは要素ライフタイムに 1 度だけバインド) (#311)"
+      },
+      {
+        "name": "useScrollRatio",
+        "file": "frontend/src/hooks/useScrollRatio.ts",
+        "summary": "マウント時に scroll 比を復元し、スクロールに応じて親へ ratio を通知 (#311)"
+      },
+      {
+        "name": "useViewHistory",
+        "file": "frontend/src/hooks/useViewHistory.ts",
+        "summary": "ファイルビューアの戻るナビ。window.history と同期した view スタックで、ブラウザバック / Escape / アプリ内戻るを処理 (#312)"
       },
       {
         "name": "useAuth",

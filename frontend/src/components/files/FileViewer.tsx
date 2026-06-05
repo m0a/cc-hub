@@ -789,11 +789,11 @@ export function FileViewer({
 							<button
 								type="button"
 								onClick={handleBack}
-								className="p-1.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 rounded transition-colors"
+								className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 rounded transition-colors"
 							>
-								<ArrowLeft className="w-4 h-4" />
+								<ArrowLeft className="w-5 h-5" />
 							</button>
-							<h2 className="text-[13px] font-medium text-zinc-300 truncate max-w-[120px]">
+							<h2 className="text-[13px] font-medium text-zinc-300 truncate max-w-[84px]">
 								{viewMode === "browser"
 									? t("files.title")
 									: viewMode === "changes"
@@ -812,7 +812,7 @@ export function FileViewer({
 								<button
 									type="button"
 									onClick={handleShowBrowser}
-									className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
+									className={`px-2.5 py-1.5 text-sm rounded font-medium transition-colors ${
 										viewMode === "browser" || viewMode === "file"
 											? "bg-white/[0.08] text-zinc-300"
 											: "text-zinc-600 hover:text-zinc-400"
@@ -823,7 +823,7 @@ export function FileViewer({
 								<button
 									type="button"
 									onClick={handleShowChanges}
-									className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
+									className={`px-2.5 py-1.5 text-sm rounded font-medium transition-colors ${
 										viewMode === "changes" || viewMode === "diff"
 											? "bg-white/[0.08] text-zinc-300"
 											: "text-zinc-600 hover:text-zinc-400"
@@ -841,7 +841,7 @@ export function FileViewer({
 									<button
 										type="button"
 										onClick={togglePreviewMode}
-										className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${previewMode ? "bg-blue-600 text-white" : "bg-white/[0.04] hover:bg-white/[0.08] text-zinc-500"}`}
+										className={`px-2.5 py-1.5 text-sm rounded font-medium transition-colors ${previewMode ? "bg-blue-600 text-white" : "bg-white/[0.04] hover:bg-white/[0.08] text-zinc-500"}`}
 									>
 										{previewMode ? t("files.source") : t("files.preview")}
 									</button>
@@ -854,14 +854,14 @@ export function FileViewer({
 										type="button"
 										onClick={handleUploadClick}
 										disabled={uploading}
-										className="p-1.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-50"
+										className="p-2.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-50"
 										title={
 											uploading
 												? t("files.uploading")
 												: t("files.uploadTo", { path: currentPath })
 										}
 									>
-										<Upload className="w-4 h-4" />
+										<Upload className="w-5 h-5" />
 									</button>
 									<input
 										ref={uploadInputRef}
@@ -873,13 +873,13 @@ export function FileViewer({
 									<button
 										type="button"
 										onClick={() => setShowHidden(!showHidden)}
-										className={`p-1.5 rounded transition-colors ${showHidden ? "bg-blue-600 text-white" : "text-zinc-500 hover:text-zinc-300"}`}
+										className={`p-2.5 rounded transition-colors ${showHidden ? "bg-blue-600 text-white" : "text-zinc-500 hover:text-zinc-300"}`}
 										title={t("files.showHidden")}
 									>
 										{showHidden ? (
-											<Eye className="w-4 h-4" />
+											<Eye className="w-5 h-5" />
 										) : (
-											<EyeOff className="w-4 h-4" />
+											<EyeOff className="w-5 h-5" />
 										)}
 									</button>
 								</>
@@ -890,10 +890,10 @@ export function FileViewer({
 								<button
 									type="button"
 									onClick={handleDownloadFile}
-									className="p-1.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors"
+									className="p-2.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors"
 									title={t("files.download")}
 								>
-									<Download className="w-4 h-4" />
+									<Download className="w-5 h-5" />
 								</button>
 							)}
 
@@ -901,9 +901,9 @@ export function FileViewer({
 							<button
 								type="button"
 								onClick={onClose}
-								className="p-1.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
+								className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
 							>
-								<X className="w-4 h-4" />
+								<X className="w-5 h-5" />
 							</button>
 						</div>
 					</div>

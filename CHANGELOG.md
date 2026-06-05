@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.170] - 2026-06-05
+
+`cchub tui` で attach 後にトラックパッドスクロールが入力履歴ナビになる問題を修正。
+
+### Fixed
+- **`cchub tui`: attach 後のトラックパッドスクロールが Claude Code の入力履歴ナビに化ける問題を修正**: web UI (`tmux -CC`) は attach 時にセッション単位で `mouse off` を立てるため、その後 `cchub tui` から `tmux attach` するとセッションは mouse off のまま。alt-screen 中のホスト端末（iTerm/Terminal.app）は wheel を ↑/↓ キーに変換し、Claude Code (Ink) がそれを履歴ナビとして拾っていた。`cchub tui` の attach 前に `set-option mouse on`、detach 後に元の値へ復元するようにし、attach 中は tmux が wheel を copy-mode スクロールに振り向け、ホスト端末も wheel→arrow 変換を停止する（`tui/src/tmux/attach.ts`）
+
 ## [0.1.169] - 2026-06-05
 
 モバイル Web UI: セッション操作バーのアイコンを押しやすく。

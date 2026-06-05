@@ -1,5 +1,4 @@
 /** biome-ignore-all lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: legacy click-on-div UI; keyboard navigation provided via main shortcuts */
-import hljs from "highlight.js";
 import {
 	ChevronLeft,
 	ChevronRight,
@@ -8,37 +7,18 @@ import {
 	Plus,
 	WrapText,
 } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import "highlight.js/styles/github-dark.css";
 import { useLineSelection } from "../../hooks/useLineSelection";
+import { usePinchZoom } from "../../hooks/usePinchZoom";
+import {
+	MAX_FONTSIZE,
+	MIN_FONTSIZE,
+	useViewerSettings,
+} from "../../hooks/useViewerSettings";
+import { highlightCode } from "../../utils/highlight";
 import { getLanguageFromPath } from "./language-detect";
 import { PromptComposer } from "./PromptComposer";
-
-const WORDWRAP_STORAGE_KEY = "cchub-wordwrap";
-
-function getWordWrapSetting(fileName: string): boolean {
-	try {
-		const stored = localStorage.getItem(WORDWRAP_STORAGE_KEY);
-		if (stored) {
-			const settings = JSON.parse(stored);
-			return settings[fileName] ?? true;
-		}
-	} catch {
-		// ignore
-	}
-	return true;
-}
-
-function setWordWrapSetting(fileName: string, value: boolean) {
-	try {
-		const stored = localStorage.getItem(WORDWRAP_STORAGE_KEY);
-		const settings = stored ? JSON.parse(stored) : {};
-		settings[fileName] = value;
-		localStorage.setItem(WORDWRAP_STORAGE_KEY, JSON.stringify(settings));
-	} catch {
-		// ignore
-	}
-}
 
 interface DiffViewerProps {
 	oldContent?: string;
@@ -55,51 +35,6 @@ interface DiffLine {
 	content: string;
 	oldLineNum?: number;
 	newLineNum?: number;
-}
-
-// Split highlighted HTML into lines, properly handling unclosed span tags
-function splitHighlightedHtml(html: string): string[] {
-	const rawLines = html.split("\n");
-	const result: string[] = [];
-	let openTags: string[] = [];
-
-	for (const rawLine of rawLines) {
-		const line = openTags.join("") + rawLine;
-
-		// Track open/close span tags
-		const tags: string[] = [];
-		const tagRe = /<(\/?)span([^>]*)>/g;
-		let m: RegExpExecArray | null = tagRe.exec(line);
-		while (m !== null) {
-			if (m[1] === "/") {
-				if (tags.length > 0) tags.pop();
-			} else {
-				tags.push(m[0]);
-			}
-			m = tagRe.exec(line);
-		}
-
-		// Close unclosed tags at end of line
-		result.push(line + "</span>".repeat(tags.length));
-		openTags = tags;
-	}
-
-	return result;
-}
-
-function highlightCode(content: string, language: string): string[] {
-	if (!language || language === "plaintext") {
-		return content.split("\n");
-	}
-	try {
-		if (!hljs.getLanguage(language)) {
-			return content.split("\n");
-		}
-		const result = hljs.highlight(content, { language, ignoreIllegals: true });
-		return splitHighlightedHtml(result.value);
-	} catch {
-		return content.split("\n");
-	}
 }
 
 function computeDiff(oldText: string, newText: string): DiffLine[] {
@@ -284,20 +219,26 @@ export function DiffViewer({
 	unifiedDiff,
 	onCopyPrompt,
 }: DiffViewerProps) {
-	const [wordWrap, setWordWrap] = useState(() =>
-		getWordWrapSetting(fileName || ""),
-	);
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
+	const {
+		wordWrap,
+		toggleWordWrap,
+		fontSize,
+		setFontSize,
+		commitFontSize,
+		resetFontSize,
+	} = useViewerSettings(fileName);
 	const { selection, handleLineClick, isLineSelected, clearSelection } =
 		useLineSelection();
 
-	const toggleWordWrap = useCallback(() => {
-		const newValue = !wordWrap;
-		setWordWrap(newValue);
-		if (fileName) {
-			setWordWrapSetting(fileName, newValue);
-		}
-	}, [wordWrap, fileName]);
+	usePinchZoom({
+		ref: scrollContainerRef,
+		value: fontSize,
+		min: MIN_FONTSIZE,
+		max: MAX_FONTSIZE,
+		onChange: setFontSize,
+		onCommit: commitFontSize,
+	});
 
 	const scrollRight = useCallback(() => {
 		if (scrollContainerRef.current) {
@@ -386,6 +327,9 @@ export function DiffViewer({
 		return { added, removed };
 	}, [diffLines]);
 
+	const lineHeight = `${fontSize * 1.5}px`;
+	const gutterFontSize = `${Math.max(10, fontSize - 2)}px`;
+
 	return (
 		<div className="flex flex-col h-full bg-th-bg text-th-text font-mono text-sm">
 			{/* Header */}
@@ -441,6 +385,15 @@ export function DiffViewer({
 							</button>
 						</>
 					)}
+					{/* Font size reset */}
+					<button
+						type="button"
+						onClick={resetFontSize}
+						className="px-1.5 py-0.5 rounded text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover transition-colors"
+						title="フォントサイズをリセット (ピンチでズーム)"
+					>
+						{fontSize}px
+					</button>
 					{/* Word wrap toggle */}
 					<button
 						type="button"
@@ -479,11 +432,12 @@ export function DiffViewer({
 											: line.newLineNum || line.oldLineNum || null;
 									return (
 										<div
-											className={`shrink-0 text-th-text-muted text-right select-none border-r border-th-border bg-th-surface/50 text-xs leading-6 px-1 min-w-[2rem] ${
+											className={`shrink-0 text-th-text-muted text-right select-none border-r border-th-border bg-th-surface/50 px-1 min-w-[2rem] ${
 												onCopyPrompt && lineNum
 													? "cursor-pointer hover:text-th-text hover:bg-blue-900/30"
 													: ""
 											} ${lineNum && isLineSelected(lineNum) ? "bg-blue-800/40 text-blue-300" : ""}`}
+											style={{ fontSize: gutterFontSize, lineHeight }}
 											onClick={
 												onCopyPrompt && lineNum
 													? () => handleLineClick(lineNum)
@@ -501,20 +455,22 @@ export function DiffViewer({
 
 							{/* Indicator */}
 							<div
-								className={`w-4 shrink-0 text-center leading-6 text-xs ${
+								className={`w-4 shrink-0 text-center ${
 									line.type === "add"
 										? "text-green-400 bg-green-900/50"
 										: line.type === "remove"
 											? "text-red-400 bg-red-900/50"
 											: "text-th-text-muted"
 								}`}
+								style={{ fontSize: gutterFontSize, lineHeight }}
 							>
 								{line.type === "add" ? "+" : line.type === "remove" ? "-" : ""}
 							</div>
 
 							{/* Content */}
 							<pre
-								className={`flex-1 px-2 leading-6 ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
+								className={`flex-1 px-2 ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
+								style={{ fontSize: `${fontSize}px`, lineHeight }}
 							>
 								{highlightedMap?.has(i) ? (
 									<span

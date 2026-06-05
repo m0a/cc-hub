@@ -1,98 +1,18 @@
-/** biome-ignore-all lint/correctness/useExhaustiveDependencies: depends on refs and setters that React guarantees stable; adding them would cause unintended re-runs */
 /** biome-ignore-all lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: legacy click-on-div UI; keyboard navigation provided via main shortcuts */
 import hljs from "highlight.js";
 import { Eye, WrapText } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
 import "highlight.js/styles/github-dark.css";
 import { useLineSelection } from "../../hooks/useLineSelection";
+import { usePinchZoom } from "../../hooks/usePinchZoom";
+import { useScrollRatio } from "../../hooks/useScrollRatio";
+import {
+	MAX_FONTSIZE,
+	MIN_FONTSIZE,
+	useViewerSettings,
+} from "../../hooks/useViewerSettings";
+import { splitHighlightedHtml } from "../../utils/highlight";
 import { PromptComposer } from "./PromptComposer";
-
-const WORDWRAP_STORAGE_KEY = "cchub-wordwrap";
-const FONTSIZE_STORAGE_KEY = "cchub-fontsize";
-const DEFAULT_FONTSIZE = 14;
-const MIN_FONTSIZE = 8;
-const MAX_FONTSIZE = 32;
-
-function getWordWrapSetting(fileName: string): boolean {
-	try {
-		const stored = localStorage.getItem(WORDWRAP_STORAGE_KEY);
-		if (stored) {
-			const settings = JSON.parse(stored);
-			return settings[fileName] ?? true; // デフォルトはtrue
-		}
-	} catch {
-		// ignore
-	}
-	return true; // デフォルトはtrue
-}
-
-function setWordWrapSetting(fileName: string, value: boolean) {
-	try {
-		const stored = localStorage.getItem(WORDWRAP_STORAGE_KEY);
-		const settings = stored ? JSON.parse(stored) : {};
-		settings[fileName] = value;
-		localStorage.setItem(WORDWRAP_STORAGE_KEY, JSON.stringify(settings));
-	} catch {
-		// ignore
-	}
-}
-
-function getFontSizeSetting(): number {
-	try {
-		const stored = localStorage.getItem(FONTSIZE_STORAGE_KEY);
-		if (stored) {
-			const size = parseInt(stored, 10);
-			if (!Number.isNaN(size) && size >= MIN_FONTSIZE && size <= MAX_FONTSIZE) {
-				return size;
-			}
-		}
-	} catch {
-		// ignore
-	}
-	return DEFAULT_FONTSIZE;
-}
-
-function setFontSizeSetting(size: number) {
-	try {
-		localStorage.setItem(FONTSIZE_STORAGE_KEY, String(size));
-	} catch {
-		// ignore
-	}
-}
-
-// Calculate distance between two touch points
-function getTouchDistance(touches: TouchList): number {
-	if (touches.length < 2) return 0;
-	const dx = touches[0].clientX - touches[1].clientX;
-	const dy = touches[0].clientY - touches[1].clientY;
-	return Math.sqrt(dx * dx + dy * dy);
-}
-
-// Split highlighted HTML into lines, handling unclosed span tags
-function splitHighlightedHtml(html: string): string[] {
-	const rawLines = html.split("\n");
-	const result: string[] = [];
-	let openTags: string[] = [];
-
-	for (const rawLine of rawLines) {
-		const line = openTags.join("") + rawLine;
-		const tags: string[] = [];
-		const tagRe = /<(\/?)span([^>]*)>/g;
-		let m: RegExpExecArray | null = tagRe.exec(line);
-		while (m !== null) {
-			if (m[1] === "/") {
-				if (tags.length > 0) tags.pop();
-			} else {
-				tags.push(m[0]);
-			}
-			m = tagRe.exec(line);
-		}
-		result.push(line + "</span>".repeat(tags.length));
-		openTags = tags;
-	}
-
-	return result;
-}
 
 interface CodeViewerProps {
 	content: string;
@@ -122,109 +42,31 @@ export function CodeViewer({
 	onScrollRatioChange,
 }: CodeViewerProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
-	const [wordWrap, setWordWrap] = useState(() =>
-		getWordWrapSetting(fileName || ""),
-	);
-	const [fontSize, setFontSize] = useState(() => getFontSizeSetting());
+	const {
+		wordWrap,
+		toggleWordWrap,
+		fontSize,
+		setFontSize,
+		commitFontSize,
+		resetFontSize,
+	} = useViewerSettings(fileName);
 	const { selection, handleLineClick, isLineSelected, clearSelection } =
 		useLineSelection();
 
-	// Pinch zoom state
-	const pinchStateRef = useRef<{
-		initialDistance: number;
-		initialFontSize: number;
-	} | null>(null);
+	usePinchZoom({
+		ref: containerRef,
+		value: fontSize,
+		min: MIN_FONTSIZE,
+		max: MAX_FONTSIZE,
+		onChange: setFontSize,
+		onCommit: commitFontSize,
+	});
 
-	const toggleWordWrap = useCallback(() => {
-		const newValue = !wordWrap;
-		setWordWrap(newValue);
-		if (fileName) {
-			setWordWrapSetting(fileName, newValue);
-		}
-	}, [wordWrap, fileName]);
-
-	// Reset font size to default
-	const resetFontSize = useCallback(() => {
-		setFontSize(DEFAULT_FONTSIZE);
-		setFontSizeSetting(DEFAULT_FONTSIZE);
-	}, []);
-
-	// Pinch zoom handlers
-	useEffect(() => {
-		const container = containerRef.current;
-		if (!container) return;
-
-		const handleTouchStart = (e: TouchEvent) => {
-			if (e.touches.length === 2) {
-				// Prevent default zoom behavior
-				e.preventDefault();
-				pinchStateRef.current = {
-					initialDistance: getTouchDistance(e.touches),
-					initialFontSize: fontSize,
-				};
-			}
-		};
-
-		const handleTouchMove = (e: TouchEvent) => {
-			if (e.touches.length === 2 && pinchStateRef.current) {
-				e.preventDefault();
-				const currentDistance = getTouchDistance(e.touches);
-				const scale = currentDistance / pinchStateRef.current.initialDistance;
-				const newSize = Math.round(
-					pinchStateRef.current.initialFontSize * scale,
-				);
-				const clampedSize = Math.max(
-					MIN_FONTSIZE,
-					Math.min(MAX_FONTSIZE, newSize),
-				);
-				setFontSize(clampedSize);
-			}
-		};
-
-		const handleTouchEnd = (e: TouchEvent) => {
-			if (pinchStateRef.current && e.touches.length < 2) {
-				// Save the final font size
-				setFontSizeSetting(fontSize);
-				pinchStateRef.current = null;
-			}
-		};
-
-		container.addEventListener("touchstart", handleTouchStart, {
-			passive: false,
-		});
-		container.addEventListener("touchmove", handleTouchMove, {
-			passive: false,
-		});
-		container.addEventListener("touchend", handleTouchEnd);
-
-		return () => {
-			container.removeEventListener("touchstart", handleTouchStart);
-			container.removeEventListener("touchmove", handleTouchMove);
-			container.removeEventListener("touchend", handleTouchEnd);
-		};
-	}, [fontSize]);
-
-	// Restore scroll position from ratio on mount
-	useEffect(() => {
-		if (initialScrollRatio > 0 && containerRef.current) {
-			const el = containerRef.current;
-			requestAnimationFrame(() => {
-				el.scrollTop = initialScrollRatio * (el.scrollHeight - el.clientHeight);
-			});
-		}
-	}, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-	// Track scroll ratio for parent
-	useEffect(() => {
-		const el = containerRef.current;
-		if (!el || !onScrollRatioChange) return;
-		const handleScroll = () => {
-			const maxScroll = el.scrollHeight - el.clientHeight;
-			onScrollRatioChange(maxScroll > 0 ? el.scrollTop / maxScroll : 0);
-		};
-		el.addEventListener("scroll", handleScroll, { passive: true });
-		return () => el.removeEventListener("scroll", handleScroll);
-	}, [onScrollRatioChange]);
+	useScrollRatio({
+		ref: containerRef,
+		initialRatio: initialScrollRatio,
+		onChange: onScrollRatioChange,
+	});
 
 	// Highlight and split into per-line HTML
 	const highlightedLines = useMemo(() => {

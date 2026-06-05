@@ -1,5 +1,6 @@
 import hljs from "highlight.js";
 import { useMemo, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import "highlight.js/styles/github-dark.css";
@@ -57,6 +58,7 @@ export function MarkdownViewer({
 	sessionWorkingDir,
 	filesApiBase = "/api/files",
 }: MarkdownViewerProps) {
+	const { t } = useTranslation();
 	const containerRef = useRef<HTMLDivElement>(null);
 	const { fontSize, setFontSize, commitFontSize, resetFontSize } =
 		useViewerSettings();
@@ -226,7 +228,7 @@ export function MarkdownViewer({
 		<div className="relative flex flex-col h-full bg-th-bg text-th-text">
 			{truncated && (
 				<div className="px-3 py-1.5 bg-yellow-900/50 text-yellow-300 text-xs border-b border-yellow-800">
-					ファイルが大きすぎるため一部のみ表示しています
+					{t("files.fileTooLarge")}
 				</div>
 			)}
 
@@ -248,7 +250,7 @@ export function MarkdownViewer({
 					type="button"
 					onClick={resetFontSize}
 					className="px-1.5 py-0.5 text-xs text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover rounded transition-colors"
-					title="フォントサイズをリセット (ピンチでズーム)"
+					title={t("files.resetFontSizeHint")}
 				>
 					{fontSize}px
 				</button>

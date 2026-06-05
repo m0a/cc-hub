@@ -8,6 +8,7 @@ import {
 	WrapText,
 } from "lucide-react";
 import { useCallback, useMemo, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import "highlight.js/styles/github-dark.css";
 import { useLineSelection } from "../../hooks/useLineSelection";
 import { usePinchZoom } from "../../hooks/usePinchZoom";
@@ -219,6 +220,7 @@ export function DiffViewer({
 	unifiedDiff,
 	onCopyPrompt,
 }: DiffViewerProps) {
+	const { t } = useTranslation();
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
 	const {
 		wordWrap,
@@ -348,7 +350,7 @@ export function DiffViewer({
 								: "bg-yellow-900 text-yellow-300"
 						}`}
 					>
-						{toolName === "Write" ? "新規作成" : "編集"}
+						{toolName === "Write" ? t("files.newFile") : t("files.edited")}
 					</span>
 				)}
 			</div>
@@ -357,11 +359,11 @@ export function DiffViewer({
 			<div className="flex items-center gap-4 px-3 py-1.5 border-b border-th-border bg-th-surface/50 text-xs">
 				<span className="text-green-400 flex items-center gap-0.5">
 					<Plus className="w-3 h-3" />
-					{stats.added} 追加
+					{stats.added} {t("files.added")}
 				</span>
 				<span className="text-red-400 flex items-center gap-0.5">
 					<Minus className="w-3 h-3" />
-					{stats.removed} 削除
+					{stats.removed} {t("files.removed")}
 				</span>
 				<div className="flex items-center gap-1 ml-auto">
 					{/* Scroll buttons */}
@@ -371,7 +373,7 @@ export function DiffViewer({
 								type="button"
 								onClick={scrollLeft}
 								className="p-1 rounded text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover transition-colors"
-								title="左へスクロール"
+								title={t("files.scrollLeft")}
 							>
 								<ChevronLeft className="w-4 h-4" />
 							</button>
@@ -379,7 +381,7 @@ export function DiffViewer({
 								type="button"
 								onClick={scrollRight}
 								className="p-1 rounded text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover transition-colors"
-								title="右へスクロール"
+								title={t("files.scrollRight")}
 							>
 								<ChevronRight className="w-4 h-4" />
 							</button>
@@ -390,7 +392,7 @@ export function DiffViewer({
 						type="button"
 						onClick={resetFontSize}
 						className="px-1.5 py-0.5 rounded text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover transition-colors"
-						title="フォントサイズをリセット (ピンチでズーム)"
+						title={t("files.resetFontSizeHint")}
 					>
 						{fontSize}px
 					</button>
@@ -399,7 +401,7 @@ export function DiffViewer({
 						type="button"
 						onClick={toggleWordWrap}
 						className={`p-1 rounded transition-colors ${wordWrap ? "bg-blue-600 text-th-text" : "text-th-text-secondary hover:text-th-text hover:bg-th-surface-hover"}`}
-						title={wordWrap ? "折り返しOFF" : "折り返しON"}
+						title={wordWrap ? t("files.wrapOff") : t("files.wrapOn")}
 					>
 						<WrapText className="w-4 h-4" />
 					</button>

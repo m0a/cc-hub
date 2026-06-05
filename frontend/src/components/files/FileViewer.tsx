@@ -191,7 +191,9 @@ export function FileViewer({
 						.json()
 						.catch(() => ({ error: `${res.status}` }));
 					setUploadMessage({
-						text: `Upload failed: ${err.error || res.statusText}`,
+						text: t("files.uploadFailed", {
+						error: err.error || res.statusText,
+					}),
 						isError: true,
 					});
 					return;
@@ -199,12 +201,18 @@ export function FileViewer({
 				const result = await res.json().catch(() => null);
 				const names =
 					result?.files?.map((f: { name: string }) => f.name).join(", ") || "";
-				setUploadMessage({ text: `Uploaded: ${names}`, isError: false });
+				setUploadMessage({
+				text: t("files.uploaded", { names }),
+				isError: false,
+			});
 				await listDirectory(currentPath);
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : "Unknown error";
 				console.error(`[upload] error: ${msg}`, err);
-				setUploadMessage({ text: `Upload failed: ${msg}`, isError: true });
+				setUploadMessage({
+				text: t("files.uploadFailed", { error: msg }),
+				isError: true,
+			});
 			} finally {
 				setUploading(false);
 				if (uploadInputRef.current) uploadInputRef.current.value = "";
@@ -458,7 +466,7 @@ export function FileViewer({
 									type="button"
 									onClick={onClose}
 									className="p-2 text-zinc-300 transition-colors"
-									title="ファイル"
+									title={t("files.file")}
 								>
 									<FileText className="w-[18px] h-[18px]" />
 								</button>
@@ -467,7 +475,7 @@ export function FileViewer({
 										type="button"
 										onClick={onShowDashboard}
 										className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
-										title="ダッシュボード"
+										title={t("dashboard.title")}
 									>
 										<BarChart3 className="w-[18px] h-[18px]" />
 									</button>
@@ -476,7 +484,7 @@ export function FileViewer({
 									type="button"
 									onClick={() => listDirectory(currentPath)}
 									className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
-									title="リロード"
+									title={t("files.reload")}
 								>
 									<RotateCw className="w-[18px] h-[18px]" />
 								</button>
@@ -531,7 +539,9 @@ export function FileViewer({
 											disabled={uploading}
 											className="p-1.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-50"
 											title={
-												uploading ? "Uploading…" : `Upload to ${currentPath}`
+												uploading
+												? t("files.uploading")
+												: t("files.uploadTo", { path: currentPath })
 											}
 										>
 											<Upload className="w-4 h-4" />
@@ -643,7 +653,7 @@ export function FileViewer({
 													onClick={togglePreviewMode}
 													className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${previewMode ? "bg-blue-600 text-white" : "bg-white/[0.04] hover:bg-white/[0.08] text-zinc-500"}`}
 												>
-													{previewMode ? "Source" : "Preview"}
+													{previewMode ? t("files.source") : t("files.preview")}
 												</button>
 											)}
 										{viewMode === "file" && selectedFile && (
@@ -651,7 +661,7 @@ export function FileViewer({
 												type="button"
 												onClick={handleDownloadFile}
 												className="p-1.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors"
-												title="Download file"
+												title={t("files.downloadFile")}
 											>
 												<Download className="w-4 h-4" />
 											</button>
@@ -833,7 +843,7 @@ export function FileViewer({
 										onClick={togglePreviewMode}
 										className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${previewMode ? "bg-blue-600 text-white" : "bg-white/[0.04] hover:bg-white/[0.08] text-zinc-500"}`}
 									>
-										{previewMode ? "Source" : "Preview"}
+										{previewMode ? t("files.source") : t("files.preview")}
 									</button>
 								)}
 
@@ -846,7 +856,9 @@ export function FileViewer({
 										disabled={uploading}
 										className="p-1.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-50"
 										title={
-											uploading ? "Uploading…" : `Upload to ${currentPath}`
+											uploading
+												? t("files.uploading")
+												: t("files.uploadTo", { path: currentPath })
 										}
 									>
 										<Upload className="w-4 h-4" />
@@ -879,7 +891,7 @@ export function FileViewer({
 									type="button"
 									onClick={handleDownloadFile}
 									className="p-1.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors"
-									title="Download"
+									title={t("files.download")}
 								>
 									<Download className="w-4 h-4" />
 								</button>
@@ -939,7 +951,7 @@ export function FileViewer({
 								type="button"
 								onClick={onClose}
 								className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
-								title="ファイル"
+								title={t("files.file")}
 							>
 								<FileText className="w-5 h-5 text-zinc-300" />
 							</button>
@@ -956,7 +968,7 @@ export function FileViewer({
 								type="button"
 								onClick={() => listDirectory(currentPath)}
 								className="p-2.5 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
-								title="リロード"
+								title={t("files.reload")}
 							>
 								<RotateCw className="w-5 h-5" />
 							</button>

@@ -9,6 +9,7 @@ import {
 	Image,
 } from "lucide-react";
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { FileInfo } from "../../../../shared/types";
 import { authFetch } from "../../services/api";
 import { toHomeShortPath } from "../../utils/path";
@@ -196,6 +197,7 @@ export function FileBrowser({
 	showHidden = false,
 	selectedPath,
 }: FileBrowserProps) {
+	const { t } = useTranslation();
 	const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
 	const [dirContents, setDirContents] = useState<Map<string, FileInfo[]>>(
 		new Map(),
@@ -274,11 +276,11 @@ export function FileBrowser({
 			<div className="flex-1 overflow-y-auto">
 				{showLoadingPlaceholder ? (
 					<div className="flex items-center justify-center h-32">
-						<div className="text-th-text-muted">読み込み中...</div>
+						<div className="text-th-text-muted">{t("common.loading")}</div>
 					</div>
 				) : visibleFiles.length === 0 ? (
 					<div className="flex items-center justify-center h-32">
-						<div className="text-th-text-muted">ファイルがありません</div>
+						<div className="text-th-text-muted">{t("files.noFiles")}</div>
 					</div>
 				) : (
 					<div className="py-1">

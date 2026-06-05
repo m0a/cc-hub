@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.173] - 2026-06-06
+
+`cchub tui` に popup サイドバー機能を追加。attach 中でもセッション一覧を即座に呼び出せるように。
+
+### Added
+- **TUI: popup モード (`cchub tui --popup`)**: tmux `display-popup` から呼び出される単発モード。Enter で `tmux switch-client` してそのまま終了するので popup が自動で閉じる（`tui/src/index.ts`, `tui/src/tmux/attach.ts`）
+- **tmux F11 バインド (no-prefix)**: 左端 50col × 全高の popup サイドバーとして session list を表示。`CCHUB_TMUX_CONFIG` に同梱されサーバ起動時に自動 source される（`backend/src/services/tmux.ts`）
+- **tmux F12 バインド (no-prefix)**: detach-client（cchub TUI 一覧へ戻る）を `CCHUB_TMUX_CONFIG` 側にも追加。従来は attach 時に `preAttachCommands` で都度設定していたが、サーバレベルで常時有効に
+- **status-bar クリックボタン**: cchub TUI 経由で attach 中、status-right に `#[range=user|sessions,reverse] ≡ cchub` のクリック可能ボタンを表示。マウスクリックで F11 と同じ popup を開く。`MouseDown1Status` の `if-shell` フィルタで他の status クリックには影響しない（`tui/src/tmux/attach.ts`: `attachStatusRight`、`backend/src/services/tmux.ts`）
+
+### Notes
+- popup binding は `cchub` バイナリを PATH 経由で呼び出すため、本リリースを `cchub update` で適用したホストでのみ自動的に F11 / クリックボタンが有効になる
+- 既存の F12（一覧へ戻る）の挙動は変わらず
+
 ## [0.1.172] - 2026-06-06
 
 モバイルのファイルViewer フッターのタップ性改善 ＋ アーキテクチャ情報の更新。

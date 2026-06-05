@@ -28,6 +28,7 @@ interface CliOptions {
   sendWaitMs?: number;
   sendLines?: number;
   peekTarget?: string;
+  tuiPopup?: boolean;
 }
 
 function printHelp(): void {
@@ -79,6 +80,12 @@ send options:
 
 peek options:
   --lines <n>            Trailing rows to include in viewport (default 20)
+
+tui options:
+  --popup                One-shot mode for tmux display-popup: Enter switches
+                         the current client to the selected session and exits
+                         (the popup closes automatically). Bound to F11 by
+                         CC Hub's tmux config.
 
 ${t('cli.examples')}
   ${t('cli.exampleStart')}
@@ -144,6 +151,9 @@ export function parseArgs(args: string[]): CliOptions {
       }
       case 'tui':
         options.command = 'tui';
+        break;
+      case '--popup':
+        options.tuiPopup = true;
         break;
       case '--stdin':
         options.sendStdin = true;
@@ -371,7 +381,11 @@ async function runStatus(): Promise<void> {
 
 async function runTuiCommand(options: CliOptions): Promise<void> {
   const { runTui } = await import('./commands/tui');
-  await runTui({ port: options.port, host: options.host });
+  await runTui({
+    port: options.port,
+    host: options.host,
+    popup: options.tuiPopup ?? false,
+  });
 }
 
 async function runDebug(options: CliOptions): Promise<void> {

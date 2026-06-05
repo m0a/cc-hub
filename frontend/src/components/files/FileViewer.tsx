@@ -4,20 +4,16 @@ import {
 	ArrowLeft,
 	BarChart3,
 	ChevronDown,
-	ChevronRight,
 	Download,
 	Eye,
 	EyeOff,
 	FileText,
-	FolderTree,
-	GitBranch,
-	List,
 	MessageSquare,
 	RotateCw,
 	Upload,
 	X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
 	FileChange,
@@ -26,33 +22,23 @@ import type {
 } from "../../../../shared/types";
 import { useAuthBlobUrl } from "../../hooks/useAuthBlobUrl";
 import { useFileViewer } from "../../hooks/useFileViewer";
+import {
+	type ListMode,
+	type SelectedGitDiff,
+	useViewHistory,
+	type ViewMode,
+} from "../../hooks/useViewHistory";
 import { authFetch } from "../../services/api";
-import { stripHomeProjectPrefix, toHomeShortPath } from "../../utils/path";
-import { CodeViewer } from "./CodeViewer";
-import { DiffViewer } from "./DiffViewer";
+import { ChangesView } from "./ChangesView";
 import { FileBrowser } from "./FileBrowser";
-import { HtmlViewer } from "./HtmlViewer";
-import { ImageViewer } from "./ImageViewer";
-import { getLanguageFromPath } from "./language-detect";
-import { MarkdownViewer } from "./MarkdownViewer";
-
-type ViewMode = "browser" | "file" | "changes" | "diff";
-type ListMode = "browser" | "changes";
-type ChangesSource = "claude" | "git";
-type ChangesDisplay = "list" | "tree";
-
-const CHANGES_SOURCE_KEY = "cchub-changes-source";
-const CHANGES_DISPLAY_KEY = "cchub-changes-display";
-
-function getStoredChangesSource(): ChangesSource {
-	return (localStorage.getItem(CHANGES_SOURCE_KEY) as ChangesSource) || "git";
-}
-
-function getStoredChangesDisplay(): ChangesDisplay {
-	return (
-		(localStorage.getItem(CHANGES_DISPLAY_KEY) as ChangesDisplay) || "list"
-	);
-}
+import { FileContentView } from "./FileContentView";
+import {
+	getFileName,
+	isHtmlFile,
+	isImageFile,
+	isMarkdownFile,
+	isMediaFile,
+} from "./file-types";
 
 interface FileViewerProps {
 	sessionWorkingDir: string;
@@ -74,69 +60,6 @@ interface FileViewerProps {
 		| "lost";
 	onShowConversation?: () => void;
 	onShowDashboard?: () => void;
-}
-
-// Image extensions
-const IMAGE_EXTENSIONS = new Set([
-	".png",
-	".jpg",
-	".jpeg",
-	".gif",
-	".webp",
-	".ico",
-	".bmp",
-	".svg",
-]);
-
-// Markdown extensions
-const MARKDOWN_EXTENSIONS = new Set([".md", ".mdx", ".markdown"]);
-
-// HTML extensions (for preview mode)
-const HTML_EXTENSIONS = new Set([".html", ".htm"]);
-
-// Video/audio extensions
-const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".ogg", ".mov", ".m4v"]);
-const AUDIO_EXTENSIONS = new Set([
-	".mp3",
-	".wav",
-	".ogg",
-	".m4a",
-	".aac",
-	".flac",
-	".wma",
-]);
-
-function isImageFile(path: string): boolean {
-	const ext = path.toLowerCase().match(/\.[^.]+$/)?.[0];
-	return ext ? IMAGE_EXTENSIONS.has(ext) : false;
-}
-
-function isMarkdownFile(path: string): boolean {
-	const ext = path.toLowerCase().match(/\.[^.]+$/)?.[0];
-	return ext ? MARKDOWN_EXTENSIONS.has(ext) : false;
-}
-
-function isHtmlFile(path: string): boolean {
-	const ext = path.toLowerCase().match(/\.[^.]+$/)?.[0];
-	return ext ? HTML_EXTENSIONS.has(ext) : false;
-}
-
-function isVideoFile(path: string): boolean {
-	const ext = path.toLowerCase().match(/\.[^.]+$/)?.[0];
-	return ext ? VIDEO_EXTENSIONS.has(ext) : false;
-}
-
-function isAudioFile(path: string): boolean {
-	const ext = path.toLowerCase().match(/\.[^.]+$/)?.[0];
-	return ext ? AUDIO_EXTENSIONS.has(ext) : false;
-}
-
-function isMediaFile(path: string): boolean {
-	return isVideoFile(path) || isAudioFile(path);
-}
-
-function getFileName(path: string): string {
-	return path.split("/").pop() || path;
 }
 
 export function FileViewer({
@@ -175,18 +98,30 @@ export function FileViewer({
 	const filesApiBase =
 		peerId && peerId !== "local" ? `/api/peers/${peerId}/files` : "/api/files";
 
+	const [viewMode, setViewMode] = useState<ViewMode>("browser");
+	const [listMode, setListMode] = useState<ListMode>("browser");
+	const [previewMode, setPreviewMode] = useState(false);
+	const [showHidden, setShowHidden] = useState(false);
+	const [selectedChange, setSelectedChange] = useState<FileChange | null>(null);
+	const [selectedGitDiff, setSelectedGitDiff] =
+		useState<SelectedGitDiff | null>(null);
+	const [uploading, setUploading] = useState(false);
+	const [uploadMessage, setUploadMessage] = useState<{
+		text: string;
+		isError: boolean;
+	} | null>(null);
+	const uploadInputRef = useRef<HTMLInputElement>(null);
+
 	// `<img src>` / `<video src>` / `<audio src>` cannot send the Bearer auth
 	// header, so /files/raw 401s when CCHUB_PASSWORD is set. Fetch the bytes via
 	// authFetch and present them as a same-origin blob: URL instead. #260
 	const rawUrl =
-		selectedFile && (isImageFile(selectedFile.path) || isMediaFile(selectedFile.path))
+		selectedFile &&
+		(isImageFile(selectedFile.path) || isMediaFile(selectedFile.path))
 			? `${filesApiBase}/raw?path=${encodeURIComponent(selectedFile.path)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`
 			: null;
 	const rawBlobUrl = useAuthBlobUrl(rawUrl);
 
-	const [viewMode, setViewMode] = useState<ViewMode>("browser");
-	const [listMode, setListMode] = useState<ListMode>("browser");
-	const [previewMode, setPreviewMode] = useState(false);
 	// Scroll ratio to preserve scroll position across preview/source toggle
 	const scrollRatioRef = useRef(0);
 	const handleScrollRatioChange = useCallback((ratio: number) => {
@@ -198,18 +133,19 @@ export function FileViewer({
 	const enablePreviewMode = useCallback(() => {
 		setPreviewMode(true);
 	}, []);
-	const [showHidden, setShowHidden] = useState(false);
-	const [selectedChange, setSelectedChange] = useState<FileChange | null>(null);
-	const [selectedGitDiff, setSelectedGitDiff] = useState<{
-		path: string;
-		diff: string;
-	} | null>(null);
-	const [uploading, setUploading] = useState(false);
-	const [uploadMessage, setUploadMessage] = useState<{
-		text: string;
-		isError: boolean;
-	} | null>(null);
-	const uploadInputRef = useRef<HTMLInputElement>(null);
+
+	// Back-navigation (history stack synced with window.history + Escape).
+	const { pushToHistory, handleBack } = useViewHistory({
+		onRestore: (prev) => {
+			setViewMode(prev.viewMode);
+			setListMode(prev.listMode);
+			setSelectedChange(prev.selectedChange);
+			setSelectedGitDiff(prev.selectedGitDiff);
+			// Keep selectedFile around even when returning to browser view so the
+			// FileBrowser can highlight the most recently opened file.
+		},
+		onClose,
+	});
 
 	const handleUploadClick = useCallback(() => {
 		uploadInputRef.current?.click();
@@ -289,9 +225,7 @@ export function FileViewer({
 			const res = await authFetch(url, {}, 300_000);
 			if (!res.ok) return;
 			const cd = res.headers.get("content-disposition") ?? "";
-			const dispMatch = cd.match(
-				/filename\*?=(?:UTF-8''|")?([^";]+)"?/i,
-			);
+			const dispMatch = cd.match(/filename\*?=(?:UTF-8''|")?([^";]+)"?/i);
 			const fallback = selectedFile.path.split("/").pop() ?? "download";
 			let filename = fallback;
 			if (dispMatch?.[1]) {
@@ -315,43 +249,6 @@ export function FileViewer({
 			// best-effort download — surface nothing extra to the user
 		}
 	}, [selectedFile, sessionWorkingDir, filesApiBase]);
-
-	// View history stack for back navigation
-	// Use module-level array to survive React strict mode and re-renders
-	const viewHistoryRef = useRef<
-		Array<{
-			viewMode: ViewMode;
-			listMode: ListMode;
-			selectedChange: FileChange | null;
-			selectedGitDiff: { path: string; diff: string } | null;
-		}>
-	>([]);
-
-	const pushToHistory = useCallback(
-		(state: {
-			viewMode: ViewMode;
-			listMode: ListMode;
-			selectedChange: FileChange | null;
-			selectedGitDiff: { path: string; diff: string } | null;
-		}) => {
-			viewHistoryRef.current.push(state);
-			window.history.pushState({ fileViewer: true }, "", window.location.href);
-		},
-		[],
-	);
-
-	// Store onClose in a ref so the popstate listener always sees the latest.
-	const onCloseRef = useRef(onClose);
-	onCloseRef.current = onClose;
-
-	// handleBack for in-app button
-	const handleBack = useCallback(() => {
-		if (viewHistoryRef.current.length === 0) {
-			onCloseRef.current();
-			return;
-		}
-		window.history.back();
-	}, []);
 
 	// Detect wide screen for two-pane layout
 	const [isWideScreen, setIsWideScreen] = useState(
@@ -417,17 +314,6 @@ export function FileViewer({
 		};
 	}, []);
 
-	// Cleanup history entries on unmount (e.g. close button)
-	useEffect(() => {
-		return () => {
-			const remaining = viewHistoryRef.current.length;
-			viewHistoryRef.current = [];
-			if (remaining > 0) {
-				window.history.go(-remaining);
-			}
-		};
-	}, []);
-
 	// Initialize
 	useEffect(() => {
 		const initPath = initialPath || sessionWorkingDir;
@@ -445,31 +331,6 @@ export function FileViewer({
 		},
 		[readFile, viewMode, listMode, selectedChange, selectedGitDiff],
 	);
-
-	// Handle browser back gesture / back button
-	// Register ONCE with empty deps - use refs to access latest callbacks
-	// Use capture phase so this runs BEFORE App.tsx's bubble phase handler
-	useEffect(() => {
-		const handlePopState = (e: PopStateEvent) => {
-			const stack = viewHistoryRef.current;
-			const prev = stack.pop();
-			if (prev) {
-				e.stopImmediatePropagation();
-				setViewMode(prev.viewMode);
-				setListMode(prev.listMode);
-				setSelectedChange(prev.selectedChange);
-				setSelectedGitDiff(prev.selectedGitDiff);
-				// Keep selectedFile around even when returning to browser view so the
-				// FileBrowser can highlight the most recently opened file.
-			} else {
-				e.stopImmediatePropagation();
-				onCloseRef.current();
-			}
-		};
-
-		window.addEventListener("popstate", handlePopState, true); // capture phase
-		return () => window.removeEventListener("popstate", handlePopState, true);
-	}, []); // eslint-disable-line react-hooks/exhaustive-deps
 
 	// Handle changes tab - fetch both Claude and Git changes
 	const handleShowChanges = useCallback(async () => {
@@ -542,18 +403,6 @@ export function FileViewer({
 		viewMode,
 		listMode,
 	]);
-
-	// Keyboard handling - Escape always goes back
-	useEffect(() => {
-		const handleKeyDown = (e: KeyboardEvent) => {
-			if (e.key === "Escape") {
-				handleBack();
-			}
-		};
-
-		window.addEventListener("keydown", handleKeyDown);
-		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [handleBack]);
 
 	// Current diff display name
 	const currentDiffFileName =
@@ -819,94 +668,19 @@ export function FileViewer({
 									</div>
 									{/* Content body */}
 									<div className="flex-1 overflow-hidden">
-										{viewMode === "file" &&
-											selectedFile &&
-											(isImageFile(selectedFile.path) ? (
-												<ImageViewer
-													content={selectedFile.content}
-													mimeType={selectedFile.mimeType}
-													fileName={getFileName(selectedFile.path)}
-													size={selectedFile.size}
-													srcUrl={rawBlobUrl ?? undefined}
-												/>
-											) : isMediaFile(selectedFile.path) ? (
-												<div className="flex flex-col h-full bg-th-bg">
-													<div className="flex-1 flex items-center justify-center overflow-hidden p-2">
-														{isVideoFile(selectedFile.path) ? (
-															// biome-ignore lint/a11y/useMediaCaption: arbitrary user files; no caption track available
-															<video
-																controls
-																playsInline
-																preload="metadata"
-																className="w-full h-full object-contain rounded"
-																src={rawBlobUrl ?? undefined}
-															/>
-														) : (
-															// biome-ignore lint/a11y/useMediaCaption: arbitrary user files; no caption track available
-															<audio
-																controls
-																preload="metadata"
-																className="w-full max-w-md"
-																src={rawBlobUrl ?? undefined}
-															/>
-														)}
-													</div>
-													<div className="px-3 py-1.5 text-xs text-th-text-muted text-center border-t border-th-border">
-														{getFileName(selectedFile.path)} •{" "}
-														{selectedFile.size
-															? `${(selectedFile.size / 1024 / 1024).toFixed(1)} MB`
-															: ""}
-													</div>
-												</div>
-											) : previewMode && isMarkdownFile(selectedFile.path) ? (
-												<MarkdownViewer
-													content={selectedFile.content}
-													truncated={selectedFile.truncated}
-													initialScrollRatio={scrollRatioRef.current}
-													onScrollRatioChange={handleScrollRatioChange}
-													filePath={selectedFile.path}
-													sessionWorkingDir={sessionWorkingDir}
-												/>
-											) : previewMode && isHtmlFile(selectedFile.path) ? (
-												<HtmlViewer
-													content={selectedFile.content}
-													fileName={getFileName(selectedFile.path)}
-												/>
-											) : (
-												<CodeViewer
-													onCopyPrompt={onCopyPrompt}
-													content={selectedFile.content}
-													language={getLanguageFromPath(selectedFile.path)}
-													fileName={getFileName(selectedFile.path)}
-													filePath={selectedFile.path}
-													truncated={selectedFile.truncated}
-													showLineNumbers={true}
-													hasPreview={
-														isMarkdownFile(selectedFile.path) ||
-														isHtmlFile(selectedFile.path)
-													}
-													onTogglePreview={enablePreviewMode}
-													initialScrollRatio={scrollRatioRef.current}
-													onScrollRatioChange={handleScrollRatioChange}
-												/>
-											))}
-										{viewMode === "diff" && selectedChange && (
-											<DiffViewer
-												onCopyPrompt={onCopyPrompt}
-												oldContent={selectedChange.oldContent}
-												newContent={selectedChange.newContent}
-												fileName={getFileName(selectedChange.path)}
-												toolName={selectedChange.toolName}
-											/>
-										)}
-										{viewMode === "diff" && selectedGitDiff && (
-											<DiffViewer
-												onCopyPrompt={onCopyPrompt}
-												unifiedDiff={selectedGitDiff.diff}
-												fileName={getFileName(selectedGitDiff.path)}
-												toolName="git"
-											/>
-										)}
+										<FileContentView
+											viewMode={viewMode}
+											selectedFile={selectedFile}
+											selectedChange={selectedChange}
+											selectedGitDiff={selectedGitDiff}
+											previewMode={previewMode}
+											rawBlobUrl={rawBlobUrl}
+											scrollRatio={scrollRatioRef.current}
+											onScrollRatioChange={handleScrollRatioChange}
+											onCopyPrompt={onCopyPrompt}
+											onEnablePreview={enablePreviewMode}
+											sessionWorkingDir={sessionWorkingDir}
+										/>
 									</div>
 								</>
 							) : (
@@ -965,70 +739,21 @@ export function FileViewer({
 						/>
 					</div>
 
-					{viewMode === "file" &&
-						selectedFile &&
-						(isImageFile(selectedFile.path) ? (
-							<ImageViewer
-								content={selectedFile.content}
-								mimeType={selectedFile.mimeType}
-								fileName={getFileName(selectedFile.path)}
-								size={selectedFile.size}
-								srcUrl={rawBlobUrl ?? undefined}
-							/>
-						) : isMediaFile(selectedFile.path) ? (
-							<div className="flex flex-col items-center justify-center h-full p-4 bg-th-bg">
-								{isVideoFile(selectedFile.path) ? (
-									// biome-ignore lint/a11y/useMediaCaption: arbitrary user files; no caption track available
-									<video
-										controls
-										className="max-w-full max-h-full rounded"
-										src={rawBlobUrl ?? undefined}
-									/>
-								) : (
-									// biome-ignore lint/a11y/useMediaCaption: arbitrary user files; no caption track available
-									<audio
-										controls
-										className="w-full max-w-md"
-										src={rawBlobUrl ?? undefined}
-									/>
-								)}
-								<div className="mt-2 text-xs text-th-text-muted">
-									{getFileName(selectedFile.path)} •{" "}
-									{selectedFile.size
-										? `${(selectedFile.size / 1024 / 1024).toFixed(1)} MB`
-										: ""}
-								</div>
-							</div>
-						) : previewMode && isMarkdownFile(selectedFile.path) ? (
-							<MarkdownViewer
-								content={selectedFile.content}
-								truncated={selectedFile.truncated}
-								initialScrollRatio={scrollRatioRef.current}
-								onScrollRatioChange={handleScrollRatioChange}
-								filePath={selectedFile.path}
-								sessionWorkingDir={sessionWorkingDir}
-							/>
-						) : previewMode && isHtmlFile(selectedFile.path) ? (
-							<HtmlViewer
-								content={selectedFile.content}
-								fileName={getFileName(selectedFile.path)}
-							/>
-						) : (
-							<CodeViewer
-								onCopyPrompt={onCopyPrompt}
-								content={selectedFile.content}
-								language={getLanguageFromPath(selectedFile.path)}
-								fileName={getFileName(selectedFile.path)}
-								truncated={selectedFile.truncated}
-								hasPreview={
-									isMarkdownFile(selectedFile.path) ||
-									isHtmlFile(selectedFile.path)
-								}
-								onTogglePreview={enablePreviewMode}
-								initialScrollRatio={scrollRatioRef.current}
-								onScrollRatioChange={handleScrollRatioChange}
-							/>
-						))}
+					{(viewMode === "file" || viewMode === "diff") && (
+						<FileContentView
+							viewMode={viewMode}
+							selectedFile={selectedFile}
+							selectedChange={selectedChange}
+							selectedGitDiff={selectedGitDiff}
+							previewMode={previewMode}
+							rawBlobUrl={rawBlobUrl}
+							scrollRatio={scrollRatioRef.current}
+							onScrollRatioChange={handleScrollRatioChange}
+							onCopyPrompt={onCopyPrompt}
+							onEnablePreview={enablePreviewMode}
+							sessionWorkingDir={sessionWorkingDir}
+						/>
+					)}
 
 					{viewMode === "changes" && (
 						<ChangesView
@@ -1038,25 +763,6 @@ export function FileViewer({
 							isLoading={isLoading}
 							onSelectClaudeChange={handleChangeFileClick}
 							onSelectGitChange={handleGitFileClick}
-						/>
-					)}
-
-					{viewMode === "diff" && selectedChange && (
-						<DiffViewer
-							onCopyPrompt={onCopyPrompt}
-							oldContent={selectedChange.oldContent}
-							newContent={selectedChange.newContent}
-							fileName={getFileName(selectedChange.path)}
-							toolName={selectedChange.toolName}
-						/>
-					)}
-
-					{viewMode === "diff" && selectedGitDiff && (
-						<DiffViewer
-							onCopyPrompt={onCopyPrompt}
-							unifiedDiff={selectedGitDiff.diff}
-							fileName={getFileName(selectedGitDiff.path)}
-							toolName="git"
 						/>
 					)}
 				</div>
@@ -1254,428 +960,6 @@ export function FileViewer({
 					</div>
 				</div>
 			</div>
-		</div>
-	);
-}
-
-// Git status label helper
-function gitStatusLabel(status: string): {
-	label: string;
-	color: string;
-	dotColor: string;
-} {
-	switch (status) {
-		case "A":
-			return {
-				label: "Added",
-				color: "text-green-400",
-				dotColor: "bg-green-500",
-			};
-		case "D":
-			return {
-				label: "Deleted",
-				color: "text-red-400",
-				dotColor: "bg-red-500",
-			};
-		case "R":
-			return {
-				label: "Renamed",
-				color: "text-blue-400",
-				dotColor: "bg-blue-500",
-			};
-		case "??":
-			return {
-				label: "Untracked",
-				color: "text-th-text-secondary",
-				dotColor: "bg-gray-500",
-			};
-		case "U":
-			return {
-				label: "Conflict",
-				color: "text-orange-400",
-				dotColor: "bg-orange-500",
-			};
-		default:
-			return {
-				label: "Modified",
-				color: "text-yellow-400",
-				dotColor: "bg-yellow-500",
-			};
-	}
-}
-
-// Tree node for file tree view
-interface TreeNode {
-	name: string;
-	fullPath: string;
-	children: TreeNode[];
-	change?: GitFileChange | FileChange;
-	isDir: boolean;
-}
-
-function buildTree(
-	items: { path: string; change: GitFileChange | FileChange }[],
-): TreeNode[] {
-	const root: TreeNode[] = [];
-
-	for (const item of items) {
-		const parts = item.path.split("/");
-		let current = root;
-
-		for (let i = 0; i < parts.length; i++) {
-			const name = parts[i];
-			const isLast = i === parts.length - 1;
-			const fullPath = parts.slice(0, i + 1).join("/");
-
-			let existing = current.find((n) => n.name === name);
-			if (!existing) {
-				existing = { name, fullPath, children: [], isDir: !isLast };
-				if (isLast) {
-					existing.change = item.change;
-				}
-				current.push(existing);
-			}
-			current = existing.children;
-		}
-	}
-
-	return root;
-}
-
-function TreeView({
-	nodes,
-	depth,
-	onSelectGitChange,
-	onSelectClaudeChange,
-	selectedPath,
-}: {
-	nodes: TreeNode[];
-	depth: number;
-	onSelectGitChange?: (change: GitFileChange) => void;
-	onSelectClaudeChange?: (change: FileChange) => void;
-	selectedPath?: string;
-}) {
-	const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-
-	const toggleDir = (path: string) => {
-		setCollapsed((prev) => {
-			const next = new Set(prev);
-			if (next.has(path)) next.delete(path);
-			else next.add(path);
-			return next;
-		});
-	};
-
-	return (
-		<>
-			{nodes.map((node) => {
-				const isCollapsed = collapsed.has(node.fullPath);
-
-				if (node.isDir) {
-					return (
-						<div key={node.fullPath}>
-							<div
-								onClick={() => toggleDir(node.fullPath)}
-								className="flex items-center gap-1 px-2 py-1 hover:bg-th-surface cursor-pointer text-sm text-th-text-secondary"
-								style={{ paddingLeft: `${depth * 16 + 8}px` }}
-							>
-								<ChevronRight
-									className={`w-3 h-3 transition-transform ${isCollapsed ? "" : "rotate-90"}`}
-								/>
-								<span className="truncate">{node.name}</span>
-								<span className="text-xs text-th-text-muted ml-auto shrink-0">
-									{countLeaves(node)}
-								</span>
-							</div>
-							{!isCollapsed && (
-								<TreeView
-									nodes={node.children}
-									depth={depth + 1}
-									onSelectGitChange={onSelectGitChange}
-									onSelectClaudeChange={onSelectClaudeChange}
-									selectedPath={selectedPath}
-								/>
-							)}
-						</div>
-					);
-				}
-
-				// Leaf node (file)
-				const isGitChange = node.change && "status" in node.change;
-				const statusInfo = isGitChange
-					? gitStatusLabel((node.change as GitFileChange).status)
-					: null;
-				const isClaudeChange = node.change && "toolName" in node.change;
-
-				return (
-					<div
-						key={node.fullPath}
-						onClick={() => {
-							if (isGitChange && onSelectGitChange) {
-								onSelectGitChange(node.change as GitFileChange);
-							} else if (isClaudeChange && onSelectClaudeChange) {
-								onSelectClaudeChange(node.change as FileChange);
-							}
-						}}
-						className={`flex items-center gap-2 px-2 py-1 hover:bg-th-surface active:bg-th-surface-hover cursor-pointer transition-colors ${
-							selectedPath === node.fullPath ? "bg-th-surface" : ""
-						}`}
-						style={{ paddingLeft: `${depth * 16 + 8}px` }}
-					>
-						<div
-							className={`w-2 h-2 rounded-full shrink-0 ${
-								statusInfo
-									? statusInfo.dotColor
-									: isClaudeChange &&
-											(node.change as FileChange).toolName === "Write"
-										? "bg-green-500"
-										: "bg-yellow-500"
-							}`}
-						/>
-						<span className="text-sm truncate flex-1">{node.name}</span>
-						<span
-							className={`text-xs shrink-0 ${statusInfo?.color || "text-th-text-muted"}`}
-						>
-							{statusInfo
-								? statusInfo.label
-								: isClaudeChange &&
-										(node.change as FileChange).toolName === "Write"
-									? "Created"
-									: "Edited"}
-						</span>
-					</div>
-				);
-			})}
-		</>
-	);
-}
-
-function countLeaves(node: TreeNode): number {
-	if (!node.isDir) return 1;
-	return node.children.reduce((sum, child) => sum + countLeaves(child), 0);
-}
-
-// Changes list view with Claude/Git toggle and list/tree display
-function ChangesView({
-	claudeChanges,
-	gitChanges,
-	gitBranch,
-	isLoading,
-	onSelectClaudeChange,
-	onSelectGitChange,
-	selectedPath,
-}: {
-	claudeChanges: FileChange[];
-	gitChanges: GitFileChange[];
-	gitBranch: string;
-	isLoading: boolean;
-	onSelectClaudeChange: (change: FileChange) => void;
-	onSelectGitChange: (change: GitFileChange) => void;
-	selectedPath?: string;
-}) {
-	const { t } = useTranslation();
-	const [source, setSource] = useState<ChangesSource>(getStoredChangesSource);
-	const [display, setDisplay] = useState<ChangesDisplay>(
-		getStoredChangesDisplay,
-	);
-
-	const handleSourceChange = (newSource: ChangesSource) => {
-		setSource(newSource);
-		localStorage.setItem(CHANGES_SOURCE_KEY, newSource);
-	};
-
-	const handleDisplayChange = (newDisplay: ChangesDisplay) => {
-		setDisplay(newDisplay);
-		localStorage.setItem(CHANGES_DISPLAY_KEY, newDisplay);
-	};
-
-	// Deduplicate git changes by path (prefer unstaged)
-	const uniqueGitChanges = useMemo(() => {
-		const seen = new Map<string, GitFileChange>();
-		for (const change of gitChanges) {
-			if (!seen.has(change.path) || !change.staged) {
-				seen.set(change.path, change);
-			}
-		}
-		return Array.from(seen.values());
-	}, [gitChanges]);
-
-	const treeNodes = useMemo(() => {
-		if (source === "git") {
-			return buildTree(
-				uniqueGitChanges.map((c) => ({ path: c.path, change: c })),
-			);
-		}
-		return buildTree(
-			claudeChanges.map((c) => ({
-				path: stripHomeProjectPrefix(c.path),
-				change: c,
-			})),
-		);
-	}, [source, uniqueGitChanges, claudeChanges]);
-
-	const currentChanges = source === "git" ? uniqueGitChanges : claudeChanges;
-
-	if (isLoading) {
-		return (
-			<div className="flex items-center justify-center h-full">
-				<div className="text-th-text-muted">{t("common.loading")}</div>
-			</div>
-		);
-	}
-
-	return (
-		<div className="h-full flex flex-col overflow-hidden">
-			{/* Controls bar */}
-			<div className="px-2 py-1.5 border-b border-th-border bg-th-surface/50 flex items-center gap-2 flex-wrap">
-				{/* Source toggle: Claude / Git */}
-				<div className="flex items-center bg-th-surface-hover rounded p-0.5">
-					<button
-						type="button"
-						onClick={() => handleSourceChange("claude")}
-						className={`px-2 py-0.5 text-xs rounded transition-colors ${
-							source === "claude"
-								? "bg-th-surface-active text-th-text"
-								: "text-th-text-secondary hover:text-th-text"
-						}`}
-					>
-						Claude{claudeChanges.length > 0 ? `(${claudeChanges.length})` : ""}
-					</button>
-					<button
-						type="button"
-						onClick={() => handleSourceChange("git")}
-						className={`px-2 py-0.5 text-xs rounded transition-colors ${
-							source === "git"
-								? "bg-th-surface-active text-th-text"
-								: "text-th-text-secondary hover:text-th-text"
-						}`}
-					>
-						Git
-						{uniqueGitChanges.length > 0 ? `(${uniqueGitChanges.length})` : ""}
-					</button>
-				</div>
-
-				{/* Display toggle: List / Tree */}
-				<div className="flex items-center bg-th-surface-hover rounded p-0.5">
-					<button
-						type="button"
-						onClick={() => handleDisplayChange("list")}
-						className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
-							display === "list"
-								? "bg-th-surface-active text-th-text"
-								: "text-th-text-secondary hover:text-th-text"
-						}`}
-						title={t("files.listView")}
-					>
-						<List className="w-3.5 h-3.5" />
-					</button>
-					<button
-						type="button"
-						onClick={() => handleDisplayChange("tree")}
-						className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
-							display === "tree"
-								? "bg-th-surface-active text-th-text"
-								: "text-th-text-secondary hover:text-th-text"
-						}`}
-						title={t("files.treeView")}
-					>
-						<FolderTree className="w-3.5 h-3.5" />
-					</button>
-				</div>
-
-				{/* Branch indicator for git */}
-				{source === "git" && gitBranch && (
-					<span className="text-xs text-th-text-muted truncate ml-auto flex items-center gap-1">
-						<GitBranch className="w-3 h-3" />
-						{gitBranch}
-					</span>
-				)}
-			</div>
-
-			{/* Content */}
-			{currentChanges.length === 0 ? (
-				<div className="flex flex-col items-center justify-center flex-1 text-th-text-muted">
-					<FileText className="w-12 h-12 mb-2" strokeWidth={1.5} />
-					<div>{t("files.noChanges")}</div>
-				</div>
-			) : display === "tree" ? (
-				<div className="flex-1 overflow-y-auto py-1">
-					<TreeView
-						nodes={treeNodes}
-						depth={0}
-						onSelectGitChange={source === "git" ? onSelectGitChange : undefined}
-						onSelectClaudeChange={
-							source === "claude" ? onSelectClaudeChange : undefined
-						}
-						selectedPath={selectedPath}
-					/>
-				</div>
-			) : (
-				<div className="flex-1 overflow-y-auto">
-					<div className="divide-y divide-gray-800">
-						{source === "git"
-							? uniqueGitChanges.map((change, i) => {
-									const statusInfo = gitStatusLabel(change.status);
-									return (
-										<div
-											// biome-ignore lint/suspicious/noArrayIndexKey: same path may appear with different statuses; composite key keeps uniqueness
-											key={`${change.path}-${i}`}
-											onClick={() => onSelectGitChange(change)}
-											className={`flex items-center gap-3 px-3 py-2 hover:bg-th-surface active:bg-th-surface-hover cursor-pointer transition-colors ${
-												selectedPath === change.path ? "bg-th-surface" : ""
-											}`}
-										>
-											<div
-												className={`w-2 h-2 rounded-full shrink-0 ${statusInfo.dotColor}`}
-											/>
-											<div className="flex-1 min-w-0">
-												<div className="text-sm truncate">
-													{getFileName(change.path)}
-												</div>
-												<div className="text-xs text-th-text-muted truncate">
-													{change.path}
-												</div>
-											</div>
-											<div className={`text-xs shrink-0 ${statusInfo.color}`}>
-												{statusInfo.label}
-											</div>
-										</div>
-									);
-								})
-							: claudeChanges.map((change, i) => (
-									<div
-										// biome-ignore lint/suspicious/noArrayIndexKey: same path may appear multiple times; composite key keeps uniqueness
-										key={`${change.path}-${i}`}
-										onClick={() => onSelectClaudeChange(change)}
-										className={`flex items-center gap-3 px-3 py-2 hover:bg-th-surface active:bg-th-surface-hover cursor-pointer transition-colors ${
-											selectedPath === change.path ? "bg-th-surface" : ""
-										}`}
-									>
-										<div
-											className={`w-2 h-2 rounded-full shrink-0 ${
-												change.toolName === "Write"
-													? "bg-green-500"
-													: "bg-yellow-500"
-											}`}
-										/>
-										<div className="flex-1 min-w-0">
-											<div className="text-sm truncate">
-												{getFileName(change.path)}
-											</div>
-											<div className="text-xs text-th-text-muted truncate">
-												{toHomeShortPath(change.path)}
-											</div>
-										</div>
-										<div className="text-xs text-th-text-muted shrink-0">
-											{change.toolName === "Write"
-												? t("files.created")
-												: t("files.edited")}
-										</div>
-									</div>
-								))}
-					</div>
-				</div>
-			)}
 		</div>
 	);
 }

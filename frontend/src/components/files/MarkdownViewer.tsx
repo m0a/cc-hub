@@ -18,10 +18,13 @@ interface MarkdownViewerProps {
 	onScrollRatioChange?: (ratio: number) => void;
 	filePath?: string;
 	sessionWorkingDir?: string;
+	/** API prefix matching the peer (`/api/files` or `/api/peers/<id>/files`). */
+	filesApiBase?: string;
 }
 
 function resolveImageSrc(
 	src: string,
+	filesApiBase: string,
 	filePath?: string,
 	sessionWorkingDir?: string,
 ): string {
@@ -42,7 +45,7 @@ function resolveImageSrc(
 		}
 		absPath = parts.join("/");
 	}
-	return `/api/files/raw?path=${encodeURIComponent(absPath)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`;
+	return `${filesApiBase}/raw?path=${encodeURIComponent(absPath)}&sessionWorkingDir=${encodeURIComponent(sessionWorkingDir)}`;
 }
 
 export function MarkdownViewer({
@@ -52,6 +55,7 @@ export function MarkdownViewer({
 	onScrollRatioChange,
 	filePath,
 	sessionWorkingDir,
+	filesApiBase = "/api/files",
 }: MarkdownViewerProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const { fontSize, setFontSize, commitFontSize, resetFontSize } =
@@ -187,6 +191,7 @@ export function MarkdownViewer({
 						<img
 							src={resolveImageSrc(
 								typeof src === "string" ? src : "",
+								filesApiBase,
 								filePath,
 								sessionWorkingDir,
 							)}
@@ -214,7 +219,7 @@ export function MarkdownViewer({
 				{content}
 			</ReactMarkdown>
 		),
-		[content, filePath, sessionWorkingDir],
+		[content, filePath, sessionWorkingDir, filesApiBase],
 	);
 
 	return (

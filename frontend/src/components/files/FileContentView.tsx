@@ -1,3 +1,5 @@
+import { Download, FileText } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { FileChange, FileContent } from "../../../../shared/types";
 import type { SelectedGitDiff, ViewMode } from "../../hooks/useViewHistory";
 import { CodeViewer } from "./CodeViewer";
@@ -29,6 +31,10 @@ interface FileContentViewProps {
 	/** Switch a markdown/html source view into preview mode. */
 	onEnablePreview: () => void;
 	sessionWorkingDir: string;
+	/** API prefix matching the peer (`/api/files` or `/api/peers/<id>/files`). */
+	filesApiBase: string;
+	/** Download the current file (used by the binary placeholder). */
+	onDownload?: () => void;
 }
 
 function MediaContent({
@@ -68,6 +74,37 @@ function MediaContent({
 	);
 }
 
+function BinaryPlaceholder({
+	file,
+	onDownload,
+}: {
+	file: FileContent;
+	onDownload?: () => void;
+}) {
+	const { t } = useTranslation();
+	return (
+		<div className="flex flex-col items-center justify-center h-full gap-3 p-6 text-th-text-muted">
+			<FileText className="w-12 h-12" strokeWidth={1.5} />
+			<div className="text-center">
+				<div className="text-sm text-th-text-secondary break-all">
+					{getFileName(file.path)}
+				</div>
+				<div className="text-xs mt-1">{t("files.binaryNotSupported")}</div>
+			</div>
+			{onDownload && (
+				<button
+					type="button"
+					onClick={onDownload}
+					className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-th-surface-hover hover:bg-th-surface-active text-th-text transition-colors"
+				>
+					<Download className="w-4 h-4" />
+					{t("files.download")}
+				</button>
+			)}
+		</div>
+	);
+}
+
 /**
  * The single source of truth for rendering file/diff content. Both the
  * wide (two-pane) and mobile (single-pane) layouts of FileViewer render this,
@@ -86,6 +123,8 @@ export function FileContentView({
 	onCopyPrompt,
 	onEnablePreview,
 	sessionWorkingDir,
+	filesApiBase,
+	onDownload,
 }: FileContentViewProps) {
 	if (viewMode === "file" && selectedFile) {
 		const path = selectedFile.path;
@@ -115,6 +154,7 @@ export function FileContentView({
 					onScrollRatioChange={onScrollRatioChange}
 					filePath={path}
 					sessionWorkingDir={sessionWorkingDir}
+					filesApiBase={filesApiBase}
 				/>
 			);
 		}
@@ -123,6 +163,12 @@ export function FileContentView({
 			return (
 				<HtmlViewer content={selectedFile.content} fileName={getFileName(path)} />
 			);
+		}
+
+		// Non-image binary (PDF/zip/…): the backend returns base64. Don't dump it
+		// into the code viewer — offer a download instead.
+		if (selectedFile.encoding === "base64") {
+			return <BinaryPlaceholder file={selectedFile} onDownload={onDownload} />;
 		}
 
 		return (

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.174] - 2026-06-07
+
+セッション一覧の pane 操作の不具合を2件修正。
+
+### Fixed
+- **2 paneでpaneにアクセスできない**: Remote Control セッション（`bridgeSessionId` あり）の複数paneセッションをセッション一覧でタップすると jump menu のみ展開され、その下の pane一覧（各paneの focus / close / split）に到達できなくなっていた問題を修正。jump menu と pane一覧の両方を展開するようにした（`41637d3` のデグレ。`frontend/src/components/SessionList.tsx`）
+- **複数windowセッションで pane を閉じられない**: 「最後のpaneは閉じない」判定が `tmux list-panes -t <id>` で現在の window の pane しか数えず、複数window構成のセッション（各 window が1 pane）が誤って count=1 と判定され close が 400 で拒否されていた問題を修正。`-s` を付けてセッション全体の pane を数えるようにした（`backend/src/routes/sessions.ts`）
+
 ## [0.1.173] - 2026-06-06
 
 `cchub tui` に popup サイドバー機能を追加。attach 中でもセッション一覧を即座に呼び出せるように。

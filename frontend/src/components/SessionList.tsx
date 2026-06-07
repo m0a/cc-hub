@@ -804,6 +804,12 @@ function SessionItem({
 		// terminal and opening the matching session in the Claude app.
 		if (session.bridgeSessionId) {
 			setShowJumpMenu((prev) => !prev);
+			// Multi-pane: also toggle the pane list so per-pane access (focus /
+			// close / split) stays reachable for Remote Control sessions instead
+			// of being shadowed by the jump menu's early return.
+			if (session.panes && session.panes.length > 1) {
+				setPanesExpanded((prev) => !prev);
+			}
 			return;
 		}
 

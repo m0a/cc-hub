@@ -947,9 +947,12 @@ sessions.post('/:id/panes/close', async (c) => {
     return c.json({ error: 'Session not found' }, 404);
   }
 
-  // Check pane count - don't allow closing the last pane
+  // Check pane count - don't allow closing the last pane.
+  // Use `-s` so panes across ALL windows of the session are counted; without
+  // it tmux only lists the current window's panes, so a multi-window session
+  // (each window holding one pane) was mis-counted as 1 and wrongly refused.
   try {
-    const countProc = Bun.spawn(['tmux', 'list-panes', '-t', id, '-F', '#{pane_id}'], {
+    const countProc = Bun.spawn(['tmux', 'list-panes', '-s', '-t', id, '-F', '#{pane_id}'], {
       stdout: 'pipe',
       stderr: 'pipe',
     });

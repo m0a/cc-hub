@@ -432,9 +432,9 @@ Uses [Biome](https://biomejs.dev/) for linting. Configuration in `biome.json` at
 
 ### Remote Logging
 
-Frontend `console.log/warn/error/info` calls are automatically sent to the backend via `/api/logs`. Logs are written to `logs/frontend.log`.
+Frontend `console.log/warn/error/info` calls are automatically sent to the backend via `/api/logs`. Logs are written to `/tmp/cc-hub-browser.log`.
 
-This enables debugging on mobile/tablet devices without access to browser DevTools. Use `tail -f logs/frontend.log` to monitor frontend logs in real-time.
+This enables debugging on mobile/tablet devices without access to browser DevTools. Use `tail -f /tmp/cc-hub-browser.log` to monitor frontend logs in real-time (also exposed via `GET /api/logs`).
 
 ### TMUX Nesting Caveat
 

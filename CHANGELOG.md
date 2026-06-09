@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.175] - 2026-06-09
+
+ソフトキーボードの Shift+Tab を修正。
+
+### Fixed
+- **ソフトキーボードの Shift+Tab が効かない**: `TAB` キーはアクションバーにあり `ActionButton` 経由で `onSend("\t")` を直接送るため、`⇧` モディファイアを無視して常に素の `\t`（hex `09`）を送っていた。`sendKeyPress` 側にあった Shift+Tab→VT back-tab（CSI Z, `\x1b[Z`）処理は TAB に到達できず dead code だった。`ActionButton` で `⇧`+TAB のとき CSI Z を送るようにし（Claude Code の auto-mode / plan-mode / accept-edits 循環が効くように）、`⇧` 押下中はラベルを「⇧TAB」に変更（`frontend/src/components/Keyboard.tsx`）
+
 ## [0.1.174] - 2026-06-07
 
 セッション一覧の pane 操作の不具合を2件修正。

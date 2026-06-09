@@ -401,6 +401,13 @@ export function Keyboard({
 				onUrlExtract?.();
 			} else if (keyDef.key === "MODE_SWITCH") {
 				onModeSwitch?.();
+			} else if (keyDef.key === "\t" && shiftPressed) {
+				// Shift+Tab → VT back-tab (CSI Z). TAB lives in the action bar and
+				// is sent directly from here, so the shift modifier toggled in the
+				// main keyboard would otherwise be ignored. Claude Code uses
+				// back-tab to cycle auto-mode / plan-mode / accept-edits.
+				onSend("\x1b[Z");
+				setShiftPressed(false);
 			} else {
 				onSend(keyDef.key);
 			}
@@ -441,7 +448,7 @@ export function Keyboard({
 				className={`${compact ? "h-[26px] text-[10px]" : "h-[30px] text-[11px]"} min-w-[34px] px-1.5 flex items-center justify-center rounded-md font-medium select-none ${getBgColor()}`}
 				data-onboarding={getOnboardingAttr()}
 			>
-				{keyDef.label}
+				{keyDef.key === "\t" && shiftPressed ? "⇧TAB" : keyDef.label}
 			</button>
 		);
 	};

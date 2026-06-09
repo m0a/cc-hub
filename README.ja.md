@@ -40,6 +40,11 @@ Claude Codeセッションをリモート管理するWebベースのターミナ
 - **会話ビューア** - Markdownレンダリング、画像表示、システムサマリー区別表示
 - **プロンプト検索** - 全セッションにまたがるプロンプト履歴の検索
 - **Hook通知** - Claude Codeイベント（応答完了、入力待ち等）のブラウザプッシュ通知
+- **Codex対応** - Claude Codeと並行してCodex CLIセッションを実行（会話ビュー、使用量トラッキング）
+- **チャットビュー** - ターミナルの代わりに現在のセッションを会話形式で表示
+- **Peerサーバー** - 複数のCC HubサーバーをTailscale経由で連携（自動検出、セッション/履歴/ダッシュボードの集約）
+- **ローカルTUI** - `cchub tui` によるターミナルUI（セッション一覧・履歴検索）
+- **リモートペイン制御** - `cchub send` / `cchub peek` でローカル・peerサーバーのペインをCLIから操作
 - **多言語対応** - 英語・日本語UIの自動言語検出
 - **オンボーディング** - 初回ユーザー向けスポットライト式操作ガイド
 
@@ -115,16 +120,30 @@ cchub -P mypassword          # パスワード付きで起動
 
 # サービス登録（自動再起動・自動更新）
 cchub setup -P mypassword
+cchub uninstall              # サービス登録を解除
 
 # 更新
 cchub update                 # 最新版に更新
 cchub update --check         # 更新確認のみ
+cchub update --auto          # 自動更新モード（タイマー用）
 
 # Hook通知（Claude Code hookから使用）
 cchub notify                 # hookイベント送信（stdinからJSON読み取り）
 
 # 状態確認
 cchub status
+
+# リモートペイン制御（target: <peer>:<session>:<paneId>）
+cchub send <target> [text]   # ローカル/peerサーバーのペインに入力を送信
+cchub peek <target>          # ペインの現在のビューポートを取得
+
+# ローカルターミナルUI
+cchub tui                    # セッション一覧・履歴検索のTUI
+cchub tui --popup            # tmux display-popup 用ワンショットモード（F11にバインド）
+
+# デバッグ
+cchub debug <sub>            # 稼働中サービスのBunインスペクタ操作
+                             # sub: enable | disable | profile | status
 ```
 
 ### オプション
@@ -136,6 +155,20 @@ cchub status
 | `-P, --password` | 認証パスワード | なし |
 | `-h, --help` | ヘルプ表示 | - |
 | `-v, --version` | バージョン表示 | - |
+
+**`cchub send` オプション** — `<target>` は `<peer>:<session>:<paneId>`（peer は `local`、peer ID、ニックネームのいずれか）:
+
+| オプション | 説明 |
+|-----------|------|
+| `--stdin` | 引数の代わりにstdinからペイロードを読み取る |
+| `--newline` | ペイロードに `\r` を追加（Enterを1回押す動作） |
+| `--submit` | ブラケットペースト + Enter でラップ（Claude Code / Codex TUIへの送信、長文対応） |
+| `--base64` | ペイロードをbase64として扱う（バイナリセーフ） |
+| `--wait` | 送信後にペインのビューポートと検出状態（idle / processing / permission_prompt / ask_user_question）を表示 |
+| `--wait-ms <n>` | `--wait` 時のスナップショットまでの遅延（デフォルト 800） |
+| `--lines <n>` | ビューポートに含める末尾行数（デフォルト 20、`cchub peek` でも使用可） |
+
+**`cchub debug` オプション**: `--seconds <n>`（`profile` 用: N秒後に自動無効化）
 
 ### Tailscale設定
 

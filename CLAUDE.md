@@ -39,6 +39,8 @@ bun run stop
 backend/     # Hono API server (Bun runtime)
 frontend/    # React SPA (Vite + Tailwind v4)
 shared/      # Shared types and Zod schemas (types.ts)
+tui/         # Local terminal UI for `cchub tui` (Ink + React on Bun)
+glasses/     # EVEN G2 smart glasses app (EvenHub SDK, built to out.ehpk)
 ```
 
 ### Backend Services
@@ -48,6 +50,7 @@ shared/      # Shared types and Zod schemas (types.ts)
 - **TmuxLayoutParser** (`services/tmux-layout-parser.ts`) - Parses tmux layout strings into `TmuxLayoutNode` tree for frontend rendering
 - **TmuxOctalDecoder** (`services/tmux-octal-decoder.ts`) - Decodes tmux octal-encoded output, raw byte processing for split UTF-8 sequences, hex encoding for `send-keys -H`
 - **PaneViewport** (`services/pane-viewport.ts`) - Captures a viewport (visible region + optional scrollback offset) from a pane via `capture-pane -e -p -S/-E`. tmux is the single source of truth for both visible content and history; the frontend is render-only with `scrollback: 0`. Includes `padFill` for normal-screen inline TUIs (Claude Code etc.) that don't paint the full pane height — trims trailing blanks down to the cursor row and prepends scrollback so the user never sees "void" rows, shifting the cursor `y` accordingly. altScreen TUIs (htop/vim/Codex) are returned untouched
+- **ViewportCursorPolicy** (`services/viewport-cursor-policy.ts`) - Per-agent cursor policy for viewport frames (`default` vs `codex-footer`), decides cursor visibility and padFill cursor shift
 - **ClaudeCodeService** (`services/claude-code.ts`) - Monitors Claude Code state from `.jsonl` files, PTY-based session matching
 - **SessionHistoryService** (`services/session-history.ts`) - Reads past Claude Code session history and conversations
 - **SessionMetadataService** (`services/session-metadata.ts`) - Persists session metadata (theme, title, session order, last known sessions for recovery after reboot)
@@ -64,9 +67,14 @@ shared/      # Shared types and Zod schemas (types.ts)
 - **CodexService** (`services/codex.ts`) - Codex CLI integration: spawns/attaches Codex sessions, watches state files
 - **CodexConversationService** (`services/codex-conversation.ts`) - Reads Codex conversation transcripts and exposes them to the UI
 - **CodexUsageService** (`services/codex-usage.ts`) - Tracks Codex token usage and rate-limit state
+- **CodexHistoryService** (`services/codex-history.ts`) - Reads Codex rollout transcripts (`~/.codex/sessions`) and merges them into project history alongside Claude Code sessions
 - **ConversationWatcher** (`services/conversation-watcher.ts`) - Watches Claude Code / Codex `.jsonl` files and emits conversation updates to subscribed WebSocket clients
 - **HookStatusService** (`services/hook-status.ts`) - Tracks per-session indicator state driven by Claude Code / Codex hook events (`Stop`, `PreToolUse`, `UserPromptSubmit`, etc.)
 - **AuthService** (`services/auth.ts`) - Password-based authentication with session tokens
+- **PeerRegistry** (`services/peer-registry.ts`) - Persists peer server metadata to `peers.json` (with mutation locking), records per-peer success/failure state
+- **PeerAuth** (`services/peer-auth.ts`) - Proxy login to peer servers (`POST /api/auth/login`), stores JWT tokens for subsequent API/WS calls, marks peers `unauthorized` on 401
+- **PeerDiscovery** (`services/peer-discovery.ts`) - Scans the Tailscale tailnet (`tailscale status --json`) and probes each peer's `:5923/health` in parallel to find running CC Hub instances
+- **PeerUrl** (`services/peer-url.ts`) - SSRF guard for peer URLs (#235): only allows Tailscale hosts (`*.ts.net`, CGNAT `100.64.0.0/10`, ULA `fd7a:115c:a1e0::/48`)
 
 ### Key API Routes
 
@@ -80,6 +88,9 @@ shared/      # Shared types and Zod schemas (types.ts)
 - `POST /:id/panes/close` - Close a pane (`{ paneId }`, rejects last pane)
 - `POST /:id/panes/split` - Split a pane (`{ paneId, direction: 'h'|'v' }`)
 - `POST /:id/panes/respawn` - Respawn a dead pane
+- `POST /:id/panes/input` - Send input to a pane over REST (used by `cchub send` / peers)
+- `GET /:id/panes/:paneId/viewport` - Capture a pane viewport over REST (used by `cchub peek` / `--wait`)
+- `POST /:id/prompt` - Send a prompt to the session's agent
 - `GET /:id/copy-mode` - Get tmux copy mode selection
 - `PUT /:id/theme` - Set session color theme
 - `PUT /:id/title` - Set session custom title
@@ -111,6 +122,20 @@ shared/      # Shared types and Zod schemas (types.ts)
 - `GET /language` - Detect file language
 - `POST /mkdir` - Create directory
 
+**Peers** (`/api/peers`) — multi-server federation over Tailscale:
+- `GET /` - List registered peers
+- `GET /discover` - Discover CC Hub instances on the Tailscale tailnet
+- `POST /` - Register a peer / `DELETE /:id` - Remove a peer
+- `POST /:id/verify` - Re-verify connectivity and auth for a peer
+- `PUT /order` - Set peer display order
+- `GET|PUT /session-order` - Get/set cross-peer session display order
+- `GET /sessions` - Aggregate active sessions across all peers
+- `GET /history/projects` - Aggregate project history across peers
+- `GET /history/:peerId/projects/:dirName` - Sessions for a peer's project
+- `GET /history/:peerId/:sessionId/conversation` - Conversation from a peer session
+- `POST /history/:peerId/resume` - Resume a session on a peer
+- `GET /:peerId/files/browse`, `POST /:peerId/files/mkdir`, `POST /:peerId/upload/image`, `GET /:peerId/dashboard` - Proxied peer operations
+
 **Terminal WebSocket** (`/ws/mux`):
 - Multiplexed WebSocket — single connection serves all sessions
 - Client subscribes/unsubscribes per session via JSON messages
@@ -121,11 +146,13 @@ shared/      # Shared types and Zod schemas (types.ts)
 **Other**:
 - `GET /api/dashboard` - Dashboard data (usage limits, statistics, cost estimates, system metrics, usage history)
 - `POST /api/upload/image` - Upload image file
-- `POST /api/notify` - Receive hook events from Claude Code
-- `POST /api/auth` - Login
+- `POST /api/notify` - Receive hook events from Claude Code / Codex
+- `GET /api/notify/hook-status` - Per-session hook indicator state (lists sessions with missing hook setup)
+- `POST /api/auth/login` - Login
+- `GET /api/auth/required` - Whether password auth is enabled
 - `POST /api/auth/logout` - Logout
 - `GET /api/auth/me` - Get current user
-- `POST /api/logs` - Frontend log submission
+- `POST /api/logs` - Frontend log submission / `GET /api/logs` - Read logs / `DELETE /api/logs` - Clear logs
 
 ### Frontend Components
 
@@ -144,6 +171,17 @@ shared/      # Shared types and Zod schemas (types.ts)
 - **SessionHistory.tsx** - Past session browser with project grouping
 - **ConversationViewer.tsx** - Markdown-rendered conversation display with image support
 
+**History V2** (`components/history/`, opt-in via `cchub-history-v2` localStorage flag):
+- **SessionHistoryV2.tsx** - Flat searchable history list with facet filtering
+- **HistoryRowV2.tsx** - Single history row item
+- **HistoryFacetSidebar.tsx** / **HistoryFacetDrawer.tsx** - Facet filters (desktop sidebar / mobile drawer)
+- **HistoryActiveChips.tsx** - Active filter chips
+- **VirtualizedHistoryList.tsx** - Virtualized scrolling for large histories
+
+**Peers**:
+- **PeerManager.tsx** - Peer server management UI (register, verify, discover, reorder, remove)
+- **dashboard/PeerServerCard.tsx** - Per-peer server info card with system metrics
+
 **Chat** (`components/chat/`):
 - **ChatView.tsx** - Conversation-style view of the current session, replacing the terminal area when "Chat" mode is selected
 - **ChatComposer.tsx** - Multi-line message composer used by ChatView
@@ -156,6 +194,8 @@ shared/      # Shared types and Zod schemas (types.ts)
 **Files** (`components/files/`):
 - **FileViewer.tsx** - Container with file browser and content viewer, Claude/Git change toggle, browser history navigation, file upload/download, video/audio playback
 - **FileBrowser.tsx** - Directory tree navigation
+- **FileContentView.tsx** - Routes file content to the right viewer (code/image/markdown/html/media)
+- **ChangesView.tsx** - Claude Code / Git change list with per-file diff navigation
 - **CodeViewer.tsx** - Syntax highlighted code display
 - **DiffViewer.tsx** - Side-by-side diff view for file changes
 - **ImageViewer.tsx** - Image preview with zoom (uses `/files/raw` streaming for large images)
@@ -195,6 +235,18 @@ shared/      # Shared types and Zod schemas (types.ts)
 - **useConversationStream.ts** - Subscribes to `/ws/mux` conversation streams (`subscribe-conversation`) and exposes incremental conversation updates
 - **useAgentConversation.ts** - Unified conversation hook that selects between Claude Code and Codex sources for the active session
 - **useCodexConversation.ts** - Codex-specific conversation loader (transcript + token usage)
+- **usePeers.ts** - Peer list CRUD and state management (`/api/peers`)
+- **usePeerConnection.ts** - Resolves connection info (HTTP/WS URLs, auth) for the active peer
+- **usePeerSessionsWatcher.ts** - Persistent `/ws/mux` WebSocket per remote peer so `sessions-updated` pushes arrive without polling
+- **usePeerServerMetrics.ts** - Fetches a peer's dashboard metrics for `PeerServerCard`
+- **useHistoryActions.ts** - History operations (resume, delete, metadata updates)
+- **useFlatHistoryItems.ts** - Flattens project-grouped history into a filterable list for History V2
+- **useHistoryV2Flag.ts** - History V2 opt-in flag (`cchub-history-v2` localStorage)
+- **useViewHistory.ts** - File viewer back/forward navigation history (browser/file/changes/diff view modes)
+- **useViewerSettings.ts** - File viewer preferences (word wrap, font size) persisted to localStorage
+- **useAuthBlobUrl.ts** - Fetches protected resources with auth headers and exposes them as blob URLs
+- **usePinchZoom.ts** - Pinch-to-zoom gesture handling for touch devices
+- **useScrollRatio.ts** - Tracks scroll position ratio of a scrollable element
 
 ### Keyboard Shortcuts (Desktop)
 
@@ -243,16 +295,33 @@ cchub -P password       # With password auth
 
 # Management
 cchub setup -P pass     # Register systemd/launchd service
+cchub uninstall         # Remove service registration
 cchub update            # Update from GitHub Releases
 cchub update --check    # Check only (no update)
+cchub update --auto     # Auto-update mode (for timer)
 cchub status            # Show service status
 
 # Hook notification
 cchub notify            # Send hook event (reads JSON from stdin)
 
+# Remote pane control (target: <peer>:<session>:<paneId>, peer = 'local' | peer id | nickname)
+cchub send local:dev:%1 "ls"        # Send text to a pane
+cchub send local:dev:%1 --submit "fix the bug"  # Bracketed-paste + Enter (Claude/Codex TUI submit)
+cchub send local:dev:%1 --stdin     # Read payload from stdin (--base64 for binary-safe)
+cchub send local:dev:%1 --wait "y"  # Send, then snapshot viewport with detected state
+                                    # (--wait-ms <n> delay, --lines <n> rows)
+cchub peek local:dev:%1             # Snapshot a pane viewport (--lines <n>, default 20)
+
 # Local terminal UI (tui/ workspace, Ink)
 cchub tui               # Launch the local TUI (session list + history search)
 cchub tui -p 3456       # Connect to a dev server
+cchub tui --popup       # One-shot mode for tmux display-popup (bound to F11)
+
+# Debugging (Bun inspector on the running service)
+cchub debug status      # Show inspector state
+cchub debug enable      # Enable inspector (port 9229)
+cchub debug disable     # Disable inspector
+cchub debug profile --seconds 30   # Enable for N seconds then auto-disable
 
 # Help
 cchub --help

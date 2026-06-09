@@ -40,6 +40,11 @@ Left: session list adapts to a single-column layout on smartphones. Right: termi
 - **Conversation Viewer** - Markdown rendering, image display, system summary distinction
 - **Prompt Search** - Search across prompt history from all sessions
 - **Hook Notifications** - Browser push notifications for Claude Code events (response complete, user input needed)
+- **Codex Support** - Run Codex CLI sessions alongside Claude Code (conversation view, usage tracking)
+- **Chat View** - Conversation-style view of the current session as an alternative to the terminal
+- **Peer Servers** - Connect multiple CC Hub servers over Tailscale (auto-discovery, aggregated sessions/history/dashboard)
+- **Local TUI** - `cchub tui` terminal UI with session list and history search
+- **Remote Pane Control** - `cchub send` / `cchub peek` to drive panes on local or peer servers from the CLI
 - **i18n** - English and Japanese UI with automatic language detection
 - **Onboarding Walkthrough** - Spotlight-style guide for first-time users
 
@@ -115,16 +120,30 @@ cchub -P mypassword          # Start with password
 
 # Register service (auto-restart, auto-update)
 cchub setup -P mypassword
+cchub uninstall              # Remove service registration
 
 # Update
 cchub update                 # Update to latest
 cchub update --check         # Check for updates only
+cchub update --auto          # Auto-update mode (for timer)
 
 # Hook notification (used by Claude Code hooks)
 cchub notify                 # Send hook event (reads JSON from stdin)
 
 # Status
 cchub status
+
+# Remote pane control (target: <peer>:<session>:<paneId>)
+cchub send <target> [text]   # Send input to a pane on a local or peer server
+cchub peek <target>          # Snapshot a pane's current viewport
+
+# Local terminal UI
+cchub tui                    # Session list + history search in the terminal
+cchub tui --popup            # One-shot mode for tmux display-popup (bound to F11)
+
+# Debugging
+cchub debug <sub>            # Bun inspector on the running service
+                             # sub: enable | disable | profile | status
 ```
 
 ### Options
@@ -136,6 +155,20 @@ cchub status
 | `-P, --password` | Auth password | none |
 | `-h, --help` | Show help | - |
 | `-v, --version` | Show version | - |
+
+**`cchub send` options** — `<target>` is `<peer>:<session>:<paneId>` where peer is `local`, a peer id, or a nickname:
+
+| Option | Description |
+|--------|-------------|
+| `--stdin` | Read payload from stdin instead of the argument |
+| `--newline` | Append `\r` to the payload (acts like pressing Enter once) |
+| `--submit` | Wrap payload in bracketed paste markers + Enter (Claude Code / Codex TUI submit, works at any length) |
+| `--base64` | Treat payload as base64 (binary-safe) |
+| `--wait` | After sending, snapshot the pane viewport with detected state (idle / processing / permission_prompt / ask_user_question) |
+| `--wait-ms <n>` | Delay before snapshot when `--wait` is set (default 800) |
+| `--lines <n>` | Trailing rows to include in the viewport (default 20, also for `cchub peek`) |
+
+**`cchub debug` options**: `--seconds <n>` (for `profile`: enable for N seconds then auto-disable).
 
 ### Tailscale Configuration
 

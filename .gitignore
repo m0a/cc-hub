@@ -47,3 +47,7 @@ frontend/dev-dist/
 # Claude Code user prompt history (local only)
 .claude-user-prompts/
 profiles/
+
+# Generated analysis reports (one-off artifacts)
+/report.html
+/report-ja.html

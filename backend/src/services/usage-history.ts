@@ -5,6 +5,13 @@ const HISTORY_FILE = '/tmp/cchub-usage-history.json';
 const THROTTLE_MS = 30 * 1000; // 30 seconds
 const MAX_AGE_MS = 8 * 24 * 60 * 60 * 1000; // 8 days
 
+function onlySnapshots(items: unknown[]): UsageSnapshot[] {
+  return items.filter(
+    (s): s is UsageSnapshot =>
+      !!s && typeof s === 'object' && 'timestamp' in (s as Record<string, unknown>),
+  );
+}
+
 export class UsageHistoryService {
   private lastRecordTime = 0;
 
@@ -12,9 +19,13 @@ export class UsageHistoryService {
     try {
       const content = await readFile(HISTORY_FILE, 'utf-8');
       const parsed = JSON.parse(content);
-      // Handle both array format and legacy {snapshots: [...]} format
+      // Handle both the current array format and the legacy
+      // { snapshots: [...] } format written by older versions.
       if (Array.isArray(parsed)) {
-        return parsed.filter((s: unknown) => s && typeof s === 'object' && 'timestamp' in (s as Record<string, unknown>));
+        return onlySnapshots(parsed);
+      }
+      if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { snapshots?: unknown }).snapshots)) {
+        return onlySnapshots((parsed as { snapshots: unknown[] }).snapshots);
       }
       return [];
     } catch {

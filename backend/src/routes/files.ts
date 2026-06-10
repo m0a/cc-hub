@@ -162,6 +162,10 @@ files.get('/git-changes/:workingDir', async (c) => {
     return c.json({ error: 'Missing workingDir parameter' }, 400);
   }
 
+  if (!(await isAllowedSessionDir(workingDir))) {
+    return c.json({ error: 'Access denied' }, 403);
+  }
+
   try {
     // Get current branch
     const branchProc = Bun.spawn(['git', '-C', workingDir, 'rev-parse', '--abbrev-ref', 'HEAD'], {
@@ -247,6 +251,10 @@ files.get('/git-diff/:workingDir', async (c) => {
     return c.json({ error: 'Missing workingDir or path parameter' }, 400);
   }
 
+  if (!(await isAllowedSessionDir(workingDir))) {
+    return c.json({ error: 'Access denied' }, 403);
+  }
+
   try {
     const args = ['git', '-C', workingDir, 'diff'];
     if (staged) {
@@ -266,7 +274,14 @@ files.get('/git-diff/:workingDir', async (c) => {
       // For untracked files, generate a "new file" diff
       try {
         const fullPath = join(workingDir, filePath);
-        const content = await readFile(fullPath, 'utf-8');
+        // Confine the fallback read to the (session-validated) workingDir so a
+        // relative path like "../../etc/passwd" can't escape it
+        const realFullPath = await realpath(fullPath);
+        const realWorkingDir = await realpath(workingDir);
+        if (realFullPath !== realWorkingDir && !realFullPath.startsWith(`${realWorkingDir}/`)) {
+          return c.json({ error: 'Access denied' }, 403);
+        }
+        const content = await readFile(realFullPath, 'utf-8');
         const lines = content.split('\n');
         const fakeDiff = [
           `--- /dev/null`,

@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import type { User, AuthResponse } from 'shared';
+import { timingSafeStringEqual } from '../utils/timing-safe-equal';
 
 export interface JwtPayload {
   userId: string;
@@ -129,7 +130,7 @@ export class AuthService {
     const [headerB64, payloadB64, signature] = parts;
     const expectedSig = await this.sign(`${headerB64}.${payloadB64}`);
 
-    if (signature !== expectedSig) {
+    if (!timingSafeStringEqual(signature, expectedSig)) {
       throw new Error('Invalid token signature');
     }
 

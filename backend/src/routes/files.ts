@@ -136,6 +136,10 @@ files.get('/changes/:sessionWorkingDir', async (c) => {
     return c.json({ error: 'Missing sessionWorkingDir parameter' }, 400);
   }
 
+  if (!(await isAllowedSessionDir(sessionWorkingDir))) {
+    return c.json({ error: 'Access denied' }, 403);
+  }
+
   try {
     const changes = await changeTracker.getChangesForWorkingDir(sessionWorkingDir);
 

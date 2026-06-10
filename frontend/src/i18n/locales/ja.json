@@ -117,6 +117,7 @@
 		"limitPrediction": "リミット到達予測",
 		"dailyStats": "日別アクティビティ",
 		"modelUsage": "モデル使用量",
+		"modelUsageWindow": "モデル使用量（過去30日）",
 		"messages": "メッセージ",
 		"sessions": "セッション",
 		"tokens": "トークン",

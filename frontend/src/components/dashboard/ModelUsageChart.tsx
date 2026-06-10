@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { ModelUsage } from "../../../../shared/types";
 
 interface ModelUsageChartProps {
@@ -43,9 +44,14 @@ function buildColorMap(models: string[]): Map<string, string> {
 }
 
 export function ModelUsageChart({ data }: ModelUsageChartProps) {
+	const { t } = useTranslation();
+
 	if (data.length === 0) {
 		return (
 			<div className="p-3 bg-th-surface rounded-md">
+				<div className="text-sm font-medium text-th-text mb-1">
+					{t("dashboard.modelUsageWindow")}
+				</div>
 				<div className="text-th-text-muted text-xs">No model usage data</div>
 			</div>
 		);
@@ -60,7 +66,9 @@ export function ModelUsageChart({ data }: ModelUsageChartProps) {
 
 	return (
 		<div className="p-3 bg-th-surface rounded-md">
-			<div className="text-sm font-medium text-th-text mb-2">Model Usage</div>
+			<div className="text-sm font-medium text-th-text mb-2">
+				{t("dashboard.modelUsageWindow")}
+			</div>
 
 			{/* Bar chart */}
 			<div className="h-4 bg-th-surface-hover rounded-full overflow-hidden flex">

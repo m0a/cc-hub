@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.179] - 2026-06-11
+
+### Changed
+- **Model Usage パネルを過去30日に限定**: 従来は `stats-cache.json` の日付なし累計を表示していたため全期間累計しか出せなかった。`~/.claude/projects/*/*.jsonl` トランスクリプトを直接集計し、`timestamp` で過去30日にフィルタしてモデル別トークンを表示するよう変更。mtime が cutoff より古いファイルはスキップ、結果は5分 TTL でキャッシュ。見出しを「モデル使用量（過去30日）」/ "Model Usage (last 30 days)" に変更（#367, `backend/src/services/stats-service.ts`, `frontend/src/components/dashboard/ModelUsageChart.tsx`）
+  - 注: jsonl 直集計の数値は Claude Code 本体の累計値と完全一致しない（本体側の重複排除を再現しないため）が、期間内の相対内訳は正確
+
 ## [0.1.178] - 2026-06-11
 
 全体レビューで検出した問題の一括修正リリース（issue #346〜#355）。

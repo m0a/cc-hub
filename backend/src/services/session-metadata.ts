@@ -1,10 +1,15 @@
 import { join } from 'node:path';
-import { readFile, writeFile, unlink } from 'node:fs/promises';
-import { ensureDataDir } from '../utils/storage';
+import { readFile, unlink } from 'node:fs/promises';
+import { ensureDataDir, atomicWriteFile, createMutationLock } from '../utils/storage';
 import type { AgentProvider, SessionTheme } from '../../../shared/types';
 
 const METADATA_FILE = 'session-metadata.json';
 const LAST_KNOWN_FILE = 'last-known-sessions.json';
+
+// Serialise read-modify-write sequences per store file so concurrent theme /
+// title / order updates can't clobber each other (lost update). #333
+const withMetadataLock = createMutationLock();
+const withLastKnownLock = createMutationLock();
 
 interface SessionMeta {
   theme?: SessionTheme;
@@ -48,9 +53,9 @@ async function load(): Promise<MetadataStore> {
     // Migrate: if lastKnownSessions exists in metadata file, move to separate file
     if (parsed.lastKnownSessions) {
       const lkPath = await getLastKnownFilePath();
-      await writeFile(lkPath, JSON.stringify(parsed.lastKnownSessions, null, 2)).catch(() => {});
+      await atomicWriteFile(lkPath, JSON.stringify(parsed.lastKnownSessions, null, 2)).catch(() => {});
       delete parsed.lastKnownSessions;
-      await writeFile(filePath, JSON.stringify(parsed, null, 2)).catch(() => {});
+      await atomicWriteFile(filePath, JSON.stringify(parsed, null, 2)).catch(() => {});
     }
     return { sessions: parsed.sessions || {}, sessionOrder: parsed.sessionOrder };
   } catch {
@@ -102,7 +107,7 @@ async function save(data: MetadataStore): Promise<void> {
       delete data.sessions[id];
     }
   }
-  await writeFile(filePath, JSON.stringify(data, null, 2));
+  await atomicWriteFile(filePath, JSON.stringify(data, null, 2));
 }
 
 export async function getAllSessionMetadata(): Promise<Record<string, SessionMeta>> {
@@ -111,14 +116,16 @@ export async function getAllSessionMetadata(): Promise<Record<string, SessionMet
 }
 
 export async function setSessionTheme(sessionId: string, theme: SessionTheme | null): Promise<void> {
-  const data = await load();
-  if (!data.sessions[sessionId]) data.sessions[sessionId] = {};
-  if (theme === null) {
-    delete data.sessions[sessionId].theme;
-  } else {
-    data.sessions[sessionId].theme = theme;
-  }
-  await save(data);
+  await withMetadataLock(async () => {
+    const data = await load();
+    if (!data.sessions[sessionId]) data.sessions[sessionId] = {};
+    if (theme === null) {
+      delete data.sessions[sessionId].theme;
+    } else {
+      data.sessions[sessionId].theme = theme;
+    }
+    await save(data);
+  });
 }
 
 export async function getSessionOrder(): Promise<string[]> {
@@ -127,9 +134,11 @@ export async function getSessionOrder(): Promise<string[]> {
 }
 
 export async function setSessionOrder(order: string[]): Promise<void> {
-  const data = await load();
-  data.sessionOrder = order;
-  await save(data);
+  await withMetadataLock(async () => {
+    const data = await load();
+    data.sessionOrder = order;
+    await save(data);
+  });
 }
 
 // Last known sessions: separate file to avoid race conditions with metadata writes
@@ -144,25 +153,32 @@ export async function getLastKnownSessions(): Promise<LastKnownSession[]> {
 }
 
 export async function saveLastKnownSessions(sessions: LastKnownSession[]): Promise<void> {
-  const filePath = await getLastKnownFilePath();
-  await writeFile(filePath, JSON.stringify(sessions, null, 2));
+  await withLastKnownLock(async () => {
+    const filePath = await getLastKnownFilePath();
+    await atomicWriteFile(filePath, JSON.stringify(sessions, null, 2));
+  });
 }
 
 export async function removeLastKnownSession(sessionId: string): Promise<void> {
-  const sessions = await getLastKnownSessions();
-  const filtered = sessions.filter(s => s.id !== sessionId);
-  if (filtered.length !== sessions.length) {
-    await saveLastKnownSessions(filtered);
-  }
+  await withLastKnownLock(async () => {
+    const sessions = await getLastKnownSessions();
+    const filtered = sessions.filter(s => s.id !== sessionId);
+    if (filtered.length !== sessions.length) {
+      const filePath = await getLastKnownFilePath();
+      await atomicWriteFile(filePath, JSON.stringify(filtered, null, 2));
+    }
+  });
 }
 
 export async function setSessionTitle(sessionId: string, title: string | null): Promise<void> {
-  const data = await load();
-  if (!data.sessions[sessionId]) data.sessions[sessionId] = {};
-  if (title === null || title === '') {
-    delete data.sessions[sessionId].title;
-  } else {
-    data.sessions[sessionId].title = title;
-  }
-  await save(data);
+  await withMetadataLock(async () => {
+    const data = await load();
+    if (!data.sessions[sessionId]) data.sessions[sessionId] = {};
+    if (title === null || title === '') {
+      delete data.sessions[sessionId].title;
+    } else {
+      data.sessions[sessionId].title = title;
+    }
+    await save(data);
+  });
 }

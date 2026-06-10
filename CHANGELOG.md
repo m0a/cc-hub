@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.176] - 2026-06-10
+
+ダッシュボードの Model Usage 表示を改善し、未使用のコスト推定コードを削除。
+
+### Fixed
+- **Model Usage に生のモデルIDが表示される**: モデル表示名の整形が opus/sonnet 決め打ちだったため、`claude-haiku-4-5-20251001` などが生IDのまま折り返して表示されていた。任意のファミリーに対応する整形に一般化（"Haiku 4.5"、"Fable 5" 等。`backend/src/services/stats-service.ts`）
+- **macOS で file-service テストが失敗する**: `/var` → `/private/var` symlink 解決により `validatePath` の realpath 出力と期待値が不一致だった。テストの `testDir` を `realpath` で解決するように修正（`backend/tests/unit/file-service.test.ts`）
+
+### Changed
+- **Model Usage チャートの改善**: 使用量降順ソート、凡例の折り返し対応、ファミリー単位カラーパレットの循環割り当て（新モデル追加時もコード変更不要）、凡例の数値をバーと同じ基準（in+out+cache read）に統一しパーセンテージを追加（`frontend/src/components/dashboard/ModelUsageChart.tsx`）
+- **デッドコード削除**: 未使用の `PRICING` テーブル・`getCostEstimates()`・`CostEstimate` 型・`DashboardResponse.costEstimates`・i18n `costEstimate` ラベルを削除。実際のコスト計算は `AnthropicModels` + `SessionMetricsService` 系統が担当
+
 ## [0.1.175] - 2026-06-09
 
 ソフトキーボードの Shift+Tab を修正。

@@ -4,6 +4,7 @@ import { LoginSchema } from 'shared';
 import { AuthService } from '../services/auth';
 import { getDataDir } from '../utils/storage';
 import { getJwtSecret, authMiddleware, isAuthRequired, getServerPassword } from '../middleware/auth';
+import { timingSafeStringEqual } from '../utils/timing-safe-equal';
 
 const auth = new Hono();
 
@@ -25,8 +26,8 @@ auth.post(
       return c.json({ error: 'Authentication not enabled' }, 400);
     }
 
-    // Check against server password
-    if (password !== serverPassword) {
+    // Check against server password (constant-time, #353)
+    if (!timingSafeStringEqual(password, serverPassword)) {
       return c.json({ error: 'Invalid password' }, 401);
     }
 

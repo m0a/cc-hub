@@ -1,3 +1,5 @@
+import { realpath } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { Hono } from 'hono';
 import { broadcastToMuxClients } from './terminal-mux';
 import type { IndicatorState } from '../../../shared/types';
@@ -23,6 +25,25 @@ async function readTrailingLines(path: string, lineCount: number): Promise<strin
   // drop it so JSON.parse below doesn't fail on a truncated entry.
   if (offset > 0) lines.shift();
   return lines.slice(-lineCount);
+}
+
+// /api/notify is unauthenticated (local hooks call into it), so the
+// transcript_path in the request body cannot be trusted: generateSmartMessage
+// reads the file and broadcasts text fragments of it to every connected
+// client. Only real transcript locations (the Claude Code / Codex state
+// dirs) may be read. Symlinks are resolved before the prefix check. #347
+export async function isAllowedTranscriptPath(path: string): Promise<boolean> {
+  let resolved: string;
+  try {
+    resolved = await realpath(path);
+  } catch {
+    return false;
+  }
+  for (const dir of ['.claude', '.codex']) {
+    const root = await realpath(`${homedir()}/${dir}`).catch(() => null);
+    if (root && resolved.startsWith(`${root}/`)) return true;
+  }
+  return false;
 }
 
 /** transcriptファイルからコンテキストに応じた通知メッセージを生成する */
@@ -174,7 +195,7 @@ notify.post('/', async (c) => {
 
     // transcriptからスマートなメッセージを生成
     let message: string | undefined;
-    if (transcriptPath) {
+    if (transcriptPath && (await isAllowedTranscriptPath(transcriptPath))) {
       message = await generateSmartMessage(transcriptPath, event);
     }
 

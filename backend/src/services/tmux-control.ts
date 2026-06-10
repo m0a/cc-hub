@@ -1022,7 +1022,15 @@ export async function getOrCreateControlSession(sessionId: string): Promise<Tmux
 
   session = new TmuxControlSession(sessionId);
   controlSessions.set(sessionId, session);
-  await session.start();
+  try {
+    await session.start();
+  } catch (error) {
+    // Roll back the registry entry; otherwise a never-started session with
+    // isDestroyed=false would be returned forever, making the tmux session
+    // permanently unreachable (#331). destroy() also reaps a half-spawned proc.
+    session.destroy();
+    throw error;
+  }
   return session;
 }
 

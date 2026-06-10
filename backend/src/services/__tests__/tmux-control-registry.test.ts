@@ -12,7 +12,7 @@ describe('getOrCreateControlSession', () => {
   test('rolls back the registry entry when start() throws', async () => {
     const sessionId = 'registry-rollback-test';
     const originalStart = TmuxControlSession.prototype.start;
-    TmuxControlSession.prototype.start = async function () {
+    TmuxControlSession.prototype.start = async () => {
       throw new Error('spawn failed');
     };
     try {

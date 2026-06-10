@@ -5,7 +5,7 @@ import type {
 	HistorySession,
 	SessionResponse,
 } from "../../../shared/types";
-import { useSessionHistory } from "./useSessionHistory";
+import type { useSessionHistory } from "./useSessionHistory";
 import { authFetch } from "../services/api";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";

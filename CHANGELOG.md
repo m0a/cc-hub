@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.177] - 2026-06-10
+
+セキュリティ・安定性のバグ修正リリース（issue #331〜#337 を一括対応）。
+
+### Security
+- **git-changes / git-diff の任意パスアクセス**: `GET /api/files/git-changes/:workingDir` と `git-diff/:workingDir` が client 指定のパスを無検証で `git -C` に渡しており、ホスト上の任意 git リポジトリの status/diff を読めた。`/files/list`・`/files/read` と同じ `isAllowedSessionDir` ガードを追加し、git-diff の untracked フォールバック読み取りにも `../` エスケープ防止を追加（#337, `backend/src/routes/files.ts`）
+
+### Fixed
+- **control session のゾンビ登録で再接続不能**: `getOrCreateControlSession` が `start()` の前にレジストリ登録していたため、spawn 失敗時に壊れたエントリが残り、以後そのセッションが再起動まで回復不能だった。失敗時に `destroy()` でロールバックするよう修正（#331, `backend/src/services/tmux-control.ts`）
+- **mux subscribe 失敗時の tmux -CC プロセスリーク**: `handleSubscribe` の例外時に `addClient()` がロールバックされず、クライアントカウント過剰計上でグレースピリオドが開始されなくなっていた。catch でリスナー解除・subscription 削除・`removeClient()` を行うよう修正（#332, `backend/src/routes/terminal-mux.ts`）
+- **セッションメタデータの lost-update / 消失**: テーマ・タイトル・表示順の永続化が非アトミック上書き + 非直列 read-modify-write で、並行更新の喪失や書き込み中クラッシュでの全メタデータ消失が起き得た。peer-registry のパターンを `utils/storage.ts` に共通化（`atomicWriteFile` + `createMutationLock`）して適用（#333, `backend/src/services/session-metadata.ts`, `sessions.ts`）
+- **ConversationWatcher の fs.watch リーク**: `start()` 再入時に旧 watcher を close せず上書きしており、リーク + 誤ファイルの会話配信が起き得た。`start()` 冒頭で旧 watcher を close するよう修正（#334, `backend/src/services/conversation-watcher.ts`）
+- **履歴検索の limit 無効化と全量メモリ読み**: `searchSessions` の早期打ち切りが `Promise.all` の内側で機能せず、検索1回で全 JSONL の走査が同時起動していた。シリアル走査の `searchSessionsStream` への委譲に書き換え、`searchInSessionFile` も readline 逐次スキャン化（#335, `backend/src/services/session-history.ts`）
+- **usePeers の 5 秒ポーリング多重化**: フックのインスタンスごとに `setInterval` が張られ、`/api/peers` ポーリングが利用コンポーネント数の N 倍になっていた。モジュールレベルの単一タイマー（参照カウント方式）+ in-flight 合流に変更。unmount 後 setState も解消（#336, `frontend/src/hooks/usePeers.ts`）
+
 ## [0.1.176] - 2026-06-10
 
 ダッシュボードの Model Usage 表示を改善し、未使用のコスト推定コードを削除。

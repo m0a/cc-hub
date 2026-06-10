@@ -112,7 +112,11 @@ export class TmuxControlSession {
 
   // Mobile pane separation
   private clientDeviceTypes = new Map<string, 'mobile' | 'tablet' | 'desktop'>();
-  private knownPaneIds = new Set<string>();
+  // Known pane IDs grouped by tmux window id (e.g. "@3" → {"%1","%2"}).
+  // %layout-change is per-window, so we key by window to avoid wiping
+  // other windows' panes and to scope %window-renamed [dead] notifications
+  // to the window whose pane actually died. #348
+  private knownPanesByWindow = new Map<string, Set<string>>();
 
   // Resize debounce
   private resizeTimer: Timer | null = null;
@@ -394,21 +398,19 @@ export class TmuxControlSession {
    */
   private handleLayoutChange(line: string): void {
     // Format: %layout-change @N <layout-string>
-    const match = line.match(/^%layout-change @\d+ (.+)$/);
+    const match = line.match(/^%layout-change @(\d+) (.+)$/);
     if (!match) return;
 
-    const layoutString = match[1];
+    const windowId = `@${match[1]}`;
+    const layoutString = match[2];
     try {
       const layout = parseTmuxLayout(layoutString);
       const frontendLayout = toFrontendLayout(layout);
       this.currentLayout = layout;
 
-      // Track known pane IDs (for future use)
-      const newPaneIds = this.collectPaneIds(layout);
-      this.knownPaneIds.clear();
-      for (const id of newPaneIds) {
-        this.knownPaneIds.add(id);
-      }
+      // Track known pane IDs per window so %window-renamed [dead] only
+      // touches the affected window (and not stale panes from others).
+      this.knownPanesByWindow.set(windowId, new Set(this.collectPaneIds(layout)));
 
       for (const listener of this.layoutListeners) {
         listener(layout, frontendLayout);
@@ -538,21 +540,48 @@ export class TmuxControlSession {
    * When remain-on-exit is on and a pane's process exits, tmux renames
    * the window with a [dead] suffix (e.g. "zsh[dead]").
    *
-   * IMPORTANT: This must notify listeners SYNCHRONOUSLY because tmux
-   * sends %client-detached immediately after, which triggers destroy()
-   * and clears all listeners. An async sendCommand would arrive too late.
+   * Scope the notification to the renamed window's panes (not every known
+   * pane). For a single-pane window we must notify SYNCHRONOUSLY: the dead
+   * pane tears down the session and tmux sends %client-detached immediately
+   * after, which destroys this session before any sendCommand could reply.
+   * For a multi-pane window the session survives (only one pane died), so we
+   * ask tmux which pane is actually dead instead of flagging live siblings.
    */
   private handleWindowRenamed(line: string): void {
-    if (!line.includes('[dead]')) return;
+    const match = line.match(/^%window-renamed @(\d+) (.+)$/);
+    if (!match) return;
+    if (!match[2].includes('[dead]')) return;
 
-    // Use known pane IDs from the last layout to notify immediately.
-    // We cannot use sendCommand here because %client-detached follows
-    // immediately and will destroy the session before the response arrives.
-    for (const paneId of this.knownPaneIds) {
-      console.log(`[tmux-control] Pane ${paneId} is dead (process exited, window renamed)`);
-      for (const listener of this.paneDeadListeners) {
-        listener(paneId);
+    const windowId = `@${match[1]}`;
+    const panes = this.knownPanesByWindow.get(windowId);
+    if (!panes || panes.size === 0) return;
+
+    if (panes.size === 1) {
+      for (const paneId of panes) this.emitPaneDead(paneId);
+      return;
+    }
+
+    // Multi-pane window: identify the dead pane(s) without blocking line
+    // processing. Safe because the session is not being torn down.
+    void this.notifyDeadPanesInWindow(windowId);
+  }
+
+  private emitPaneDead(paneId: string): void {
+    console.log(`[tmux-control] Pane ${paneId} is dead (process exited, window renamed)`);
+    for (const listener of this.paneDeadListeners) {
+      listener(paneId);
+    }
+  }
+
+  private async notifyDeadPanesInWindow(windowId: string): Promise<void> {
+    try {
+      const out = await this.sendCommand(`list-panes -t ${windowId} -F "#{pane_id} #{pane_dead}"`);
+      for (const row of out.trim().split('\n')) {
+        const [paneId, dead] = row.trim().split(' ');
+        if (dead === '1' && paneId) this.emitPaneDead(paneId);
       }
+    } catch (err) {
+      console.warn(`[tmux-control] dead-pane detection failed for ${windowId}:`, err);
     }
   }
 
@@ -1000,7 +1029,7 @@ export class TmuxControlSession {
     this.paneDeadListeners.clear();
     this.newSessionListeners.clear();
     this.clientDeviceTypes.clear();
-    this.knownPaneIds.clear();
+    this.knownPanesByWindow.clear();
 
     // Remove from global registry
     controlSessions.delete(this.sessionId);

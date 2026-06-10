@@ -60,7 +60,6 @@ export async function buildDashboard(): Promise<DashboardResponse> {
     usageHistory,
     dailyActivity,
     modelUsage,
-    costEstimates: [],
     hourlyActivity,
     version: VERSION,
     systemMetrics,

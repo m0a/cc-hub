@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { FileService } from '../../src/services/file-service';
-import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, writeFile, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -10,8 +10,10 @@ describe('FileService', () => {
 
   beforeAll(async () => {
     fileService = new FileService();
-    // Create a temporary test directory
-    testDir = await mkdtemp(join(tmpdir(), 'cchub-test-'));
+    // Create a temporary test directory.
+    // Resolve symlinks (e.g. macOS /var -> /private/var) so comparisons
+    // against validatePath's realpath output are stable
+    testDir = await realpath(await mkdtemp(join(tmpdir(), 'cchub-test-')));
 
     // Create test files and directories
     await mkdir(join(testDir, 'subdir'));

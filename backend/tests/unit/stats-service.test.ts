@@ -43,20 +43,26 @@ describe('StatsService', () => {
     });
   });
 
-  describe('getCostEstimates', () => {
-    test('should return an array', async () => {
-      const costs = await statsService.getCostEstimates();
-      expect(Array.isArray(costs)).toBe(true);
+  describe('getModelDisplayName', () => {
+    // biome-ignore lint/suspicious/noExplicitAny: testing private method
+    const displayName = (id: string) => (statsService as any).getModelDisplayName(id);
+
+    test('formats opus/sonnet with dated suffix', () => {
+      expect(displayName('claude-opus-4-5-20251101')).toBe('Opus 4.5');
+      expect(displayName('claude-sonnet-4-5-20250929')).toBe('Sonnet 4.5');
     });
 
-    test('should return items with correct structure', async () => {
-      const costs = await statsService.getCostEstimates();
-      if (costs.length > 0) {
-        expect(costs[0]).toHaveProperty('model');
-        expect(costs[0]).toHaveProperty('totalCost');
-        expect(costs[0]).toHaveProperty('inputCost');
-        expect(costs[0]).toHaveProperty('outputCost');
-      }
+    test('formats versions without date suffix', () => {
+      expect(displayName('claude-opus-4-6')).toBe('Opus 4.6');
+    });
+
+    test('formats haiku and other families', () => {
+      expect(displayName('claude-haiku-4-5-20251001')).toBe('Haiku 4.5');
+      expect(displayName('claude-fable-5')).toBe('Fable 5');
+    });
+
+    test('returns unknown IDs as-is', () => {
+      expect(displayName('some-other-model')).toBe('some-other-model');
     });
   });
 

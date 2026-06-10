@@ -147,11 +147,12 @@ export class SessionHistoryService {
    * Returns the matching message snippet if found, otherwise null
    */
   private async searchInSessionFile(filePath: string, query: string): Promise<string | null> {
+    // Stream line-by-line instead of readFile: session JSONL files can be
+    // tens to hundreds of MB, and a search request touches many of them (#335)
+    const fileStream = createReadStream(filePath);
+    const rl = createInterface({ input: fileStream, crlfDelay: Infinity });
     try {
-      const fileContent = await readFile(filePath, 'utf-8');
-      const lines = fileContent.split('\n');
-
-      for (const line of lines) {
+      for await (const line of rl) {
         if (!line.trim()) continue;
         try {
           const entry = JSON.parse(line);
@@ -182,6 +183,9 @@ export class SessionHistoryService {
       return null;
     } catch {
       return null;
+    } finally {
+      rl.close();
+      fileStream.destroy();
     }
   }
 
@@ -821,64 +825,19 @@ export class SessionHistoryService {
    * Search sessions across all projects
    */
   async searchSessions(query: string, limit: number = 50): Promise<HistorySession[]> {
-    if (!query || query.trim().length === 0) {
-      return [];
-    }
-
-    const normalizedQuery = query.toLowerCase().trim();
+    // Delegate to the serial generator: the old Promise.all fan-out kicked off
+    // a scan of every project directory at once, so the `limit` early-exit
+    // never stopped work already in flight and a single request could saturate
+    // I/O across all JSONL files (#335). The generator walks newest-first and
+    // stops as soon as `limit` matches are found.
     const results: HistorySession[] = [];
-
-    try {
-      const projectDirs = await readdir(this.projectsDir);
-
-      await Promise.all(projectDirs.map(async (dir) => {
-        const projectDir = join(this.projectsDir, dir);
-
-        try {
-          const dirStat = await stat(projectDir);
-          if (!dirStat.isDirectory()) return;
-
-          const files = await readdir(projectDir);
-          const jsonlFiles = files.filter(f => f.endsWith('.jsonl'));
-
-          for (const file of jsonlFiles) {
-            if (results.length >= limit) break;
-
-            const jsonlPath = join(projectDir, file);
-            const basicInfo = await this.scanJsonlForBasicInfo(jsonlPath);
-
-            if (basicInfo?.lastPrompt) {
-              // Search in project name and first prompt
-              const projectName = basicInfo.projectPath.replace(/^\/home\/[^/]+\//, '~/');
-              const searchText = `${projectName} ${basicInfo.lastPrompt}`.toLowerCase();
-
-              if (searchText.includes(normalizedQuery)) {
-                // recap intentionally omitted on both search paths — avoid an
-                // extra tail-read per result. Search matches title/prompt only.
-                results.push({
-                  sessionId: basicInfo.sessionId,
-                  projectPath: basicInfo.projectPath,
-                  projectName,
-                  firstPrompt: basicInfo.lastPrompt,
-                  lastPrompt: basicInfo.lastPrompt,
-                  gitBranch: basicInfo.gitBranch,
-                  modified: basicInfo.modified,
-                });
-              }
-            }
-          }
-        } catch {
-          // Skip directories that can't be read
-        }
-      }));
-
-      // Sort by modified date (newest first)
-      results.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
-
-      return results.slice(0, limit);
-    } catch {
-      return [];
+    for await (const session of this.searchSessionsStream(query, limit)) {
+      results.push(session);
     }
+
+    // Sort by modified date (newest first) to keep the old response contract
+    results.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
+    return results;
   }
 
   /**

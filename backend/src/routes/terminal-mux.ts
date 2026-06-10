@@ -324,6 +324,19 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
       })
     );
 
+    // The client can disconnect while the awaits above are in flight. muxClose
+    // has already run at that point and didn't see this subscription, so the
+    // listeners and addClient() would leak (the grace period would never
+    // start and the tmux -CC subprocess would live forever). #346
+    if (!activeMuxConnections.has(ws)) {
+      console.log(`[mux] client disconnected during subscribe to ${sessionId}; rolling back`);
+      for (const fn of cleanupFns) {
+        try { fn(); } catch { /* ignore */ }
+      }
+      controlSession.removeClient();
+      return;
+    }
+
     ws.data.subscriptions.set(sessionId, sub);
 
     try {
@@ -490,6 +503,15 @@ async function handleSubscribeConversation(ws: ServerWebSocket<MuxData>, session
     initialMessages = await watcher.start(workingDir);
   } catch (err) {
     console.warn(`[mux] subscribe-conversation start failed for ${sessionId}:`, err);
+  }
+
+  // The client can disconnect while watcher.start() is in flight. muxClose
+  // has already run at that point and didn't see this watcher, so its
+  // FSWatcher would keep running forever. #346
+  if (!activeMuxConnections.has(ws)) {
+    console.log(`[mux] client disconnected during subscribe-conversation to ${sessionId}; stopping watcher`);
+    try { watcher.stop(); } catch { /* ignore */ }
+    return;
   }
 
   watcher.onUpdate((newMessages) => {

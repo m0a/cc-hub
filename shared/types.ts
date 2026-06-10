@@ -399,15 +399,6 @@ export interface ModelUsage {
   totalCacheWrite: number;
 }
 
-export interface CostEstimate {
-  model: string;
-  inputCost: number;
-  outputCost: number;
-  cacheReadCost: number;
-  cacheWriteCost: number;
-  totalCost: number;
-}
-
 // Usage limits from Anthropic API
 export interface UsageCycleInfo {
   utilization: number;
@@ -488,7 +479,6 @@ export interface DashboardResponse {
   usageHistory: UsageSnapshot[]; // Usage history for line chart
   dailyActivity: DailyActivity[];
   modelUsage: ModelUsage[];
-  costEstimates: CostEstimate[];
   hourlyActivity?: Record<number, number>; // Phase 3: Hour (0-23) -> session count
   version?: string; // CC Hub version
   systemMetrics?: SystemMetrics; // System CPU/memory metrics

@@ -17,6 +17,31 @@ function formatTokens(tokens: number): string {
 	return tokens.toString();
 }
 
+// Shades per model family; versions within a family cycle through shades
+const FAMILY_SHADES: Record<string, string[]> = {
+	opus: ["bg-fuchsia-500", "bg-purple-500", "bg-violet-400", "bg-indigo-500"],
+	sonnet: ["bg-blue-500", "bg-sky-400", "bg-cyan-500"],
+	haiku: ["bg-emerald-500", "bg-teal-400", "bg-green-500"],
+	fable: ["bg-amber-500", "bg-orange-400"],
+	other: ["bg-gray-500", "bg-slate-400", "bg-zinc-400"],
+};
+
+function buildColorMap(models: string[]): Map<string, string> {
+	const familyCounts: Record<string, number> = {};
+	const map = new Map<string, string>();
+	for (const model of models) {
+		const family =
+			Object.keys(FAMILY_SHADES).find((f) =>
+				model.toLowerCase().includes(f),
+			) ?? "other";
+		const shades = FAMILY_SHADES[family];
+		const index = familyCounts[family] ?? 0;
+		familyCounts[family] = index + 1;
+		map.set(model, shades[index % shades.length]);
+	}
+	return map;
+}
+
 export function ModelUsageChart({ data }: ModelUsageChartProps) {
 	if (data.length === 0) {
 		return (
@@ -26,19 +51,12 @@ export function ModelUsageChart({ data }: ModelUsageChartProps) {
 		);
 	}
 
-	const total = data.reduce(
-		(sum, m) => sum + m.totalTokensIn + m.totalTokensOut + m.totalCacheRead,
-		0,
-	);
+	const modelTotal = (m: ModelUsage) =>
+		m.totalTokensIn + m.totalTokensOut + m.totalCacheRead;
 
-	const getColor = (model: string): string => {
-		if (model === "Opus 4.5") return "bg-fuchsia-500";
-		if (model === "Opus 4.6") return "bg-violet-400";
-		if (model === "Opus 4.7") return "bg-indigo-500";
-		if (model.startsWith("Opus")) return "bg-purple-500";
-		if (model.startsWith("Sonnet")) return "bg-blue-500";
-		return "bg-gray-500";
-	};
+	const sorted = [...data].sort((a, b) => modelTotal(b) - modelTotal(a));
+	const total = sorted.reduce((sum, m) => sum + modelTotal(m), 0);
+	const colorMap = buildColorMap(sorted.map((m) => m.model));
 
 	return (
 		<div className="p-3 bg-th-surface rounded-md">
@@ -46,33 +64,40 @@ export function ModelUsageChart({ data }: ModelUsageChartProps) {
 
 			{/* Bar chart */}
 			<div className="h-4 bg-th-surface-hover rounded-full overflow-hidden flex">
-				{data.map((model) => {
-					const modelTotal =
-						model.totalTokensIn + model.totalTokensOut + model.totalCacheRead;
-					const pct = (modelTotal / total) * 100;
+				{sorted.map((model) => {
+					const pct = (modelTotal(model) / total) * 100;
 					if (pct < 1) return null;
 					return (
 						<div
 							key={model.model}
-							className={`${getColor(model.model)} h-full`}
+							className={`${colorMap.get(model.model)} h-full`}
 							style={{ width: `${pct}%` }}
-							title={`${model.model}: ${formatTokens(modelTotal)} tokens`}
+							title={`${model.model}: ${formatTokens(modelTotal(model))} tokens (${pct.toFixed(1)}%)`}
 						/>
 					);
 				})}
 			</div>
 
 			{/* Legend */}
-			<div className="mt-2 flex gap-3 text-xs">
-				{data.map((model) => (
-					<div key={model.model} className="flex items-center gap-1">
-						<div className={`w-2 h-2 rounded-full ${getColor(model.model)}`} />
-						<span className="text-th-text-secondary">{model.model}</span>
-						<span className="text-th-text-muted">
-							{formatTokens(model.totalTokensOut)}
-						</span>
-					</div>
-				))}
+			<div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+				{sorted.map((model) => {
+					const pct = (modelTotal(model) / total) * 100;
+					return (
+						<div
+							key={model.model}
+							className="flex items-center gap-1 whitespace-nowrap"
+							title={`${model.model}: in ${formatTokens(model.totalTokensIn)} / out ${formatTokens(model.totalTokensOut)} / cache ${formatTokens(model.totalCacheRead)}`}
+						>
+							<div
+								className={`w-2 h-2 rounded-full shrink-0 ${colorMap.get(model.model)}`}
+							/>
+							<span className="text-th-text-secondary">{model.model}</span>
+							<span className="text-th-text-muted">
+								{formatTokens(modelTotal(model))} ({pct.toFixed(0)}%)
+							</span>
+						</div>
+					);
+				})}
 			</div>
 		</div>
 	);

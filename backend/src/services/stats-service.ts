@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import type { DailyActivity, ModelUsage, CostEstimate } from '../../../shared/types';
+import type { DailyActivity, ModelUsage } from '../../../shared/types';
 
 interface StatsCache {
   version: number;
@@ -22,33 +22,6 @@ interface StatsCache {
   };
   hourCounts?: Record<string, number>;
 }
-
-// API reference pricing (per 1M tokens)
-const PRICING: Record<string, {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-}> = {
-  'claude-opus-4-5-20251101': {
-    input: 15.00 / 1_000_000,
-    output: 75.00 / 1_000_000,
-    cacheRead: 1.50 / 1_000_000,
-    cacheWrite: 18.75 / 1_000_000,
-  },
-  'claude-opus-4-6': {
-    input: 15.00 / 1_000_000,
-    output: 75.00 / 1_000_000,
-    cacheRead: 1.50 / 1_000_000,
-    cacheWrite: 18.75 / 1_000_000,
-  },
-  'claude-sonnet-4-5-20250929': {
-    input: 3.00 / 1_000_000,
-    output: 15.00 / 1_000_000,
-    cacheRead: 0.30 / 1_000_000,
-    cacheWrite: 3.75 / 1_000_000,
-  },
-};
 
 export class StatsService {
   private claudeDir: string;
@@ -99,41 +72,16 @@ export class StatsService {
     }));
   }
 
-  async getCostEstimates(): Promise<CostEstimate[]> {
-    const stats = await this.readStatsCache();
-    if (!stats?.modelUsage) {
-      return [];
-    }
-
-    return Object.entries(stats.modelUsage).map(([model, usage]) => {
-      const pricing = PRICING[model] || PRICING['claude-sonnet-4-5-20250929'];
-
-      const inputCost = usage.inputTokens * pricing.input;
-      const outputCost = usage.outputTokens * pricing.output;
-      const cacheReadCost = usage.cacheReadInputTokens * pricing.cacheRead;
-      const cacheWriteCost = usage.cacheCreationInputTokens * pricing.cacheWrite;
-
-      return {
-        model: this.getModelDisplayName(model),
-        inputCost: Math.round(inputCost * 100) / 100,
-        outputCost: Math.round(outputCost * 100) / 100,
-        cacheReadCost: Math.round(cacheReadCost * 100) / 100,
-        cacheWriteCost: Math.round(cacheWriteCost * 100) / 100,
-        totalCost: Math.round((inputCost + outputCost + cacheReadCost + cacheWriteCost) * 100) / 100,
-      };
-    });
-  }
-
   private getModelDisplayName(modelId: string): string {
-    // Extract version from model ID (e.g., "claude-opus-4-6" -> "4.6", "claude-opus-4-5-20251101" -> "4.5")
-    const match = modelId.match(/claude-(opus|sonnet)-(\d+)-(\d+)/);
+    // Extract family and version from model ID for any family
+    // (e.g., "claude-opus-4-5-20251101" -> "Opus 4.5", "claude-haiku-4-5-20251001" -> "Haiku 4.5",
+    //  "claude-fable-5" -> "Fable 5")
+    const match = modelId.match(/claude-([a-z]+)-(\d+)(?:-(\d{1,2})(?:-|$))?/);
     if (match) {
       const [, family, major, minor] = match;
-      const name = family === 'opus' ? 'Opus' : 'Sonnet';
-      return `${name} ${major}.${minor}`;
+      const name = family.charAt(0).toUpperCase() + family.slice(1);
+      return minor !== undefined ? `${name} ${major}.${minor}` : `${name} ${major}`;
     }
-    if (modelId.includes('opus')) return 'Opus';
-    if (modelId.includes('sonnet')) return 'Sonnet';
     return modelId;
   }
 

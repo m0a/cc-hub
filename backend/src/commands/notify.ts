@@ -1,7 +1,7 @@
 /**
  * cchub notify - Claude Code / Codex hookイベントをCC Hubサーバーに送信する。
  * stdinからhookのJSON入力を読み取り、CC Hubの /api/notify エンドポイントにPOSTする。
- * デフォルトで本番(5923)とdev(3000)の両方に送信する（失敗は無視）。
+ * デフォルトで本番(5923)とdev(3456)の両方に送信する（失敗は無視）。
  *
  * 使い方（hook設定）:
  *   "command": "cchub notify"
@@ -45,11 +45,14 @@ export async function sendNotify(port: number): Promise<void> {
     // Skip TLS verification since cert is for Tailscale hostname, not localhost
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
-    // Determine target ports
+    // Determine target ports. The server always serves over HTTPS (Tailscale
+    // cert), including in dev, so every target uses https. TLS verification is
+    // disabled above because the cert is for the Tailscale hostname, not
+    // localhost.
     const ports = port !== PRODUCTION_PORT
-      // Explicit port specified via -p: send to that port only
-      ? [{ port, https: port !== DEV_PORT }]
-      // Default: try both production (HTTPS) and dev (HTTP), ignore failures
+      // Explicit port specified via -p: send to that port only.
+      ? [{ port, https: true }]
+      // Default: try both production and dev, ignore failures.
       : [
           { port: PRODUCTION_PORT, https: true },
           { port: DEV_PORT, https: true },

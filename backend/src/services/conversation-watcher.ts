@@ -34,6 +34,12 @@ export class ConversationWatcher {
    * Returns the initial set of conversation messages (may be empty if no session exists yet).
    */
   async start(workingDir: string): Promise<ConversationMessage[]> {
+    // Re-entrant start: close any previous fs.watch before re-initialising.
+    // Otherwise the old watcher leaks and its change events trigger reparse
+    // against the overwritten filePath, delivering the wrong file's
+    // conversation (#334). Listeners are kept — they belong to the subscriber.
+    this.closeWatcher();
+
     const session = await claudeCodeService.getSessionForPath(workingDir);
     if (!session?.sessionId) {
       return [];
@@ -130,7 +136,7 @@ export class ConversationWatcher {
     }
   }
 
-  stop(): void {
+  private closeWatcher(): void {
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
@@ -143,6 +149,10 @@ export class ConversationWatcher {
       }
       this.watcher = null;
     }
+  }
+
+  stop(): void {
+    this.closeWatcher();
     this.listeners.clear();
     this.filePath = null;
     this.projectDirName = null;

@@ -22,11 +22,17 @@ interface UsePeersReturn {
 
 // module-level cache: 全コンポーネントで共有
 let cachedPeers: PeerClientView[] | null = null;
-const listeners = new Set<(peers: PeerClientView[]) => void>();
+let lastError: string | null = null;
+const listeners = new Set<() => void>();
 
-function broadcast(peers: PeerClientView[]) {
-	cachedPeers = peers;
-	for (const l of listeners) l(peers);
+// usePeers は複数コンポーネントから同時に呼ばれるが、ポーリングタイマーは
+// モジュールレベルで1本だけ管理する（参照カウント方式）。インスタンスごとに
+// setInterval を張ると /api/peers への 5 秒ポーリングが N 倍に多重化する (#336)
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+let refreshInFlight: Promise<void> | null = null;
+
+function notifyListeners() {
+	for (const l of listeners) l();
 }
 
 async function fetchPeers(): Promise<PeerClientView[]> {
@@ -36,48 +42,64 @@ async function fetchPeers(): Promise<PeerClientView[]> {
 	return data.peers;
 }
 
+// 同時要求は1本の fetch に合流させる
+function refreshShared(): Promise<void> {
+	if (refreshInFlight) return refreshInFlight;
+	refreshInFlight = (async () => {
+		try {
+			cachedPeers = await fetchPeers();
+			lastError = null;
+		} catch (err) {
+			lastError = err instanceof Error ? err.message : "Failed to load peers";
+		} finally {
+			refreshInFlight = null;
+			notifyListeners();
+		}
+	})();
+	return refreshInFlight;
+}
+
+function subscribePeers(listener: () => void): () => void {
+	listeners.add(listener);
+	if (!pollTimer) {
+		// 定期更新 (peer の status を最新化するため)。購読者がいる間だけ動かす
+		pollTimer = setInterval(() => {
+			void refreshShared();
+		}, 5000);
+	}
+	return () => {
+		listeners.delete(listener);
+		if (listeners.size === 0 && pollTimer) {
+			clearInterval(pollTimer);
+			pollTimer = null;
+		}
+	};
+}
+
 export function usePeers(): UsePeersReturn {
 	const [peers, setPeers] = useState<PeerClientView[]>(() => cachedPeers ?? []);
 	const [isLoading, setIsLoading] = useState(() => cachedPeers === null);
-	const [error, setError] = useState<string | null>(null);
+	const [error, setError] = useState<string | null>(() => lastError);
 
 	useEffect(() => {
-		const listener = (next: PeerClientView[]) => setPeers(next);
-		listeners.add(listener);
-		return () => {
-			listeners.delete(listener);
+		const listener = () => {
+			setPeers(cachedPeers ?? []);
+			setError(lastError);
+			setIsLoading(false);
 		};
+		const unsubscribe = subscribePeers(listener);
+		// 初回ロード。キャッシュ済みなら即確定し、裏のポーリングが最新化する
+		if (cachedPeers === null) {
+			void refreshShared();
+		} else {
+			listener();
+		}
+		return unsubscribe;
 	}, []);
 
 	const refresh = useCallback(async () => {
-		try {
-			const next = await fetchPeers();
-			broadcast(next);
-			setError(null);
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to load peers");
-		} finally {
-			setIsLoading(false);
-		}
+		await refreshShared();
 	}, []);
-
-	// 初回ロード + 定期更新 (peer の status を最新化するため)
-	useEffect(() => {
-		let cancelled = false;
-		if (cachedPeers === null) {
-			void refresh();
-		} else {
-			setIsLoading(false);
-		}
-		const timer = setInterval(() => {
-			if (cancelled) return;
-			void refresh();
-		}, 5000);
-		return () => {
-			cancelled = true;
-			clearInterval(timer);
-		};
-	}, [refresh]);
 
 	const addPeer = useCallback(async (input: PeerCreateInput): Promise<PeerClientView> => {
 		const res = await authFetch(`${API_BASE}/api/peers`, {

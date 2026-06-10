@@ -117,6 +117,7 @@
 		"limitPrediction": "Limit Prediction",
 		"dailyStats": "Daily Activity",
 		"modelUsage": "Model Usage",
+		"modelUsageWindow": "Model Usage (last 30 days)",
 		"messages": "Messages",
 		"sessions": "Sessions",
 		"tokens": "Tokens",

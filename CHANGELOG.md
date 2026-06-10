@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.178] - 2026-06-11
+
+全体レビューで検出した問題の一括修正リリース（issue #346〜#355）。
+
+### Security
+- **/api/notify の任意ファイル読み取り**: 認証不要の `POST /api/notify` がリクエストボディの `transcript_path` を無検証でファイル読み取り（→内容断片を全クライアントへブロードキャスト）に使えた。`realpath` でシンボリックリンクを解決し `~/.claude` / `~/.codex` 配下のみ許可（#347, `backend/src/routes/notify.ts`）
+- **/files/changes の検証漏れ**: `GET /files/changes/:sessionWorkingDir` だけ `isAllowedSessionDir` ガードが抜けていた。他のファイルエンドポイントと同じ 403 ガードを追加（#349, `backend/src/routes/files.ts`）
+- **認証照合のタイミング攻撃対策**: JWT 署名検証 (`verifyToken`) とサーバーパスワード照合を、SHA-256 ダイジェスト + `crypto.timingSafeEqual` による定数時間比較に変更（#353, `backend/src/services/auth.ts`, `backend/src/routes/auth.ts`）
+
+### Fixed
+- **mux subscribe 中の WS 切断によるリーク**: `handleSubscribe` / `handleSubscribeConversation` が await 中に WS が閉じると、`TmuxControlSession` のクライアントカウント過剰計上（tmux -CC プロセスが永続化）と `ConversationWatcher` の FSWatcher リークが起きた。await 完了後に切断を検知してロールバックするよう修正（#346, `backend/src/routes/terminal-mux.ts`）
+- **pane-dead の誤通知**: `%window-renamed [dead]` で既知の全ペインを dead 通知しており、複数ペイン構成で生きている兄弟ペインや別ウィンドウのペインまで dead 表示になっていた。ペインをウィンドウ単位で管理し、単一ペインは同期通知・複数ペインは `list-panes` で実際に死んだペインのみ通知（#348, `backend/src/services/tmux-control.ts`）
+- **cchub notify -p の送信失敗**: 明示ポート指定時に dev ポートが `https:false` になり、HTTPS で待ち受けるサーバへ届かずサイレント失敗していた。常に https で送信するよう統一（#350, `backend/src/commands/notify.ts`）
+- **cchub send のペイロード破損**: `--base64` と `--submit` / `--newline` を併用すると base64 文字列に VT エスケープが混入してデコードが壊れた。併用を実行前に拒否（#351, `backend/src/commands/send.ts`）
+- **usage 取得の無駄なディスク I/O**: credentials 不在時にキャッシュが効かず、ダッシュボードのポーリングごとに credentials ファイルを再読み込みしていた。no-credentials クールダウン（60s）を追加（#352, `backend/src/services/anthropic-usage.ts`）
+- **frontend のリスナー/タイマー cleanup 漏れ**: App.tsx の resize リスナー毎レンダー再登録、`subscribe-conversation` 重複送信、InputBar / Terminal のタイマー未クリアをまとめて修正（#354, `frontend/src/App.tsx` 他）
+- **usage-history の legacy 形式破棄**: `getHistory` がコメントに反して legacy `{snapshots:[...]}` 形式を `[]` で捨てていた。`parsed.snapshots` を読むよう修正（#355, `backend/src/services/usage-history.ts`）
+
 ## [0.1.177] - 2026-06-10
 
 セキュリティ・安定性のバグ修正リリース（issue #331〜#337 を一括対応）。

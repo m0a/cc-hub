@@ -11,6 +11,7 @@ import {
 	forwardRef,
 	memo,
 	useCallback,
+	useEffect,
 	useImperativeHandle,
 	useRef,
 	useState,
@@ -97,6 +98,16 @@ export const InputBar = memo(
 		const inputBarSwipeRef = useRef<{ startX: number; startY: number } | null>(
 			null,
 		);
+
+		// Clear the auto-hide timers on unmount so they don't fire after the
+		// component is gone (it returns null in "hidden" mode).
+		useEffect(() => {
+			return () => {
+				if (hintTimeoutRef.current) clearTimeout(hintTimeoutRef.current);
+				if (positionToggleTimeoutRef.current)
+					clearTimeout(positionToggleTimeoutRef.current);
+			};
+		}, []);
 
 		// Auto-hide position toggle
 		const resetPositionToggleTimer = useCallback(() => {

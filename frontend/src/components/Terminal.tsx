@@ -1064,6 +1064,10 @@ export const TerminalComponent = memo(
 			return () => {
 				if (longPressTimer) clearTimeout(longPressTimer);
 				if (mouseLongPressTimer) clearTimeout(mouseLongPressTimer);
+				// Clear the scroll-indicator auto-hide timer so a session switch
+				// doesn't let an old timer null out the new session's indicator.
+				if (scrollIndicatorTimerRef.current)
+					clearTimeout(scrollIndicatorTimerRef.current);
 				// Cancel rAF loops and the WebGL reload timer so they don't keep
 				// running against the disposed terminal — momentum scroll, touch
 				// coalesce, wheel flush, and the queued WebGL re-init all post

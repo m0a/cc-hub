@@ -474,16 +474,14 @@ export function subscribeConversation(
 ) {
 	pendingConversationUnsubs.delete(sessionId);
 	if (sharedWs?.readyState === WebSocket.OPEN && wsReady) {
-		if (!subscribedConversations.has(sessionId)) {
-			sharedWs.send(
-				JSON.stringify({ type: "subscribe-conversation", sessionId }),
-			);
-			subscribedConversations.add(sessionId);
-		} else {
-			sharedWs.send(
-				JSON.stringify({ type: "subscribe-conversation", sessionId }),
-			);
-		}
+		// Already subscribed: nothing to do. The backend recreates the watcher
+		// on every subscribe-conversation, so re-sending would needlessly tear
+		// down and rebuild it (and re-send initial-conversation).
+		if (subscribedConversations.has(sessionId)) return;
+		sharedWs.send(
+			JSON.stringify({ type: "subscribe-conversation", sessionId }),
+		);
+		subscribedConversations.add(sessionId);
 	} else {
 		pendingConversationSubs.add(sessionId);
 		ensureConnection(token);

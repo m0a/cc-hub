@@ -1,6 +1,6 @@
 {
   "name": "cc-hub",
-  "version": "0.1.178",
+  "version": "0.1.179",
   "private": true,
   "workspaces": [
     "backend",

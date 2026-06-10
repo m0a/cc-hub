@@ -207,6 +207,33 @@ function getSavedOpenSessionIds(): string[] {
 	}
 }
 
+// Device type detection
+// - desktop: PC (非タッチデバイス) → ソフトキーボード不要
+// - tablet: タッチデバイスで width >= 640px && height >= 500px
+// - mobile: タッチデバイスでそれ以外
+type DeviceType = "mobile" | "tablet" | "desktop";
+
+function checkIsTouchDevice(): boolean {
+	const hasTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+	const hasCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
+	return hasTouch && hasCoarsePointer;
+}
+
+function checkDeviceType(): DeviceType {
+	// 実タッチデバイス: 物理解像度の短辺で判定（向きに依存しない）
+	if (checkIsTouchDevice()) {
+		const shortSide = Math.min(screen.width, screen.height);
+		const longSide = Math.max(screen.width, screen.height);
+		if (shortSide >= 500 && longSide >= 640) return "tablet";
+		return "mobile";
+	}
+	// 非タッチデバイス（PC + DevToolsエミュレーション含む）: ビューポート幅で判定
+	const w = window.innerWidth;
+	if (w < 640) return "mobile";
+	if (w < 1024) return "tablet";
+	return "desktop";
+}
+
 export function App() {
 	const { t } = useTranslation();
 	const tRef = useRef(t);
@@ -378,33 +405,6 @@ export function App() {
 	// Session API state (for theme updates in mobile view)
 	const { sessions: apiSessions, createSession } = useSessions();
 
-	// Device type detection
-	// - desktop: PC (非タッチデバイス) → ソフトキーボード不要
-	// - tablet: タッチデバイスで width >= 640px && height >= 500px
-	// - mobile: タッチデバイスでそれ以外
-	type DeviceType = "mobile" | "tablet" | "desktop";
-
-	const checkIsTouchDevice = (): boolean => {
-		const hasTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
-		const hasCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
-		return hasTouch && hasCoarsePointer;
-	};
-
-	const checkDeviceType = (): DeviceType => {
-		// 実タッチデバイス: 物理解像度の短辺で判定（向きに依存しない）
-		if (checkIsTouchDevice()) {
-			const shortSide = Math.min(screen.width, screen.height);
-			const longSide = Math.max(screen.width, screen.height);
-			if (shortSide >= 500 && longSide >= 640) return "tablet";
-			return "mobile";
-		}
-		// 非タッチデバイス（PC + DevToolsエミュレーション含む）: ビューポート幅で判定
-		const w = window.innerWidth;
-		if (w < 640) return "mobile";
-		if (w < 1024) return "tablet";
-		return "desktop";
-	};
-
 	const [deviceType, setDeviceType] = useState<DeviceType>(checkDeviceType);
 
 	// Both tablet and mobile need keyboard control during onboarding
@@ -415,12 +415,13 @@ export function App() {
 				? handleMobileStepAction
 				: undefined;
 
-	// Update device type on resize
+	// Update device type on resize. checkDeviceType is a stable module-level
+	// function, so the listener is registered once for the component's life.
 	useEffect(() => {
 		const handleResize = () => setDeviceType(checkDeviceType());
 		window.addEventListener("resize", handleResize);
 		return () => window.removeEventListener("resize", handleResize);
-	}, [checkDeviceType]);
+	}, []);
 
 	// Sessions are now delivered via WS push (no HTTP polling needed)
 

@@ -50,6 +50,11 @@ export class AnthropicUsageService {
   private readonly CACHE_TTL_MS = 60_000;
   // On 429, back off for 5 minutes before retrying.
   private rateLimitedUntil = 0;
+  // When no credentials are present there is nothing to fetch, but the
+  // dashboard still polls every few seconds. Without a cooldown each poll
+  // re-reads the credentials file (disk I/O). Skip refetching until this
+  // timestamp. #352
+  private noCredentialsUntil = 0;
   private lastErrorReason: UsageLimitsErrorReason | undefined;
 
   private async getAccessToken(): Promise<string | null> {
@@ -85,6 +90,12 @@ export class AnthropicUsageService {
       return this.lastSuccessfulResult;
     }
 
+    // Respect the no-credentials cooldown so polling doesn't re-read the
+    // credentials file on every request.
+    if (now < this.noCredentialsUntil) {
+      return this.lastSuccessfulResult;
+    }
+
     // Coalesce concurrent requests
     if (this.inflight) {
       return this.inflight;
@@ -102,6 +113,8 @@ export class AnthropicUsageService {
     const token = await this.getAccessToken();
     if (!token) {
       this.lastErrorReason = 'no-credentials';
+      this.lastFetchAt = Date.now();
+      this.noCredentialsUntil = Date.now() + this.CACHE_TTL_MS;
       return this.lastSuccessfulResult;
     }
 

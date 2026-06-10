@@ -100,6 +100,15 @@ async function resolvePeer(name: string, localPort: number): Promise<{ url: stri
 export async function runSend(options: SendOptions): Promise<void> {
   const target = parseTarget(options.target);
 
+  // --submit / --newline wrap the payload in VT escapes (bracketed-paste
+  // markers, trailing CR). With --base64 the payload is meant to be a literal
+  // base64 string the server decodes verbatim, so wrapping it would inject
+  // non-base64 bytes and break decoding. Reject the combination up front
+  // rather than send a corrupt payload (#351).
+  if (options.base64 && (options.submit || options.newline)) {
+    throw new Error('--base64 は --submit / --newline と併用できません');
+  }
+
   let payload: string;
   if (options.stdin) {
     payload = await readStdin();

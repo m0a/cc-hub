@@ -257,11 +257,14 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     return;
   }
 
+  let controlSession: TmuxControlSession | null = null;
+  let clientAdded = false;
+  const cleanupFns: Array<() => void> = [];
   try {
-    const controlSession = await getOrCreateControlSession(sessionId);
+    controlSession = await getOrCreateControlSession(sessionId);
     controlSession.addClient();
+    clientAdded = true;
 
-    const cleanupFns: Array<() => void> = [];
     const sessions = await tmuxService.listSessions();
     const session = sessions.find(s => s.id === sessionId);
     const sub: MuxSubscription = {
@@ -352,7 +355,21 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     });
   } catch (error) {
     console.error(`[mux] Failed to subscribe to ${sessionId}:`, error);
-    ws.send(JSON.stringify({ type: 'error', message: 'Failed to subscribe', sessionId }));
+    // Roll back whatever was set up before the failure. Without this the
+    // client count stays over-counted, the grace period never starts, and
+    // the tmux -CC subprocess lives forever (#332).
+    for (const fn of cleanupFns) {
+      try { fn(); } catch { /* ignore */ }
+    }
+    if (ws.data.subscriptions.get(sessionId)?.controlSession === controlSession) {
+      ws.data.subscriptions.delete(sessionId);
+    }
+    if (clientAdded && controlSession) {
+      controlSession.removeClient();
+    }
+    try {
+      ws.send(JSON.stringify({ type: 'error', message: 'Failed to subscribe', sessionId }));
+    } catch { /* disconnected */ }
   }
 }
 

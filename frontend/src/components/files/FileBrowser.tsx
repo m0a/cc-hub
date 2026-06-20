@@ -8,7 +8,7 @@ import {
 	FolderOpen,
 	Image,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { FileInfo } from "../../../../shared/types";
 import { authFetch } from "../../services/api";
@@ -25,6 +25,12 @@ interface FileBrowserProps {
 	showHidden?: boolean;
 	/** Path of the file currently shown in the viewer (highlighted in the tree). */
 	selectedPath?: string;
+	/**
+	 * Bumping this number forces a refetch of every currently-expanded directory
+	 * (the in-memory `dirContents` cache is otherwise never invalidated). Wired
+	 * to the toolbar reload button so newly created files/dirs appear.
+	 */
+	refreshSignal?: number;
 }
 
 // File type icons
@@ -196,6 +202,7 @@ export function FileBrowser({
 	onSelectFile,
 	showHidden = false,
 	selectedPath,
+	refreshSignal,
 }: FileBrowserProps) {
 	const { t } = useTranslation();
 	const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
@@ -207,10 +214,13 @@ export function FileBrowser({
 	// Filter hidden files if needed
 	const visibleFiles = showHidden ? files : files.filter((f) => !f.isHidden);
 
-	// Load directory contents
+	// Load directory contents. `silent` skips the spinner and keeps the existing
+	// cached children visible while refetching in the background — used when
+	// re-expanding or refreshing a directory that's already been loaded.
 	const loadDirContents = useCallback(
-		async (path: string) => {
-			setLoadingDirs((prev) => new Set(prev).add(path));
+		async (path: string, opts?: { silent?: boolean }) => {
+			const silent = opts?.silent ?? false;
+			if (!silent) setLoadingDirs((prev) => new Set(prev).add(path));
 
 			try {
 				const params = new URLSearchParams({
@@ -228,11 +238,12 @@ export function FileBrowser({
 			} catch (err) {
 				console.error("Failed to load directory:", err);
 			} finally {
-				setLoadingDirs((prev) => {
-					const next = new Set(prev);
-					next.delete(path);
-					return next;
-				});
+				if (!silent)
+					setLoadingDirs((prev) => {
+						const next = new Set(prev);
+						next.delete(path);
+						return next;
+					});
 			}
 		},
 		[sessionWorkingDir],
@@ -252,14 +263,31 @@ export function FileBrowser({
 				// Expand
 				setExpandedDirs((prev) => new Set(prev).add(path));
 
-				// Load contents if not already loaded
 				if (!dirContents.has(path)) {
 					await loadDirContents(path);
+				} else {
+					// Cache exists but may be stale (files created after the first
+					// expand). Show it immediately and refetch in the background.
+					void loadDirContents(path, { silent: true });
 				}
 			}
 		},
 		[expandedDirs, dirContents, loadDirContents],
 	);
+
+	// When the toolbar reload button bumps `refreshSignal`, refetch every
+	// currently-expanded directory so newly created entries become visible
+	// without collapsing/re-expanding each one by hand.
+	const expandedDirsRef = useRef(expandedDirs);
+	expandedDirsRef.current = expandedDirs;
+	const prevRefreshRef = useRef(refreshSignal);
+	useEffect(() => {
+		if (refreshSignal === prevRefreshRef.current) return;
+		prevRefreshRef.current = refreshSignal;
+		for (const path of expandedDirsRef.current) {
+			void loadDirContents(path, { silent: true });
+		}
+	}, [refreshSignal, loadDirContents]);
 
 	// Get short path for display
 	const shortPath = toHomeShortPath(currentPath);

@@ -100,6 +100,9 @@ export function FileViewer({
 
 	const [viewMode, setViewMode] = useState<ViewMode>("browser");
 	const [listMode, setListMode] = useState<ListMode>("browser");
+	// Bumped by the reload button to force FileBrowser to refetch its
+	// already-expanded subtrees (whose contents are otherwise cached forever).
+	const [browserRefresh, setBrowserRefresh] = useState(0);
 	const [previewMode, setPreviewMode] = useState(false);
 	const [showHidden, setShowHidden] = useState(false);
 	const [selectedChange, setSelectedChange] = useState<FileChange | null>(null);
@@ -482,7 +485,10 @@ export function FileViewer({
 								)}
 								<button
 									type="button"
-									onClick={() => listDirectory(currentPath)}
+									onClick={() => {
+										listDirectory(currentPath);
+										setBrowserRefresh((n) => n + 1);
+									}}
 									className="p-2 text-zinc-500 hover:text-zinc-300 active:text-zinc-200 transition-colors"
 									title={t("files.reload")}
 								>
@@ -610,6 +616,7 @@ export function FileViewer({
 									onSelectFile={handleSelectFile}
 									showHidden={showHidden}
 									selectedPath={selectedFile?.path}
+									refreshSignal={browserRefresh}
 								/>
 							) : (
 								<ChangesView

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.180] - 2026-06-20
+
+### Fixed
+- **ファイルブラウザの展開済みディレクトリに新規ファイルが表示されない**: ファイルブラウザは展開した各ディレクトリの中身を `dirContents` Map にキャッシュしたまま一度も無効化せず、リロードボタンも `listDirectory` でルート階層しか再取得しなかったため、展開中フォルダ内（や初回ロード後のルート直下）に作成したファイル/ディレクトリが表示されなかった。`FileBrowser` に `refreshSignal` prop を追加し、bump で展開中の全ディレクトリを背景で再取得・再展開時もキャッシュ表示しつつ背景再取得するよう変更。リロードボタンはルート再取得に加えて `refreshSignal` を bump し、ツリー全体を一括更新する（#369, `frontend/src/components/files/FileBrowser.tsx`, `frontend/src/components/files/FileViewer.tsx`）
+
 ## [0.1.179] - 2026-06-11
 
 ### Changed

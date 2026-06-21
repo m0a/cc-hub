@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.181] - 2026-06-21
+
+### Fixed
+- **Claude TUI のカーソルが入力行からズレる**: 最近の Claude Code がモードヒントのフッター下に空行を残すレイアウトになり、`padFill`（ペイン下部の void を scrollback で埋める処理）が prepend する行数が常時 1 以上になった。カーソル補正 `computeCursorPadShift` は prepend 量から 2 を引いていた（`prependCount - 2`）ため、カーソルが入力ボックス（`›` / `❯`）より最大2行上の空白行・枠線上に浮いて表示されていた。prepend した行数ぶんちょうど下げるよう修正（`Math.max(0, prependCount)`）（#371, `backend/src/services/viewport-cursor-policy.ts`）
+
 ## [0.1.180] - 2026-06-20
 
 ### Fixed

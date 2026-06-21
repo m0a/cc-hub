@@ -19,7 +19,12 @@ export function resolveViewportCursorPolicy(agent?: string): ViewportCursorPolic
 
 export function computeCursorPadShift(policy: ViewportCursorPolicy, prependCount: number): number {
   if (policy === 'codex-footer') return 0;
-  return Math.max(0, prependCount - 2);
+  // padFill prepends exactly `prependCount` scrollback rows to the top of the
+  // viewport, so every row below — including the cursor row — shifts down by
+  // that same amount. The shift must match the prepend 1:1; any fudge factor
+  // (we previously subtracted 2) leaves the cursor floating above the real
+  // input row whenever the pane has trailing blanks below the footer.
+  return Math.max(0, prependCount);
 }
 
 export function resolveViewportCursor(policy: ViewportCursorPolicy, input: ViewportCursorInput): PaneCursor {

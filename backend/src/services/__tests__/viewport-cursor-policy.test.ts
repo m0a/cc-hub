@@ -13,7 +13,12 @@ describe('viewport cursor policy', () => {
   });
 
   test('computes cursor pad shift per policy', () => {
-    expect(computeCursorPadShift('default', 5)).toBe(3);
+    // The default policy shifts the cursor down by exactly the number of
+    // prepended scrollback rows so it tracks the input row that padFill
+    // pushed down. Codex keeps its own footer-relative cursor (no shift).
+    expect(computeCursorPadShift('default', 5)).toBe(5);
+    expect(computeCursorPadShift('default', 1)).toBe(1);
+    expect(computeCursorPadShift('default', 0)).toBe(0);
     expect(computeCursorPadShift('codex-footer', 5)).toBe(0);
   });
 

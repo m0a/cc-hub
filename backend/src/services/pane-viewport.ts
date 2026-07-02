@@ -142,10 +142,6 @@ async function captureScrollback(
   }
 }
 
-export interface ViewportRequest {
-  offset: number;
-}
-
 /**
  * Capture a viewport from a pane. Returns null if the pane no longer exists.
  *

@@ -19,16 +19,6 @@ const EVENT_MESSAGES: Record<string, string> = {
 let lastNotification = { key: "", time: 0 };
 const DEBOUNCE_MS = 500;
 
-// 最後に通知したセッションID（アプリ復帰時のセッション切り替え用）
-let pendingSessionId: string | null = null;
-
-/** 通知タップでアプリ復帰時に切り替えるべきセッションIDを取得・クリア */
-export function consumePendingSessionId(): string | null {
-	const id = pendingSessionId;
-	pendingSessionId = null;
-	return id;
-}
-
 async function showNotification(title: string, options: NotificationOptions) {
 	// 1. Try ServiceWorker (required for PWA / installed web apps)
 	if ("serviceWorker" in navigator) {
@@ -84,11 +74,6 @@ export function fireHookNotification(
 	const projectName = toHomeShortPath(cwd) || "CC Hub";
 	// Body: smart message from transcript, or fallback
 	const body = smartMessage || EVENT_MESSAGES[event] || `Hook: ${event}`;
-
-	// 通知発火時にセッションIDを記録（アプリ復帰時に切り替え用）
-	if (_sessionId) {
-		pendingSessionId = _sessionId;
-	}
 
 	showNotification(projectName, {
 		body,

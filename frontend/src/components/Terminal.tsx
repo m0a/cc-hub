@@ -188,6 +188,11 @@ export const TerminalComponent = memo(
 		const controlCleanupRef = useRef<(() => void) | null>(null);
 		const controlModeRef = useRef(controlMode);
 		controlModeRef.current = controlMode;
+		// Whether the active pane is on the alternate screen (fullscreen TUIs like
+		// Claude/Codex/vim). Updated from each viewport frame. When true we hand
+		// scrolling to the app (SGR mouse wheel) instead of paging tmux scrollback,
+		// because the alt screen has no tmux scrollback and the app scrolls itself.
+		const altScreenRef = useRef(false);
 		const hideKeyboardRef = useRef(hideKeyboard);
 		hideKeyboardRef.current = hideKeyboard;
 
@@ -584,11 +589,31 @@ export const TerminalComponent = memo(
 			// we issue one viewport refetch per frame instead of many tiny ones.
 			let pendingScrollDelta = 0;
 			let pendingScrollRafId: number | null = null;
+			// Alt-screen panes (fullscreen Claude/Codex/vim) have no tmux scrollback:
+			// the app scrolls its own transcript in response to mouse-wheel input.
+			// Forward the accumulated scroll as SGR mouse-wheel events aimed at the
+			// middle of the screen so the app pages itself. delta<0 = up (button 64),
+			// delta>0 = down (button 65). Capped per flush so touch momentum can't
+			// flood the pane with a burst of events.
+			const MAX_WHEEL_PER_FLUSH = 4;
+			const sendWheelToPane = (delta: number) => {
+				const button = delta < 0 ? 64 : 65;
+				const col = Math.max(1, Math.min(term.cols, Math.round(term.cols / 2)));
+				const row = Math.max(1, Math.min(term.rows, Math.round(term.rows / 2)));
+				const seq = `\x1b[<${button};${col};${row}M`;
+				const count = Math.min(Math.abs(delta), MAX_WHEEL_PER_FLUSH);
+				for (let i = 0; i < count; i++) controlModeRef.current?.sendInput(seq);
+			};
 			const flushPendingScroll = () => {
 				pendingScrollRafId = null;
 				const delta = pendingScrollDelta;
 				pendingScrollDelta = 0;
-				if (delta !== 0) controlModeRef.current?.scrollBy?.(delta);
+				if (delta === 0) return;
+				if (altScreenRef.current) {
+					sendWheelToPane(delta);
+				} else {
+					controlModeRef.current?.scrollBy?.(delta);
+				}
 			};
 			const scrollTerminal = (lines: number) => {
 				// Server-side scrollback: tmux holds the authoritative history; the
@@ -1149,6 +1174,7 @@ export const TerminalComponent = memo(
 			const cleanup = cm.registerOnViewport((viewport, isPseudo) => {
 				const term = terminalRef.current;
 				if (!term) return;
+				altScreenRef.current = viewport.modes.altScreen;
 				if (term.cols !== viewport.cols || term.rows !== viewport.rows) {
 					applyResize(viewport.cols, viewport.rows);
 				}
@@ -1345,7 +1371,14 @@ export const TerminalComponent = memo(
 			// the pre-server-side-scrollback behavior. `term.scrollToBottom()` is
 			// a no-op now (xterm scrollback is 0); the actual reset goes through
 			// the control mode's offset.
-			controlModeRef.current?.scrollToLive?.();
+			if (altScreenRef.current) {
+				// Fullscreen TUIs (Claude/Codex) own their own transcript scroll, so
+				// there is no tmux offset to reset — send Ctrl+End so the app jumps
+				// its transcript to the bottom. No-op when already at the live edge.
+				controlModeRef.current?.sendInput("\x1b[1;5F");
+			} else {
+				controlModeRef.current?.scrollToLive?.();
+			}
 			fitTerminal();
 		}, [fitTerminal]);
 		showKeyboardRef.current = handleShowKeyboard;

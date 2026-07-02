@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.182] - 2026-07-02
+
+### Added
+- **代替スクリーンの TUI にスクロールを明け渡す**: Claude Code (v2.1.172+) / Codex は TUI を端末の代替スクリーン(alternate screen)に描画するようになり、代替スクリーンは tmux scrollback を持たないため、cchub の「上スクロールで tmux 履歴を辿る」方式では過去が一切出なくなっていた。alt スクリーンのペイン（各 viewport frame の `modes.altScreen` で判定）では、スクロールを横取りして tmux scrollback を辿る代わりに、**SGR マウスホイールイベント（button 64=上/65=下）をペインへ送信**してアプリ自身に transcript をスクロールさせるよう変更。wheel/touch/momentum は `flushPendingScroll` に集約されているのでそこで一括分岐し、touch momentum の flood は1フラッシュあたり上限でガード。タップでの live 復帰は tmux offset が無いため Ctrl+End を送ってアプリの transcript を最下部へジャンプさせる。normal スクリーンのペインは既存の tmux-scrollback 挙動のまま（#373, `frontend/src/components/Terminal.tsx`）
+
 ## [0.1.181] - 2026-06-21
 
 ### Fixed

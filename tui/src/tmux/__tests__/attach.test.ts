@@ -5,6 +5,8 @@ import {
   planSwitchClient,
   preAttachCommands,
   RETURN_KEY,
+  SIDEBAR_WIDTH,
+  sidebarSplitArgs,
 } from '../attach';
 
 describe('planAttach', () => {
@@ -54,6 +56,21 @@ describe('attachStatusRight', () => {
 
   test('戻りキーは差し替え可能', () => {
     expect(attachStatusRight('F8')).toContain('F8 で一覧へ戻る');
+  });
+});
+
+describe('sidebarSplitArgs', () => {
+  test('左に幅固定の横分割 + フォーカス据え置き(-d) で sidebar を生やす', () => {
+    const args = sidebarSplitArgs('proj-2');
+    expect(args).toEqual([
+      'split-window', '-h', '-b', '-l', String(SIDEBAR_WIDTH), '-d', '-t', 'proj-2', 'cchub tui --sidebar',
+    ]);
+  });
+
+  test('幅・コマンドは差し替え可能', () => {
+    const args = sidebarSplitArgs('s', 30, 'cchub tui --sidebar -p 3456');
+    expect(args).toContain('30');
+    expect(args[args.length - 1]).toBe('cchub tui --sidebar -p 3456');
   });
 });
 

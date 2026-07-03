@@ -225,6 +225,10 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
         ? (hookState ?? undefined)
         : undefined;
 
+    // Push the herdr-style state dot into tmux so it shows in the status bar
+    // (rendered by attachStatusRight's #{@cchub_state}). Deduped/fire-and-forget.
+    tmuxService.setSessionState(s.name, sessionIndicatorState);
+
     const panePids: (number | undefined)[] = s.panes ? s.panes.map((p: { pid?: number }) => p.pid) : [];
     const metrics = await computeSessionMetrics({
       ccSessionId: includeClaudeInfo ? ccSession?.sessionId : undefined,

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.185] - 2026-07-04
+
+### Added
+- **herdr 風の既定レイアウト（入室時に左サイドバーを自動表示）**: `cchub tui` でセッションに入室すると、左端に幅34桁のセッション一覧サイドバーを自動で開くようにした（「左に一覧・右に作業」の herdr 風レイアウト）。狭幅向けの専用コンポーネント（1セッション=1行: `▸ ドット セッション名`）で描画し、既にサイドバーがあれば二重に開かず、フォーカスは作業ペインに残す。popup 経由の切替でも切替え先にサイドバーを生やす。`CCHUB_TUI_SIDEBAR=0`（または `off` / `false`）で無効化できる（`tui/src/components/Sidebar.tsx`, `tui/src/tmux/attach.ts`, `tui/src/index.ts`）
+
+### Changed
+- **常時表示サイドバーの幅を 48→34 桁に縮小**: herdr のスリムなサイドバーに寄せ、専用のコンパクト表示（カードではなく1行表示）に変更（`tui/src/tmux/attach.ts`, `backend/src/services/tmux.ts` の F10 バインド）
+
 ## [0.1.184] - 2026-07-03
 
 ### Fixed

@@ -93,6 +93,8 @@ export function planSwitchClient(sessionName: string): string[][] {
  * 戻り値は最後の tmux コマンド（switch-client）の exit code（成功=0）。
  */
 export function switchClient(sessionName: string): number {
+  // 既定レイアウト一貫性: popup 経由の切替でも切替え先にサイドバーを生やす。
+  if (sidebarAutoEnabled()) ensureSidebar(sessionName);
   const plan = planSwitchClient(sessionName);
   let lastCode = 0;
   for (const args of plan) {
@@ -107,7 +109,7 @@ export function switchClient(sessionName: string): number {
 }
 
 /** 常時表示サイドバーの既定幅（桁）。F10 バインドと provision で共有する。 */
-export const SIDEBAR_WIDTH = 48;
+export const SIDEBAR_WIDTH = 34;
 
 /** サイドバーとして開くペインを起動するコマンド文字列（tmux split-window に渡す）。 */
 export const SIDEBAR_SPAWN_CMD = 'cchub tui --sidebar';
@@ -165,6 +167,21 @@ export function switchClientWithSidebar(targetSession: string, width: number = S
   runTmux(['switch-client', '-t', targetSession]);
 }
 
+/**
+ * 入室時のサイドバー自動表示の有効/無効。既定は有効（herdr 風の「常に左に一覧」レイアウト）。
+ * `CCHUB_TUI_SIDEBAR=0|off|false` で無効化できる。
+ */
+export function sidebarAutoEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const v = (env.CCHUB_TUI_SIDEBAR ?? '').trim().toLowerCase();
+  return v !== '0' && v !== 'off' && v !== 'false';
+}
+
+/** 対象セッションにサイドバーが無ければ生やす（`-d` でフォーカスは作業ペインに残す）。 */
+export function ensureSidebar(sessionName: string, width: number = SIDEBAR_WIDTH): void {
+  if (sessionHasSidebar(sessionName)) return;
+  runTmux(sidebarSplitArgs(sessionName, width));
+}
+
 /** 子プロセスを stdio 継承で起動し、detach（= RETURN_KEY 等）まで同期的に待つ。 */
 export function attachSession(sessionName: string, tmuxEnv: string | undefined = process.env.TMUX): void {
   const plan = planAttach(sessionName, tmuxEnv);
@@ -189,6 +206,10 @@ export function attachSession(sessionName: string, tmuxEnv: string | undefined =
   // ここでの設定は web 側に影響しない（detach 後は元の値へ復元する）。
   const originalMouse = captureOption(sessionName, 'mouse');
   runTmux(['set-option', '-t', sessionName, 'mouse', 'on']);
+
+  // herdr 風の既定レイアウト: 入室時に左サイドバー（セッション一覧）を自動で開く。
+  // 既にあれば二重に開かない。フォーカスは作業ペインに残る（-d）。CCHUB_TUI_SIDEBAR=0 で無効。
+  if (sidebarAutoEnabled()) ensureSidebar(sessionName);
 
   Bun.spawnSync([plan.command, ...plan.args], {
     stdio: ['inherit', 'inherit', 'inherit'],

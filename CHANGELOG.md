@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.184] - 2026-07-03
+
+### Fixed
+- **端末クライアントでマウスが一切効かなくなる**: Web UI（tmux -CC 制御モード）は接続時に copy-mode 誤爆防止のため `set-option -t <session> mouse off` を実行するが、Web 切断後もこの override がセッションに残り続けるため、同じ tmux セッションに繋いでいるローカル端末クライアントのマウス（クリック選択・境界ドラッグ・ホイール）まで死んでいた。`TmuxControlSession.destroy()` で mouse override を `set-option -u` で解除し、global の `mouse on` へフォールバックさせるよう修正（`backend/src/services/tmux-control.ts`）
+
 ## [0.1.183] - 2026-07-03
 
 ### Added

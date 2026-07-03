@@ -986,6 +986,20 @@ export class TmuxControlSession {
     if (this.destroyed) return;
     this.destroyed = true;
 
+    // Restore mouse mode we disabled on attach (see `mouse off` above). Otherwise
+    // a terminal client sharing this tmux session is left with mouse off after the
+    // browser disconnects ("mouse doesn't work at all"). Unsetting the session
+    // override falls the option back to the global default (`mouse on`). Runs via a
+    // fresh tmux process since our own control connection is being torn down here.
+    try {
+      spawn('tmux', ['set-option', '-u', '-t', this.sessionId, 'mouse'], { stdio: 'ignore' }).on(
+        'error',
+        () => {},
+      );
+    } catch {
+      // best-effort — the tmux session may already be gone
+    }
+
     if (this.graceTimer) {
       clearTimeout(this.graceTimer);
       this.graceTimer = null;

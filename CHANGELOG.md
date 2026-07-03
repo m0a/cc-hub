@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.183] - 2026-07-03
+
+### Added
+- **herdr 風のエージェント状態ドットを tmux status-bar に表示**: cchub 経由で入室中のセッションで、エージェント状態を色ドット（🟡 作業中 / 🔴 入力待ち / 🔵 完了 / 🟢 アイドル）として status-bar に表示する。セッション一覧処理が hook ベースの状態を tmux ユーザオプション `@cchub_state` へ変更時のみ push（dedupe / fire-and-forget）し、`attachStatusRight` の `#{@cchub_state}` が描画する（`backend/src/services/tmux.ts`, `backend/src/routes/sessions.ts`, `tui/src/tmux/attach.ts`）
+- **常時表示のセッションサイドバー（`cchub tui --sidebar` / no-prefix F10）**: 左端に幅48桁のライブなセッション一覧をペインとして常駐させる。Enter で `switch-client` してもサイドバーは閉じず、切替え先セッションにもサイドバーを自動で生やすため「どこへ行っても左に一覧が居る」herdr 風の体験になる。サイドバーは自ペインを `@cchub_sidebar=1` でマークして重複作成を防ぎ、`q` で自ペインを閉じる（`tui/src/index.ts`, `tui/src/tmux/attach.ts`, `backend/src/cli.ts`）
+
+### Changed
+- **`cchub tui` の Help をカテゴリ分け + 状態ドット凡例を追加**: フラットなキー一覧を「移動 / セッション操作 / 入室中 / 履歴・その他」にグループ化し、状態ドットの凡例を併記。App のフッタヒントも状況（通常 / 終了確認 / ヘルプ）で出し分けるようにした（`tui/src/components/Help.tsx`, `tui/src/components/App.tsx`）
+
 ## [0.1.182] - 2026-07-02
 
 ### Added

@@ -8,7 +8,7 @@ import { resolveToken } from './api/auth';
 import { type ApiClient, createClient } from './api/client';
 import { getSessions } from './api/sessions';
 import { Root } from './components/Root';
-import { attachSession, switchClient } from './tmux/attach';
+import { attachSession, closeSidebarPane, markSidebarPane, switchClient, switchClientWithSidebar } from './tmux/attach';
 import type { ListAction } from './types';
 
 const ALT_ON = '\x1b[?1049h';
@@ -23,6 +23,12 @@ export interface StartTuiOptions {
    * detach ループはしない。
    */
   popup?: boolean;
+  /**
+   * sidebar モード: 常時表示のサイドバーペイン内で動く前提（F10 で split-window 起動）。
+   * alt-screen はスキップし、Enter で `switch-client`（切替え先にもサイドバーを生やす）
+   * してもプロセスは終了せずループ継続＝ペインが残り続ける。q で自ペインを閉じる。
+   */
+  sidebar?: boolean;
 }
 
 function isLocalHost(host: string): boolean {
@@ -117,6 +123,20 @@ export async function startTui(opts: StartTuiOptions): Promise<void> {
     return;
   }
 
+  // sidebar モード: 自ペインとして常駐する。alt-screen は使わない（ペインの一部なので）。
+  // Enter(attach) → 切替え先にもサイドバーを生やして switch-client、プロセスは終了せず
+  // 次のループで再描画（= ペインが残る）。q(quit) → 自ペインを閉じて終了。
+  if (opts.sidebar) {
+    markSidebarPane();
+    for (;;) {
+      const action = await renderRootOnce(client, baseUrl, token);
+      if (action.type === 'quit') break;
+      if (action.type === 'attach') switchClientWithSidebar(action.sessionName);
+    }
+    closeSidebarPane();
+    return;
+  }
+
   // 通常モード: alt-screen ループ。一覧 → Enter で入室（alt 退出 → tmux attach → alt 復帰）→ q で終了。
   process.on('exit', () => {
     try {
@@ -147,11 +167,13 @@ if (import.meta.main) {
   let port = 5923;
   let host = '127.0.0.1';
   let popup = false;
+  let sidebar = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if ((a === '-p' || a === '--port') && argv[i + 1]) port = Number.parseInt(argv[++i], 10);
     else if ((a === '-H' || a === '--host') && argv[i + 1]) host = argv[++i];
     else if (a === '--popup') popup = true;
+    else if (a === '--sidebar') sidebar = true;
   }
-  await startTui({ port, host, popup });
+  await startTui({ port, host, popup, sidebar });
 }

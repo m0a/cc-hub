@@ -29,6 +29,7 @@ interface CliOptions {
   sendLines?: number;
   peekTarget?: string;
   tuiPopup?: boolean;
+  tuiSidebar?: boolean;
 }
 
 function printHelp(): void {
@@ -86,6 +87,10 @@ tui options:
                          the current client to the selected session and exits
                          (the popup closes automatically). Bound to F11 by
                          CC Hub's tmux config.
+  --sidebar              Persistent left-edge session sidebar: runs inside a
+                         tmux pane, Enter switches sessions without exiting
+                         (provisioning a sidebar in the target too), q closes
+                         the pane. Toggle with F10 (CC Hub's tmux config).
 
 ${t('cli.examples')}
   ${t('cli.exampleStart')}
@@ -154,6 +159,9 @@ export function parseArgs(args: string[]): CliOptions {
         break;
       case '--popup':
         options.tuiPopup = true;
+        break;
+      case '--sidebar':
+        options.tuiSidebar = true;
         break;
       case '--stdin':
         options.sendStdin = true;
@@ -385,6 +393,7 @@ async function runTuiCommand(options: CliOptions): Promise<void> {
     port: options.port,
     host: options.host,
     popup: options.tuiPopup ?? false,
+    sidebar: options.tuiSidebar ?? false,
   });
 }
 

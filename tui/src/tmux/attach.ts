@@ -43,9 +43,14 @@ export function preAttachCommands(sessionName: string, returnKey: string = RETUR
  * `#[range=user|sessions]` でクリック可能領域を定義する。CCHUB_TMUX_CONFIG 側の
  * `MouseDown1Status` バインドが mouse_status_range='sessions' を検知して popup を開く。
  * 反転表示でボタンであることを明示し、F12 ヒントも併記する。
+ *
+ * 先頭に `#{@cchub_state}` を出す。これは cc-hub のセッション一覧処理が
+ * `tmux set-option -t <session> @cchub_state <dot>` で流し込むエージェント状態ドット
+ * （🟡=作業中 / 🔴=入力待ち / 🔵=完了 / 🟢=アイドル）で、herdr 風に「状態が一目でわかる」。
+ * 未設定なら何も出さない（`#{?...}` で条件付き）。
  */
 export function attachStatusRight(returnKey: string = RETURN_KEY): string {
-  return `#[range=user|sessions,reverse] ≡ cchub #[norange,default]  ${returnKey} で一覧へ戻る `;
+  return `#{?#{@cchub_state},#{@cchub_state} ,}#[range=user|sessions,reverse] ≡ cchub #[norange,default]  ${returnKey} で一覧へ戻る `;
 }
 
 function runTmux(args: string[]): void {
@@ -99,6 +104,65 @@ export function switchClient(sessionName: string): number {
     }
   }
   return lastCode;
+}
+
+/** 常時表示サイドバーの既定幅（桁）。F10 バインドと provision で共有する。 */
+export const SIDEBAR_WIDTH = 48;
+
+/** サイドバーとして開くペインを起動するコマンド文字列（tmux split-window に渡す）。 */
+export const SIDEBAR_SPAWN_CMD = 'cchub tui --sidebar';
+
+/**
+ * `switchClientWithSidebar` が発行する split-window 引数（純粋関数）。
+ * `-h -b`（左に横分割）+ `-l <width>`（幅固定）+ `-d`（フォーカスは切替え先の作業ペインに残す）。
+ */
+export function sidebarSplitArgs(
+  targetSession: string,
+  width: number = SIDEBAR_WIDTH,
+  cmd: string = SIDEBAR_SPAWN_CMD,
+): string[] {
+  return ['split-window', '-h', '-b', '-l', String(width), '-d', '-t', targetSession, cmd];
+}
+
+/** 対象セッションに既にサイドバーペイン（@cchub_sidebar=1）があるか。 */
+export function sessionHasSidebar(targetSession: string): boolean {
+  try {
+    const proc = Bun.spawnSync(['tmux', 'list-panes', '-t', targetSession, '-F', '#{@cchub_sidebar}'], {
+      stdout: 'pipe',
+      stderr: 'ignore',
+    });
+    const text = proc.stdout ? new TextDecoder().decode(proc.stdout) : '';
+    return text.split('\n').some((line) => line.trim() === '1');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * サイドバーモードの起動時に自ペインを整える（$TMUX_PANE 経由で現在ペインに適用）:
+ * - `@cchub_sidebar 1`: 重複作成防止・provision 検出用のマーカー
+ * - `remain-on-exit off`: グローバルは on だが、サイドバーは終了時にペインを消したい
+ */
+export function markSidebarPane(): void {
+  runTmux(['set-option', '-p', '@cchub_sidebar', '1']);
+  runTmux(['set-option', '-p', 'remain-on-exit', 'off']);
+}
+
+/** サイドバーの終了時に自ペインを閉じる（remain-on-exit を自ペインで off 済み）。 */
+export function closeSidebarPane(): void {
+  runTmux(['kill-pane']);
+}
+
+/**
+ * サイドバーからのセッション切替え。切替え先にサイドバーが無ければ先に生やしてから
+ * `switch-client` する（= どのセッションへ行っても左に一覧が居る＝常駐に見える）。
+ * 自分のペインは残るので呼出元プロセスは終了しない（index.ts 側でループ継続）。
+ */
+export function switchClientWithSidebar(targetSession: string, width: number = SIDEBAR_WIDTH): void {
+  if (!sessionHasSidebar(targetSession)) {
+    runTmux(sidebarSplitArgs(targetSession, width));
+  }
+  runTmux(['switch-client', '-t', targetSession]);
 }
 
 /** 子プロセスを stdio 継承で起動し、detach（= RETURN_KEY 等）まで同期的に待つ。 */

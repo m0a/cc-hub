@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { detectAgentProviderFromArgs, type AgentProvider } from '../../../shared/types';
+import { detectAgentProviderFromArgs, type AgentProvider, type IndicatorState } from '../../../shared/types';
 
 interface TmuxPaneInfo {
   paneId: string;          // "%0", "%1"
@@ -63,12 +63,42 @@ bind-key -n F11 display-popup -E -B -w 50 -h "100%" -x 0 -y 0 "cchub tui --popup
 # (Also re-applied per-attach by tui/src/tmux/attach.ts as a safety net.)
 bind-key -n F12 detach-client
 
+# F10 (no-prefix): open a persistent left-edge session sidebar in the current
+# window (herdr-style always-on list). The sidebar process marks its own pane
+# with @cchub_sidebar=1 so we skip if one already exists; it kills its pane on
+# quit. Enter in the sidebar switches sessions without closing it.
+bind-key -n F10 if-shell "tmux list-panes -F '#{@cchub_sidebar}' | grep -q 1" 'display-message "cchub sidebar is already open (q to close)"' 'split-window -h -b -l 48 "cchub tui --sidebar"'
+
 # Mouse click on status-bar "≡ cchub" button → open session popup.
 # The button itself (with #[range=user|sessions]) is set per-attach by
 # tui/src/tmux/attach.ts so we don't clobber the user's global status-right.
 # MouseDown1Status fires for any status click; if-shell filters by range name.
 bind-key -n MouseDown1Status if-shell -F "#{==:#{mouse_status_range},sessions}" "display-popup -E -B -w 50 -h 100% -x 0 -y 0 'cchub tui --popup'"
 `;
+
+/**
+ * Map an agent's indicator state to a herdr-style "state at a glance" dot,
+ * rendered in the tmux status bar via the `@cchub_state` user option.
+ *   🟡 processing (working) / 🔴 waiting_input (needs you) /
+ *   🔵 completed (done) / 🟢 idle-or-unknown.
+ */
+export function indicatorStateToDot(state?: IndicatorState): string {
+  switch (state) {
+    case 'processing':
+      return '🟡';
+    case 'waiting_input':
+      return '🔴';
+    case 'completed':
+      return '🔵';
+    default:
+      return '🟢';
+  }
+}
+
+// Dedupe cache so we only spawn `tmux set-option` when a session's dot actually
+// changes. The sessions list recomputes state every ~5s; without this we'd
+// fork one tmux process per session per poll for no visible change.
+const lastSessionDot = new Map<string, string>();
 
 /** Parsed process info from a single `ps` call, shared across consumers */
 export interface ParsedProcessInfo {
@@ -105,6 +135,28 @@ export class TmuxService {
   constructor() {
     const configDir = path.join(process.env.HOME || '/tmp', '.config', 'cchub');
     this.configPath = path.join(configDir, 'tmux.conf');
+  }
+
+  /**
+   * Push a herdr-style agent-state dot into the tmux session's `@cchub_state`
+   * user option so `attachStatusRight()` can render it in the status bar.
+   * Fire-and-forget and deduped: only spawns when the dot changes.
+   */
+  setSessionState(sessionName: string, state?: IndicatorState): void {
+    const dot = indicatorStateToDot(state);
+    if (lastSessionDot.get(sessionName) === dot) return;
+    lastSessionDot.set(sessionName, dot);
+    try {
+      Bun.spawn(['tmux', 'set-option', '-t', sessionName, '@cchub_state', dot], {
+        stdout: 'ignore',
+        stderr: 'ignore',
+        env: TMUX_ENV,
+      });
+    } catch {
+      // Best-effort: the status dot is cosmetic; drop the cache entry so the
+      // next poll retries rather than sticking on a stale value.
+      lastSessionDot.delete(sessionName);
+    }
   }
 
   /**

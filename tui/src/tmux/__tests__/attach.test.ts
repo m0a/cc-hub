@@ -6,6 +6,7 @@ import {
   preAttachCommands,
   RETURN_KEY,
   SIDEBAR_WIDTH,
+  sidebarAutoEnabled,
   sidebarSplitArgs,
 } from '../attach';
 
@@ -71,6 +72,23 @@ describe('sidebarSplitArgs', () => {
     const args = sidebarSplitArgs('s', 30, 'cchub tui --sidebar -p 3456');
     expect(args).toContain('30');
     expect(args[args.length - 1]).toBe('cchub tui --sidebar -p 3456');
+  });
+});
+
+describe('sidebarAutoEnabled', () => {
+  test('未設定は既定で有効', () => {
+    expect(sidebarAutoEnabled({})).toBe(true);
+  });
+
+  test('0 / off / false（大文字小文字問わず）で無効', () => {
+    expect(sidebarAutoEnabled({ CCHUB_TUI_SIDEBAR: '0' })).toBe(false);
+    expect(sidebarAutoEnabled({ CCHUB_TUI_SIDEBAR: 'off' })).toBe(false);
+    expect(sidebarAutoEnabled({ CCHUB_TUI_SIDEBAR: 'FALSE' })).toBe(false);
+  });
+
+  test('その他の値（1 / on 等）は有効', () => {
+    expect(sidebarAutoEnabled({ CCHUB_TUI_SIDEBAR: '1' })).toBe(true);
+    expect(sidebarAutoEnabled({ CCHUB_TUI_SIDEBAR: 'on' })).toBe(true);
   });
 });
 

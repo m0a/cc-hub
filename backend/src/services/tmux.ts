@@ -67,7 +67,7 @@ bind-key -n F12 detach-client
 # window (herdr-style always-on list). The sidebar process marks its own pane
 # with @cchub_sidebar=1 so we skip if one already exists; it kills its pane on
 # quit. Enter in the sidebar switches sessions without closing it.
-bind-key -n F10 if-shell "tmux list-panes -F '#{@cchub_sidebar}' | grep -q 1" 'display-message "cchub sidebar is already open (q to close)"' 'split-window -h -b -l 48 "cchub tui --sidebar"'
+bind-key -n F10 if-shell "tmux list-panes -F '#{@cchub_sidebar}' | grep -q 1" 'display-message "cchub sidebar is already open (q to close)"' 'split-window -h -b -l 34 "cchub tui --sidebar"'
 
 # Mouse click on status-bar "≡ cchub" button → open session popup.
 # The button itself (with #[range=user|sessions]) is set per-attach by

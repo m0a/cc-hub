@@ -92,6 +92,10 @@ tui options:
                          (provisioning a sidebar in the target too), q closes
                          the pane. Toggle with F10 (CC Hub's tmux config).
 
+  On entering a session, cchub tui auto-opens this sidebar (herdr-style
+  "list on the left, work on the right" layout). Disable with the env var
+  CCHUB_TUI_SIDEBAR=0 (or off/false).
+
 ${t('cli.examples')}
   ${t('cli.exampleStart')}
   ${t('cli.exampleWithPort')}

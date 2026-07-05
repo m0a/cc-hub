@@ -8,7 +8,7 @@ import type { DailyActivity, ModelUsage } from '../../../shared/types';
 // Model Usage panel covers a rolling recent window. stats-cache.json only
 // holds a date-less cumulative total, so the per-model breakdown for a window
 // is aggregated directly from the Claude Code transcripts (#: model-usage-30d).
-export const MODEL_USAGE_WINDOW_DAYS = 30;
+const MODEL_USAGE_WINDOW_DAYS = 30;
 // Full jsonl scans are not free; the dashboard polls every 60s. Cache the
 // aggregate so repeated polls within this window reuse one scan.
 const MODEL_USAGE_CACHE_TTL_MS = 5 * 60_000;

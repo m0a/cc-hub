@@ -2,13 +2,12 @@ import { join } from 'node:path';
 import { readdir, readFile, rm, mkdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { ensureDataDir, atomicWriteFile, createMutationLock } from '../utils/storage';
-import type { Session, SessionState, SessionResponse } from '../../../shared/types';
+import type { Session, SessionResponse } from '../../../shared/types';
 
 const SESSIONS_DIR = 'sessions';
 
 // Serialise read-modify-write updates against the per-session JSON files so
-// concurrent updateSessionAccess / updateSessionState calls can't drop each
-// other's changes. #333
+// concurrent updateSessionAccess calls can't drop each other's changes. #333
 const withSessionsLock = createMutationLock();
 
 async function getSessionsDir(): Promise<string> {
@@ -117,24 +116,6 @@ export async function updateSessionAccess(id: string): Promise<boolean> {
     try {
       const data = await readFile(filePath, 'utf-8');
       const session = JSON.parse(data) as Session;
-      session.lastAccessedAt = new Date().toISOString();
-      await atomicWriteFile(filePath, JSON.stringify(session, null, 2));
-      return true;
-    } catch {
-      return false;
-    }
-  });
-}
-
-export async function updateSessionState(id: string, state: SessionState): Promise<boolean> {
-  return withSessionsLock(async () => {
-    const sessionsDir = await getSessionsDir();
-    const filePath = join(sessionsDir, `${id}.json`);
-
-    try {
-      const data = await readFile(filePath, 'utf-8');
-      const session = JSON.parse(data) as Session;
-      session.state = state;
       session.lastAccessedAt = new Date().toISOString();
       await atomicWriteFile(filePath, JSON.stringify(session, null, 2));
       return true;

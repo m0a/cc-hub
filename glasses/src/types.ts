@@ -1,6 +1,6 @@
 // CC Hub API response types (subset relevant to G2 display)
 
-export type IndicatorState = 'processing' | 'waiting_input' | 'idle' | 'completed'
+type IndicatorState = 'processing' | 'waiting_input' | 'idle' | 'completed'
 
 export interface Session {
   id: string

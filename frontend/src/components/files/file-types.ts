@@ -52,7 +52,7 @@ export function isVideoFile(path: string): boolean {
 	return ext ? VIDEO_EXTENSIONS.has(ext) : false;
 }
 
-export function isAudioFile(path: string): boolean {
+function isAudioFile(path: string): boolean {
 	const ext = extOf(path);
 	return ext ? AUDIO_EXTENSIONS.has(ext) : false;
 }

@@ -6,7 +6,7 @@ export interface RecapEntry {
 }
 
 /** How many trailing lines of a jsonl file are scanned for a recap. */
-export const RECAP_SCAN_LINES = 300;
+const RECAP_SCAN_LINES = 300;
 
 /**
  * Parse the latest recap out of already-read jsonl lines. Two sources:

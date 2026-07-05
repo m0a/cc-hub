@@ -11,7 +11,7 @@ interface SessionWithPeer {
 	peerId?: string;
 }
 
-export function resolveSessionApi(
+function resolveSessionApi(
 	session: SessionWithPeer | undefined,
 	peers: PeerClientView[],
 ): { apiBase: string; token: string | null; isRemote: boolean } {

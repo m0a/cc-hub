@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { Database } from 'bun:sqlite';
 
-export interface CodexTokenUsage {
+interface CodexTokenUsage {
   contextTokens?: number;
   contextMaxTokens?: number;
   contextPercent?: number;

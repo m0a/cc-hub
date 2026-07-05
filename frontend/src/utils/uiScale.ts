@@ -1,9 +1,7 @@
 export const UI_SCALE_STORAGE_KEY = "cchub-ui-scale";
 export const UI_SCALE_OPTIONS = [0.8, 0.9, 1.0, 1.15, 1.3] as const;
-export const DEFAULT_UI_SCALE = 1.0;
+const DEFAULT_UI_SCALE = 1.0;
 const BASE_FONT_SIZE_PX = 14;
-
-export type UiScale = (typeof UI_SCALE_OPTIONS)[number];
 
 export function getStoredUiScale(): number {
 	try {

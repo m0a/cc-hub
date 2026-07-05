@@ -3,7 +3,11 @@ import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import type { HistorySession } from '../../../shared/types';
+import type {
+  ConversationMessage,
+  HistorySession,
+  ToolResultImage,
+} from '../../../shared/types';
 import { readLastLines } from '../utils/read-last-lines';
 import { scanLastRecap } from '../utils/recap-scanner';
 
@@ -45,34 +49,6 @@ function truncateRecap(content: string): string {
   return content.length > RECAP_PREVIEW_MAX
     ? `${content.slice(0, RECAP_PREVIEW_MAX)}…`
     : content;
-}
-
-export interface ToolUseInfo {
-  id: string;
-  name: string;
-  input: Record<string, unknown>;
-}
-
-export interface ToolResultImage {
-  mediaType: string;
-  data: string;
-}
-
-export interface ToolResultInfo {
-  toolUseId: string;
-  toolName?: string;
-  output: string;
-  images?: ToolResultImage[];
-  isError?: boolean;
-}
-
-export interface ConversationMessage {
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp?: string;
-  thinking?: string;
-  toolUse?: ToolUseInfo[];
-  toolResult?: ToolResultInfo[];
 }
 
 export interface ProjectInfo {

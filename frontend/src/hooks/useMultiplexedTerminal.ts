@@ -519,7 +519,7 @@ export function sendTerminalInput(
 	return true;
 }
 
-export function dispatchInputEcho(
+function dispatchInputEcho(
 	sessionId: string,
 	paneId: string,
 	data: string,

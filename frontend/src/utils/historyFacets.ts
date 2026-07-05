@@ -6,7 +6,7 @@ export type HistoryPeriod = "24h" | "7d" | "30d" | null;
 
 /** Sentinel value for sessions with no git branch. */
 export const UNKNOWN_BRANCH = "__unknown__";
-export const LOCAL_PEER = "local";
+const LOCAL_PEER = "local";
 
 export interface FacetState {
 	projects: Set<string>;
@@ -120,7 +120,7 @@ function sortedValues(
 }
 
 /** Strip the leading `~/` so the sidebar shows a clean project name. */
-export function projectLabel(projectName: string): string {
+function projectLabel(projectName: string): string {
 	return projectName.replace(/^~\//, "");
 }
 

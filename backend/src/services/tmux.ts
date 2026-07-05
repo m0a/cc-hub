@@ -82,7 +82,7 @@ bind-key -n MouseDown1Status if-shell -F "#{==:#{mouse_status_range},sessions}" 
  *   🟡 processing (working) / 🔴 waiting_input (needs you) /
  *   🔵 completed (done) / 🟢 idle-or-unknown.
  */
-export function indicatorStateToDot(state?: IndicatorState): string {
+function indicatorStateToDot(state?: IndicatorState): string {
   switch (state) {
     case 'processing':
       return '🟡';

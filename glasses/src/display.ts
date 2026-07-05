@@ -13,7 +13,7 @@ const W = 576
 const H = 288
 
 export type Bridge = Awaited<ReturnType<typeof waitForEvenAppBridge>>
-export type Mode = 'session_list' | 'conversation' | 'choice'
+type Mode = 'session_list' | 'conversation' | 'choice'
 
 // Display metrics (measured on actual G2 hardware)
 // Body container: 568x210, border=0, padding=6 → effective 556x198

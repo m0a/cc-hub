@@ -157,7 +157,7 @@ interface SessionListProps {
 }
 
 // Session menu dialog (color change + title edit + delete)
-export function SessionMenuDialog({
+function SessionMenuDialog({
 	session,
 	onChangeTheme,
 	onChangeTitle,

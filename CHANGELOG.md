@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.186] - 2026-07-06
+
+### Fixed
+- **react/react-dom のバージョン不整合でアプリが起動不能になる問題**: lockfile が react@19.2.6 / react-dom@19.2.4 と不整合なまま（v0.1.166 直後の tui scaffold 以降）で、依存の再インストールや vite の deps 再最適化を踏むと "Incompatible React versions" で White Screen になっていた。両方を 19.2.7 に整合させた（`frontend/package.json`, `bun.lock`）
+- **frontend の `bun:test` 型解決が backend への import 連鎖に偶然依存していた**: `@types/bun` を frontend に明示追加し、tsconfig に `types: ["bun"]` を設定（backend/tui と同じパターン）
+
+### Changed
+- **デッドコード除去（knip 走査）**: 未使用の export・関数・型・ファイル・依存を全ワークスペースから削除（31ファイル、−525行）。`session-history.ts` に重複していた `ConversationMessage` / `ToolUseInfo` / `ToolResultInfo` / `ToolResultImage` を `shared/types.ts` に一元化。未使用依存 `hono`・`sharp` を frontend から削除。ファイル内でのみ使用される約20シンボルを un-export（#379）
+
 ## [0.1.185] - 2026-07-04
 
 ### Added

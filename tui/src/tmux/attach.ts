@@ -112,7 +112,7 @@ export function switchClient(sessionName: string): number {
 export const SIDEBAR_WIDTH = 34;
 
 /** サイドバーとして開くペインを起動するコマンド文字列（tmux split-window に渡す）。 */
-export const SIDEBAR_SPAWN_CMD = 'cchub tui --sidebar';
+const SIDEBAR_SPAWN_CMD = 'cchub tui --sidebar';
 
 /**
  * `switchClientWithSidebar` が発行する split-window 引数（純粋関数）。
@@ -127,7 +127,7 @@ export function sidebarSplitArgs(
 }
 
 /** 対象セッションに既にサイドバーペイン（@cchub_sidebar=1）があるか。 */
-export function sessionHasSidebar(targetSession: string): boolean {
+function sessionHasSidebar(targetSession: string): boolean {
   try {
     const proc = Bun.spawnSync(['tmux', 'list-panes', '-t', targetSession, '-F', '#{@cchub_sidebar}'], {
       stdout: 'pipe',
@@ -177,7 +177,7 @@ export function sidebarAutoEnabled(env: NodeJS.ProcessEnv = process.env): boolea
 }
 
 /** 対象セッションにサイドバーが無ければ生やす（`-d` でフォーカスは作業ペインに残す）。 */
-export function ensureSidebar(sessionName: string, width: number = SIDEBAR_WIDTH): void {
+function ensureSidebar(sessionName: string, width: number = SIDEBAR_WIDTH): void {
   if (sessionHasSidebar(sessionName)) return;
   runTmux(sidebarSplitArgs(sessionName, width));
 }

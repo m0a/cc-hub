@@ -1,7 +1,7 @@
 import type { SessionTheme } from "../../../shared/types";
 
 // Terminal theme colors based on session theme (dark mode)
-export const TERMINAL_THEMES_DARK: Record<
+const TERMINAL_THEMES_DARK: Record<
 	SessionTheme | "default",
 	{ background: string; foreground: string; accent: string }
 > = {
@@ -18,7 +18,7 @@ export const TERMINAL_THEMES_DARK: Record<
 };
 
 // Terminal theme colors (light mode) - soft bg, strong text
-export const TERMINAL_THEMES_LIGHT: Record<
+const TERMINAL_THEMES_LIGHT: Record<
 	SessionTheme | "default",
 	{ background: string; foreground: string; accent: string }
 > = {
@@ -65,7 +65,7 @@ export function isLightMode() {
 }
 
 // Font size constants and helpers
-export const FONT_SIZE_KEY_PREFIX = "cchub-terminal-font-size-";
+const FONT_SIZE_KEY_PREFIX = "cchub-terminal-font-size-";
 export const DEFAULT_FONT_SIZE = 14;
 export const MIN_FONT_SIZE = 8;
 export const MAX_FONT_SIZE = 32;

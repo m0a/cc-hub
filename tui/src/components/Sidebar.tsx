@@ -8,8 +8,8 @@ import { useSessions } from '../hooks/useSessions';
 import type { ListAction, TuiSession } from '../types';
 import { deriveRow, indicatorGlyph } from './session-row';
 
-/** 1 セッション = 1 行（選択中は ▸ + cyan bold）。純粋な presentational でテスト対象。 */
-export function SidebarRow({ session, selected }: { session: TuiSession; selected: boolean }) {
+/** 1 セッション = 1 行（選択中は ▸ + cyan bold）。純粋な presentational。 */
+function SidebarRow({ session, selected }: { session: TuiSession; selected: boolean }) {
   const row = deriveRow(session);
   const ind = indicatorGlyph(row.indicator);
   return (

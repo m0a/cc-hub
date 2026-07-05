@@ -26,5 +26,3 @@ i18n
 			lookupLocalStorage: "cchub-language",
 		},
 	});
-
-export default i18n;

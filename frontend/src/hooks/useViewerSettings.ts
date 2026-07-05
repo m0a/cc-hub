@@ -3,7 +3,7 @@ import { useCallback, useState } from "react";
 const WORDWRAP_STORAGE_KEY = "cchub-wordwrap";
 const FONTSIZE_STORAGE_KEY = "cchub-fontsize";
 
-export const DEFAULT_FONTSIZE = 14;
+const DEFAULT_FONTSIZE = 14;
 export const MIN_FONTSIZE = 8;
 export const MAX_FONTSIZE = 32;
 

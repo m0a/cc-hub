@@ -1,5 +1,5 @@
 // Language map for syntax highlighting
-export const LANGUAGE_MAP: Record<string, string> = {
+const LANGUAGE_MAP: Record<string, string> = {
 	// Web
 	".ts": "typescript",
 	".tsx": "typescript",

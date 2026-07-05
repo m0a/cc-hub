@@ -12,7 +12,7 @@ export interface UseAgentConversationOptions {
 	enabled?: boolean;
 }
 
-export type AgentConversationError = "missing-agent" | "unsupported-agent";
+type AgentConversationError = "missing-agent" | "unsupported-agent";
 
 export interface UseAgentConversationResult {
 	messages: ConversationMessage[];

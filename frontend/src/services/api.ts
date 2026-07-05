@@ -1,10 +1,5 @@
-import { hc } from "hono/client";
-import type { AppType } from "../../../backend/src/index";
-
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const TOKEN_KEY = "cc-hub-token";
-
-export const client = hc<AppType>(API_BASE);
 
 // Get auth token from localStorage
 export function getAuthToken(): string | null {

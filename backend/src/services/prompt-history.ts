@@ -3,7 +3,7 @@ import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-export interface PromptEntry {
+interface PromptEntry {
   display: string;
   timestamp: number;
   project: string;

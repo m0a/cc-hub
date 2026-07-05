@@ -176,17 +176,7 @@ function detectLanguage(): string {
   return 'en';
 }
 
-let currentLanguage = detectLanguage();
-
-export function setLanguage(lang: string): void {
-  if (translations[lang]) {
-    currentLanguage = lang;
-  }
-}
-
-export function getLanguage(): string {
-  return currentLanguage;
-}
+const currentLanguage = detectLanguage();
 
 // Get nested value from object using dot notation
 function getNestedValue(obj: Translations, key: string): string | undefined {

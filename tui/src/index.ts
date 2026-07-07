@@ -8,8 +8,8 @@ import { resolveToken } from './api/auth';
 import { type ApiClient, createClient } from './api/client';
 import { getSessions } from './api/sessions';
 import { Root } from './components/Root';
-import { SidebarApp } from './components/Sidebar';
-import { attachSession, closeSidebarPane, markSidebarPane, switchClient, switchClientWithSidebar } from './tmux/attach';
+import { runMouseSidebar } from './sidebar/mouse-sidebar';
+import { attachSession, closeSidebarPane, markSidebarPane, switchClient } from './tmux/attach';
 import type { ListAction } from './types';
 
 const ALT_ON = '\x1b[?1049h';
@@ -60,21 +60,6 @@ function renderRootOnce(client: ApiClient, baseUrl: string, token: string | null
         client,
         baseUrl,
         token,
-        onAction: (action: ListAction) => {
-          instance.unmount();
-          resolve(action);
-        },
-      }),
-    );
-  });
-}
-
-/** サイドバー用に SidebarApp を 1 回描画し、ユーザ操作（attach / quit）で解決して unmount する。 */
-function renderSidebarOnce(client: ApiClient, _baseUrl: string, _token: string | null): Promise<ListAction> {
-  return new Promise((resolve) => {
-    const instance = render(
-      React.createElement(SidebarApp, {
-        client,
         onAction: (action: ListAction) => {
           instance.unmount();
           resolve(action);
@@ -143,12 +128,9 @@ export async function startTui(opts: StartTuiOptions): Promise<void> {
   // Enter(attach) → 切替え先にもサイドバーを生やして switch-client、プロセスは終了せず
   // 次のループで再描画（= ペインが残る）。q(quit) → 自ペインを閉じて終了。
   if (opts.sidebar) {
+    // マウス対応サイドバー（raw ターミナル）。クリック/Enter で switch、q で閉じる。
     markSidebarPane();
-    for (;;) {
-      const action = await renderSidebarOnce(client, baseUrl, token);
-      if (action.type === 'quit') break;
-      if (action.type === 'attach') switchClientWithSidebar(action.sessionName);
-    }
+    await runMouseSidebar(client);
     closeSidebarPane();
     return;
   }

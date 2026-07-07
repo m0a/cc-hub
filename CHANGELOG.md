@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.186] - 2026-07-04
+
+### Changed
+- **サイドバーをマウスでクリック選択できるように（Ink → raw ターミナル実装）**: Ink はマウス非対応のため、常時表示サイドバーの中身を React/Ink から raw ターミナル描画へ置き換えた。SGR マウス（`\x1b[?1006h`）を自前で有効化し、tmux が転送してくるマウスイベントをパースして、**行をクリックするとそのセッションへ switch** する（herdr 風の「左でクリック→右が切替」）。キーボード操作（↑↓ / j k / Enter / q）と状態ドット（🟡🔴🔵🟢）・2.5s ごとのライブ更新も維持。旧 Ink サイドバー（`Sidebar.tsx`）は削除（`tui/src/sidebar/mouse-sidebar.ts`）
+
 ## [0.1.185] - 2026-07-04
 
 ### Added

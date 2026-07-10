@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 
-/** カテゴリ見出し → [キー, 説明] の並び。herdr 風にグループ分けして見通しを良くする。 */
+/** カテゴリ見出し → [キー, 説明] の並び。グループ分けして見通しを良くする。 */
 const GROUPS: Array<[string, Array<[string, string]>]> = [
   ['移動', [['↑↓ / j k', '選択を移動']]],
   [

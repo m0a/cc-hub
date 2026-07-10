@@ -3,7 +3,7 @@
 // Ink はマウス非対応なので、ここは React を使わず raw ターミナルで描画する。
 // SGR マウス（\x1b[?1006h）を自前で有効化し、tmux がこのペインへ転送してくる
 // マウスイベント（\x1b[<b;x;yM）を読んで、行クリックでそのセッションへ switch する。
-// tmux セッション（実端末）はそのまま右に残るので、herdr 風の「左でクリック→右が切替」になる。
+// tmux セッション（実端末）はそのまま右に残るので、「左でクリック→右が切替」になる。
 import type { ApiClient } from '../api/client';
 import { getSessions } from '../api/sessions';
 import { deriveIndicator } from '../components/session-row';

@@ -64,7 +64,7 @@ bind-key -n F11 display-popup -E -B -w 50 -h "100%" -x 0 -y 0 "cchub tui --popup
 bind-key -n F12 detach-client
 
 # F10 (no-prefix): open a persistent left-edge session sidebar in the current
-# window (herdr-style always-on list). The sidebar process marks its own pane
+# window (always-on list). The sidebar process marks its own pane
 # with @cchub_sidebar=1 so we skip if one already exists; it kills its pane on
 # quit. Enter in the sidebar switches sessions without closing it.
 bind-key -n F10 if-shell "tmux list-panes -F '#{@cchub_sidebar}' | grep -q 1" 'display-message "cchub sidebar is already open (q to close)"' 'split-window -h -b -l 34 "cchub tui --sidebar"'
@@ -77,7 +77,7 @@ bind-key -n MouseDown1Status if-shell -F "#{==:#{mouse_status_range},sessions}" 
 `;
 
 /**
- * Map an agent's indicator state to a herdr-style "state at a glance" dot,
+ * Map an agent's indicator state to a "state at a glance" dot,
  * rendered in the tmux status bar via the `@cchub_state` user option.
  *   🟡 processing (working) / 🔴 waiting_input (needs you) /
  *   🔵 completed (done) / 🟢 idle-or-unknown.
@@ -138,7 +138,7 @@ export class TmuxService {
   }
 
   /**
-   * Push a herdr-style agent-state dot into the tmux session's `@cchub_state`
+   * Push a agent-state dot into the tmux session's `@cchub_state`
    * user option so `attachStatusRight()` can render it in the status bar.
    * Fire-and-forget and deduped: only spawns when the dot changes.
    */

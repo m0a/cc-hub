@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.190] - 2026-07-10
+
+### Added
+- **`cchub tui`（embed-tui）に選択セッションの詳細パネル**: web 版の表示に寄せて、サイドバー下部に選択中セッションの **recap / branch / tokens / ctx%** を表示。サーバが `buildSessionsList` から `@cchub_recap` / `@cchub_branch` / `@cchub_tokens` / `@cchub_ctx` の tmux ユーザオプションへ書き込み（`@cchub_state` と同じ dedupe/fire-and-forget 方式）、embed-tui が `list-sessions -F` で tmux 直読みして描画する（HTTP 不使用・サーバ未起動時は非表示で degrade）（`backend/src/services/tmux.ts`, `backend/src/routes/sessions.ts`, `tui/src/embed/embed-tui.ts`）
+- **サイドバーにクリック可能なアクションボタン**: 2行目に `[ + 新規 ]` `[ 履歴 ]` を表示し、マウスクリックで新規作成 file manager / 履歴パネルを開けるようにした（キー `n` / `H` も併用可）
+
 ## [0.1.189] - 2026-07-10
 
 ### Changed

@@ -243,6 +243,16 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
         }
       : metrics;
 
+    // Push recap / branch / tokens / ctx into tmux user options so the local TUI
+    // (embed-tui) can show a rich detail panel by reading them directly (no API).
+    // Deduped/fire-and-forget, same pattern as setSessionState.
+    tmuxService.setSessionMeta(s.name, {
+      recap: includeClaudeInfo && isExactPathMatch ? ccSession?.lastRecap?.content : undefined,
+      branch: includeClaudeInfo ? ccSession?.gitBranch : includeCodexInfo ? codexThread?.gitBranch : undefined,
+      tokens: (sessionMetrics as { totalTokens?: number })?.totalTokens,
+      contextPercent: (sessionMetrics as { contextPercent?: number })?.contextPercent,
+    });
+
     return {
       id: s.id,
       name: s.name,

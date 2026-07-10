@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.189] - 2026-07-10
+
+### Changed
+- **`cchub tui` を自前フルスクリーン TUI（embed-tui）に全面移行**: これまでの Ink 製・サーバ API クライアント・`tmux attach` ハンドオフ方式の `cchub tui` を廃止し、**tmux をバックエンド（PTY・端末レンダリング）としてのみ使い UI は完全自前描画**する embed-tui に置き換えた。左サイドバー＋選択セッションの実端末（`capture-pane`）を1画面に描画し、入力は `send-keys` で転送。サーバ API を経由しないので CC Hub サーバ未起動でも動く。マウス操作（選択/フォーカス/幅ドラッグ/右クリックメニューでセッション close）、枠線 file manager での新規作成、**履歴からの復帰（`~/.claude/projects` 直読み → `claude -r`、`H` キー）** を備える（`tui/src/embed/embed-tui.ts`, `tui/src/embed/history.ts`）
+
+### Removed
+- **旧 Ink TUI 一式を削除**: `tui/src/index.ts` / `components/` / `hooks/` / `api/` / `sidebar/mouse-sidebar.ts` / `tmux/attach.ts,send.ts` とそのテスト、tmux config の F10/F11/F12・status ボタンバインド、CLI の `cchub tui --popup` / `--sidebar` を撤去。tui から ink/react 依存も除去
+
 ## [0.1.188] - 2026-07-10
 
 ### Added

@@ -39,7 +39,7 @@ bun run stop
 backend/     # Hono API server (Bun runtime)
 frontend/    # React SPA (Vite + Tailwind v4)
 shared/      # Shared types and Zod schemas (types.ts)
-tui/         # Local terminal UI for `cchub tui` (Ink + React on Bun)
+tui/         # Local terminal UI for `cchub tui` (embed-tui: full-screen, tmux-direct, plain Bun)
 glasses/     # EVEN G2 smart glasses app (EvenHub SDK, built to out.ehpk)
 ```
 
@@ -312,10 +312,8 @@ cchub send local:dev:%1 --wait "y"  # Send, then snapshot viewport with detected
                                     # (--wait-ms <n> delay, --lines <n> rows)
 cchub peek local:dev:%1             # Snapshot a pane viewport (--lines <n>, default 20)
 
-# Local terminal UI (tui/ workspace, Ink)
-cchub tui               # Launch the local TUI (session list + history search)
-cchub tui -p 3456       # Connect to a dev server
-cchub tui --popup       # One-shot mode for tmux display-popup (bound to F11)
+# Local terminal UI (tui/ workspace, embed-tui)
+cchub tui               # Launch the full-screen session manager (sidebar + live terminal)
 
 # Debugging (Bun inspector on the running service)
 cchub debug status      # Show inspector state
@@ -328,7 +326,7 @@ cchub --help
 cchub --version
 ```
 
-The `cchub tui` subcommand is a local-only terminal UI implemented in the `tui/` workspace (Ink + React on Bun). It is a **client of the running CC Hub server** (reuses `/api/sessions`, history search, lifecycle endpoints) and hands off to native `tmux attach` for "entering" a session — it does not transport the terminal over the network. Requires a real raw-mode TTY (not a pipe/wrapper). See `tui/README.md`.
+The `cchub tui` subcommand is a local-only, full-screen terminal UI (`embed-tui`) implemented in the `tui/` workspace (plain Bun, no Ink/React). It uses **tmux as the backend only** (PTY + terminal rendering) and renders its own UI: a left sidebar + the selected session's live terminal (drawn from `capture-pane`), with input forwarded via `send-keys`. It talks to tmux directly (no HTTP/WS API), so it works even without the CC Hub server running. Features: mouse-driven selection/focus, new-session file-manager, resume-from-history (`~/.claude/projects` → `claude -r`), right-click close, wheel scroll. Requires a real raw-mode TTY (not a pipe/wrapper). See `tui/README.md`. Entry: `tui/src/embed/embed-tui.ts`.
 
 ### CLI Options
 

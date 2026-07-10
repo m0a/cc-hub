@@ -54,26 +54,6 @@ set -g set-clipboard on
 
 # Keep panes alive after process exits (dead pane mode)
 set -g remain-on-exit on
-
-# F11 (no-prefix): show CC Hub session list as a left-edge popup sidebar.
-# Selecting a session calls switch-client; the popup closes automatically.
-bind-key -n F11 display-popup -E -B -w 50 -h "100%" -x 0 -y 0 "cchub tui --popup"
-
-# F12 (no-prefix): detach from the current session back to the cchub TUI list.
-# (Also re-applied per-attach by tui/src/tmux/attach.ts as a safety net.)
-bind-key -n F12 detach-client
-
-# F10 (no-prefix): open a persistent left-edge session sidebar in the current
-# window (always-on list). The sidebar process marks its own pane
-# with @cchub_sidebar=1 so we skip if one already exists; it kills its pane on
-# quit. Enter in the sidebar switches sessions without closing it.
-bind-key -n F10 if-shell "tmux list-panes -F '#{@cchub_sidebar}' | grep -q 1" 'display-message "cchub sidebar is already open (q to close)"' 'split-window -h -b -l 34 "cchub tui --sidebar"'
-
-# Mouse click on status-bar "≡ cchub" button → open session popup.
-# The button itself (with #[range=user|sessions]) is set per-attach by
-# tui/src/tmux/attach.ts so we don't clobber the user's global status-right.
-# MouseDown1Status fires for any status click; if-shell filters by range name.
-bind-key -n MouseDown1Status if-shell -F "#{==:#{mouse_status_range},sessions}" "display-popup -E -B -w 50 -h 100% -x 0 -y 0 'cchub tui --popup'"
 `;
 
 /**

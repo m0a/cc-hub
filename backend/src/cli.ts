@@ -28,8 +28,6 @@ interface CliOptions {
   sendWaitMs?: number;
   sendLines?: number;
   peekTarget?: string;
-  tuiPopup?: boolean;
-  tuiSidebar?: boolean;
 }
 
 function printHelp(): void {
@@ -49,8 +47,8 @@ ${t('cli.usage')}
   cchub peek <target>       Snapshot a pane's current viewport (last 20 rows
                             by default) — useful for checking peer state
                             without opening the peer UI.
-  cchub tui                 Launch the local terminal UI (session list +
-                            history search) for the running CC Hub server.
+  cchub tui                 Launch the local terminal UI: a full-screen session
+                            manager (sidebar + live terminal, mouse-driven).
   cchub debug <sub>         Toggle Bun inspector mode on the running service
                             sub: enable | disable | profile | status
 
@@ -81,20 +79,6 @@ send options:
 
 peek options:
   --lines <n>            Trailing rows to include in viewport (default 20)
-
-tui options:
-  --popup                One-shot mode for tmux display-popup: Enter switches
-                         the current client to the selected session and exits
-                         (the popup closes automatically). Bound to F11 by
-                         CC Hub's tmux config.
-  --sidebar              Persistent left-edge session sidebar: runs inside a
-                         tmux pane, Enter switches sessions without exiting
-                         (provisioning a sidebar in the target too), q closes
-                         the pane. Toggle with F10 (CC Hub's tmux config).
-
-  On entering a session, cchub tui auto-opens this sidebar (a
-  "list on the left, work on the right" layout). Disable with the env var
-  CCHUB_TUI_SIDEBAR=0 (or off/false).
 
 ${t('cli.examples')}
   ${t('cli.exampleStart')}
@@ -160,12 +144,6 @@ export function parseArgs(args: string[]): CliOptions {
       }
       case 'tui':
         options.command = 'tui';
-        break;
-      case '--popup':
-        options.tuiPopup = true;
-        break;
-      case '--sidebar':
-        options.tuiSidebar = true;
         break;
       case '--stdin':
         options.sendStdin = true;
@@ -391,14 +369,9 @@ async function runStatus(): Promise<void> {
   await showStatus();
 }
 
-async function runTuiCommand(options: CliOptions): Promise<void> {
+async function runTuiCommand(_options: CliOptions): Promise<void> {
   const { runTui } = await import('./commands/tui');
-  await runTui({
-    port: options.port,
-    host: options.host,
-    popup: options.tuiPopup ?? false,
-    sidebar: options.tuiSidebar ?? false,
-  });
+  await runTui();
 }
 
 async function runDebug(options: CliOptions): Promise<void> {

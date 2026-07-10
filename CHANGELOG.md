@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.188] - 2026-07-10
+
+### Added
+- **実験的な自前フルスクリーン TUI（embed-tui）**: `bun run dev:tui-embed` で起動する新しいローカル TUI。tmux をバックエンド（PTY・端末レンダリング）としてのみ使い、UI は完全自前描画・サーバ API を経由せず tmux を直接叩く。左=自前サイドバー / 右=選択セッションの実端末（`capture-pane -e -p` を自領域に描画）、入力転送（`send-keys -H`）、フォーカスモデル（Enter=端末 / Ctrl-B=一覧）、状態ドット（`@cchub_state`）・カスタムタイトル（`~/.cc-hub/session-metadata.json` 直読み）、サイドバー幅調整（`[` `]` ＋区切り線マウスドラッグ）、枠線 file manager UI の新規作成（fs 直・マウス操作）、右クリックのコンテキストメニュー→セッション close、スクロール（通常=tmux 履歴 offset / alt-screen=ホイール転送、慣性フラッドをレート制限）を備える（`tui/src/embed/embed-tui.ts`）
+- **リリース不要のソース起動 dev ハーネス**: サイドバー起動コマンドを `CCHUB_SIDEBAR_CMD` で差し替え可能にし、`scripts/dev-tui.sh`（`bun run dev:tui-live`）でソースから TUI を試せるようにした
+
+### Changed
+- **コードから外部プロダクト名の表記を撤去**: コメント / CLI ヘルプ / スクリプトの表記を中立表現へ置換（`backend/src/cli.ts`, `backend/src/services/tmux.ts`, `tui/src/tmux/attach.ts` 他）
+
 ## [0.1.187] - 2026-07-07
 
 ### Changed

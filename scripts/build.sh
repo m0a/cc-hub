@@ -18,9 +18,6 @@ bun run scripts/generate-static-assets.ts
 # Build backend binary with embedded assets
 echo "🔧 Building backend binary (with embedded assets)..."
 cd backend
-# `cchub tui` のため ink/react を同梱する。ink は DEV 時のみ react-devtools-core を
-# 動的ロードするが、--compile はバンドル時に解決を要求するため react-devtools-core を
-# 依存に入れてある（tui/package.json）。通常実行（DEV 未設定）では読み込まれない。
 bun build src/index.ts --compile --outfile ../dist/cchub
 cd ..
 

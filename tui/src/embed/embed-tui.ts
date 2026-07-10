@@ -11,6 +11,7 @@
 // 実行: bun run tui/src/embed/embed-tui.ts   (= bun run dev:tui-embed)
 
 import { readdirSync, readFileSync } from 'node:fs';
+import { listHistory, resumeCommand, type HistoryEntry } from './history';
 
 const ESC = '\x1b';
 const HIDE_CURSOR = `${ESC}[?25l`;
@@ -236,6 +237,8 @@ async function main() {
     sel: number; // 選択中エントリ
     agent: 'claude' | 'codex';
   } | null = null;
+  // 履歴から復帰パネル（開いている間は右領域にオーバーレイ表示）。
+  let history: { entries: HistoryEntry[]; sel: number } | null = null;
   // サイドバー幅の手動上書き（null=自動）。[ / ] で調整。
   let sidebarWidth: number | null = null;
   // 通常スクリーンの履歴スクロール量（0=ライブ）。alt-screen ではアプリ側に任せる。
@@ -303,7 +306,7 @@ async function main() {
     for (let r = 1; r <= rows; r++) out += moveTo(r, sidebarW + 1) + `${ESC}[${sepColor}m│${RESET}`;
     // フッタ: モードバッジ（反転）＋ヒント。
     const badge = sidebarActive ? `${ESC}[7;36m 一覧 ${RESET}` : `${ESC}[7;33m 端末 ${RESET}`;
-    const hint = sidebarActive ? ' ↑↓ Enter n [] q' : ' Ctrl-B で一覧へ';
+    const hint = sidebarActive ? ' ↑↓ Enter n H:履歴 [] q' : ' Ctrl-B で一覧へ';
     out += moveTo(rows, 1) + badge + `${ESC}[2m${truncateDisplay(hint, Math.max(0, sidebarW - 6))}${RESET}${CLEAR_EOL}`;
     write(out);
   }
@@ -409,6 +412,97 @@ async function main() {
     creating = null;
     const name = uniqueSessionName(dir);
     createTmuxSession(name, dir, agent);
+    refreshSessions();
+    const idx = sessions.findIndex((s) => s.name === name);
+    if (idx >= 0) {
+      selected = idx;
+      sessions[selected].activePane = activePaneOf(name);
+      fitSelected();
+    }
+    focus = 'terminal';
+    renderSidebar();
+    renderTerminal();
+  }
+
+  function renderHistory() {
+    if (!history) return;
+    const h = history;
+    const { rows, termLeft, termW } = layout();
+    const W = Math.max(24, termW);
+    const inner = W - 2; // 枠の内側幅
+    const B = (s: string) => `${ESC}[36m${s}${RESET}`; // 枠は cyan
+    let out = HIDE_CURSOR;
+    for (let r = 1; r <= rows; r++) out += moveTo(r, termLeft) + RESET + CLEAR_EOL;
+
+    const put = (r: number, s: string) => {
+      out += moveTo(r, termLeft) + s;
+    };
+    const bodyRow = (text: string, opts: { selected?: boolean; color?: string } = {}) => {
+      const t = truncateDisplay(text, inner - 1);
+      const padded = ` ${t}${' '.repeat(Math.max(0, inner - 1 - displayWidth(t)))}`;
+      let body = padded;
+      if (opts.color) body = `${ESC}[${opts.color}m${body}${RESET}`;
+      if (opts.selected) body = `${ESC}[7;36m${padded}${RESET}`;
+      return B('│') + body + B('│');
+    };
+    const sep = (l: string, r: string) => B(l + '─'.repeat(inner) + r);
+
+    // 上枠＋タイトル、区切り。
+    const title = ' 履歴から復帰 ';
+    put(1, B(`┌─${title}${'─'.repeat(Math.max(0, inner - displayWidth(title) - 1))}┐`));
+    put(2, sep('├', '┤'));
+
+    // 履歴一覧（タイトル＋projectPath dim・選択ハイライト＋スクロールバー）。
+    const listTop = 3;
+    const listRows = Math.max(1, rows - 5);
+    const start = Math.max(0, Math.min(h.sel - (listRows >> 1), Math.max(0, h.entries.length - listRows)));
+    for (let i = 0; i < listRows; i++) {
+      const idx = start + i;
+      const r = listTop + i;
+      if (idx >= h.entries.length) {
+        if (h.entries.length === 0 && i === 0) put(r, bodyRow('(履歴なし)', { color: '2' }));
+        else put(r, bodyRow(''));
+        continue;
+      }
+      const entry = h.entries[idx];
+      const selected = idx === h.sel;
+      // 幅が許せば projectPath を dim で末尾に付ける（色エスケープは幅計算に含めない）。
+      const budget = inner - 1;
+      const titleTrunc = truncateDisplay(entry.title, budget);
+      let gap = '';
+      let path = '';
+      const remAfterTitle = budget - displayWidth(titleTrunc);
+      if (remAfterTitle > 4) {
+        gap = '   ';
+        path = truncateDisplay(entry.projectPath, remAfterTitle - gap.length);
+      }
+      const visibleW = displayWidth(titleTrunc) + displayWidth(gap) + displayWidth(path);
+      const pad = ' '.repeat(Math.max(0, budget - visibleW));
+      // 選択行は反転済みなので path は dim にせずそのまま（RESET の入れ子を避ける）。
+      const pathSeg = path ? `${gap}${selected ? path : `${ESC}[2m${path}${RESET}`}` : '';
+      const content = ` ${titleTrunc}${pathSeg}${pad}`;
+      let rowStr = selected ? B('│') + `${ESC}[7;36m${content}${RESET}` + B('│') : B('│') + content + B('│');
+      // スクロールバー: 溢れている時、右端 │ の内側にスライダを重ねる。
+      if (h.entries.length > listRows) {
+        const barPos = Math.round((h.sel / Math.max(1, h.entries.length - 1)) * (listRows - 1));
+        if (i === barPos) rowStr = rowStr.slice(0, -B('│').length) + `${ESC}[36m▐${RESET}`;
+      }
+      put(r, rowStr);
+    }
+
+    // 区切り＋フッタ＋下枠。
+    put(rows - 2, sep('├', '┤'));
+    put(rows - 1, bodyRow('↑↓ 移動 · Enter/クリック 復帰 · Esc 中止', { color: '2' }));
+    put(rows, sep('└', '┘'));
+    write(out);
+  }
+
+  function doResume(entry: HistoryEntry) {
+    history = null;
+    const name = uniqueSessionName(entry.projectPath);
+    tmux(['new-session', '-d', '-s', name]);
+    tmux(['source-file', `${process.env.HOME}/.config/cchub/tmux.conf`]);
+    tmux(['send-keys', '-t', name, resumeCommand(entry), 'Enter']);
     refreshSessions();
     const idx = sessions.findIndex((s) => s.name === name);
     if (idx >= 0) {
@@ -616,6 +710,53 @@ async function main() {
       return;
     }
 
+    // 履歴から復帰パネルが開いている間は最優先で処理。
+    if (history) {
+      const h = history;
+      // --- マウス: ホイールでスクロール / クリックで行を選択して即復帰 ---
+      const mci = data.indexOf(MOUSE_PREFIX);
+      if (mci !== -1) {
+        let j = mci + MOUSE_PREFIX.length;
+        while (j < data.length && data[j] !== 'M' && data[j] !== 'm') j++;
+        if (j < data.length && data[j] === 'M') {
+          const p = data.slice(mci + MOUSE_PREFIX.length, j).split(';');
+          const button = Number.parseInt(p[0] ?? '', 10);
+          const x = Number.parseInt(p[1] ?? '', 10);
+          const y = Number.parseInt(p[2] ?? '', 10);
+          const { rows, termLeft } = layout();
+          const listTop = 3;
+          const listRows = Math.max(1, rows - 5);
+          const start = Math.max(0, Math.min(h.sel - (listRows >> 1), Math.max(0, h.entries.length - listRows)));
+          if (button === 64 || button === 65) {
+            h.sel = Math.max(0, Math.min(h.entries.length - 1, h.sel + (button === 64 ? -3 : 3)));
+            renderHistory();
+          } else if ((button & 3) === 0 && x >= termLeft) {
+            if (y >= listTop && y < listTop + listRows) {
+              const idx = start + (y - listTop);
+              if (idx >= 0 && idx < h.entries.length) {
+                h.sel = idx;
+                doResume(h.entries[idx]); // クリックで選択即復帰
+              }
+            }
+          }
+        }
+        return;
+      }
+      if (data === '\x1b') {
+        history = null;
+        renderTerminal();
+      } else if (data === `${ESC}[A` || data === 'k') {
+        h.sel = Math.max(0, h.sel - 1);
+        renderHistory();
+      } else if (data === `${ESC}[B` || data === 'j') {
+        h.sel = Math.min(Math.max(0, h.entries.length - 1), h.sel + 1);
+        renderHistory();
+      } else if (data === '\r' || data === '\n') {
+        if (h.entries[h.sel]) doResume(h.entries[h.sel]);
+      }
+      return;
+    }
+
     // マウス処理。全フォーカス共通。区切り線ドラッグで幅調整・クリックで選択/フォーカス・ホイールでスクロール。
     // パースできたマウスイベントは常に握りつぶす（端末へ生シーケンスが漏れないように）。
     let handledMouse = false;
@@ -705,6 +846,11 @@ async function main() {
       openCreate();
       return;
     }
+    if (data === 'H') {
+      history = { entries: listHistory(50), sel: 0 };
+      renderHistory();
+      return;
+    }
     if (data === '[' || data === ']') {
       const cur = layout().sidebarW;
       sidebarWidth = cur + (data === ']' ? 2 : -2);
@@ -756,14 +902,23 @@ async function main() {
   renderSidebar();
 
   timer = setInterval(() => {
-    if (done || creating) return; // 作成フォーム表示中は上書きしない
+    if (done || creating || history) return; // 作成フォーム/履歴パネル表示中は上書きしない
     refreshSessions();
     renderTerminal();
     if (menu) renderMenu(); // メニューは最前面に再描画
   }, FRAME_MS);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+/** `cchub tui` / `bun run dev:tui` の入口。 */
+export async function startEmbedTui(): Promise<void> {
+  await main();
+}
+
+// `bun run tui/src/embed/embed-tui.ts` で直接起動された場合のみ自動実行。
+// backend の commands/tui.ts から import される時は import.meta.main が false なので走らない。
+if (import.meta.main) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

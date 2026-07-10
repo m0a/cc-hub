@@ -46,7 +46,7 @@ export function preAttachCommands(sessionName: string, returnKey: string = RETUR
  *
  * 先頭に `#{@cchub_state}` を出す。これは cc-hub のセッション一覧処理が
  * `tmux set-option -t <session> @cchub_state <dot>` で流し込むエージェント状態ドット
- * （🟡=作業中 / 🔴=入力待ち / 🔵=完了 / 🟢=アイドル）で、herdr 風に「状態が一目でわかる」。
+ * （🟡=作業中 / 🔴=入力待ち / 🔵=完了 / 🟢=アイドル）で、「状態が一目でわかる」。
  * 未設定なら何も出さない（`#{?...}` で条件付き）。
  */
 export function attachStatusRight(returnKey: string = RETURN_KEY): string {
@@ -111,8 +111,15 @@ export function switchClient(sessionName: string): number {
 /** 常時表示サイドバーの既定幅（桁）。F10 バインドと provision で共有する。 */
 export const SIDEBAR_WIDTH = 34;
 
-/** サイドバーとして開くペインを起動するコマンド文字列（tmux split-window に渡す）。 */
-const SIDEBAR_SPAWN_CMD = 'cchub tui --sidebar';
+/**
+ * サイドバーとして開くペインを起動するコマンド文字列（tmux split-window に渡す）。
+ * 既定はインストール済みバイナリ（`cchub tui --sidebar`）。開発時は `CCHUB_SIDEBAR_CMD`
+ * にソース起動コマンド（例: `bun run /abs/tui/src/index.ts --sidebar -p 5923`）を渡すと、
+ * リリースせずにソースのサイドバーを開ける（tmux 経由で開く子ペインもこれを使う）。
+ */
+export function sidebarSpawnCmd(): string {
+  return process.env.CCHUB_SIDEBAR_CMD ?? 'cchub tui --sidebar';
+}
 
 /**
  * `switchClientWithSidebar` が発行する split-window 引数（純粋関数）。
@@ -121,7 +128,7 @@ const SIDEBAR_SPAWN_CMD = 'cchub tui --sidebar';
 export function sidebarSplitArgs(
   targetSession: string,
   width: number = SIDEBAR_WIDTH,
-  cmd: string = SIDEBAR_SPAWN_CMD,
+  cmd: string = sidebarSpawnCmd(),
 ): string[] {
   return ['split-window', '-h', '-b', '-l', String(width), '-d', '-t', targetSession, cmd];
 }
@@ -168,7 +175,7 @@ export function switchClientWithSidebar(targetSession: string, width: number = S
 }
 
 /**
- * 入室時のサイドバー自動表示の有効/無効。既定は有効（herdr 風の「常に左に一覧」レイアウト）。
+ * 入室時のサイドバー自動表示の有効/無効。既定は有効（「常に左に一覧」レイアウト）。
  * `CCHUB_TUI_SIDEBAR=0|off|false` で無効化できる。
  */
 export function sidebarAutoEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -207,7 +214,7 @@ export function attachSession(sessionName: string, tmuxEnv: string | undefined =
   const originalMouse = captureOption(sessionName, 'mouse');
   runTmux(['set-option', '-t', sessionName, 'mouse', 'on']);
 
-  // herdr 風の既定レイアウト: 入室時に左サイドバー（セッション一覧）を自動で開く。
+  // 既定レイアウト: 入室時に左サイドバー（セッション一覧）を自動で開く。
   // 既にあれば二重に開かない。フォーカスは作業ペインに残る（-d）。CCHUB_TUI_SIDEBAR=0 で無効。
   if (sidebarAutoEnabled()) ensureSidebar(sessionName);
 

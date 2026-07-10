@@ -9,7 +9,7 @@ import type { ListAction, TuiSession } from '../types';
 import { Help } from './Help';
 import { SessionList } from './SessionList';
 
-// フッタのヒントは状況で出し分ける（herdr 風のコンテキスト対応）。
+// フッタのヒントは状況で出し分ける（状況に応じたコンテキスト対応）。
 const SHORTCUTS_LIST = `↑↓ 選択 · Enter 入室(${RETURN_KEY}で戻る) · n 新規 · x 終了 · r 再開 · c compact · / 履歴 · ? ヘルプ · q 終了`;
 const SHORTCUTS_CONFIRM = 'y 終了する · n キャンセル';
 const SHORTCUTS_HELP = '何かキーで閉じる · ? でも閉じる';

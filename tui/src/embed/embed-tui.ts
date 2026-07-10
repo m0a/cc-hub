@@ -27,6 +27,7 @@ const CLEAR_EOL = `${ESC}[K`;
 const MOUSE_PREFIX = `${ESC}[<`; // SGR マウス列の接頭辞
 
 const FRAME_MS = 33; // ~30fps
+const LIST_TOP = 3; // セッション一覧の開始スクリーン行（1=タイトル, 2=アクションボタン, 3〜=一覧）
 const WHEEL_MIN_MS = 40; // alt-screen へのホイール転送の最小間隔（慣性フラッド抑制）
 const SIDEBAR_MIN = 20;
 const SIDEBAR_MAX = 32;
@@ -48,6 +49,11 @@ interface Sess {
   dot: string;
   /** カスタムタイトル（~/.cc-hub/session-metadata.json 由来、無ければ undefined）。 */
   title?: string;
+  /** サーバが `@cchub_*` に書いたリッチ情報（詳細パネル用、無ければ空文字）。 */
+  recap: string;
+  branch: string;
+  tokens: string;
+  ctx: string;
 }
 
 // カスタムタイトルはサーバが ~/.cc-hub/session-metadata.json に { sessions: { <name>: {title} } }
@@ -81,16 +87,21 @@ function detectSelfSession(): string {
 }
 
 function listSessions(): Sess[] {
-  // 名前 + 状態ドット(@cchub_state) を一発で取得（tab 区切り）。
-  const raw = tmux(['list-sessions', '-F', '#{session_name}\t#{@cchub_state}']);
+  // 名前 + 状態ドット + リッチ情報(@cchub_*) を一発で取得（tab 区切り）。
+  // recap/branch/tokens/ctx はサーバがサニタイズ済み（tab/改行を含まない）。
+  const raw = tmux([
+    'list-sessions',
+    '-F',
+    '#{session_name}\t#{@cchub_state}\t#{@cchub_recap}\t#{@cchub_branch}\t#{@cchub_tokens}\t#{@cchub_ctx}',
+  ]);
   const titles = readTitles();
   return raw
     .split('\n')
     .map((line) => line.trimEnd())
     .filter(Boolean)
     .map((line) => {
-      const [name, dot = ''] = line.split('\t');
-      return { name, activePane: null, dot, title: titles.get(name) };
+      const [name, dot = '', recap = '', branch = '', tokens = '', ctx = ''] = line.split('\t');
+      return { name, activePane: null, dot, title: titles.get(name), recap, branch, tokens, ctx };
     })
     .filter((s) => s.name && s.name !== SELF_SESSION);
 }
@@ -247,6 +258,10 @@ async function main() {
   let dragging = false;
   // alt-screen へホイールを最後に転送した時刻（レート制限用）。
   let lastWheelForward = 0;
+  // サイドバーのクリック可能ボタンの x 範囲（renderSidebar で更新、クリック判定で参照）。
+  const actionBtns = { newBtn: [0, -1] as [number, number], histBtn: [0, -1] as [number, number] };
+  // 一覧の最終スクリーン行（詳細パネルぶん減る）。クリック判定で「詳細/フッタ領域は選択しない」ために参照。
+  let listBottomRow = 0;
   // 右クリックのコンテキストメニュー（開いている間は最前面に描画）。
   let menu: { session: string; items: string[]; sel: number; mx: number; my: number; w: number } | null = null;
   const resized = new Set<string>();
@@ -289,9 +304,26 @@ async function main() {
     const title = sidebarActive ? '≡ sessions ◀' : '≡ sessions';
     const titleStyle = sidebarActive ? '1;36' : '2';
     out += moveTo(1, 1) + `${ESC}[${titleStyle}m${truncateDisplay(title, sidebarW)}${RESET}${CLEAR_EOL}`;
+    // アクションボタン行（クリック可能）: [ + 新規 ] [ 履歴 ]。x 範囲を記録して当たり判定に使う。
+    const newLabel = ' + 新規 ';
+    const histLabel = ' 履歴 ';
+    const wNew = displayWidth(newLabel);
+    const wHist = displayWidth(histLabel);
+    actionBtns.newBtn = [1, wNew];
+    actionBtns.histBtn = [wNew + 2, wNew + 1 + wHist];
+    out += `${moveTo(2, 1)}${ESC}[7;36m${newLabel}${RESET} ${ESC}[7;35m${histLabel}${RESET}${CLEAR_EOL}`;
+
+    // 詳細パネル: 選択セッションの recap/branch/tokens/ctx を下部3行に表示（画面が十分高い時のみ）。
+    // 一覧はそのぶん短くする。footer=rows, detail=rows-3..rows-1, list=LIST_TOP..rows-4。
+    const sel = sessions[selected];
+    const hasDetail = rows >= 9 && !!sel && !!(sel.recap || sel.branch || sel.tokens || sel.ctx);
+    const detailTop = hasDetail ? rows - 3 : rows; // 詳細が無ければ list はフッタ直前まで
+    const lastListRow = detailTop - 1; // これ以下が一覧領域（フッタは常に rows）
+    listBottomRow = lastListRow; // クリック判定用
+
     sessions.forEach((s, i) => {
-      const row = i + 2;
-      if (row > rows - 1) return;
+      const row = i + LIST_TOP;
+      if (row > lastListRow) return;
       const marker = i === selected ? '▸ ' : '  ';
       const dot = s.dot ? `${s.dot} ` : '· ';
       const label = truncateDisplay(marker + dot + (s.title || s.name), sidebarW);
@@ -301,6 +333,21 @@ async function main() {
       else out += label;
       out += CLEAR_EOL;
     });
+    // 一覧の余白行をクリア（詳細パネルの上まで）。
+    for (let r = LIST_TOP + sessions.length; r <= lastListRow; r++) out += moveTo(r, 1) + CLEAR_EOL;
+
+    // 詳細パネル。
+    if (hasDetail && sel) {
+      const rule = `─ 詳細 ${'─'.repeat(Math.max(0, sidebarW - 5))}`;
+      out += `${moveTo(rows - 3, 1)}${ESC}[90m${truncateDisplay(rule, sidebarW)}${RESET}${CLEAR_EOL}`;
+      const recapLine = sel.recap ? sel.recap : '—';
+      out += `${moveTo(rows - 2, 1)}${ESC}[2m${truncateDisplay(recapLine, sidebarW)}${RESET}${CLEAR_EOL}`;
+      const metaParts: string[] = [];
+      if (sel.branch) metaParts.push(`⎇ ${sel.branch}`);
+      if (sel.tokens) metaParts.push(sel.tokens);
+      if (sel.ctx) metaParts.push(`ctx ${sel.ctx}%`);
+      out += `${moveTo(rows - 1, 1)}${ESC}[36m${truncateDisplay(metaParts.join('  '), sidebarW)}${RESET}${CLEAR_EOL}`;
+    }
     // 区切り線: フォーカスのある側を cyan、無い側は暗いグレー。
     const sepColor = sidebarActive ? '90' : '36';
     for (let r = 1; r <= rows; r++) out += moveTo(r, sidebarW + 1) + `${ESC}[${sepColor}m│${RESET}`;
@@ -346,6 +393,11 @@ async function main() {
     const dir = process.env.HOME || '/';
     creating = { dir, entries: listDirs(dir), sel: 0, agent: 'claude' };
     renderCreate();
+  }
+
+  function openHistory() {
+    history = { entries: listHistory(50), sel: 0 };
+    renderHistory();
   }
 
   function renderCreate() {
@@ -588,7 +640,9 @@ async function main() {
     const byName = new Map(sessions.map((s) => [s.name, s]));
     sessions = next.map((n) => {
       const prev = byName.get(n.name);
-      return prev ? { ...prev, dot: n.dot, title: n.title } : n;
+      return prev
+        ? { ...prev, dot: n.dot, title: n.title, recap: n.recap, branch: n.branch, tokens: n.tokens, ctx: n.ctx }
+        : n;
     });
     if (selected >= sessions.length) selected = Math.max(0, sessions.length - 1);
     const cur = sessions[selected];
@@ -803,17 +857,21 @@ async function main() {
         }
       } else if (isPress && (button & 3) === 2 && !motion && x < sidebarW) {
         // 右クリック（サイドバー行）→ コンテキストメニュー。
-        const idx = y - 2;
-        if (idx >= 0 && idx < sessions.length) openMenu(sessions[idx].name, x, y);
+        const idx = y - LIST_TOP;
+        if (y >= LIST_TOP && y <= listBottomRow && idx < sessions.length) openMenu(sessions[idx].name, x, y);
       } else if (isPress && (button & 3) === 0 && !motion) {
         if (x === sidebarW || x === sidebarW + 1) {
           // 区切り線（＋その左1桁）を掴んだらドラッグ開始。
           dragging = true;
+        } else if (y === 2 && x >= actionBtns.newBtn[0] && x <= actionBtns.newBtn[1]) {
+          openCreate(); // [ + 新規 ] ボタン
+        } else if (y === 2 && x >= actionBtns.histBtn[0] && x <= actionBtns.histBtn[1]) {
+          openHistory(); // [ 履歴 ] ボタン
         } else if (x < sidebarW) {
           // サイドバー領域はどこをクリックしてもフォーカスを移す（空白でも）。
-          // セッション行の上ならその行を選択も行う。
-          const idx = y - 2;
-          if (idx >= 0 && idx < sessions.length) selectIndex(idx);
+          // セッション行（一覧領域内）の上ならその行を選択も行う。
+          const idx = y - LIST_TOP;
+          if (y >= LIST_TOP && y <= listBottomRow && idx < sessions.length) selectIndex(idx);
           enterSidebar();
         } else if (x > sidebarW) {
           enterTerminal();
@@ -847,8 +905,7 @@ async function main() {
       return;
     }
     if (data === 'H') {
-      history = { entries: listHistory(50), sel: 0 };
-      renderHistory();
+      openHistory();
       return;
     }
     if (data === '[' || data === ']') {

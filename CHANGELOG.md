@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.191] - 2026-07-13
+
+### Added
+- **`cchub tui` に複数 pane 分割表示**: 選択セッションの全 pane を tmux レイアウト通りに 1 画面へ合成描画（区切り線 │/─）。クリックで pane フォーカス切替、ホイールはマウス直下の pane へルーティング、**端末領域の右クリックメニューで split │（左右）/ split ─（上下）/ close pane**（split は元 pane の cwd を引き継ぎ、最後の 1 枚は close 不可）（`tui/src/embed/embed-tui.ts`）
+- **`cchub tui` にダッシュボードパネル**: サイドバーの `dash` ボタンまたは `D` キーで、Claude/Codex の使用率バー（5h/7d、状態色付き）・today のアクティビティ・システムメトリクス・disk をオーバーレイ表示。データはサーバの `/api/dashboard` から statusline.sh と同じ経路（HTTPS 自己署名許容＋Keychain の `cchub` パスワードで login → Bearer）で取得し、表示中は 5 秒ごとに自動更新。サーバ未起動時はエラーメッセージに degrade（`tui/src/embed/dashboard.ts`）
+
+### Changed
+- **`cchub tui` の描画エンジンを tmux 制御モード常駐クライアント化**: 毎フレームの `tmux` fork（macOS で 1 回 5〜20ms）をやめ、常駐 `tmux -C attach` へコマンドをパイプ（サブ ms）。`%output` をダーティ信号としたイベント駆動再描画＋行差分キャッシュ＋約 30fps レート制限＋Synchronized Output (DEC 2026) で、スクロール/ストリーミング時の遅さと点滅を解消（`tui/src/embed/tmux-ctl.ts`, `tui/src/embed/embed-tui.ts`）
+- **normal-screen の void 埋め（padFill）**: Claude Code 等の非 alt-screen TUI でカーソル行より下の空白を刈り、スクロールバックを上に継ぎ足して画面を埋める（web UI の PaneViewport と同じ方式）
+
+### Fixed
+- **トラックパッドの横スクロールで pane メニューが誤って開く問題**: SGR ホイールイベント（button 64〜67）をクリック判定から除外（`66 & 3 === 2` が右クリックに誤マッチしていた）。メニュー表示中のホイールがクリック扱いになる穴も修正
+- **描画中のカーソルちらつき**: カーソル可視性（DECTCEM）の切替を状態遷移時のみに限定し、サイドバー定期更新後にカーソル位置を pane へ復元
+- **罫線・ブロック文字（│ ─ █ ░）の幅計算**: 全角扱い（幅 2）していたのを幅 1 に修正し、メニューやバーの右罫線ズレを解消
+
 ## [0.1.190] - 2026-07-10
 
 ### Added

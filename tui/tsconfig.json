@@ -6,8 +6,7 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "jsx": "react-jsx",
-    "types": ["bun", "react"],
+    "types": ["bun"],
     "resolveJsonModule": true,
     "paths": {
       "shared": ["../shared/types.ts"]

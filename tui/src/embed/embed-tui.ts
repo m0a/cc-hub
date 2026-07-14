@@ -1450,6 +1450,11 @@ async function main() {
 
   let timer: ReturnType<typeof setInterval> | null = null;
   let sessionsTimer: ReturnType<typeof setInterval> | null = null;
+  // main() は終了（cleanup）まで解決しないための待ち合わせ。CLI（cchub tui）は
+  // `await runTui()` の後に process.exit するので、ここで待たないとセットアップ直後に
+  // プロセスごと終了してしまう（`bun run embed-tui.ts` 直起動ではイベントループが
+  // 生きたまま残るため気づけない）。
+  let resolveDone: (() => void) | null = null;
 
   function cleanup() {
     if (done) return;
@@ -1468,6 +1473,7 @@ async function main() {
     // リサイズしたセッションを自動サイズへ戻す。
     for (const name of resized) tmux(['set-option', '-u', '-t', name, 'window-size']);
     write(MOUSE_OFF + SHOW_CURSOR + ALT_OFF);
+    resolveDone?.();
   }
 
   // セットアップ
@@ -1515,6 +1521,12 @@ async function main() {
     ensureCtl(sessions[selected]?.name);
     renderSidebar();
   }, SESSIONS_REFRESH_MS);
+
+  // 終了（q / Ctrl-C → cleanup）までブロックする。
+  await new Promise<void>((resolve) => {
+    resolveDone = resolve;
+    if (done) resolve(); // ここに来る前に cleanup 済みならハングさせない
+  });
 }
 
 /** `cchub tui` / `bun run dev:tui` の入口。 */

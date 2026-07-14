@@ -6,19 +6,19 @@
  * so the WS mux layer and the frontend stay unchanged.
  *
  * Differences from the tmux backend:
- *  - Output push signal: one `herdr terminal session observe` subprocess per
- *    pane (NDJSON terminal.frame records) instead of `%output` lines. Frame
- *    payloads are not forwarded; like `%output`, they only trigger a
- *    server-side viewport recapture.
+ *  - Per-pane transport: one persistent `herdr terminal session control`
+ *    subprocess per pane (see PaneController). It carries raw PTY input
+ *    (base64, no sanitization — mouse SGR / bracketed paste / escape
+ *    sequences pass through intact), absolute PTY resizes, and streams
+ *    terminal.frame records that (a) trigger viewport recaptures and
+ *    (b) are scanned for cursor position and alt-screen state.
  *  - Layout: CC Hub owns the split tree (see herdr-layout.ts) because the
- *    herdr workspace grid cannot be resized headlessly. Pane PTYs are sized
- *    individually via short-lived control clients.
+ *    herdr workspace grid cannot be resized headlessly.
  *  - Scrollback: herdr's pane.read is capped at 1000 lines, so viewports
- *    clamp history to (1000 - rows) rows above the live edge (#see
+ *    clamp history to (1000 - rows) rows above the live edge (see
  *    poc/herdr/FINDINGS.md).
  */
 
-import type { Subprocess } from 'bun';
 import type { PaneCursor, PaneModes, PaneViewport, TmuxLayoutNode } from '../../../shared/types';
 import {
   getPane,
@@ -26,12 +26,11 @@ import {
   herdrSubscribe,
   listPanes,
   listWorkspaces,
+  PaneController,
   readPane,
-  resizePanePty,
   toHerdrPaneId,
   toTmuxPaneId,
 } from './herdr-client';
-import { translateInput } from './herdr-input';
 import { PaneLayoutTree } from './herdr-layout';
 import { toFrontendLayout } from './tmux-layout-parser';
 
@@ -55,6 +54,97 @@ type LayoutListener = (
 type ExitListener = (reason: string) => void;
 type PaneDeadListener = (paneId: string) => void;
 
+/** Live terminal state tracked from a pane's frame stream. */
+export interface PaneRuntimeState {
+  altScreen: boolean;
+  cursorX: number; // 0-based
+  cursorY: number; // 0-based
+  cursorVisible: boolean;
+}
+
+const CUP_RE = /\x1b\[(\d*)(?:;(\d*))?[Hf]/g;
+
+const SHELL_NAMES = new Set(['zsh', 'bash', 'fish', 'sh', 'dash', 'ksh', 'nu', 'pwsh']);
+
+/**
+ * Best-effort initial alt-screen guess for a pane that was already running
+ * when we attached. herdr 0.7.x tracks `alternate_screen` internally but
+ * doesn't expose it over the socket API, and attach frames repaint cells
+ * without re-emitting mode toggles. Heuristic: a non-shell foreground
+ * process with zero host scrollback is almost certainly a fullscreen TUI
+ * (Claude, vim, htop, less) — alt apps accumulate no host history, while a
+ * normal-screen program quickly does. Later frames correct the state on any
+ * real transition.
+ */
+async function guessInitialAltScreen(
+  herdrPaneId: string,
+  state: PaneRuntimeState,
+): Promise<void> {
+  try {
+    const res = await herdrRpc<{
+      process_info?: { foreground_processes?: Array<{ name?: string }> };
+    }>('pane.process_info', { pane_id: herdrPaneId });
+    const leader = res.process_info?.foreground_processes?.[0]?.name ?? '';
+    if (!leader || SHELL_NAMES.has(leader)) return;
+    const pane = await getPane(herdrPaneId);
+    if ((pane?.scroll.max_offset_from_bottom ?? 0) === 0) {
+      state.altScreen = true;
+    }
+  } catch {
+    // keep the default (normal screen)
+  }
+}
+
+/**
+ * Update tracked state from one rendered frame.
+ *
+ * herdr frames are re-renders (not raw PTY passthrough) and always end with
+ * explicit cursor placement (CUP) plus a show/hide-cursor toggle, so "last
+ * occurrence wins" scanning is sufficient — no VT emulation needed.
+ */
+export function scanFrameForState(state: PaneRuntimeState, bytes: Buffer): void {
+  const s = bytes.toString('latin1');
+
+  // Alt-screen enter/leave (1049/1047/47 variants), last occurrence wins.
+  let altPos = -1;
+  let altVal = state.altScreen;
+  for (const [pat, val] of [
+    ['\x1b[?1049h', true],
+    ['\x1b[?1049l', false],
+    ['\x1b[?1047h', true],
+    ['\x1b[?1047l', false],
+    ['\x1b[?47h', true],
+    ['\x1b[?47l', false],
+  ] as Array<[string, boolean]>) {
+    const p = s.lastIndexOf(pat);
+    if (p > altPos) {
+      altPos = p;
+      altVal = val;
+    }
+  }
+  state.altScreen = altVal;
+
+  // Cursor visibility, last occurrence wins.
+  const show = s.lastIndexOf('\x1b[?25h');
+  const hide = s.lastIndexOf('\x1b[?25l');
+  if (show >= 0 || hide >= 0) {
+    state.cursorVisible = show > hide;
+  }
+
+  // Cursor position: the final CUP of the frame is where the cursor rests.
+  let last: RegExpExecArray | null = null;
+  CUP_RE.lastIndex = 0;
+  for (let m = CUP_RE.exec(s); m !== null; m = CUP_RE.exec(s)) {
+    last = m;
+  }
+  if (last) {
+    const row = last[1] ? Number.parseInt(last[1], 10) : 1;
+    const col = last[2] ? Number.parseInt(last[2], 10) : 1;
+    state.cursorY = Math.max(0, row - 1);
+    state.cursorX = Math.max(0, col - 1);
+  }
+}
+
 export class HerdrControlSession {
   private sessionId: string;
   private workspaceId: string | null = null;
@@ -67,8 +157,10 @@ export class HerdrControlSession {
   // Sizes we last applied per pane, echoed into viewports
   private paneSizes = new Map<string, { cols: number; rows: number }>();
 
-  // observe subprocess per herdr pane id
-  private observers = new Map<string, Subprocess>();
+  // persistent control client per herdr pane id (input + resize + frames)
+  private controllers = new Map<string, PaneController>();
+  // live cursor / alt-screen state per tmux pane id, fed by frame scanning
+  private runtimeStates = new Map<string, PaneRuntimeState>();
   private unsubscribeEvents: (() => void) | null = null;
 
   private globalOutputListeners = new Set<(paneId: string, data: Buffer) => void>();
@@ -81,11 +173,6 @@ export class HerdrControlSession {
   private graceTimer: Timer | null = null;
   private destroyed = false;
   private clientDeviceTypes = new Map<string, 'mobile' | 'tablet' | 'desktop'>();
-
-  // Serializes pane.send_input calls. Each herdr RPC opens its own socket
-  // connection, so concurrent inputs (one WS message per keystroke) can
-  // arrive at the PTY out of order without this chain.
-  private inputTail: Promise<unknown> = Promise.resolve();
 
   constructor(sessionId: string) {
     this.sessionId = sessionId;
@@ -107,8 +194,18 @@ export class HerdrControlSession {
       .filter((id): id is string => id !== null);
     this.tree.setInitialPanes(tmuxIds);
 
+    const rects = this.tree.computeRects(this.clientSize.cols, this.clientSize.rows);
     for (const pane of panes) {
-      this.startObserver(pane.pane_id);
+      const tmuxId = toTmuxPaneId(pane.pane_id);
+      const rect = tmuxId ? rects.get(tmuxId) : undefined;
+      this.startController(
+        pane.pane_id,
+        rect?.width ?? this.clientSize.cols,
+        rect?.height ?? this.clientSize.rows,
+      );
+      if (tmuxId && rect) {
+        this.paneSizes.set(tmuxId, { cols: rect.width, rows: rect.height });
+      }
     }
 
     // Structural events → reconcile pane set. Payload shapes are treated as
@@ -137,59 +234,71 @@ export class HerdrControlSession {
   }
 
   // ==========================================================================
-  // Observe subprocess management (output push signal)
+  // Pane controller management (input + resize + frame stream)
   // ==========================================================================
 
-  private startObserver(herdrPaneId: string): void {
-    if (this.destroyed || this.observers.has(herdrPaneId)) return;
+  private startController(herdrPaneId: string, cols: number, rows: number): void {
+    if (this.destroyed || this.controllers.get(herdrPaneId)?.isAlive) return;
     const tmuxId = toTmuxPaneId(herdrPaneId);
     if (!tmuxId) return;
 
-    let proc: Subprocess;
-    try {
-      proc = Bun.spawn(['herdr', 'terminal', 'session', 'observe', herdrPaneId], {
-        stdin: 'ignore',
-        stdout: 'pipe',
-        stderr: 'ignore',
-      });
-    } catch (err) {
-      console.error(`[herdr-control] observe spawn failed for ${herdrPaneId}:`, err);
-      return;
+    const existing = this.runtimeStates.get(tmuxId);
+    const state: PaneRuntimeState = existing ?? {
+      altScreen: false,
+      cursorX: 0,
+      cursorY: 0,
+      cursorVisible: false,
+    };
+    this.runtimeStates.set(tmuxId, state);
+    if (!existing) {
+      // Frames only carry alt-screen TRANSITIONS; a pane already inside an
+      // alt-screen app when we attach would stay misclassified forever.
+      void guessInitialAltScreen(herdrPaneId, state);
     }
-    this.observers.set(herdrPaneId, proc);
 
-    // Any stdout activity = new frames = pane output. We don't parse the
-    // NDJSON; its arrival is the signal.
-    void (async () => {
-      try {
-        const stdout = proc.stdout;
-        if (!stdout || typeof stdout === 'number') return;
-        const reader = stdout.getReader();
-        for (;;) {
-          const { done } = await reader.read();
-          if (done) break;
+    let controller: PaneController;
+    try {
+      controller = new PaneController(herdrPaneId, cols, rows, {
+        onFrame: (bytes) => {
+          scanFrameForState(state, bytes);
           for (const listener of this.globalOutputListeners) {
             listener(tmuxId, Buffer.alloc(0));
           }
-        }
-      } catch {
-        // stream closed
-      } finally {
-        this.observers.delete(herdrPaneId);
-      }
-    })();
+        },
+        onExit: () => {
+          if (this.controllers.get(herdrPaneId) === controller) {
+            this.controllers.delete(herdrPaneId);
+          }
+          if (this.destroyed) return;
+          // The control client can die without the pane being gone (herdr
+          // restart, takeover by another client). Reconcile decides whether
+          // the pane still exists and layout-applies a fresh controller.
+          setTimeout(() => void this.reconcilePanes(), 500);
+        },
+      });
+    } catch (err) {
+      console.error(`[herdr-control] control spawn failed for ${herdrPaneId}:`, err);
+      return;
+    }
+    this.controllers.set(herdrPaneId, controller);
   }
 
-  private stopObserver(herdrPaneId: string): void {
-    const proc = this.observers.get(herdrPaneId);
-    if (proc) {
-      this.observers.delete(herdrPaneId);
-      try {
-        proc.kill();
-      } catch {
-        // already dead
-      }
+  private stopController(herdrPaneId: string): void {
+    const controller = this.controllers.get(herdrPaneId);
+    if (controller) {
+      this.controllers.delete(herdrPaneId);
+      controller.kill();
     }
+  }
+
+  private controllerFor(paneId: string): PaneController | undefined {
+    const controller = this.controllers.get(this.toHerdr(paneId));
+    return controller?.isAlive ? controller : undefined;
+  }
+
+  /** Live cursor / alt-screen state for a pane (from its frame stream). */
+  getRuntimeState(paneId: string): PaneRuntimeState | undefined {
+    return this.runtimeStates.get(paneId);
   }
 
   private async reconcilePanes(): Promise<void> {
@@ -209,16 +318,27 @@ export class HerdrControlSession {
       live.add(tmuxId);
       if (!this.tree.has(tmuxId)) {
         this.tree.addUnknown(tmuxId);
-        this.startObserver(pane.pane_id);
         changed = true;
+      }
+      // A live pane without a running controller (fresh pane, or its control
+      // client died) gets one at its current size; applyLayout below corrects
+      // the size if the tree changed.
+      if (!this.controllers.get(pane.pane_id)?.isAlive) {
+        const size = this.paneSizes.get(tmuxId);
+        this.startController(
+          pane.pane_id,
+          size?.cols ?? this.clientSize.cols,
+          size?.rows ?? this.clientSize.rows,
+        );
       }
     }
 
     for (const tmuxId of this.tree.paneIds()) {
       if (!live.has(tmuxId)) {
         this.tree.remove(tmuxId);
-        this.stopObserver(this.toHerdr(tmuxId));
+        this.stopController(this.toHerdr(tmuxId));
         this.paneSizes.delete(tmuxId);
+        this.runtimeStates.delete(tmuxId);
         for (const listener of this.paneDeadListeners) listener(tmuxId);
         changed = true;
       }
@@ -242,18 +362,12 @@ export class HerdrControlSession {
     if (this.destroyed) return;
     const { cols, rows } = this.clientSize;
     const rects = this.tree.computeRects(cols, rows);
-    await Promise.all(
-      [...rects.entries()].map(async ([paneId, rect]) => {
-        const prev = this.paneSizes.get(paneId);
-        if (prev && prev.cols === rect.width && prev.rows === rect.height) return;
-        this.paneSizes.set(paneId, { cols: rect.width, rows: rect.height });
-        try {
-          await resizePanePty(this.toHerdr(paneId), rect.width, rect.height);
-        } catch (err) {
-          console.warn(`[herdr-control] pty resize failed for ${paneId}:`, err);
-        }
-      }),
-    );
+    for (const [paneId, rect] of rects) {
+      const prev = this.paneSizes.get(paneId);
+      if (prev && prev.cols === rect.width && prev.rows === rect.height) continue;
+      this.paneSizes.set(paneId, { cols: rect.width, rows: rect.height });
+      this.controllerFor(paneId)?.resize(rect.width, rect.height);
+    }
     this.emitLayout();
   }
 
@@ -293,27 +407,14 @@ export class HerdrControlSession {
   async sendInput(paneId: string, data: Buffer): Promise<void> {
     assertPaneId(paneId);
     if (data.length === 0) return;
-    const herdrId = this.toHerdr(paneId);
-    // herdr's send_input treats `text` as literal (it strips newlines to
-    // prevent Enter injection), so control bytes must go as named keys.
-    const ops = translateInput(data);
-    if (ops.length === 0) return;
-    const send = async () => {
-      for (const op of ops) {
-        try {
-          await herdrRpc('pane.send_input', {
-            pane_id: herdrId,
-            text: 'text' in op ? op.text : '',
-            keys: 'keys' in op ? op.keys : [],
-          });
-        } catch {
-          // non-fatal (pane may have closed), matches tmux behavior
-        }
-      }
-    };
-    const next = this.inputTail.then(send, send);
-    this.inputTail = next;
-    await next;
+    // Raw byte passthrough over the pane's control stream. Ordering is
+    // guaranteed by the single stdin pipe; no serialization needed.
+    const controller = this.controllerFor(paneId);
+    if (!controller) {
+      console.warn(`[herdr-control] no controller for ${paneId}; input dropped`);
+      return;
+    }
+    controller.input(data);
   }
 
   async splitPane(paneId: string, direction: 'h' | 'v'): Promise<void> {
@@ -327,7 +428,14 @@ export class HerdrControlSession {
     const newTmuxId = newHerdrId ? toTmuxPaneId(newHerdrId) : null;
     if (newHerdrId && newTmuxId) {
       this.tree.split(paneId, direction, newTmuxId);
-      this.startObserver(newHerdrId);
+      const rect = this.tree
+        .computeRects(this.clientSize.cols, this.clientSize.rows)
+        .get(newTmuxId);
+      this.startController(
+        newHerdrId,
+        rect?.width ?? this.clientSize.cols,
+        rect?.height ?? this.clientSize.rows,
+      );
       await this.applyLayout();
     } else {
       // Shape mismatch — fall back to reconcile
@@ -342,8 +450,9 @@ export class HerdrControlSession {
     }
     await herdrRpc('pane.close', { pane_id: this.toHerdr(paneId) });
     this.tree.remove(paneId);
-    this.stopObserver(this.toHerdr(paneId));
+    this.stopController(this.toHerdr(paneId));
     this.paneSizes.delete(paneId);
+    this.runtimeStates.delete(paneId);
     await this.applyLayout();
   }
 
@@ -355,7 +464,7 @@ export class HerdrControlSession {
   async resizePane(paneId: string, cols: number, rows: number): Promise<void> {
     assertPaneId(paneId);
     this.paneSizes.set(paneId, { cols, rows });
-    await resizePanePty(this.toHerdr(paneId), cols, rows);
+    this.controllerFor(paneId)?.resize(cols, rows);
   }
 
   async adjustPaneSize(paneId: string, direction: 'L' | 'R' | 'U' | 'D', amount: number): Promise<void> {
@@ -536,9 +645,10 @@ export class HerdrControlSession {
       this.unsubscribeEvents();
       this.unsubscribeEvents = null;
     }
-    for (const herdrPaneId of [...this.observers.keys()]) {
-      this.stopObserver(herdrPaneId);
+    for (const herdrPaneId of [...this.controllers.keys()]) {
+      this.stopController(herdrPaneId);
     }
+    this.runtimeStates.clear();
 
     this.globalOutputListeners.clear();
     this.layoutListeners.clear();
@@ -584,9 +694,9 @@ export async function getOrCreateHerdrControlSession(sessionId: string): Promise
  *   offset > 0 → pane.read(recent) window slice, clamped to herdr's
  *                1000-line read cap.
  *
- * Known interim limitations vs the tmux backend (see poc/herdr/FINDINGS.md):
- * cursor position is not exposed by herdr's read API (reported hidden), and
- * altScreen is always reported false.
+ * Cursor position/visibility and alt-screen state come from the pane's
+ * control-stream frames (see scanFrameForState), since herdr's read API
+ * exposes neither.
  */
 export async function captureViewportHerdr(
   cs: HerdrControlSession,
@@ -636,9 +746,16 @@ export async function captureViewportHerdr(
     lines.push('');
   }
 
-  const cursor: PaneCursor = { x: 0, y: 0, visible: false };
-  const modes: PaneModes = { altScreen: false };
+  const runtime = cs.getRuntimeState(paneId);
   const atTail = clampedOffset === 0;
+  // Hide the cursor in scrolled mode so the client doesn't render a stale
+  // cursor inside historical content (same rule as the tmux backend).
+  const cursor: PaneCursor = {
+    x: runtime?.cursorX ?? 0,
+    y: runtime?.cursorY ?? 0,
+    visible: atTail && (runtime?.cursorVisible ?? false),
+  };
+  const modes: PaneModes = { altScreen: runtime?.altScreen ?? false };
 
   return {
     paneId,

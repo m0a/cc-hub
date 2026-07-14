@@ -226,47 +226,150 @@ export async function readPaneText(
   }
 }
 
+export interface FrameMeta {
+  /** true = full repaint, false = incremental */
+  full: boolean;
+  width: number;
+  height: number;
+  seq: number;
+}
+
+export interface PaneControllerHandlers {
+  /** Called for every terminal.frame with the decoded VT bytes. */
+  onFrame: (bytes: Buffer, meta: FrameMeta) => void;
+  /** Called once when the control subprocess exits or its stream ends. */
+  onExit: () => void;
+}
+
 /**
- * Resize a pane's PTY to an absolute size.
+ * Persistent `herdr terminal session control` client for one pane.
  *
- * herdr's socket API only offers relative grid resizing (`pane.resize`), and
- * the workspace grid itself is fixed at the default client size when no
- * interactive client is attached. A `terminal session control` client,
- * however, resizes the target pane's PTY to its --cols/--rows on attach and
- * the size persists after detach (verified against herdr 0.7.3). So we spawn
- * a short-lived control client purely for its resize side effect.
+ * This is the herdr equivalent of tmux -CC for a single pane: stdin accepts
+ * newline-delimited JSON commands and stdout streams terminal.frame records.
+ *
+ *   {"type":"terminal.input","bytes":"<base64>"}  raw PTY write, NO
+ *       sanitization (verified against herdr 0.7.3 src/client/mod.rs) —
+ *       unlike pane.send_input, which strips ESC/newlines from text.
+ *   {"type":"terminal.resize","cols":N,"rows":N}  absolute PTY resize.
+ *
+ * Input ordering is guaranteed by the single stdin pipe, and raw byte
+ * passthrough means mouse SGR sequences, bracketed paste, and arbitrary
+ * escape sequences reach the application intact.
  */
-export async function resizePanePty(
-  herdrPaneId: string,
-  cols: number,
-  rows: number,
-): Promise<void> {
-  const proc = Bun.spawn(
-    [
-      'herdr',
-      'terminal',
-      'session',
-      'control',
-      herdrPaneId,
-      '--takeover',
-      '--cols',
-      String(cols),
-      '--rows',
-      String(rows),
-    ],
-    { stdin: 'pipe', stdout: 'ignore', stderr: 'ignore' },
-  );
-  // Give the attach + resize a moment to apply, then detach by closing stdin
-  // and killing the client. The PTY size sticks.
-  await new Promise((r) => setTimeout(r, 200));
-  try {
-    proc.stdin.end();
-  } catch {
-    // already closed
+export class PaneController {
+  private proc: ReturnType<typeof Bun.spawn>;
+  private stdinWriter: { write(s: string): unknown; flush?(): unknown };
+  private exited = false;
+
+  constructor(
+    readonly herdrPaneId: string,
+    cols: number,
+    rows: number,
+    handlers: PaneControllerHandlers,
+  ) {
+    this.proc = Bun.spawn(
+      [
+        'herdr',
+        'terminal',
+        'session',
+        'control',
+        herdrPaneId,
+        '--takeover',
+        '--cols',
+        String(cols),
+        '--rows',
+        String(rows),
+      ],
+      { stdin: 'pipe', stdout: 'pipe', stderr: 'ignore' },
+    );
+    this.stdinWriter = this.proc.stdin as unknown as { write(s: string): unknown };
+
+    void this.readFrames(handlers);
+    void this.proc.exited.then(() => {
+      if (!this.exited) {
+        this.exited = true;
+        handlers.onExit();
+      }
+    });
   }
-  try {
-    proc.kill();
-  } catch {
-    // already dead
+
+  private async readFrames(handlers: PaneControllerHandlers): Promise<void> {
+    const stdout = this.proc.stdout;
+    if (!stdout || typeof stdout === 'number') return;
+    const reader = stdout.getReader();
+    let buf = '';
+    const decoder = new TextDecoder();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let nl = buf.indexOf('\n');
+        while (nl >= 0) {
+          const line = buf.slice(0, nl);
+          buf = buf.slice(nl + 1);
+          try {
+            const msg = JSON.parse(line) as {
+              type?: string;
+              bytes?: string;
+              full?: boolean;
+              width?: number;
+              height?: number;
+              seq?: number;
+            };
+            if (msg.type === 'terminal.frame' && typeof msg.bytes === 'string') {
+              handlers.onFrame(Buffer.from(msg.bytes, 'base64'), {
+                full: msg.full ?? false,
+                width: msg.width ?? 0,
+                height: msg.height ?? 0,
+                seq: msg.seq ?? 0,
+              });
+            }
+          } catch {
+            // skip malformed line
+          }
+          nl = buf.indexOf('\n');
+        }
+      }
+    } catch {
+      // stream torn down
+    }
+  }
+
+  private send(obj: Record<string, unknown>): void {
+    if (this.exited) return;
+    try {
+      this.stdinWriter.write(`${JSON.stringify(obj)}\n`);
+    } catch {
+      // stdin closed
+    }
+  }
+
+  /** Write raw bytes to the pane's PTY (ordering guaranteed by the pipe). */
+  input(data: Buffer): void {
+    this.send({ type: 'terminal.input', bytes: data.toString('base64') });
+  }
+
+  /** Absolute PTY resize. */
+  resize(cols: number, rows: number): void {
+    this.send({ type: 'terminal.resize', cols, rows });
+  }
+
+  get isAlive(): boolean {
+    return !this.exited;
+  }
+
+  kill(): void {
+    this.exited = true;
+    try {
+      (this.proc.stdin as unknown as { end?: () => void })?.end?.();
+    } catch {
+      // already closed
+    }
+    try {
+      this.proc.kill();
+    } catch {
+      // already dead
+    }
   }
 }

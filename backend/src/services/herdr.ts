@@ -67,8 +67,11 @@ function workspaceSessionId(ws: HerdrWorkspace): string {
 export class HerdrService {
   private listSessionsCache: { data: HerdrSessionInfo[]; timestamp: number } | null = null;
   private static readonly LIST_SESSIONS_CACHE_TTL = 2000;
-  // pane process info cache (pane_id → argv-ish string)
-  private processCmdCache = new Map<string, { cmd: string; pid?: number; timestamp: number }>();
+  // pane process info cache (pane_id → foreground process snapshot)
+  private processCmdCache = new Map<
+    string,
+    { cmdlines: string[]; leader: string; pid?: number; timestamp: number }
+  >();
   private static readonly PROCESS_CMD_CACHE_TTL = 3000;
 
   private async resolveWorkspace(sessionId: string): Promise<HerdrWorkspace | null> {
@@ -84,29 +87,54 @@ export class HerdrService {
     }
   }
 
-  private async paneCommand(herdrPaneId: string): Promise<{ cmd: string; pid?: number }> {
+  private async paneProcesses(
+    herdrPaneId: string,
+  ): Promise<{ cmdlines: string[]; leader: string; pid?: number }> {
     const cached = this.processCmdCache.get(herdrPaneId);
     if (cached && Date.now() - cached.timestamp < HerdrService.PROCESS_CMD_CACHE_TTL) {
-      return { cmd: cached.cmd, pid: cached.pid };
+      return cached;
     }
     try {
-      const res = await herdrRpc<Record<string, unknown>>('pane.process_info', {
-        pane_id: herdrPaneId,
-      });
-      // Shape is version-dependent; look for common fields defensively.
-      const info = (res.process ?? res.process_info ?? res) as Record<string, unknown>;
-      const cmd =
-        (typeof info.command === 'string' && info.command) ||
-        (Array.isArray(info.argv) && info.argv.join(' ')) ||
-        (typeof info.name === 'string' && info.name) ||
-        '';
-      const pid = typeof info.pid === 'number' ? info.pid : undefined;
-      this.processCmdCache.set(herdrPaneId, { cmd, pid, timestamp: Date.now() });
-      return { cmd, pid };
+      const res = await herdrRpc<{
+        process_info?: {
+          shell_pid?: number;
+          foreground_processes?: Array<{
+            pid?: number;
+            name?: string;
+            argv?: string[];
+            cmdline?: string;
+          }>;
+        };
+      }>('pane.process_info', { pane_id: herdrPaneId });
+      // foreground_processes lists the whole foreground group: its first
+      // entry is the group leader (e.g. `claude`), later entries are its
+      // children (MCP servers etc.). Agent detection scans all of them.
+      const procs = res.process_info?.foreground_processes ?? [];
+      const cmdlines = procs
+        .map((p) => p.cmdline || p.argv?.join(' ') || p.name || '')
+        .filter((c) => c.length > 0);
+      const leaderProc = procs[0];
+      const entry = {
+        cmdlines,
+        leader: leaderProc?.name || leaderProc?.cmdline || '',
+        pid: typeof leaderProc?.pid === 'number' ? leaderProc.pid : undefined,
+        timestamp: Date.now(),
+      };
+      this.processCmdCache.set(herdrPaneId, entry);
+      return entry;
     } catch {
-      this.processCmdCache.set(herdrPaneId, { cmd: '', timestamp: Date.now() });
-      return { cmd: '' };
+      const entry = { cmdlines: [], leader: '', timestamp: Date.now() };
+      this.processCmdCache.set(herdrPaneId, entry);
+      return entry;
     }
+  }
+
+  private static detectAgent(cmdlines: string[]): AgentProvider | undefined {
+    for (const cmd of cmdlines) {
+      const detected = detectAgentProviderFromArgs(cmd);
+      if (detected) return detected;
+    }
+    return undefined;
   }
 
   async listSessions(): Promise<HerdrSessionInfo[]> {
@@ -126,10 +154,10 @@ export class HerdrService {
           const panes: HerdrPaneInfo[] = await Promise.all(
             wsPanes.map(async (p) => {
               const tmuxId = toTmuxPaneId(p.pane_id) ?? p.pane_id;
-              const { cmd, pid } = await this.paneCommand(p.pane_id);
+              const { leader, pid } = await this.paneProcesses(p.pane_id);
               return {
                 paneId: tmuxId,
-                command: cmd.split(/\s+/)[0]?.split('/').pop() ?? '',
+                command: leader.split(/\s+/)[0]?.split('/').pop() ?? '',
                 path: p.foreground_cwd || p.cwd || '',
                 title: '',
                 tty: '',
@@ -140,13 +168,14 @@ export class HerdrService {
             }),
           );
 
-          // Agent detection from pane process argv (herdr also exposes
-          // agent_status natively, but it doesn't tell us WHICH agent).
+          // Agent detection from the pane's foreground process group (herdr
+          // also exposes agent_status natively, but it doesn't tell us WHICH
+          // agent).
           let agent: AgentProvider | undefined;
           let agentPanePath: string | undefined;
           for (const p of wsPanes) {
-            const { cmd } = await this.paneCommand(p.pane_id);
-            const detected = detectAgentProviderFromArgs(cmd);
+            const { cmdlines } = await this.paneProcesses(p.pane_id);
+            const detected = HerdrService.detectAgent(cmdlines);
             if (detected) {
               agent = detected;
               agentPanePath = p.foreground_cwd || p.cwd;

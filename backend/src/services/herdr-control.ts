@@ -267,6 +267,7 @@ export class HerdrControlSession {
           }
         },
         onExit: () => {
+          console.log(`[herdr-control] controller exited for ${herdrPaneId} (session=${this.sessionId})`);
           if (this.controllers.get(herdrPaneId) === controller) {
             this.controllers.delete(herdrPaneId);
           }
@@ -282,6 +283,21 @@ export class HerdrControlSession {
       return;
     }
     this.controllers.set(herdrPaneId, controller);
+    console.log(`[herdr-control] controller spawned for ${herdrPaneId} (${cols}x${rows}, session=${this.sessionId})`);
+
+    // Nudge subscribers to recapture shortly after a controller (re)spawn.
+    // A capture can race the app's resize repaint (blank/transitional
+    // content), and if the app then goes idle no frame would ever trigger a
+    // corrective push — the stale viewport would stick until the next real
+    // output. Two delayed ticks cover fast and slow repaints.
+    for (const delay of [300, 1200]) {
+      setTimeout(() => {
+        if (this.destroyed || !this.controllers.get(herdrPaneId)?.isAlive) return;
+        for (const listener of this.globalOutputListeners) {
+          listener(tmuxId, Buffer.alloc(0));
+        }
+      }, delay);
+    }
   }
 
   private stopController(herdrPaneId: string): void {

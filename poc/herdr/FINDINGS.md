@@ -2,14 +2,27 @@
 
 検証日: 2026-07-14 / herdr v0.7.3 (protocol 16) / Arch Linux
 
-## 結論
+## 結論（実装済み — 同ブランチに CCHUB_MUX=herdr 暫定バックエンドあり）
 
-**技術的には成立する。ただし「深い scrollback」に 1000 行の API キャップがあり、
-現行 CC Hub の「履歴は多重化層が唯一の真実、フロントは render-only」設計を
-完全再現するには herdr 側の機能追加（pane.read の offset 対応 or キャップ緩和）が必要。**
+**成立する。Claude Code 実セッションで dev 検証済み**（TUI描画・入力ボックス
+カーソル・日本語プロンプト往復・hook indicator・ccSessionId 紐付け・分割・
+scrollback・クローズ）。残る制約は「深い scrollback」の 1000 行 API キャップのみで、
+herdr 側の機能追加（pane.read の offset 対応 or キャップ緩和）待ち。
 
-ライブ表示・入力・レイアウト・イベント購読・エージェント状態検知は
-tmux 実装より簡潔になる。深い履歴だけが唯一のブロッカー。
+### 実装で確定したアーキテクチャ (v2)
+
+ペインごとに `herdr terminal session control` を常駐させ、単一ストリームに統合:
+- 入力: `{"type":"terminal.input","bytes":"<base64>"}` — **raw パススルー**
+  （`pane.send_input` RPC は text 中の改行/ESC を落とすため使わない。
+  マウスSGR・bracketed paste もそのまま届く。順序は stdin パイプが保証）
+- リサイズ: `{"type":"terminal.resize","cols":N,"rows":N}` — ペイン単位の絶対サイズ
+  （headless では herdr グリッドが不変のため、レイアウトは CC Hub 自前の split 木）
+- 出力: stdout の terminal.frame (base64 ANSI) を viewport 再取得のトリガに使い、
+  フレーム末尾の CUP/?25h/l と 1049h/l 遷移から**カーソル位置と alt-screen を追跡**
+  （アタッチ前から alt の場合はフレームに遷移が出ないため、
+  「非シェル前面プロセス && host scrollback 0」で初期推定）
+- agent 検出: `pane.process_info` の foreground_processes を全走査
+  （先頭が group leader = claude、以降は子の MCP サーバ）
 
 ## 検証環境の再現
 

@@ -4,6 +4,14 @@ import { homedir } from 'node:os';
 import { AGENT_PROVIDERS, AGENT_PROVIDER_IDS, CreateSessionSchema, DEFAULT_AGENT_PROVIDER, PaneIdSchema, SessionIdSchema, agentResumeCommand, agentSupportsConversationMetadata, type AgentProvider, type IndicatorState, type PaneInfo, type ExtendedSessionResponse, type SessionState } from '../../../shared/types';
 import { TmuxService } from '../services/tmux';
 import { controlSessions, getOrCreateControlSession } from '../services/tmux-control';
+import { HerdrService } from '../services/herdr';
+import {
+  captureViewportHerdr,
+  getOrCreateHerdrControlSession,
+  HerdrControlSession,
+  herdrControlSessions,
+} from '../services/herdr-control';
+import { isHerdrMode } from '../services/herdr-client';
 import { ClaudeCodeService } from '../services/claude-code';
 import { CodexService } from '../services/codex';
 import { CodexConversationService } from '../services/codex-conversation';
@@ -18,7 +26,7 @@ import { captureViewport, detectPaneState, stripAnsi, type DetectedPaneState } f
 import { resolveViewportCursorPolicy } from '../services/viewport-cursor-policy';
 import type { TmuxControlSession } from '../services/tmux-control';
 
-const tmuxService = new TmuxService();
+const tmuxService = isHerdrMode() ? new HerdrService() : new TmuxService();
 const claudeCodeService = new ClaudeCodeService();
 const codexService = new CodexService();
 const codexConversationService = new CodexConversationService();
@@ -60,7 +68,7 @@ function notifySessionChange(): void {
  * stripped variants plus a heuristic `detectedState`.
  */
 async function captureViewportSnapshot(
-  cs: TmuxControlSession,
+  cs: TmuxControlSession | HerdrControlSession,
   paneId: string,
   lines: number,
   cursorPolicy: ReturnType<typeof resolveViewportCursorPolicy> = 'default',
@@ -74,7 +82,10 @@ async function captureViewportSnapshot(
   cursor: { x: number; y: number; visible: boolean };
   detectedState: DetectedPaneState;
 } | null> {
-  const vp = await captureViewport(cs, paneId, 0, cursorPolicy);
+  const vp =
+    cs instanceof HerdrControlSession
+      ? await captureViewportHerdr(cs, paneId, 0)
+      : await captureViewport(cs, paneId, 0, cursorPolicy);
   if (!vp) return null;
   const slice = lines > 0 ? vp.lines.slice(-lines) : vp.lines;
   const stripped = slice.map(stripAnsi);
@@ -94,6 +105,16 @@ async function resolveSessionCursorPolicy(sessionId: string): Promise<ReturnType
   const sessions = await tmuxService.listSessions();
   const session = sessions.find(s => s.id === sessionId);
   return resolveViewportCursorPolicy(session?.agent ?? session?.currentCommand);
+}
+
+/** Backend-agnostic control session lookup (tmux or herdr). */
+async function getAnyControlSession(
+  sessionId: string,
+): Promise<TmuxControlSession | HerdrControlSession> {
+  if (isHerdrMode()) {
+    return herdrControlSessions.get(sessionId) || (await getOrCreateHerdrControlSession(sessionId));
+  }
+  return controlSessions.get(sessionId) || (await getOrCreateControlSession(sessionId));
 }
 
 export const sessions = new Hono();
@@ -929,14 +950,19 @@ sessions.post('/:id/panes/focus', async (c) => {
   }
 
   try {
-    const proc = Bun.spawn(['tmux', 'select-pane', '-t', parsed.data.paneId], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    const exitCode = await proc.exited;
-    if (exitCode !== 0) {
-      const error = await new Response(proc.stderr).text();
-      return c.json({ error: `Failed to focus pane: ${error}` }, 500);
+    if (isHerdrMode()) {
+      const cs = await getAnyControlSession(id);
+      await cs.selectPane(parsed.data.paneId);
+    } else {
+      const proc = Bun.spawn(['tmux', 'select-pane', '-t', parsed.data.paneId], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) {
+        const error = await new Response(proc.stderr).text();
+        return c.json({ error: `Failed to focus pane: ${error}` }, 500);
+      }
     }
     tmuxService.invalidateCache();
     notifySessionChange();
@@ -959,6 +985,20 @@ sessions.post('/:id/panes/close', async (c) => {
   const exists = await tmuxService.sessionExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
+  }
+
+  if (isHerdrMode()) {
+    try {
+      const cs = await getAnyControlSession(id);
+      await cs.closePane(parsed.data.paneId); // rejects the last pane itself
+      tmuxService.invalidateCache();
+      notifySessionChange();
+      return c.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to close pane';
+      const status = message.includes('last pane') ? 400 : 500;
+      return c.json({ error: message }, status);
+    }
   }
 
   // Check pane count - don't allow closing the last pane.
@@ -1014,14 +1054,19 @@ sessions.post('/:id/panes/split', async (c) => {
   }
 
   try {
-    const proc = Bun.spawn(['tmux', 'split-window', parsed.data.direction === 'h' ? '-h' : '-v', '-t', parsed.data.paneId], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    const exitCode = await proc.exited;
-    if (exitCode !== 0) {
-      const error = await new Response(proc.stderr).text();
-      return c.json({ error: `Failed to split pane: ${error}` }, 500);
+    if (isHerdrMode()) {
+      const cs = await getAnyControlSession(id);
+      await cs.splitPane(parsed.data.paneId, parsed.data.direction);
+    } else {
+      const proc = Bun.spawn(['tmux', 'split-window', parsed.data.direction === 'h' ? '-h' : '-v', '-t', parsed.data.paneId], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) {
+        const error = await new Response(proc.stderr).text();
+        return c.json({ error: `Failed to split pane: ${error}` }, 500);
+      }
     }
     tmuxService.invalidateCache();
     notifySessionChange();
@@ -1044,6 +1089,11 @@ sessions.post('/:id/panes/respawn', async (c) => {
   const exists = await tmuxService.sessionExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
+  }
+
+  if (isHerdrMode()) {
+    // herdr has no dead-pane/respawn concept; exited panes are closed.
+    return c.json({ error: 'respawn-pane is not supported in herdr mode' }, 501);
   }
 
   try {
@@ -1080,7 +1130,7 @@ sessions.post('/:id/panes/input', async (c) => {
   }
 
   try {
-    const controlSession = controlSessions.get(id) || await getOrCreateControlSession(id);
+    const controlSession = await getAnyControlSession(id);
     const panes = await controlSession.listPanes();
     const targetPane = panes.find(p => p.paneId === parsed.data.paneId);
     if (!targetPane) {
@@ -1130,7 +1180,7 @@ sessions.get('/:id/panes/:paneId/viewport', async (c) => {
   }
 
   try {
-    const controlSession = controlSessions.get(id) || await getOrCreateControlSession(id);
+    const controlSession = await getAnyControlSession(id);
     const panes = await controlSession.listPanes();
     if (!panes.find(p => p.paneId === paneId)) {
       return c.json({ error: 'Pane not found' }, 404);
@@ -1162,7 +1212,7 @@ sessions.post('/:id/prompt', async (c) => {
   }
 
   try {
-    const controlSession = controlSessions.get(id) || await getOrCreateControlSession(id);
+    const controlSession = await getAnyControlSession(id);
     const panes = await controlSession.listPanes();
     // Find the active pane, or fall back to the first pane
     const targetPane = panes.find(p => p.isActive) || panes[0];

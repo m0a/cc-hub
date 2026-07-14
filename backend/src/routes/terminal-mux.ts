@@ -1,6 +1,13 @@
 import type { ServerWebSocket } from 'bun';
 import { TmuxService } from '../services/tmux';
 import { getOrCreateControlSession, type TmuxControlSession } from '../services/tmux-control';
+import { HerdrService } from '../services/herdr';
+import {
+  captureViewportHerdr,
+  getOrCreateHerdrControlSession,
+  HerdrControlSession,
+} from '../services/herdr-control';
+import { isHerdrMode } from '../services/herdr-client';
 import { ConversationWatcher } from '../services/conversation-watcher';
 import { captureViewport } from '../services/pane-viewport';
 import type {
@@ -25,9 +32,12 @@ const PUSH_MIN_INTERVAL_MS = 200;
 
 const DEBUG_MUX = process.env.DEBUG_MUX === '1' || process.env.DEBUG_MUX === 'true';
 
+/** Backend-agnostic control session (tmux or herdr, same public surface) */
+type ControlSession = TmuxControlSession | HerdrControlSession;
+
 /** Per-session subscription state for a mux client */
 interface MuxSubscription {
-  controlSession: TmuxControlSession;
+  controlSession: ControlSession;
   cleanupFns: Array<() => void>;
   // True once the client has sent at least one `resize` message. The first
   // resize uses setClientSizeImmediate (synchronous tmux size adoption);
@@ -59,7 +69,7 @@ export interface MuxData {
   lastPingAt: number;
 }
 
-const tmuxService = new TmuxService();
+const tmuxService = isHerdrMode() ? new HerdrService() : new TmuxService();
 
 // Track mux connections for broadcast
 const activeMuxConnections = new Set<ServerWebSocket<MuxData>>();
@@ -257,11 +267,13 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     return;
   }
 
-  let controlSession: TmuxControlSession | null = null;
+  let controlSession: ControlSession | null = null;
   let clientAdded = false;
   const cleanupFns: Array<() => void> = [];
   try {
-    controlSession = await getOrCreateControlSession(sessionId);
+    controlSession = isHerdrMode()
+      ? await getOrCreateHerdrControlSession(sessionId)
+      : await getOrCreateControlSession(sessionId);
     controlSession.addClient();
     clientAdded = true;
 
@@ -340,14 +352,21 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     ws.data.subscriptions.set(sessionId, sub);
 
     try {
-      const layoutOutput = await controlSession.sendCommand(
-        `list-windows -F "#{window_layout}"`
-      );
-      const layoutString = layoutOutput.trim().split('\n')[0];
-      if (layoutString) {
-        const { parseTmuxLayout } = await import('../services/tmux-layout-parser');
-        const layout = parseTmuxLayout(layoutString);
-        ws.send(JSON.stringify({ type: 'layout', layout, sessionId }));
+      if (controlSession instanceof HerdrControlSession) {
+        const layout = controlSession.getCurrentLayout();
+        if (layout) {
+          ws.send(JSON.stringify({ type: 'layout', layout, sessionId }));
+        }
+      } else {
+        const layoutOutput = await controlSession.sendCommand(
+          `list-windows -F "#{window_layout}"`
+        );
+        const layoutString = layoutOutput.trim().split('\n')[0];
+        if (layoutString) {
+          const { parseTmuxLayout } = await import('../services/tmux-layout-parser');
+          const layout = parseTmuxLayout(layoutString);
+          ws.send(JSON.stringify({ type: 'layout', layout, sessionId }));
+        }
       }
     } catch (err) {
       console.error(`[mux] Failed to send initial layout for ${sessionId}:`, err);
@@ -436,7 +455,10 @@ async function pushViewport(
   if (sub.controlSession.isDestroyed) return;
   let viewport: Awaited<ReturnType<typeof captureViewport>> = null;
   try {
-    viewport = await captureViewport(sub.controlSession, paneId, offset, sub.cursorPolicy);
+    viewport =
+      sub.controlSession instanceof HerdrControlSession
+        ? await captureViewportHerdr(sub.controlSession, paneId, offset)
+        : await captureViewport(sub.controlSession, paneId, offset, sub.cursorPolicy);
   } catch (err) {
     console.warn(`[mux] captureViewport failed for ${paneId}:`, err);
     return;

@@ -247,13 +247,6 @@ export class HerdrService {
     // tmux status-bar dot; no herdr equivalent wired up yet
   }
 
-  setSessionMeta(
-    _sessionName: string,
-    _meta: { recap?: string; branch?: string; tokens?: number; contextPercent?: number },
-  ): void {
-    // tmux user options for the local TUI; no herdr equivalent
-  }
-
   async capturePane(sessionId: string, lines: number = 15): Promise<string | null> {
     const ws = await this.resolveWorkspace(sessionId);
     if (!ws) return null;

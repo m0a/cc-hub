@@ -6,15 +6,13 @@
     "backend",
     "frontend",
     "shared",
-    "glasses",
-    "tui"
+    "glasses"
   ],
   "scripts": {
     "dev": "bun run stop; bun run dev:backend & bun run dev:frontend",
     "dev:auth": "bun run stop; bun run --filter backend dev:auth & bun run --filter frontend dev",
     "dev:backend": "bun run --filter backend dev",
     "dev:frontend": "bun run --filter frontend dev",
-    "dev:tui": "bun run tui/src/embed/embed-tui.ts",
     "stop": "fuser -k 3456/tcp 5173/tcp 2>/dev/null || true",
     "build": "bun run --filter '*' build",
     "build:binary": "bash scripts/build.sh",

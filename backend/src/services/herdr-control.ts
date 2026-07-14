@@ -62,6 +62,7 @@ export interface PaneRuntimeState {
   cursorVisible: boolean;
 }
 
+// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escapes by design.
 const CUP_RE = /\x1b\[(\d*)(?:;(\d*))?[Hf]/g;
 
 const SHELL_NAMES = new Set(['zsh', 'bash', 'fish', 'sh', 'dash', 'ksh', 'nu', 'pwsh']);

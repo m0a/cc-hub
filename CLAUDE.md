@@ -39,7 +39,6 @@ bun run stop
 backend/     # Hono API server (Bun runtime)
 frontend/    # React SPA (Vite + Tailwind v4)
 shared/      # Shared types and Zod schemas (types.ts)
-tui/         # Local terminal UI for `cchub tui` (embed-tui: full-screen, tmux-direct, plain Bun)
 glasses/     # EVEN G2 smart glasses app (EvenHub SDK, built to out.ehpk)
 ```
 
@@ -312,9 +311,6 @@ cchub send local:dev:%1 --wait "y"  # Send, then snapshot viewport with detected
                                     # (--wait-ms <n> delay, --lines <n> rows)
 cchub peek local:dev:%1             # Snapshot a pane viewport (--lines <n>, default 20)
 
-# Local terminal UI (tui/ workspace, embed-tui)
-cchub tui               # Launch the full-screen session manager (sidebar + live terminal)
-
 # Debugging (Bun inspector on the running service)
 cchub debug status      # Show inspector state
 cchub debug enable      # Enable inspector (port 9229)
@@ -325,8 +321,6 @@ cchub debug profile --seconds 30   # Enable for N seconds then auto-disable
 cchub --help
 cchub --version
 ```
-
-The `cchub tui` subcommand is a local-only, full-screen terminal UI (`embed-tui`) implemented in the `tui/` workspace (plain Bun, no Ink/React). It uses **tmux as the backend only** (PTY + terminal rendering) and renders its own UI: a left sidebar + the selected session's live terminal (drawn from `capture-pane`), with input forwarded via `send-keys`. It talks to tmux directly (no HTTP/WS API), so it works even without the CC Hub server running. Features: mouse-driven selection/focus, new-session file-manager, resume-from-history (`~/.claude/projects` → `claude -r`), right-click close, wheel scroll. Requires a real raw-mode TTY (not a pipe/wrapper). See `tui/README.md`. Entry: `tui/src/embed/embed-tui.ts`.
 
 ### CLI Options
 
@@ -445,7 +439,3 @@ When running the dev server from within a tmux session (e.g., from a CC Hub term
 nohup env -u TMUX bun run dev > /tmp/cchub-dev.log 2>&1 &
 ```
 
-<!-- SPECKIT START -->
-Active feature plan: `specs/002-cchub-tui/plan.md` (CC Hub TUI — local `cchub tui` subcommand).
-For technologies, project structure, and constraints of in-flight feature work, read the current plan.
-<!-- SPECKIT END -->

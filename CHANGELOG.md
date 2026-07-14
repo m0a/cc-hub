@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.192] - 2026-07-14
+
+### Fixed
+- **`cchub tui`（バイナリ）が起動直後に終了する問題**: embed-tui の `main()` がセットアップ後すぐ return する設計だったため、CLI 経路（`await runTui()` → `process.exit`）ではプロセスごと即終了していた（v0.1.189 から）。`bun run dev:tui` ではイベントループが残るため露見しなかった。`main()` が終了（`q` / Ctrl-C → cleanup）まで待つよう修正（`tui/src/embed/embed-tui.ts`）
+
 ## [0.1.191] - 2026-07-13
 
 ### Added

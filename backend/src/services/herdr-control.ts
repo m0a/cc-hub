@@ -56,6 +56,12 @@ export interface PaneRuntimeState {
   cursorX: number; // 0-based
   cursorY: number; // 0-based
   cursorVisible: boolean;
+  /** altScreen came from the attach-time heuristic (not an observed 1049
+   *  transition). Guessed state is revoked if host scrollback grows — alt
+   *  screens never add host history, so growth proves the guess wrong. */
+  altGuessed?: boolean;
+  /** max_offset_from_bottom at guess time, for the growth check. */
+  altGuessBaseline?: number;
 }
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escapes by design.
@@ -84,8 +90,17 @@ async function guessInitialAltScreen(
     const leader = res.process_info?.foreground_processes?.[0]?.name ?? '';
     if (!leader || SHELL_NAMES.has(leader)) return;
     const pane = await getPane(herdrPaneId);
-    if ((pane?.scroll.max_offset_from_bottom ?? 0) === 0) {
+    if (!pane) return;
+    const offset = pane.scroll.max_offset_from_bottom;
+    // Allow up to one screenful of host scrollback: panes created by the
+    // resume/create flows carry a few shell lines (the `cd … && claude -r`
+    // echo) from before the agent entered the alt screen. A wrong guess is
+    // self-corrected in captureViewportHerdr when host scrollback GROWS —
+    // alt screens never add host history.
+    if (offset <= pane.scroll.viewport_rows) {
       state.altScreen = true;
+      state.altGuessed = true;
+      state.altGuessBaseline = offset;
     }
   } catch {
     // keep the default (normal screen)
@@ -118,6 +133,10 @@ export function scanFrameForState(state: PaneRuntimeState, bytes: Buffer): void 
       altPos = p;
       altVal = val;
     }
+  }
+  if (altPos >= 0) {
+    // An observed transition supersedes any attach-time guess.
+    state.altGuessed = false;
   }
   state.altScreen = altVal;
 
@@ -828,6 +847,18 @@ export async function captureViewportHerdr(
   const rows = size?.rows ?? pane.scroll.viewport_rows;
   const cols = size?.cols ?? 80;
   if (rows <= 0 || cols <= 0) return null;
+
+  // Revoke a guessed alt-screen state if host scrollback has grown since the
+  // guess: alt screens never append host history, so growth proves the pane
+  // is on the normal screen (e.g. inline-mode Claude misdetected at attach).
+  const runtimeCheck = cs.getRuntimeState(paneId);
+  if (
+    runtimeCheck?.altGuessed &&
+    pane.scroll.max_offset_from_bottom > (runtimeCheck.altGuessBaseline ?? 0)
+  ) {
+    runtimeCheck.altScreen = false;
+    runtimeCheck.altGuessed = false;
+  }
 
   // History the UI is allowed to scroll into: herdr's own metric, clamped to
   // what pane.read can actually reach (1000-line cap minus the window).

@@ -1,10 +1,14 @@
 import { join } from 'node:path';
-import { readFile, unlink } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { ensureDataDir, atomicWriteFile, createMutationLock } from '../utils/storage';
 import type { AgentProvider, SessionTheme } from '../../../shared/types';
 
-const METADATA_FILE = 'session-metadata.json';
-const LAST_KNOWN_FILE = 'last-known-sessions.json';
+// The data dir (~/.cc-hub) is shared with tmux-era CC Hub installs
+// (production service on another port). The herdr backend uses its own
+// store files so tmux-era session lists don't bleed into the herdr UI as
+// phantom "Lost" entries — and vice versa.
+const METADATA_FILE = 'herdr-session-metadata.json';
+const LAST_KNOWN_FILE = 'herdr-last-known-sessions.json';
 
 // Serialise read-modify-write sequences per store file so concurrent theme /
 // title / order updates can't clobber each other (lost update). #333
@@ -43,61 +47,18 @@ async function getLastKnownFilePath(): Promise<string> {
   return join(dataDir, LAST_KNOWN_FILE);
 }
 
-let migrated = false;
-
 async function load(): Promise<MetadataStore> {
   const filePath = await getFilePath();
   try {
     const data = await readFile(filePath, 'utf-8');
-    const parsed = JSON.parse(data) as MetadataStore & { lastKnownSessions?: LastKnownSession[] };
-    // Migrate: if lastKnownSessions exists in metadata file, move to separate file
-    if (parsed.lastKnownSessions) {
-      const lkPath = await getLastKnownFilePath();
-      await atomicWriteFile(lkPath, JSON.stringify(parsed.lastKnownSessions, null, 2)).catch(() => {});
-      delete parsed.lastKnownSessions;
-      await atomicWriteFile(filePath, JSON.stringify(parsed, null, 2)).catch(() => {});
-    }
+    const parsed = JSON.parse(data) as MetadataStore;
     return { sessions: parsed.sessions || {}, sessionOrder: parsed.sessionOrder };
   } catch {
-    if (!migrated) {
-      migrated = true;
-      return await migrateFromOldFiles();
-    }
+    // Fresh store. Deliberately NO migration from the tmux-era files
+    // (session-metadata.json etc.) — they belong to the tmux install and
+    // reference tmux session names.
     return { sessions: {} };
   }
-}
-
-async function migrateFromOldFiles(): Promise<MetadataStore> {
-  const dataDir = await ensureDataDir();
-  const sessions: Record<string, SessionMeta> = {};
-
-  try {
-    const themesData = JSON.parse(await readFile(join(dataDir, 'session-themes.json'), 'utf-8'));
-    if (themesData.themes) {
-      for (const [id, theme] of Object.entries(themesData.themes)) {
-        sessions[id] = { theme: theme as SessionTheme };
-      }
-    }
-  } catch { /* no old themes file */ }
-
-  try {
-    const titlesData = JSON.parse(await readFile(join(dataDir, 'session-titles.json'), 'utf-8'));
-    if (titlesData.titles) {
-      for (const [id, title] of Object.entries(titlesData.titles)) {
-        if (!sessions[id]) sessions[id] = {};
-        sessions[id].title = title as string;
-      }
-    }
-  } catch { /* no old titles file */ }
-
-  const store: MetadataStore = { sessions };
-  if (Object.keys(sessions).length > 0) {
-    await save(store);
-  }
-  // Auto-delete old files after migration
-  try { await unlink(join(dataDir, 'session-themes.json')); } catch { /* already deleted */ }
-  try { await unlink(join(dataDir, 'session-titles.json')); } catch { /* already deleted */ }
-  return store;
 }
 
 async function save(data: MetadataStore): Promise<void> {

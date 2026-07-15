@@ -41,7 +41,7 @@ describe('session-metadata mutation lock', () => {
     expect(await meta.getSessionOrder()).toEqual(['ses-a', 'ses-b', 'ses-19']);
 
     // The file on disk must always be complete JSON (atomic temp+rename).
-    const text = await readFile(join(tempDir, 'session-metadata.json'), 'utf-8');
+    const text = await readFile(join(tempDir, 'herdr-session-metadata.json'), 'utf-8');
     const parsed = JSON.parse(text);
     expect(parsed.sessions['ses-a'].theme).toBe('blue');
   });

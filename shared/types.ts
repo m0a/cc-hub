@@ -471,6 +471,22 @@ export interface UsageLimitsStatus {
   isStale?: boolean; // true when serving cached data while backing off
 }
 
+/**
+ * herdr binary-vs-server version skew (#393). Present only when cchub could
+ * read herdr's status; absent means "don't say anything" (herdr missing or an
+ * unreadable status) so a format change never turns into a false warning.
+ */
+export interface HerdrUpdateStatus {
+  /** Version of the herdr binary on disk. */
+  binaryVersion?: string;
+  /** Version of the herdr server process currently holding the panes. */
+  serverVersion?: string;
+  /** True when the running server is older than the binary cchub spawns. */
+  restartNeeded: boolean;
+  /** True when herdr runs under systemd/launchd, so cchub can restart it. */
+  canApply: boolean;
+}
+
 export interface DashboardResponse {
   limits: LimitsInfo | null; // Deprecated, kept for compatibility
   usageLimits: UsageLimits | null; // New: from Anthropic API
@@ -484,6 +500,7 @@ export interface DashboardResponse {
   systemMetrics?: SystemMetrics; // System CPU/memory metrics
   diskUsage?: { total: number; used: number; available: number; mountpoint: string };
   connectedClients?: number;
+  herdrUpdate?: HerdrUpdateStatus;
 }
 
 export interface ExtendedSessionResponse extends SessionResponse {

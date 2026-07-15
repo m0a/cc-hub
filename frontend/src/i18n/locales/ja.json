@@ -156,7 +156,14 @@
 		"cpuUsage": "CPU使用率",
 		"memoryUsage": "メモリ使用率",
 		"loadAverage": "負荷平均",
-		"cores": "コア"
+		"cores": "コア",
+		"herdrUpdateTitle": "herdr が更新されています",
+		"herdrUpdateCost": "反映には herdr サーバの再起動が必要です。再起動すると全ペインが張り直され、エージェントの会話は自動復元されますが、実行中のコマンドは失われます。",
+		"herdrUpdateVersions": "サーバ {{server}} → バイナリ {{binary}}",
+		"herdrUpdateApply": "更新して herdr を再起動",
+		"herdrUpdateApplying": "更新中…",
+		"herdrUpdateManualHint": "herdr が systemd/launchd の管理下にないため、herdr サーバを手動で再起動してください。",
+		"herdrUpdateFailed": "更新に失敗しました: {{error}}"
 	},
 	"files": {
 		"title": "ファイルブラウザ",

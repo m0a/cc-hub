@@ -8,6 +8,7 @@ interface PeerServerMetrics {
 	systemMetrics?: DashboardResponse["systemMetrics"];
 	diskUsage?: DashboardResponse["diskUsage"];
 	connectedClients?: number;
+	herdrUpdate?: DashboardResponse["herdrUpdate"];
 }
 
 interface UsePeerServerMetricsReturn extends PeerServerMetrics {
@@ -42,6 +43,7 @@ export function usePeerServerMetrics(
 				systemMetrics: data.systemMetrics,
 				diskUsage: data.diskUsage,
 				connectedClients: data.connectedClients,
+				herdrUpdate: data.herdrUpdate,
 			});
 			setError(null);
 		} catch (err) {

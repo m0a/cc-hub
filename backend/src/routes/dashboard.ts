@@ -4,6 +4,7 @@ import { AnthropicUsageService } from '../services/anthropic-usage';
 import { CodexUsageService } from '../services/codex-usage';
 import { UsageHistoryService } from '../services/usage-history';
 import { SystemMetricsService } from '../services/system-metrics';
+import { HerdrUpdateService } from '../services/herdr-update';
 import { getConnectedClientCount } from './terminal-mux';
 import { VERSION } from '../cli';
 import type { DashboardResponse } from '../../../shared/types';
@@ -13,6 +14,8 @@ const anthropicUsageService = new AnthropicUsageService();
 const codexUsageService = new CodexUsageService();
 const usageHistoryService = new UsageHistoryService();
 const systemMetricsService = new SystemMetricsService();
+// Shared with the /api/herdr apply route so an apply invalidates this cache.
+export const herdrUpdateService = new HerdrUpdateService();
 
 async function getDiskUsage(): Promise<{ total: number; used: number; available: number; mountpoint: string } | null> {
   try {
@@ -33,7 +36,9 @@ async function getDiskUsage(): Promise<{ total: number; used: number; available:
 }
 
 export async function buildDashboard(): Promise<DashboardResponse> {
-  const [usageLimits, codexUsageLimits, dailyActivity, modelUsage, hourlyActivity, usageHistory, systemMetrics, diskUsage] = await Promise.all([
+  // The herdr skew check rides on this poll instead of its own timer (#393);
+  // it is cached, so the extra spawn is far rarer than the request rate.
+  const [usageLimits, codexUsageLimits, dailyActivity, modelUsage, hourlyActivity, usageHistory, systemMetrics, diskUsage, herdrUpdate] = await Promise.all([
     anthropicUsageService.getUsageLimits(),
     codexUsageService.getUsageLimits(),
     statsService.getDailyActivity(14),
@@ -42,6 +47,7 @@ export async function buildDashboard(): Promise<DashboardResponse> {
     usageHistoryService.getHistory(),
     Promise.resolve(systemMetricsService.getMetrics()),
     getDiskUsage(),
+    herdrUpdateService.getStatus(),
   ]);
 
   // Record snapshot for history
@@ -65,6 +71,7 @@ export async function buildDashboard(): Promise<DashboardResponse> {
     systemMetrics,
     diskUsage: diskUsage || undefined,
     connectedClients: getConnectedClientCount(),
+    herdrUpdate,
   };
 }
 

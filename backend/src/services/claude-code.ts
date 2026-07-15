@@ -457,6 +457,54 @@ export class ClaudeCodeService {
   }
 
   /**
+   * Locate the conversation `.jsonl` for a session id across ALL projects
+   * and return the `cwd` recorded inside it. Resume flows need this because
+   * the caller's projectPath can be stale — e.g. a lost session recorded
+   * after the agent exited, when the pane cwd had fallen back to the shell's
+   * home — and `claude -r` only finds conversations from the project
+   * directory they belong to.
+   */
+  async resolveSessionCwd(sessionId: string): Promise<string | null> {
+    // Defense: sessionId is interpolated into a path.
+    if (!/^[0-9a-f-]{16,64}$/i.test(sessionId)) return null;
+    try {
+      const dirs = await readdir(this.claudeDir);
+      for (const dir of dirs) {
+        const filePath = join(this.claudeDir, dir, `${sessionId}.jsonl`);
+        try {
+          await stat(filePath);
+        } catch {
+          continue;
+        }
+        // cwd appears within the first few records; scan the head only.
+        const rl = createInterface({
+          input: createReadStream(filePath, { start: 0, end: 262_144 }),
+        });
+        try {
+          let scanned = 0;
+          for await (const line of rl) {
+            if (++scanned > 200) break;
+            try {
+              const d = JSON.parse(line) as { cwd?: string };
+              if (typeof d.cwd === 'string' && d.cwd.startsWith('/')) {
+                return d.cwd;
+              }
+            } catch {
+              // truncated / malformed line
+            }
+          }
+        } finally {
+          rl.close();
+        }
+        return null; // file found but no cwd recorded
+      }
+    } catch {
+      // projects dir unreadable
+    }
+    return null;
+  }
+
+  /**
    * Get Claude Code session info by session ID
    */
   async getSessionById(sessionId: string, workingDir: string): Promise<ClaudeCodeSession | null> {

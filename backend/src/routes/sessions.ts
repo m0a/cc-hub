@@ -340,10 +340,17 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
   const snapshot: LastKnownSession[] = [
     ...results.filter(s => s.state !== 'lost').map(s => {
       const prev = prevById.get(s.id);
+      // currentPath tracks the agent's cwd while an agent runs; once the
+      // agent exits, the pane cwd falls back to the shell's dir (often ~)
+      // and would DEGRADE the recorded project path, breaking lost-session
+      // resume. Keep the last agent-era value in that case.
+      const currentPath = s.agent
+        ? (s.currentPath ?? prev?.currentPath)
+        : (prev?.currentPath ?? s.currentPath);
       return {
         id: s.id,
         name: s.name,
-        currentPath: s.currentPath ?? prev?.currentPath,
+        currentPath,
         agent: s.agent ?? prev?.agent,
         theme: s.theme ?? prev?.theme,
         customTitle: s.customTitle ?? prev?.customTitle,
@@ -636,8 +643,15 @@ sessions.post('/history/resume', async (c) => {
     return c.json({ error: 'Invalid request: sessionId and projectPath required' }, 400);
   }
 
-  const { sessionId, projectPath } = parsed.data;
+  const { sessionId } = parsed.data;
   const agent: AgentProvider = parsed.data.agent ?? DEFAULT_AGENT_PROVIDER;
+  // The provided projectPath can be stale (lost sessions record the pane's
+  // cwd, which falls back to the shell dir once the agent exits). The cwd
+  // recorded inside the conversation .jsonl is authoritative — `claude -r`
+  // only finds conversations from the project directory they belong to.
+  const recordedCwd =
+    agent === 'claude' ? await claudeCodeService.resolveSessionCwd(sessionId) : null;
+  const projectPath = recordedCwd ?? parsed.data.projectPath;
 
   try {
     // Generate a unique tmux session name based on project

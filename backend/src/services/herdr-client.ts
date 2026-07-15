@@ -52,44 +52,76 @@ export interface HerdrWorkspace {
 const RPC_TIMEOUT_MS = 10_000;
 let reqCounter = 0;
 
+/**
+ * Incremental NDJSON line splitter with correct UTF-8 handling: raw socket
+ * chunks are decoded with a streaming TextDecoder, so a multi-byte character
+ * split across TCP chunks survives intact (naive per-chunk toString('utf-8')
+ * turns it into replacement characters — visible as mojibake in Japanese
+ * pane content).
+ */
+export function createNdjsonReader(onLine: (line: string) => void): (chunk: Buffer) => void {
+  const decoder = new TextDecoder();
+  let buf = '';
+  return (chunk: Buffer) => {
+    buf += decoder.decode(chunk, { stream: true });
+    let nl = buf.indexOf('\n');
+    while (nl >= 0) {
+      const line = buf.slice(0, nl);
+      buf = buf.slice(nl + 1);
+      if (line) onLine(line);
+      nl = buf.indexOf('\n');
+    }
+  };
+}
+
 export async function herdrRpc<T = Record<string, unknown>>(
   method: string,
   params: Record<string, unknown>,
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const sock = connect(herdrSocketPath());
-    let buf = '';
     const id = `cchub_${++reqCounter}`;
+    let settled = false;
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
     const timer = setTimeout(() => {
       sock.destroy();
-      reject(new Error(`herdr rpc timeout: ${method}`));
+      settle(() => reject(new Error(`herdr rpc timeout: ${method}`)));
     }, RPC_TIMEOUT_MS);
-    sock.on('connect', () => {
-      sock.write(`${JSON.stringify({ id, method, params })}\n`);
-    });
-    sock.on('data', (chunk: Buffer) => {
-      buf += chunk.toString('utf-8');
-      const nl = buf.indexOf('\n');
-      if (nl < 0) return;
-      clearTimeout(timer);
+    const readLine = createNdjsonReader((line) => {
       sock.end();
       try {
-        const msg = JSON.parse(buf.slice(0, nl)) as {
+        const msg = JSON.parse(line) as {
           result?: T;
           error?: { code?: string; message?: string };
         };
         if (msg.error) {
-          reject(new Error(`herdr ${method}: ${msg.error.message ?? msg.error.code ?? 'error'}`));
+          settle(() =>
+            reject(new Error(`herdr ${method}: ${msg.error?.message ?? msg.error?.code ?? 'error'}`)),
+          );
         } else {
-          resolve(msg.result as T);
+          settle(() => resolve(msg.result as T));
         }
       } catch (err) {
-        reject(err as Error);
+        settle(() => reject(err as Error));
       }
     });
+    sock.on('connect', () => {
+      sock.write(`${JSON.stringify({ id, method, params })}\n`);
+    });
+    sock.on('data', readLine);
     sock.on('error', (err: Error) => {
-      clearTimeout(timer);
-      reject(err);
+      settle(() => reject(err));
+    });
+    // A connection that closes before delivering a complete response line
+    // must fail fast — without this, callers hang for the full RPC timeout
+    // whenever herdr shuts down mid-request.
+    sock.on('close', () => {
+      settle(() => reject(new Error(`herdr connection closed before response: ${method}`)));
     });
   });
 }
@@ -97,7 +129,9 @@ export async function herdrRpc<T = Record<string, unknown>>(
 /**
  * Subscribe to herdr push events. Returns an unsubscribe function.
  * The first response line is the subscription ack; later lines are events.
- * `onClose` fires once if the connection drops (herdr restart etc.).
+ * `onClose` fires once if the connection drops (herdr restart etc.) or if
+ * the subscription itself is rejected — a failed subscribe must not be
+ * mistaken for a healthy silent stream.
  */
 export function herdrSubscribe(
   subscriptions: Array<Record<string, unknown>>,
@@ -105,39 +139,42 @@ export function herdrSubscribe(
   onClose: () => void,
 ): () => void {
   const sock = connect(herdrSocketPath());
-  let buf = '';
   let acked = false;
   let stopped = false;
-  sock.on('connect', () => {
-    sock.write(
-      `${JSON.stringify({ id: 'cchub_sub', method: 'events.subscribe', params: { subscriptions } })}\n`,
-    );
-  });
-  sock.on('data', (chunk: Buffer) => {
-    buf += chunk.toString('utf-8');
-    let nl = buf.indexOf('\n');
-    while (nl >= 0) {
-      const line = buf.slice(0, nl);
-      buf = buf.slice(nl + 1);
-      try {
-        const msg = JSON.parse(line) as Record<string, unknown>;
-        if (!acked) {
-          acked = true;
-        } else {
-          onEvent(msg);
-        }
-      } catch {
-        // skip malformed line
-      }
-      nl = buf.indexOf('\n');
-    }
-  });
   const emitClose = () => {
     if (!stopped) {
       stopped = true;
       onClose();
     }
   };
+  const readLine = createNdjsonReader((line) => {
+    try {
+      const msg = JSON.parse(line) as { error?: { code?: string; message?: string } } & Record<
+        string,
+        unknown
+      >;
+      if (!acked) {
+        acked = true;
+        if (msg.error) {
+          console.error(
+            `[herdr-client] events.subscribe rejected: ${msg.error.message ?? msg.error.code}`,
+          );
+          sock.destroy();
+          emitClose();
+        }
+      } else {
+        onEvent(msg);
+      }
+    } catch {
+      // skip malformed line
+    }
+  });
+  sock.on('connect', () => {
+    sock.write(
+      `${JSON.stringify({ id: 'cchub_sub', method: 'events.subscribe', params: { subscriptions } })}\n`,
+    );
+  });
+  sock.on('data', readLine);
   sock.on('close', emitClose);
   sock.on('error', emitClose);
   return () => {
@@ -293,39 +330,33 @@ export class PaneController {
     const stdout = this.proc.stdout;
     if (!stdout || typeof stdout === 'number') return;
     const reader = stdout.getReader();
-    let buf = '';
-    const decoder = new TextDecoder();
+    const readLine = createNdjsonReader((line) => {
+      try {
+        const msg = JSON.parse(line) as {
+          type?: string;
+          bytes?: string;
+          full?: boolean;
+          width?: number;
+          height?: number;
+          seq?: number;
+        };
+        if (msg.type === 'terminal.frame' && typeof msg.bytes === 'string') {
+          handlers.onFrame(Buffer.from(msg.bytes, 'base64'), {
+            full: msg.full ?? false,
+            width: msg.width ?? 0,
+            height: msg.height ?? 0,
+            seq: msg.seq ?? 0,
+          });
+        }
+      } catch {
+        // skip malformed line
+      }
+    });
     try {
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        let nl = buf.indexOf('\n');
-        while (nl >= 0) {
-          const line = buf.slice(0, nl);
-          buf = buf.slice(nl + 1);
-          try {
-            const msg = JSON.parse(line) as {
-              type?: string;
-              bytes?: string;
-              full?: boolean;
-              width?: number;
-              height?: number;
-              seq?: number;
-            };
-            if (msg.type === 'terminal.frame' && typeof msg.bytes === 'string') {
-              handlers.onFrame(Buffer.from(msg.bytes, 'base64'), {
-                full: msg.full ?? false,
-                width: msg.width ?? 0,
-                height: msg.height ?? 0,
-                seq: msg.seq ?? 0,
-              });
-            }
-          } catch {
-            // skip malformed line
-          }
-          nl = buf.indexOf('\n');
-        }
+        readLine(Buffer.from(value));
       }
     } catch {
       // stream torn down

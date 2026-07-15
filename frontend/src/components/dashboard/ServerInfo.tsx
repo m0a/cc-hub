@@ -1,9 +1,14 @@
-import { Users } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Users } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
+	HerdrUpdateStatus,
 	SystemMetrics,
 	SystemMetricsSnapshot,
 } from "../../../../shared/types";
+import { authFetch } from "../../services/api";
+
+const API_BASE = import.meta.env.VITE_API_URL || "";
 
 function useIsLightMode() {
 	const [light, setLight] = useState(
@@ -197,6 +202,97 @@ function formatSpeed(bps: number): string {
 	return `${bps.toFixed(0)} B/s`;
 }
 
+// ─── herdr version skew notice (#393) ───
+/**
+ * `herdr update` swaps the binary but leaves the running server on the old
+ * version, and cchub spawns that binary to drive panes — so the skew shows up
+ * as "the terminal won't connect". Applying costs every running command, so
+ * the restart happens only when the user presses this button.
+ */
+function HerdrUpdateNotice({
+	status,
+	allowApply,
+	onApplied,
+}: {
+	status: HerdrUpdateStatus;
+	allowApply: boolean;
+	onApplied?: () => void;
+}) {
+	const { t } = useTranslation();
+	const [applying, setApplying] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	const apply = useCallback(async () => {
+		setApplying(true);
+		setError(null);
+		try {
+			const res = await authFetch(`${API_BASE}/api/herdr/apply-update`, {
+				method: "POST",
+			});
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({}));
+				throw new Error(body.error || `HTTP ${res.status}`);
+			}
+			onApplied?.();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Unknown error");
+		} finally {
+			setApplying(false);
+		}
+	}, [onApplied]);
+
+	// The button is offered only for the local server: it restarts *this*
+	// host's herdr, and an unsupervised server can't be restarted at all.
+	const canApply = allowApply && status.canApply;
+
+	return (
+		<div className="rounded-md border border-amber-500/30 bg-amber-500/[0.08] p-2 space-y-1.5">
+			<div className="flex items-start gap-1.5">
+				<AlertTriangle className="w-3 h-3 text-amber-400 mt-0.5 shrink-0" />
+				<div className="min-w-0 space-y-0.5">
+					<p className="text-[11px] font-medium text-amber-300">
+						{t("dashboard.herdrUpdateTitle")}
+					</p>
+					{status.serverVersion && status.binaryVersion && (
+						<p className="text-[10px] text-amber-200/60 font-mono tabular-nums">
+							{t("dashboard.herdrUpdateVersions", {
+								server: status.serverVersion,
+								binary: status.binaryVersion,
+							})}
+						</p>
+					)}
+					<p className="text-[10px] text-amber-200/70 leading-snug">
+						{t("dashboard.herdrUpdateCost")}
+					</p>
+				</div>
+			</div>
+			{canApply ? (
+				<button
+					type="button"
+					onClick={apply}
+					disabled={applying}
+					className="w-full text-[11px] font-medium px-2 py-1 rounded bg-amber-500/20 text-amber-200 border border-amber-500/30 hover:bg-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+				>
+					{applying
+						? t("dashboard.herdrUpdateApplying")
+						: t("dashboard.herdrUpdateApply")}
+				</button>
+			) : (
+				allowApply && (
+					<p className="text-[10px] text-amber-200/50 leading-snug">
+						{t("dashboard.herdrUpdateManualHint")}
+					</p>
+				)
+			)}
+			{error && (
+				<p className="text-[10px] text-red-400 leading-snug break-words">
+					{t("dashboard.herdrUpdateFailed", { error })}
+				</p>
+			)}
+		</div>
+	);
+}
+
 // ─── Main component ───
 interface ServerInfoProps {
 	systemMetrics?: SystemMetrics;
@@ -211,6 +307,12 @@ interface ServerInfoProps {
 	label?: string;
 	/** Hide the throughput chart (it tracks this browser's WS bytes, not the peer's). */
 	hideThroughput?: boolean;
+	/** herdr binary-vs-server skew for this server (#393). */
+	herdrUpdate?: HerdrUpdateStatus;
+	/** Offer the apply button — local server only; the endpoint restarts this host's herdr. */
+	allowHerdrApply?: boolean;
+	/** Re-poll after an apply so the warning clears once the server is current. */
+	onHerdrApplied?: () => void;
 }
 
 // Throughput history (kept in module scope so it persists across re-renders)
@@ -244,6 +346,9 @@ export function ServerInfo({
 	connectedClients,
 	label,
 	hideThroughput = false,
+	herdrUpdate,
+	allowHerdrApply = false,
+	onHerdrApplied,
 }: ServerInfoProps) {
 	const isLight = useIsLightMode();
 
@@ -293,6 +398,14 @@ export function ServerInfo({
 					</span>
 				</div>
 			</div>
+
+			{herdrUpdate?.restartNeeded && (
+				<HerdrUpdateNotice
+					status={herdrUpdate}
+					allowApply={allowHerdrApply}
+					onApplied={onHerdrApplied}
+				/>
+			)}
 
 			{/* Charts: CPU, Memory, Throughput */}
 			{cur && (

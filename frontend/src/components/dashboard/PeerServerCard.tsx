@@ -14,7 +14,7 @@ interface PeerServerCardProps {
  */
 export function PeerServerCard({ peer }: PeerServerCardProps) {
 	const isLocal = peer.id === LOCAL_PEER_ID;
-	const { systemMetrics, diskUsage, connectedClients, error } =
+	const { systemMetrics, diskUsage, connectedClients, herdrUpdate, error, refetch } =
 		usePeerServerMetrics(peer.id);
 
 	return (
@@ -43,6 +43,9 @@ export function PeerServerCard({ peer }: PeerServerCardProps) {
 				connectedClients={connectedClients}
 				label={peer.nickname}
 				hideThroughput={!isLocal}
+				herdrUpdate={herdrUpdate}
+				allowHerdrApply={isLocal}
+				onHerdrApplied={refetch}
 			/>
 		</div>
 	);

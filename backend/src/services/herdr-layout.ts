@@ -79,6 +79,12 @@ export class PaneLayoutTree {
 
   /** Split `target` in two; `newPane` becomes the second child. */
   split(target: string, dir: 'h' | 'v', newPane: string): void {
+    // A pane.created event can race the split RPC response: reconcile may
+    // have already grafted the new pane at the root via addUnknown(). Remove
+    // it first so the pane ends up as a single leaf at its intended position.
+    if (this.has(newPane)) {
+      this.remove(newPane);
+    }
     const replace = (n: LayoutNode): LayoutNode => {
       if (n.type === 'leaf') {
         if (n.paneId !== target) return n;
@@ -150,6 +156,58 @@ export class PaneLayoutTree {
       const signed = foundInFirst ? delta : -delta;
       node.ratio = Math.min(MAX_RATIO, Math.max(MIN_RATIO, node.ratio + signed));
     }
+  }
+
+  /**
+   * Set an absolute target size for one pane by adjusting the ratio of its
+   * deepest same-direction ancestor split (per dimension). The pane's extent
+   * equals its branch extent at that split (no same-direction split lies
+   * below it on the path), so the ratio maps directly.
+   */
+  setPaneSize(paneId: string, cols: number, rows: number, totalCols: number, totalRows: number): void {
+    this.setPaneExtent(paneId, 'h', cols, totalCols, totalRows);
+    this.setPaneExtent(paneId, 'v', rows, totalCols, totalRows);
+  }
+
+  private setPaneExtent(
+    paneId: string,
+    dir: 'h' | 'v',
+    desired: number,
+    totalCols: number,
+    totalRows: number,
+  ): void {
+    if (!this.root) return;
+    let found: { node: SplitNode; extent: number; inFirst: boolean } | null = null;
+    const walk = (n: LayoutNode, rect: PaneRect): boolean => {
+      if (n.type === 'leaf') return n.paneId === paneId;
+      const usable = (n.dir === 'h' ? rect.width : rect.height) - 1;
+      const a = Math.max(1, Math.round(usable * n.ratio));
+      const b = Math.max(1, usable - a);
+      const rectA: PaneRect =
+        n.dir === 'h'
+          ? { ...rect, width: a }
+          : { ...rect, height: a };
+      const rectB: PaneRect =
+        n.dir === 'h'
+          ? { x: rect.x + a + 1, y: rect.y, width: b, height: rect.height }
+          : { x: rect.x, y: rect.y + a + 1, width: rect.width, height: b };
+      const inA = walk(n.a, rectA);
+      const inB = inA ? false : walk(n.b, rectB);
+      if ((inA || inB) && n.dir === dir) {
+        // Deeper matches were already recorded (post-order); keep the first
+        // (deepest) one only.
+        if (!found) {
+          found = { node: n, extent: usable, inFirst: inA };
+        }
+      }
+      return inA || inB;
+    };
+    walk(this.root, { x: 0, y: 0, width: totalCols, height: totalRows });
+    if (!found || (found as { extent: number }).extent <= 0) return;
+    const f = found as { node: SplitNode; extent: number; inFirst: boolean };
+    const share = desired / f.extent;
+    const ratio = f.inFirst ? share : 1 - share;
+    f.node.ratio = Math.min(MAX_RATIO, Math.max(MIN_RATIO, ratio));
   }
 
   /** Reset every split of the given orientation to an even ratio. */

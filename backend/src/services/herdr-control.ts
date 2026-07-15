@@ -171,6 +171,10 @@ export class HerdrControlSession {
   private destroyed = false;
   private clientDeviceTypes = new Map<string, 'mobile' | 'tablet' | 'desktop'>();
 
+  // Focused pane (tmux-style id). Initialized from herdr's focused flag,
+  // updated by selectPane/splitPane and reconciled against herdr state.
+  private activePaneId: string | null = null;
+
   constructor(sessionId: string) {
     this.sessionId = sessionId;
   }
@@ -190,6 +194,9 @@ export class HerdrControlSession {
       .map((p) => toTmuxPaneId(p.pane_id))
       .filter((id): id is string => id !== null);
     this.tree.setInitialPanes(tmuxIds);
+
+    const focused = panes.find((p) => p.focused);
+    this.activePaneId = (focused ? toTmuxPaneId(focused.pane_id) : null) ?? tmuxIds[0] ?? null;
 
     const rects = this.tree.computeRects(this.clientSize.cols, this.clientSize.rows);
     for (const pane of panes) {
@@ -333,6 +340,11 @@ export class HerdrControlSession {
         this.tree.addUnknown(tmuxId);
         changed = true;
       }
+      // herdr's focused flag is authoritative for panes focused outside our
+      // own selectPane calls (other herdr clients, focus-follows on split).
+      if (pane.focused) {
+        this.activePaneId = tmuxId;
+      }
       // A live pane without a running controller (fresh pane, or its control
       // client died) gets one at its current size; applyLayout below corrects
       // the size if the tree changed.
@@ -355,6 +367,10 @@ export class HerdrControlSession {
         for (const listener of this.paneDeadListeners) listener(tmuxId);
         changed = true;
       }
+    }
+
+    if (this.activePaneId && !live.has(this.activePaneId)) {
+      this.activePaneId = this.tree.paneIds()[0] ?? null;
     }
 
     if (this.tree.paneIds().length === 0) {
@@ -440,6 +456,8 @@ export class HerdrControlSession {
     const newTmuxId = newHerdrId ? toTmuxPaneId(newHerdrId) : null;
     if (newHerdrId && newTmuxId) {
       this.tree.split(paneId, direction, newTmuxId);
+      // pane.split was issued with focus: true — the new pane is focused.
+      this.activePaneId = newTmuxId;
       const rect = this.tree
         .computeRects(this.clientSize.cols, this.clientSize.rows)
         .get(newTmuxId);
@@ -465,6 +483,9 @@ export class HerdrControlSession {
     this.stopController(this.toHerdr(paneId));
     this.paneSizes.delete(paneId);
     this.runtimeStates.delete(paneId);
+    if (this.activePaneId === paneId) {
+      this.activePaneId = this.tree.paneIds()[0] ?? null;
+    }
     await this.applyLayout();
   }
 
@@ -475,8 +496,11 @@ export class HerdrControlSession {
 
   async resizePane(paneId: string, cols: number, rows: number): Promise<void> {
     assertPaneId(paneId);
-    this.paneSizes.set(paneId, { cols, rows });
-    this.controllerFor(paneId)?.resize(cols, rows);
+    // Route the absolute size through the layout tree (ancestor split ratio)
+    // so the resize survives later applyLayout passes; writing paneSizes/PTY
+    // directly would be silently reverted by the next split/zoom/resize.
+    this.tree.setPaneSize(paneId, cols, rows, this.clientSize.cols, this.clientSize.rows);
+    await this.applyLayout();
   }
 
   async adjustPaneSize(paneId: string, direction: 'L' | 'R' | 'U' | 'D', amount: number): Promise<void> {
@@ -492,6 +516,7 @@ export class HerdrControlSession {
 
   async selectPane(paneId: string): Promise<void> {
     assertPaneId(paneId);
+    this.activePaneId = paneId;
     try {
       await herdrRpc('pane.focus', { pane_id: this.toHerdr(paneId) });
     } catch {
@@ -538,13 +563,15 @@ export class HerdrControlSession {
 
   async listPanes(): Promise<Array<{ paneId: string; width: number; height: number; isActive: boolean }>> {
     const rects = this.tree.computeRects(this.clientSize.cols, this.clientSize.rows);
-    return this.tree.paneIds().map((paneId, i) => {
+    const ids = this.tree.paneIds();
+    const active = this.activePaneId && ids.includes(this.activePaneId) ? this.activePaneId : ids[0];
+    return ids.map((paneId) => {
       const rect = rects.get(paneId);
       return {
         paneId,
         width: rect?.width ?? this.clientSize.cols,
         height: rect?.height ?? this.clientSize.rows,
-        isActive: i === 0,
+        isActive: paneId === active,
       };
     });
   }

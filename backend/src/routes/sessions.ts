@@ -111,6 +111,28 @@ async function withControlSession<T>(
   }
 }
 
+/**
+ * Deliver text to the session's active pane over the raw control stream.
+ * Unlike herdr's pane.send_input RPC (which strips ESC/newlines from text),
+ * raw bytes preserve multi-line payloads; `bracketed` wraps the text in
+ * bracketed-paste markers so agent TUIs (Claude/Codex) treat embedded
+ * newlines as literal lines and the trailing \r as submit.
+ */
+async function sendTextToSession(
+  sessionId: string,
+  text: string,
+  opts?: { bracketed?: boolean },
+): Promise<string> {
+  return withControlSession(sessionId, async (cs) => {
+    const panes = await cs.listPanes();
+    const target = panes.find((p) => p.isActive) || panes[0];
+    if (!target) throw new Error('No pane found');
+    const payload = opts?.bracketed ? `\x1b[200~${text}\x1b[201~\r` : `${text}\r`;
+    await cs.sendInput(target.paneId, Buffer.from(payload, 'utf-8'));
+    return target.paneId;
+  });
+}
+
 export const sessions = new Hono();
 
 /** Build the full sessions list (shared by HTTP handler and WS push) */
@@ -138,9 +160,13 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
     const codexThread = s.currentPath ? codexThreadsByPath.get(s.currentPath) : undefined;
 
     if (agentSupportsConversationMetadata(s.agent ?? s.currentCommand) && s.currentPath) {
-      // herdr panes expose no TTY, so PTY-args / tty-start-time matching is
-      // gone; the most recent `.jsonl` for the working dir is the resolver.
-      ccSession = ccSessionsByPath.get(s.currentPath);
+      // Prefer the native session id reported via the herdr agent
+      // integration — it keeps two sessions in the SAME workingDir
+      // distinguishable. Fall back to most-recent-.jsonl path matching.
+      ccSession = s.agentSessionId
+        ? ((await claudeCodeService.getSessionById(s.agentSessionId, s.currentPath)) ??
+          ccSessionsByPath.get(s.currentPath))
+        : ccSessionsByPath.get(s.currentPath);
     }
 
     const includeClaudeInfo = agentSupportsConversationMetadata(s.agent ?? s.currentCommand);
@@ -157,10 +183,10 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
     const hookResult = conversationSessionId ? getIndicatorOverride(conversationSessionId) : null;
     const hookState = hookResult?.state ?? null;
     const hookToolName = hookResult?.toolName;
-    // When pane title shows ✳ (Claude Code idle marker) but hook says "processing",
-    // Claude is waiting for permission (not actually processing).
-    const isPaneTitleIdle = s.paneTitle?.startsWith('✳');
-    const indicatorState: IndicatorState = (hookState === 'processing' && isPaneTitleIdle) ? 'waiting_input' : (hookState ?? 'completed');
+    // When hooks say "processing" but herdr's agent detection says the agent
+    // is blocked, Claude is waiting for permission (not actually processing).
+    // (Replaces the tmux-era ✳-pane-title heuristic.)
+    const indicatorState: IndicatorState = (hookState === 'processing' && s.agentBlocked) ? 'waiting_input' : (hookState ?? 'completed');
     // Use hook tool name for waiting state when jsonl doesn't have it yet
     const effectiveWaitingToolName = (indicatorState === 'waiting_input' && hookToolName && !ccSession?.waitingToolName)
       ? hookToolName : ccSession?.waitingToolName;
@@ -382,29 +408,29 @@ sessions.post('/', async (c) => {
 
     // Start the selected agent if workingDir is specified
     if (parsed.success && parsed.data.workingDir) {
-      await tmuxService.sendKeys(name, agentStartCommand(agent, parsed.data.workingDir));
+      await sendTextToSession(name, agentStartCommand(agent, parsed.data.workingDir));
 
       // Send initial prompt after the agent starts (interactive mode)
       if (parsed.data.initialPrompt) {
         const prompt = parsed.data.initialPrompt;
         const sessionName = name;
-        // Poll until the selected agent process is running on the session's TTY
+        // Poll until the selected agent process is running in the session
         (async () => {
           for (let i = 0; i < 30; i++) { // up to 30 seconds
             await new Promise(r => setTimeout(r, 1000));
             const sessions = await tmuxService.listSessions();
             const session = sessions.find(s => s.name === sessionName);
             if (session?.currentCommand === agent) {
-              // Wait a bit more for the TUI to be fully ready
+              // Wait a bit more for the TUI to be fully ready, then submit
+              // via bracketed paste (multi-line prompts stay multi-line).
               await new Promise(r => setTimeout(r, 2000));
-              await tmuxService.sendKeys(sessionName, prompt);
-              // Send extra Enter to submit the prompt
-              await new Promise(r => setTimeout(r, 500));
-              await tmuxService.sendKeys(sessionName, '');
+              await sendTextToSession(sessionName, prompt, { bracketed: true });
               return;
             }
           }
-        })();
+        })().catch((err) => {
+          console.warn(`[sessions] initial prompt delivery failed for ${name}:`, err);
+        });
       }
     }
 
@@ -628,9 +654,9 @@ sessions.post('/history/resume', async (c) => {
 
     // Change to project directory and run the agent's resume command
     const command = `cd ${shellQuote(expandHome(projectPath))} && ${agentResumeCommand(agent, sessionId)}`;
-    const success = await tmuxService.sendKeys(tmuxSessionName, command);
-
-    if (!success) {
+    try {
+      await sendTextToSession(tmuxSessionName, command);
+    } catch {
       // Clean up the session if command failed
       await tmuxService.killSession(tmuxSessionName);
       return c.json({ error: 'Failed to start agent session' }, 500);
@@ -733,10 +759,7 @@ sessions.post('/:id/resume', async (c) => {
     const agent: AgentProvider = requestedAgent ?? session.agent ?? DEFAULT_AGENT_PROVIDER;
     const command = agentResumeCommand(agent, sessionId);
 
-    const success = await tmuxService.sendKeys(id, command);
-    if (!success) {
-      return c.json({ error: 'Failed to send command' }, 500);
-    }
+    await sendTextToSession(id, command);
 
     return c.json({ success: true, command });
   } catch (_error) {

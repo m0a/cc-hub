@@ -40,6 +40,13 @@ interface HerdrSessionInfo {
   paneTty?: string;
   preview?: string;
   panes?: HerdrPaneInfo[];
+  /** Native agent session id (e.g. Claude conversation UUID) reported by the
+   *  herdr agent integration hook. Authoritative for .jsonl matching — two
+   *  sessions in the same workingDir stay distinguishable. */
+  agentSessionId?: string;
+  /** herdr's own detection says the agent is blocked waiting for input
+   *  (permission prompt etc.). */
+  agentBlocked?: boolean;
 }
 
 /** Session id for a workspace: label when present, else the workspace id. */
@@ -120,6 +127,31 @@ export class HerdrService {
     return undefined;
   }
 
+  /**
+   * pane_id → native agent session id (Claude conversation UUID etc.),
+   * reported to herdr by its agent integration hooks. Best-effort: without
+   * the integration installed the map is simply empty.
+   */
+  private async listAgentSessions(): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    try {
+      const res = await herdrRpc<{
+        agents?: Array<{
+          pane_id?: string;
+          agent_session?: { kind?: string; value?: string };
+        }>;
+      }>('agent.list', {});
+      for (const a of res.agents ?? []) {
+        if (a.pane_id && a.agent_session?.kind === 'id' && a.agent_session.value) {
+          map.set(a.pane_id, a.agent_session.value);
+        }
+      }
+    } catch {
+      // enrichment only
+    }
+    return map;
+  }
+
   async listSessions(): Promise<HerdrSessionInfo[]> {
     if (
       this.listSessionsCache &&
@@ -129,7 +161,11 @@ export class HerdrService {
     }
 
     try {
-      const [workspaces, allPanes] = await Promise.all([listWorkspaces(), listPanes()]);
+      const [workspaces, allPanes, agentSessions] = await Promise.all([
+        listWorkspaces(),
+        listPanes(),
+        this.listAgentSessions(),
+      ]);
 
       const result: HerdrSessionInfo[] = await Promise.all(
         workspaces.map(async (ws) => {
@@ -184,6 +220,10 @@ export class HerdrService {
           }
 
           const currentPath = agentPanePath ?? rootPane?.foreground_cwd ?? rootPane?.cwd;
+          const agentSessionId = wsPanes
+            .map((p) => agentSessions.get(p.pane_id))
+            .find((id) => id !== undefined);
+          const agentBlocked = wsPanes.some((p) => p.agent_status === 'blocked');
           return {
             id: workspaceSessionId(ws),
             name: workspaceSessionId(ws),
@@ -196,6 +236,8 @@ export class HerdrService {
             paneTty: undefined,
             preview,
             panes,
+            agentSessionId,
+            agentBlocked,
           };
         }),
       );
@@ -274,24 +316,5 @@ export class HerdrService {
 
   async getBuffer(): Promise<string | null> {
     return null;
-  }
-
-  /** Send literal text + Enter to the session's root pane. */
-  async sendKeys(sessionId: string, keys: string): Promise<boolean> {
-    const ws = await this.resolveWorkspace(sessionId);
-    if (!ws) return false;
-    try {
-      const panes = await listPanes(ws.workspace_id);
-      const root = panes[0];
-      if (!root) return false;
-      await herdrRpc('pane.send_input', {
-        pane_id: root.pane_id,
-        text: keys,
-        keys: ['enter'],
-      });
-      return true;
-    } catch {
-      return false;
-    }
   }
 }

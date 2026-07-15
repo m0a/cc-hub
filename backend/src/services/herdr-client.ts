@@ -12,11 +12,56 @@
  * long as one CC Hub session maps to one herdr workspace.
  */
 
+import { existsSync } from 'node:fs';
 import { connect } from 'node:net';
 import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 export function herdrSocketPath(): string {
   return process.env.HERDR_SOCKET_PATH || `${homedir()}/.config/herdr/herdr.sock`;
+}
+
+let cachedHerdrBinary: string | null | undefined;
+
+/**
+ * Absolute path to the herdr binary, or null when it isn't installed.
+ *
+ * PATH alone isn't enough: herdr's install script drops the binary in
+ * `~/.local/bin`, which systemd (`zsh -lc` never sources .zshrc) and launchd
+ * leave out of PATH — so a service that works interactively fails at boot.
+ * Spawns must use the resolved absolute path, not the bare name.
+ */
+export function herdrBinaryPath(): string | null {
+  if (cachedHerdrBinary !== undefined) return cachedHerdrBinary;
+
+  const override = process.env.HERDR_BIN;
+  if (override && existsSync(override)) {
+    cachedHerdrBinary = override;
+    return cachedHerdrBinary;
+  }
+
+  const which = Bun.spawnSync(['which', 'herdr']);
+  if (which.exitCode === 0) {
+    const resolved = which.stdout.toString().trim();
+    if (resolved) {
+      cachedHerdrBinary = resolved;
+      return cachedHerdrBinary;
+    }
+  }
+
+  const candidates = [
+    join(homedir(), '.local', 'bin', 'herdr'), // install.sh
+    '/opt/homebrew/bin/herdr', // brew (Apple Silicon)
+    '/usr/local/bin/herdr', // brew (Intel) / manual
+    '/usr/bin/herdr', // distro package
+  ];
+  cachedHerdrBinary = candidates.find((p) => existsSync(p)) ?? null;
+  return cachedHerdrBinary;
+}
+
+/** Resolved herdr path, falling back to the bare name so spawns still error usefully. */
+export function herdrBin(): string {
+  return herdrBinaryPath() ?? 'herdr';
 }
 
 export interface HerdrScroll {
@@ -306,7 +351,7 @@ export class PaneController {
     // geometry is known.
     const sizeArgs = size ? ['--cols', String(size.cols), '--rows', String(size.rows)] : [];
     this.proc = Bun.spawn(
-      ['herdr', 'terminal', 'session', 'control', herdrPaneId, '--takeover', ...sizeArgs],
+      [herdrBin(), 'terminal', 'session', 'control', herdrPaneId, '--takeover', ...sizeArgs],
       { stdin: 'pipe', stdout: 'pipe', stderr: 'ignore' },
     );
     this.stdinWriter = this.proc.stdin as unknown as { write(s: string): unknown };

@@ -642,7 +642,12 @@ export function DesktopLayout({
 		setZoomedPaneId(null);
 		lastViewportRef.current.clear();
 		paneOffsetRef.current.clear();
-		paneCallbacksRef.current.clear();
+		// paneCallbacksRef is deliberately NOT cleared: registrations are
+		// owned by each Terminal's effect (cleanup on unmount). A Terminal
+		// that survives the session switch (same pane id, e.g. %1 → %1)
+		// never re-registers — wiping here would leave the new session's
+		// viewports with no consumer, rendering a blank terminal until a
+		// full page reload. #history-resume-blank
 		lastSentSizeRef.current = null;
 	}, [controlSessionId]);
 

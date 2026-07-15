@@ -16,6 +16,7 @@ import {
   toTmuxPaneId,
   type HerdrWorkspace,
 } from './herdr-client';
+import { herdrControlSessions } from './herdr-control';
 
 interface HerdrPaneInfo {
   paneId: string;
@@ -304,6 +305,10 @@ export class HerdrService {
       throw new Error(`Failed to kill session: workspace not found: ${sessionId}`);
     }
     await herdrRpc('workspace.close', { workspace_id: ws.workspace_id });
+    // Reap the control session immediately. Left in the registry, it would
+    // be handed out for a future same-name workspace while still bound to
+    // the closed one (blank viewports, dead-pane controller spawn loops).
+    herdrControlSessions.get(sessionId)?.destroy();
   }
 
   async sessionExists(sessionId: string): Promise<boolean> {

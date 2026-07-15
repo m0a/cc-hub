@@ -370,6 +370,20 @@ export class HerdrControlSession {
     try {
       panes = await listPanes(this.workspaceId);
     } catch {
+      // Distinguish "workspace is gone" (terminal) from a transient RPC
+      // failure. Swallowing the former leaves this session in the registry
+      // as a zombie bound to a dead workspace — a later same-name workspace
+      // then resolves to it and every read fails (blank terminal until the
+      // grace timer finally reaps it).
+      try {
+        const workspaces = await listWorkspaces();
+        if (!workspaces.some((w) => w.workspace_id === this.workspaceId)) {
+          this.handleExit('workspace closed');
+        }
+      } catch {
+        // herdr unreachable — keep the session; the event-stream onClose
+        // path handles a dead server.
+      }
       return;
     }
     const live = new Set<string>();

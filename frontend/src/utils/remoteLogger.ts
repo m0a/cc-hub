@@ -1,4 +1,6 @@
 const LOG_ENDPOINT = "/api/logs";
+// Same key as useAuth — imported by value to avoid pulling React hooks in here.
+const TOKEN_KEY = "cc-hub-token";
 
 type LogLevel = "log" | "warn" | "error" | "info";
 
@@ -16,14 +18,32 @@ const originalConsole = {
 	info: console.info.bind(console),
 };
 
+// Token value that last got a 401 (null = no token). While the stored token
+// still equals it, sending is pointless — stay quiet instead of emitting a
+// doomed request per console call.
+let unauthorizedToken: string | null | undefined;
+
 function sendLog(entry: LogEntry) {
+	const token = localStorage.getItem(TOKEN_KEY);
+	if (unauthorizedToken !== undefined && unauthorizedToken === token) return;
+
+	const headers: Record<string, string> = {
+		"Content-Type": "application/json",
+	};
+	if (token) {
+		headers.Authorization = `Bearer ${token}`;
+	}
 	fetch(LOG_ENDPOINT, {
 		method: "POST",
-		headers: { "Content-Type": "application/json" },
+		headers,
 		body: JSON.stringify(entry),
-	}).catch(() => {
-		// Ignore send errors
-	});
+	})
+		.then((res) => {
+			unauthorizedToken = res.status === 401 ? token : undefined;
+		})
+		.catch(() => {
+			// Ignore send errors
+		});
 }
 
 function formatArgs(args: unknown[]): string {

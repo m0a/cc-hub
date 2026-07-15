@@ -2,13 +2,42 @@ import { useTranslation } from "react-i18next";
 import type {
 	UsageCycleInfo,
 	UsageLimitsStatus,
+	UsageScopedLimit,
 	UsageSnapshot,
 } from "../../../../shared/types";
-import { UsageChart } from "./UsageChart";
+import { type UsageChartOverlay, UsageChart } from "./UsageChart";
 
 interface UsageLimitsData {
 	fiveHour?: UsageCycleInfo;
 	sevenDay?: UsageCycleInfo;
+	scopedLimits?: UsageScopedLimit[];
+}
+
+// Hues chosen to stay distinct from the cycle line, which is already green /
+// yellow / red depending on status.
+const OVERLAY_COLORS = ["#a855f7", "#06b6d4", "#f472b6", "#facc15"];
+
+function toOverlays(
+	scopedLimits: UsageScopedLimit[] | undefined,
+	group: "session" | "weekly",
+): UsageChartOverlay[] {
+	if (!scopedLimits?.length) return [];
+	// Index the palette within the whole set rather than per group, so a model
+	// keeps one colour across both charts.
+	return scopedLimits.flatMap((limit, i) =>
+		limit.group === group
+			? [
+					{
+						key: limit.key,
+						name: limit.name,
+						utilization: limit.utilization,
+						isActive: limit.isActive,
+						severity: limit.severity,
+						color: OVERLAY_COLORS[i % OVERLAY_COLORS.length],
+					},
+				]
+			: [],
+	);
 }
 
 interface UsageLimitsProps {
@@ -198,6 +227,7 @@ export function UsageLimits({
 						data.fiveHour.timeRemaining,
 						data.fiveHour.estimatedHitTime,
 					)}
+					overlays={toOverlays(data.scopedLimits, "session")}
 				/>
 			) : (
 				showMissingCycles && (
@@ -222,6 +252,7 @@ export function UsageLimits({
 						data.sevenDay.timeRemaining,
 						data.sevenDay.estimatedHitTime,
 					)}
+					overlays={toOverlays(data.scopedLimits, "weekly")}
 				/>
 			) : (
 				showMissingCycles && (

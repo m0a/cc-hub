@@ -1,7 +1,7 @@
 import { t } from '../i18n';
 import { VERSION } from '../cli';
 import { getClaudeAccessToken } from '../utils/claude-credentials';
-import type { UsageLimitsErrorReason, UsageLimitsStatus } from '../../../shared/types';
+import type { UsageLimitsErrorReason, UsageLimitsStatus, UsageScopedLimit } from '../../../shared/types';
 
 function parseRetryAfter(header: string | null): number | null {
   if (!header) return null;
@@ -21,6 +21,68 @@ interface UsageResponse {
     utilization: number;
     resets_at: string;
   };
+  limits?: unknown;
+}
+
+interface RawLimitEntry {
+  group?: unknown;
+  percent?: unknown;
+  severity?: unknown;
+  resets_at?: unknown;
+  is_active?: unknown;
+  scope?: {
+    model?: { display_name?: unknown } | null;
+    surface?: unknown;
+  } | null;
+}
+
+/**
+ * Extract per-model limits from the `limits[]` array of the OAuth usage
+ * response. Entries whose `scope` is null are the overall cycles, which
+ * `five_hour` / `seven_day` already carry — only scoped entries add anything.
+ *
+ * Every field is validated because `limits[]` is newer than the flat fields
+ * and cchub must never break the existing chart over an unexpected shape: an
+ * entry that doesn't parse (unknown `group`, missing `percent`) is dropped
+ * rather than guessed at, and an absent/malformed array yields no overlays.
+ */
+export function parseScopedLimits(raw: unknown): UsageScopedLimit[] {
+  const entries = (raw as { limits?: unknown } | null)?.limits;
+  if (!Array.isArray(entries)) return [];
+
+  const scoped: UsageScopedLimit[] = [];
+  for (const entry of entries as RawLimitEntry[]) {
+    if (!entry || typeof entry !== 'object') continue;
+
+    const modelName = entry.scope?.model?.display_name;
+    const surface = entry.scope?.surface;
+    const name =
+      typeof modelName === 'string' && modelName
+        ? modelName
+        : typeof surface === 'string' && surface
+          ? surface
+          : null;
+    if (!name) continue;
+
+    // Anything other than the two cycles cchub charts would have no axis to
+    // sit on, so drop it instead of misplacing it.
+    const group = entry.group === 'session' || entry.group === 'weekly' ? entry.group : null;
+    if (!group) continue;
+
+    if (typeof entry.percent !== 'number' || !Number.isFinite(entry.percent)) continue;
+    if (typeof entry.resets_at !== 'string' || !entry.resets_at) continue;
+
+    scoped.push({
+      key: `${group}:${name}`,
+      name,
+      group,
+      utilization: entry.percent,
+      resetsAt: entry.resets_at,
+      isActive: entry.is_active === true,
+      severity: typeof entry.severity === 'string' ? entry.severity : undefined,
+    });
+  }
+  return scoped;
 }
 
 export interface UsageLimits {
@@ -40,6 +102,7 @@ export interface UsageLimits {
     status: 'safe' | 'warning' | 'danger' | 'exceeded';
     statusMessage: string;
   };
+  scopedLimits?: UsageScopedLimit[];
 }
 
 export class AnthropicUsageService {
@@ -167,6 +230,7 @@ export class AnthropicUsageService {
           estimatedHitTime: sevenDayEstimate,
           ...this.calculateStatus(data.seven_day.utilization, sevenDayEstimate, this.formatTimeRemaining(data.seven_day.resets_at)),
         },
+        scopedLimits: parseScopedLimits(data),
       };
 
       this.lastSuccessfulResult = result;

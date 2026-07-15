@@ -147,7 +147,6 @@
   "diagram": [
     " Clients",
     "   |- Browser (React SPA) ------ tablet / mobile / desktop",
-    "   |- cchub tui (Ink) ---------- local TTY",
     "   |- G2 Glasses (EvenHub) ----- REST + /ws/mux",
     "   '- cchub send / peek -------- CLI (REST)",
     "            |",
@@ -182,6 +181,14 @@
         ]
       },
       {
+        "name": "HerdrAgentStatusWatcher",
+        "file": "backend/src/services/herdr-agent-status.ts",
+        "summary": "herdr の pane.agent_status_changed (pane_id 必須の per-pane 購読) と pane ライフサイクルを購読し、エージェントの状態変化を即座に sessions push へ反映。値は pane.list から取るため、イベント取りこぼしは遅延止まりで不整合にならない (#390)",
+        "deps": [
+          "HerdrClient"
+        ]
+      },
+      {
         "name": "HerdrLayout",
         "file": "backend/src/services/herdr-layout.ts",
         "summary": "CC Hub 自前の split 木 (headless では herdr グリッドがリサイズ不能)。split/close/zoom/ratio調整/絶対サイズ指定を tmux 慣習の TmuxLayoutNode 矩形にレンダリング",
@@ -190,7 +197,15 @@
       {
         "name": "HerdrService",
         "file": "backend/src/services/herdr.ts",
-        "summary": "セッションレベル操作を herdr workspace にマッピング。一覧 (pane.process_info でエージェント検出、agent.list で native session id、blocked 状態)、作成/削除、プレビュー",
+        "summary": "セッションレベル操作を herdr workspace にマッピング。一覧 (pane.process_info でエージェント検出、agent.list で native session id、agent_status: idle/working/blocked/done)、作成/削除、プレビュー",
+        "deps": [
+          "HerdrClient"
+        ]
+      },
+      {
+        "name": "HerdrUpdateService",
+        "file": "backend/src/services/herdr-update.ts",
+        "summary": "herdr のバイナリと稼働サーバの版ズレを検知 (herdr update はバイナリ置換のみで稼働サーバは旧版のまま)。herdr status --json を 30s キャッシュで読み、ダッシュボードに警告。適用 (update + 監視下再起動) は POST /api/herdr/apply-update のユーザー操作のみで、auto 更新経路からは呼ばない。判定不能な出力は警告せず degrade (#393)",
         "deps": [
           "HerdrClient"
         ]
@@ -199,12 +214,6 @@
         "name": "PaneState",
         "file": "backend/src/services/pane-state.ts",
         "summary": "stripAnsi / detectPaneState ヒューリスティック (cchub send --wait / peek 用のペイン状態判定)",
-        "deps": []
-      },
-      {
-        "name": "ViewportCursorPolicy",
-        "file": "backend/src/services/viewport-cursor-policy.ts",
-        "summary": "agent 種別ごとの cursor 描画ポリシー (default / codex-footer) を解決。padFill の prepend 量に応じた cursor シフト量を計算",
         "deps": []
       },
       {
@@ -222,7 +231,7 @@
       {
         "name": "SessionMetadataService",
         "file": "backend/src/services/session-metadata.ts",
-        "summary": "セッションのテーマ・タイトル・表示順を session-metadata.json に、再起動復旧用の last-known-sessions.json を分離して永続化。旧形式 (session-themes.json 等) からのマイグレーションも処理",
+        "summary": "セッションのテーマ・タイトル・表示順を herdr-session-metadata.json に、再起動復旧用の herdr-last-known-sessions.json を分離して永続化 (tmux 版の store とはファイル名で分離)",
         "deps": []
       },
       {
@@ -325,7 +334,7 @@
       {
         "name": "HookStatusService",
         "file": "backend/src/services/hook-status.ts",
-        "summary": "Claude (~/.claude/settings.json) / Codex (config.toml, hooks.json) の hook 設定を解析し、cchub notify が Stop / PreToolUse / UserPromptSubmit / PostToolUse に登録済みかを判定。missing イベント一覧を返す",
+        "summary": "CC Hub がまだ必要とする hook (Stop = 通知本文、PostToolUse/AskUserQuestion = 質問のツール名) の設定有無を報告。インジケータの状態遷移は herdr 由来なので PreToolUse/UserPromptSubmit は不要 (#390)",
         "deps": []
       },
       {
@@ -1467,7 +1476,7 @@
   },
   "websocket": {
     "endpoint": "/ws/mux",
-    "description": "単一の多重化 WebSocket。クライアントは subscribe でセッション毎に購読し、ターミナル表示は PaneViewport フレーム (offset ベースのサーバーサイドスクロールバック) で配信。request-viewport への応答に加え、live (offset=0) 購読者には tmux 出力時に未要求 push もされる。全クライアント入力フレームは zod で検証 (#231)",
+    "description": "単一の多重化 WebSocket。クライアントは subscribe でセッション毎に購読し、ターミナル表示は PaneViewport フレーム (offset ベースのサーバーサイドスクロールバック) で配信。request-viewport への応答に加え、live (offset=0) 購読者には herdr のフレーム到着時に未要求 push もされる。全クライアント入力フレームは zod で検証 (#231)",
     "client_messages": {
       "mux_level": [
         "subscribe",

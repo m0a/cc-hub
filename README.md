@@ -39,11 +39,11 @@ Left: session list adapts to a single-column layout on smartphones. Right: termi
 - **Session History** - Browse and resume past Claude Code sessions with full-text search
 - **Conversation Viewer** - Markdown rendering, image display, system summary distinction
 - **Prompt Search** - Search across prompt history from all sessions
+- **Session Indicators** - See at a glance which sessions are working, waiting on you, or done — detected from the pane itself, no hooks required
 - **Hook Notifications** - Browser push notifications for Claude Code events (response complete, user input needed)
 - **Codex Support** - Run Codex CLI sessions alongside Claude Code (conversation view, usage tracking)
 - **Chat View** - Conversation-style view of the current session as an alternative to the terminal
 - **Peer Servers** - Connect multiple CC Hub servers over Tailscale (auto-discovery, aggregated sessions/history/dashboard)
-- **Local TUI** - `cchub tui` terminal UI with session list and history search
 - **Remote Pane Control** - `cchub send` / `cchub peek` to drive panes on local or peer servers from the CLI
 - **i18n** - English and Japanese UI with automatic language detection
 - **Onboarding Walkthrough** - Spotlight-style guide for first-time users
@@ -180,7 +180,9 @@ sudo tailscale set --operator=$USER
 
 CC Hub runs every session as a [herdr](https://herdr.dev/) workspace. `cchub setup` provisions everything: a supervised `herdr server` (systemd on Linux, launchd on macOS), `~/.config/herdr/config.toml` with `resume_agents_on_restore = true` (agent conversations survive server restarts), and the Claude Code integration hook (native session identity).
 
-To update herdr later: `herdr update`, then restart the supervised server (`systemctl --user restart herdr`). Do **not** use `herdr update --handoff` under systemd/launchd — the handed-off server escapes supervision.
+To update herdr later: `herdr update`, then restart the supervised server (`systemctl --user restart herdr`). The update replaces the binary but leaves the running server on the old version, so the restart is what actually applies it — CC Hub notices that gap and shows a warning on the dashboard, with a button that does both steps for you. Restarting re-creates every pane: agent conversations come back automatically, but commands running in a pane do not, so it waits for you to press it.
+
+Do **not** use `herdr update --handoff` under systemd/launchd — the handed-off server escapes supervision.
 
 ## Usage
 

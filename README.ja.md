@@ -21,8 +21,8 @@ Claude Codeセッションをリモート管理するWebベースのターミナ
 ## 機能
 
 - **マルチセッション管理** - 複数のClaude Codeセッションを同時に実行・切り替え
-- **マルチペインターミナル** - tmux制御モードによるペイン分割・リアルタイムレイアウト同期（全クライアント共有）
-- **ペイン操作** - ズーム、リサイズ、フォーカス、クローズ、リスポーンをキーボードショートカットまたはセッションモーダルUIから操作
+- **マルチペインターミナル** - herdrバックエンドによるペイン分割・リアルタイムレイアウト同期（全クライアント共有）
+- **ペイン操作** - ズーム、リサイズ、フォーカス、クローズをキーボードショートカットまたはセッションモーダルUIから操作
 - **チームエージェント表示** - ペイン一覧やモバイルタブバーにエージェント名と色を表示
 - **セッション色テーマ** - セッションごとに色を設定して視覚的に区別
 - **デスクトップ対応** - テキスト選択＆自動コピー、フォントサイズ調整（Ctrl+=/-)
@@ -39,11 +39,11 @@ Claude Codeセッションをリモート管理するWebベースのターミナ
 - **セッション履歴** - 過去のClaude Codeセッション閲覧・再開・全文検索
 - **会話ビューア** - Markdownレンダリング、画像表示、システムサマリー区別表示
 - **プロンプト検索** - 全セッションにまたがるプロンプト履歴の検索
+- **セッションインジケータ** - 処理中・入力待ち・完了を一覧で把握（ペイン自体から検出するのでhook不要）
 - **Hook通知** - Claude Codeイベント（応答完了、入力待ち等）のブラウザプッシュ通知
 - **Codex対応** - Claude Codeと並行してCodex CLIセッションを実行（会話ビュー、使用量トラッキング）
 - **チャットビュー** - ターミナルの代わりに現在のセッションを会話形式で表示
 - **Peerサーバー** - 複数のCC HubサーバーをTailscale経由で連携（自動検出、セッション/履歴/ダッシュボードの集約）
-- **ローカルTUI** - `cchub tui` によるターミナルUI（セッション一覧・履歴検索）
 - **リモートペイン制御** - `cchub send` / `cchub peek` でローカル・peerサーバーのペインをCLIから操作
 - **多言語対応** - 英語・日本語UIの自動言語検出
 - **オンボーディング** - 初回ユーザー向けスポットライト式操作ガイド
@@ -81,7 +81,7 @@ source ~/.bashrc
 | 依存関係 | 必須 | インストール方法 |
 |---------|-----|----------------|
 | [Tailscale](https://tailscale.com/) | ○ | Linux: https://tailscale.com/download / macOS: `brew install tailscale` |
-| [tmux](https://github.com/tmux/tmux) 3.0+ | ○ | `apt install tmux` / `brew install tmux` |
+| [herdr](https://herdr.dev/) | ○ | `curl -fsSL https://herdr.dev/install.sh \| sh` / `brew install herdr` |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | ○ | `npm install -g @anthropic-ai/claude-code` |
 
 ## クイックスタート
@@ -137,10 +137,6 @@ cchub status
 cchub send <target> [text]   # ローカル/peerサーバーのペインに入力を送信
 cchub peek <target>          # ペインの現在のビューポートを取得
 
-# ローカルターミナルUI
-cchub tui                    # セッション一覧・履歴検索のTUI
-cchub tui --popup            # tmux display-popup 用ワンショットモード（F11にバインド）
-
 # デバッグ
 cchub debug <sub>            # 稼働中サービスのBunインスペクタ操作
                              # sub: enable | disable | profile | status
@@ -180,15 +176,15 @@ sudo tailscale set --operator=$USER
 
 > **macOSの場合**: App Store版ではなく、`brew install tailscale`でインストールしてください。App Store版はCLIコマンドが使えないため、証明書生成が動作しません。
 
-### tmux設定（オプション）
+### herdrバックエンド
 
-CC Hubはデフォルトのtmux設定で動作しますが、以下の設定を推奨します：
+CC Hubは全セッションを [herdr](https://herdr.dev/) のワークスペースとして実行します。`cchub setup` が必要な設定を一通り行います：常駐する `herdr server`（Linux: systemd / macOS: launchd）、`~/.config/herdr/config.toml` の `resume_agents_on_restore = true`（サーバー再起動をまたいでエージェントの会話が復元される）、Claude Code integration hook（ネイティブなセッションID連携）。
 
-```bash
-# ~/.tmux.conf
-set -g mouse on              # マウス操作を有効化
-set -g history-limit 10000   # スクロールバック履歴を増やす
-```
+セッションはherdrサーバーのプロセス内にあるため、**cchubの再起動・更新ではセッションは落ちません**。
+
+herdrを後から更新する場合は `herdr update` → `systemctl --user restart herdr`。`herdr update` はバイナリを置き換えるだけで稼働中のサーバーは旧版のまま動き続けるため、反映には再起動が必要です。CC Hubはこのズレを検知してダッシュボードに警告を出し、ボタンから両方を代行できます（再起動すると全ペインが張り直され、エージェントの会話は自動復元されますが実行中のコマンドは失われるため、実行はユーザーが押したときだけです）。
+
+> systemd/launchd配下では `herdr update --handoff` を使わないでください。ハンドオフ先のサーバーが監視外に出てしまいます。
 
 ## 使い方
 
@@ -199,7 +195,7 @@ set -g history-limit 10000   # スクロールバック履歴を増やす
 
 ### キーボードショートカット
 
-CC Hubはtmux制御モード（`tmux -CC`）によりリアルタイムでペインレイアウトを同期します。接続中の全クライアントが同じペインレイアウトを共有します。
+CC Hubはペインレイアウトをリアルタイムで同期します。接続中の全クライアントが同じペインレイアウトを共有します。
 
 **ペイン・セッション操作**:
 | ショートカット | 操作 |
@@ -289,8 +285,6 @@ Claude Codeが応答完了・入力待ち状態になった時にブラウザプ
 {
   "hooks": {
     "Stop": [{ "hooks": [{ "type": "command", "command": "cchub notify" }] }],
-    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "cchub notify" }] }],
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "cchub notify" }] }],
     "PostToolUse": [{
       "matcher": "AskUserQuestion",
       "hooks": [{ "type": "command", "command": "cchub notify" }]
@@ -300,6 +294,10 @@ Claude Codeが応答完了・入力待ち状態になった時にブラウザプ
 ```
 
 CC Hubサーバーが起動している必要があります。初回アクセス時にブラウザの通知権限を許可してください。
+
+セッションのインジケータ（処理中・入力待ち・完了）にhookは不要です — herdrがエージェントの状態を自身で検出します。上記2つのhookは、herdrからは見えない情報だけを運びます：通知の本文（`Stop`）と、質問を出したツール名（`PostToolUse`/`AskUserQuestion`）。
+
+> v0.2.2より前は `PreToolUse` / `UserPromptSubmit` も必要でしたが、今は不要です。設定済みのまま残しても害はありませんが、`PreToolUse` はツール呼び出しのたびに `cchub notify` プロセスを起動するので、外すと無駄が減ります。
 
 ## 開発環境セットアップ
 
@@ -337,7 +335,7 @@ bun run lint            # リント
 
 - **Backend**: Bun, Hono, WebSocket
 - **Frontend**: React 19, Vite, Tailwind CSS v4, xterm.js, react-i18next
-- **Terminal**: tmux制御モード（`tmux -CC`）
+- **Terminal**: herdr（NDJSONソケットAPI + ペインごとの制御ストリーム）
 
 ## アーキテクチャ
 

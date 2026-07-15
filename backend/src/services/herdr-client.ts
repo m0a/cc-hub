@@ -70,6 +70,13 @@ export interface HerdrScroll {
   viewport_rows: number;
 }
 
+/**
+ * herdr's AgentStatus enum (protocol 16, `herdr api schema`). Kept as a union
+ * of known values plus `string`: herdr may add states, and an unknown one must
+ * fall through to the caller's default rather than be mapped to a wrong state.
+ */
+export type HerdrAgentStatus = 'idle' | 'working' | 'blocked' | 'done' | 'unknown' | (string & {});
+
 export interface HerdrPane {
   pane_id: string;
   workspace_id: string;
@@ -78,7 +85,7 @@ export interface HerdrPane {
   cwd: string;
   foreground_cwd?: string;
   focused: boolean;
-  agent_status: string;
+  agent_status: HerdrAgentStatus;
   revision: number;
   scroll: HerdrScroll;
 }

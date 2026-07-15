@@ -189,7 +189,11 @@ notify.post('/', async (c) => {
       if (newState) {
         const ttl = OVERRIDE_TTL;
         evictStateOverrides();
-        stateOverrides.set(sessionId, { state: newState, expiresAt: Date.now() + ttl, toolName: event === 'PreToolUse' ? toolName : undefined });
+        // Keep the tool name from either side of the tool call: PreToolUse is
+        // optional now that herdr reports `blocked` on its own (#390), so
+        // PostToolUse/AskUserQuestion has to be able to name the question.
+        const carriesToolName = event === 'PreToolUse' || event === 'PostToolUse';
+        stateOverrides.set(sessionId, { state: newState, expiresAt: Date.now() + ttl, toolName: carriesToolName ? toolName : undefined });
       }
     }
 
@@ -227,8 +231,8 @@ notify.get('/hook-status', async (c) => {
     // settings / config files don't exist or are invalid
     return c.json({
       configured: false,
-      events: { stop: false, preToolUse: false, userPromptSubmit: false, askUserQuestion: false },
-      missing: ['stop', 'preToolUse', 'userPromptSubmit', 'askUserQuestion'],
+      events: { stop: false, askUserQuestion: false },
+      missing: ['stop', 'askUserQuestion'],
     });
   }
 });

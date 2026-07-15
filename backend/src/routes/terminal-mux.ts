@@ -5,6 +5,7 @@ import {
   getOrCreateHerdrControlSession,
   type HerdrControlSession,
 } from '../services/herdr-control';
+import { startAgentStatusWatcher, stopAgentStatusWatcher } from '../services/herdr-agent-status';
 import { ConversationWatcher } from '../services/conversation-watcher';
 import type {
   ControlClientMessage,
@@ -88,6 +89,11 @@ let lastSessionsJson = '';
 
 function startSessionsPush() {
   if (sessionsPushTimer) return;
+  // herdr tells us the instant an agent changes state; the interval below is
+  // the floor (metrics, recap, anything herdr doesn't emit), not the ceiling.
+  startAgentStatusWatcher(() => {
+    if (activeMuxConnections.size > 0) pushSessionsNow();
+  });
   sessionsPushTimer = setInterval(async () => {
     if (activeMuxConnections.size === 0) {
       stopSessionsPush();
@@ -115,6 +121,7 @@ function stopSessionsPush() {
     clearInterval(sessionsPushTimer);
     sessionsPushTimer = null;
   }
+  stopAgentStatusWatcher();
   lastSessionsJson = '';
 }
 

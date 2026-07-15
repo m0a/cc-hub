@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.3] - 2026-07-16
+
+### Fixed
+- **リモートログ送信が 401 で全滅していた問題**: `remoteLogger.ts` が認証ヘッダなしの素の fetch で `/api/logs` へ送っていたため、パスワード認証を有効にした環境ではブラウザログが一切サーバに届かず、コンソールが 401 エラーで埋まっていた。保存済みトークン（`cc-hub-token`）を `Authorization: Bearer` として付与し、401 を受けたらトークンが変わるまで送信を止める（未ログインのページが console 呼び出しごとに失敗確定のリクエストを撃ち続けない）（`frontend/src/utils/remoteLogger.ts`）
+- **古い herdr サーバで subscribe が原因不明のまま失敗する問題**: protocol 16（herdr v0.7.3）未満のサーバは `pane.list` に `scroll` を返さないため、`pane.scroll.viewport_rows` の参照が TypeError になり、ブラウザには説明のない `Failed to subscribe` だけが届いてターミナルが真っ白になっていた（`herdr update` / `brew upgrade` 後にサーバが旧版のまま動き続ける版ズレで実際に発生）。subscribe の入口で検出して「herdr を更新してサーバを再起動せよ」という対処法つきのエラーを投げ、エラー詳細をクライアントへ転送し、read-only の viewport / peek 経路も `scroll` 欠損で落ちないようにした（`backend/src/services/herdr-control.ts`, `herdr-client.ts`, `backend/src/routes/terminal-mux.ts`）
+
 ## [0.2.2] - 2026-07-15
 
 ### Changed

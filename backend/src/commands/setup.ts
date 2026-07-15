@@ -4,6 +4,7 @@ import { mkdir, writeFile, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir, platform } from 'node:os';
 import { t } from '../i18n';
+import { herdrBinaryPath } from '../services/herdr-client';
 import { storePassword as storePasswordInKeychain } from '../utils/keychain';
 
 /** Escape special characters for safe inclusion in XML/plist content. */
@@ -190,14 +191,13 @@ pane_history = true
 async function provisionHerdr(): Promise<void> {
   console.log('🐑 herdr バックエンドのセットアップ');
 
-  const which = Bun.spawnSync(['which', 'herdr']);
-  if (which.exitCode !== 0) {
+  const herdrPath = herdrBinaryPath();
+  if (!herdrPath) {
     console.error('⚠️  herdr が見つかりません。先にインストールしてください:');
     console.error('   curl -fsSL https://herdr.dev/install.sh | sh  (または brew install herdr)');
     console.log('');
     return;
   }
-  const herdrPath = which.stdout.toString().trim();
 
   // config.toml: create with our defaults; never clobber an existing file.
   const herdrConfigDir = join(homedir(), '.config', 'herdr');
@@ -215,7 +215,7 @@ async function provisionHerdr(): Promise<void> {
   }
 
   // Supervised server.
-  const wasRunning = Bun.spawnSync(['herdr', 'status', 'server'])
+  const wasRunning = Bun.spawnSync([herdrPath, 'status', 'server'])
     .stdout.toString()
     .includes('status: running');
   if (platform() === 'darwin') {
@@ -257,7 +257,7 @@ async function provisionHerdr(): Promise<void> {
   // Claude Code integration: reports native session ids to herdr so agent
   // conversations survive server restarts. Adds a SessionStart hook to
   // ~/.claude/settings.json (coexists with cchub notify hooks).
-  const integ = Bun.spawnSync(['herdr', 'integration', 'install', 'claude']);
+  const integ = Bun.spawnSync([herdrPath, 'integration', 'install', 'claude']);
   if (integ.exitCode === 0) {
     console.log('✅ herdr Claude integration を設定しました (~/.claude/settings.json に SessionStart hook)');
   } else {

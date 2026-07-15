@@ -7,7 +7,6 @@ import {
   captureViewportHerdr,
   getOrCreateHerdrControlSession,
   type HerdrControlSession,
-  herdrControlSessions,
 } from '../services/herdr-control';
 import { ClaudeCodeService } from '../services/claude-code';
 import { CodexService } from '../services/codex';
@@ -92,8 +91,24 @@ async function captureViewportSnapshot(
   };
 }
 
-async function getAnyControlSession(sessionId: string): Promise<HerdrControlSession> {
-  return herdrControlSessions.get(sessionId) || (await getOrCreateHerdrControlSession(sessionId));
+/**
+ * Run `fn` against the session's control session with REST client
+ * accounting: addClient/removeClient bracket the call so a control session
+ * created solely for a one-shot REST request (cchub peek/send, peer calls)
+ * starts its grace timer afterwards and gets cleaned up instead of leaking
+ * its per-pane controller subprocesses forever.
+ */
+async function withControlSession<T>(
+  sessionId: string,
+  fn: (cs: HerdrControlSession) => Promise<T>,
+): Promise<T> {
+  const cs = await getOrCreateHerdrControlSession(sessionId);
+  cs.addClient();
+  try {
+    return await fn(cs);
+  } finally {
+    cs.removeClient();
+  }
 }
 
 export const sessions = new Hono();
@@ -848,8 +863,7 @@ sessions.post('/:id/panes/focus', async (c) => {
   }
 
   try {
-    const cs = await getAnyControlSession(id);
-    await cs.selectPane(parsed.data.paneId);
+    await withControlSession(id, (cs) => cs.selectPane(parsed.data.paneId));
     tmuxService.invalidateCache();
     notifySessionChange();
     return c.json({ success: true });
@@ -874,8 +888,8 @@ sessions.post('/:id/panes/close', async (c) => {
   }
 
   try {
-    const cs = await getAnyControlSession(id);
-    await cs.closePane(parsed.data.paneId); // rejects the last pane itself
+    // rejects the last pane itself
+    await withControlSession(id, (cs) => cs.closePane(parsed.data.paneId));
     tmuxService.invalidateCache();
     notifySessionChange();
     return c.json({ success: true });
@@ -902,8 +916,7 @@ sessions.post('/:id/panes/split', async (c) => {
   }
 
   try {
-    const cs = await getAnyControlSession(id);
-    await cs.splitPane(parsed.data.paneId, parsed.data.direction);
+    await withControlSession(id, (cs) => cs.splitPane(parsed.data.paneId, parsed.data.direction));
     tmuxService.invalidateCache();
     notifySessionChange();
     return c.json({ success: true });
@@ -947,32 +960,33 @@ sessions.post('/:id/panes/input', async (c) => {
   }
 
   try {
-    const controlSession = await getAnyControlSession(id);
-    const panes = await controlSession.listPanes();
-    const targetPane = panes.find(p => p.paneId === parsed.data.paneId);
-    if (!targetPane) {
-      return c.json({ error: 'Pane not found' }, 404);
-    }
+    return await withControlSession(id, async (controlSession) => {
+      const panes = await controlSession.listPanes();
+      const targetPane = panes.find((p) => p.paneId === parsed.data.paneId);
+      if (!targetPane) {
+        return c.json({ error: 'Pane not found' }, 404);
+      }
 
-    const buffer = parsed.data.encoding === 'base64'
-      ? Buffer.from(parsed.data.data, 'base64')
-      : Buffer.from(parsed.data.data, 'utf-8');
-    await controlSession.sendInput(parsed.data.paneId, buffer);
+      const buffer = parsed.data.encoding === 'base64'
+        ? Buffer.from(parsed.data.data, 'base64')
+        : Buffer.from(parsed.data.data, 'utf-8');
+      await controlSession.sendInput(parsed.data.paneId, buffer);
 
-    if (!parsed.data.wait) {
-      return c.json({ success: true, paneId: parsed.data.paneId, bytes: buffer.length });
-    }
+      if (!parsed.data.wait) {
+        return c.json({ success: true, paneId: parsed.data.paneId, bytes: buffer.length });
+      }
 
-    // Give the TUI time to render before snapshotting.
-    if (parsed.data.waitMs > 0) {
-      await new Promise(resolve => setTimeout(resolve, parsed.data.waitMs));
-    }
-    const viewport = await captureViewportSnapshot(controlSession, parsed.data.paneId, parsed.data.lines);
-    return c.json({
-      success: true,
-      paneId: parsed.data.paneId,
-      bytes: buffer.length,
-      viewport,
+      // Give the TUI time to render before snapshotting.
+      if (parsed.data.waitMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, parsed.data.waitMs));
+      }
+      const viewport = await captureViewportSnapshot(controlSession, parsed.data.paneId, parsed.data.lines);
+      return c.json({
+        success: true,
+        paneId: parsed.data.paneId,
+        bytes: buffer.length,
+        viewport,
+      });
     });
   } catch (_error) {
     return c.json({ error: 'Failed to send input' }, 500);
@@ -996,16 +1010,17 @@ sessions.get('/:id/panes/:paneId/viewport', async (c) => {
   }
 
   try {
-    const controlSession = await getAnyControlSession(id);
-    const panes = await controlSession.listPanes();
-    if (!panes.find(p => p.paneId === paneId)) {
-      return c.json({ error: 'Pane not found' }, 404);
-    }
-    const viewport = await captureViewportSnapshot(controlSession, paneId, lines);
-    if (!viewport) {
-      return c.json({ error: 'Failed to capture viewport' }, 500);
-    }
-    return c.json(viewport);
+    return await withControlSession(id, async (controlSession) => {
+      const panes = await controlSession.listPanes();
+      if (!panes.find((p) => p.paneId === paneId)) {
+        return c.json({ error: 'Pane not found' }, 404);
+      }
+      const viewport = await captureViewportSnapshot(controlSession, paneId, lines);
+      if (!viewport) {
+        return c.json({ error: 'Failed to capture viewport' }, 500);
+      }
+      return c.json(viewport);
+    });
   } catch (_error) {
     return c.json({ error: 'Failed to capture viewport' }, 500);
   }
@@ -1027,19 +1042,20 @@ sessions.post('/:id/prompt', async (c) => {
   }
 
   try {
-    const controlSession = await getAnyControlSession(id);
-    const panes = await controlSession.listPanes();
-    // Find the active pane, or fall back to the first pane
-    const targetPane = panes.find(p => p.isActive) || panes[0];
-    if (!targetPane) {
-      return c.json({ error: 'No pane found' }, 404);
-    }
+    return await withControlSession(id, async (controlSession) => {
+      const panes = await controlSession.listPanes();
+      // Find the active pane, or fall back to the first pane
+      const targetPane = panes.find((p) => p.isActive) || panes[0];
+      if (!targetPane) {
+        return c.json({ error: 'No pane found' }, 404);
+      }
 
-    // Send using bracketed paste mode + Enter
-    const payload = `\x1b[200~${text}\x1b[201~\r`;
-    await controlSession.sendInput(targetPane.paneId, Buffer.from(payload, 'utf-8'));
+      // Send using bracketed paste mode + Enter
+      const payload = `\x1b[200~${text}\x1b[201~\r`;
+      await controlSession.sendInput(targetPane.paneId, Buffer.from(payload, 'utf-8'));
 
-    return c.json({ success: true, paneId: targetPane.paneId });
+      return c.json({ success: true, paneId: targetPane.paneId });
+    });
   } catch (_error) {
     return c.json({ error: 'Failed to send prompt' }, 500);
   }

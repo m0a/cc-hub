@@ -147,12 +147,23 @@ export class HerdrControlSession {
   private workspaceId: string | null = null;
   private tree = new PaneLayoutTree();
 
-  // Client size as reported by the browser (drives pane PTY sizes)
+  // Client size as reported by the browser (drives pane PTY sizes).
+  // Until a real client reports a size (clientSizeKnown), controllers attach
+  // WITHOUT resizing so REST-only access never reflows a pane someone else
+  // is using at a different geometry.
   private clientSize: { cols: number; rows: number } = { cols: 80, rows: 24 };
+  private clientSizeKnown = false;
   private resizeTimer: Timer | null = null;
   private lastClientSize: { cols: number; rows: number } | null = null;
-  // Sizes we last applied per pane, echoed into viewports
+  // Last known per-pane size: written by applyLayout when we resize, and
+  // kept fresh from frame metadata (the renderer's actual geometry).
   private paneSizes = new Map<string, { cols: number; rows: number }>();
+  // Started-once gate so concurrent getOrCreate callers all await the same
+  // initialization instead of observing a half-started instance.
+  private startPromise: Promise<void> | null = null;
+  // Controllers (per-pane control streams) are lazy: false until a WS client
+  // subscribes or input is sent. Read-only REST access never flips this.
+  private controllersEnabled = false;
 
   // persistent control client per herdr pane id (input + resize + frames)
   private controllers = new Map<string, PaneController>();
@@ -179,7 +190,15 @@ export class HerdrControlSession {
     this.sessionId = sessionId;
   }
 
-  async start(): Promise<void> {
+  /** Idempotent start: all callers share one initialization. */
+  startOnce(): Promise<void> {
+    if (!this.startPromise) {
+      this.startPromise = this.start();
+    }
+    return this.startPromise;
+  }
+
+  private async start(): Promise<void> {
     const workspaces = await listWorkspaces();
     const ws = workspaces.find(
       (w) => w.label === this.sessionId || w.workspace_id === this.sessionId,
@@ -198,17 +217,17 @@ export class HerdrControlSession {
     const focused = panes.find((p) => p.focused);
     this.activePaneId = (focused ? toTmuxPaneId(focused.pane_id) : null) ?? tmuxIds[0] ?? null;
 
-    const rects = this.tree.computeRects(this.clientSize.cols, this.clientSize.rows);
+    // No controllers yet: reads (REST viewport, previews) are pure RPC and
+    // must not take over / resize panes a human may be using elsewhere.
+    // Controllers spawn via enableControllers() when a WS client subscribes
+    // or input is sent (writing inherently takes control).
     for (const pane of panes) {
       const tmuxId = toTmuxPaneId(pane.pane_id);
-      const rect = tmuxId ? rects.get(tmuxId) : undefined;
-      this.startController(
-        pane.pane_id,
-        rect?.width ?? this.clientSize.cols,
-        rect?.height ?? this.clientSize.rows,
-      );
-      if (tmuxId && rect) {
-        this.paneSizes.set(tmuxId, { cols: rect.width, rows: rect.height });
+      if (tmuxId) {
+        this.paneSizes.set(tmuxId, {
+          cols: this.clientSize.cols,
+          rows: pane.scroll.viewport_rows || this.clientSize.rows,
+        });
       }
     }
 
@@ -233,6 +252,23 @@ export class HerdrControlSession {
     return toHerdrPaneId(this.workspaceId, paneId);
   }
 
+  /**
+   * Spawn per-pane control streams (raw input + frame push + PTY resize).
+   * Taking a pane's control stream kicks any other controller and may
+   * resize the PTY, so this only happens when a client actually needs
+   * write/live access: WS subscribe, or the first input into the session.
+   */
+  enableControllers(): void {
+    if (this.controllersEnabled || this.destroyed) return;
+    this.controllersEnabled = true;
+    for (const tmuxId of this.tree.paneIds()) {
+      this.startController(
+        this.toHerdr(tmuxId),
+        this.clientSizeKnown ? (this.paneSizes.get(tmuxId) ?? null) : null,
+      );
+    }
+  }
+
   getPaneSize(paneId: string): { cols: number; rows: number } | undefined {
     return this.paneSizes.get(paneId);
   }
@@ -241,7 +277,7 @@ export class HerdrControlSession {
   // Pane controller management (input + resize + frame stream)
   // ==========================================================================
 
-  private startController(herdrPaneId: string, cols: number, rows: number): void {
+  private startController(herdrPaneId: string, size: { cols: number; rows: number } | null): void {
     if (this.destroyed || this.controllers.get(herdrPaneId)?.isAlive) return;
     const tmuxId = toTmuxPaneId(herdrPaneId);
     if (!tmuxId) return;
@@ -262,9 +298,14 @@ export class HerdrControlSession {
 
     let controller: PaneController;
     try {
-      controller = new PaneController(herdrPaneId, cols, rows, {
-        onFrame: (bytes) => {
+      controller = new PaneController(herdrPaneId, size, {
+        onFrame: (bytes, meta) => {
           scanFrameForState(state, bytes);
+          // Frame metadata carries the renderer's actual geometry — keep
+          // paneSizes truthful even for panes we never explicitly resized.
+          if (meta.width > 0 && meta.height > 0) {
+            this.paneSizes.set(tmuxId, { cols: meta.width, rows: meta.height });
+          }
           for (const listener of this.globalOutputListeners) {
             listener(tmuxId, Buffer.alloc(0));
           }
@@ -286,7 +327,9 @@ export class HerdrControlSession {
       return;
     }
     this.controllers.set(herdrPaneId, controller);
-    console.log(`[herdr-control] controller spawned for ${herdrPaneId} (${cols}x${rows}, session=${this.sessionId})`);
+    console.log(
+      `[herdr-control] controller spawned for ${herdrPaneId} (${size ? `${size.cols}x${size.rows}` : 'attach-size'}, session=${this.sessionId})`,
+    );
 
     // Nudge subscribers to recapture shortly after a controller (re)spawn.
     // A capture can race the app's resize repaint (blank/transitional
@@ -346,14 +389,11 @@ export class HerdrControlSession {
         this.activePaneId = tmuxId;
       }
       // A live pane without a running controller (fresh pane, or its control
-      // client died) gets one at its current size; applyLayout below corrects
-      // the size if the tree changed.
-      if (!this.controllers.get(pane.pane_id)?.isAlive) {
-        const size = this.paneSizes.get(tmuxId);
+      // client died) gets one — but only once controllers are enabled at all.
+      if (this.controllersEnabled && !this.controllers.get(pane.pane_id)?.isAlive) {
         this.startController(
           pane.pane_id,
-          size?.cols ?? this.clientSize.cols,
-          size?.rows ?? this.clientSize.rows,
+          this.clientSizeKnown ? (this.paneSizes.get(tmuxId) ?? null) : null,
         );
       }
     }
@@ -389,13 +429,15 @@ export class HerdrControlSession {
   /** Resize every pane PTY to its computed rect and notify layout listeners. */
   private async applyLayout(): Promise<void> {
     if (this.destroyed) return;
-    const { cols, rows } = this.clientSize;
-    const rects = this.tree.computeRects(cols, rows);
-    for (const [paneId, rect] of rects) {
-      const prev = this.paneSizes.get(paneId);
-      if (prev && prev.cols === rect.width && prev.rows === rect.height) continue;
-      this.paneSizes.set(paneId, { cols: rect.width, rows: rect.height });
-      this.controllerFor(paneId)?.resize(rect.width, rect.height);
+    if (this.clientSizeKnown) {
+      const { cols, rows } = this.clientSize;
+      const rects = this.tree.computeRects(cols, rows);
+      for (const [paneId, rect] of rects) {
+        const prev = this.paneSizes.get(paneId);
+        if (prev && prev.cols === rect.width && prev.rows === rect.height) continue;
+        this.paneSizes.set(paneId, { cols: rect.width, rows: rect.height });
+        this.controllerFor(paneId)?.resize(rect.width, rect.height);
+      }
     }
     this.emitLayout();
   }
@@ -435,12 +477,24 @@ export class HerdrControlSession {
   async sendInput(paneId: string, data: Buffer): Promise<void> {
     assertPaneId(paneId);
     if (data.length === 0) return;
+    // Writing requires a control stream; take one lazily for input-only
+    // access (REST sends into an unwatched session). stdin pipe buffering
+    // delivers the bytes once the client finishes attaching.
+    if (!this.controllersEnabled) {
+      this.enableControllers();
+    } else if (!this.controllerFor(paneId)) {
+      this.startController(
+        this.toHerdr(paneId),
+        this.clientSizeKnown ? (this.paneSizes.get(paneId) ?? null) : null,
+      );
+    }
     // Raw byte passthrough over the pane's control stream. Ordering is
     // guaranteed by the single stdin pipe; no serialization needed.
     const controller = this.controllerFor(paneId);
     if (!controller) {
-      console.warn(`[herdr-control] no controller for ${paneId}; input dropped`);
-      return;
+      // Surface the failure instead of silently dropping bytes — callers
+      // like `cchub send` must not get a success response for lost input.
+      throw new Error(`pane ${paneId} has no active control stream`);
     }
     controller.input(data);
   }
@@ -458,14 +512,12 @@ export class HerdrControlSession {
       this.tree.split(paneId, direction, newTmuxId);
       // pane.split was issued with focus: true — the new pane is focused.
       this.activePaneId = newTmuxId;
-      const rect = this.tree
-        .computeRects(this.clientSize.cols, this.clientSize.rows)
-        .get(newTmuxId);
-      this.startController(
-        newHerdrId,
-        rect?.width ?? this.clientSize.cols,
-        rect?.height ?? this.clientSize.rows,
-      );
+      if (this.controllersEnabled) {
+        const rect = this.clientSizeKnown
+          ? this.tree.computeRects(this.clientSize.cols, this.clientSize.rows).get(newTmuxId)
+          : undefined;
+        this.startController(newHerdrId, rect ? { cols: rect.width, rows: rect.height } : null);
+      }
       await this.applyLayout();
     } else {
       // Shape mismatch — fall back to reconcile
@@ -537,6 +589,7 @@ export class HerdrControlSession {
       if (last && last.cols === cols && Math.abs(last.rows - rows) <= 1) return;
       this.lastClientSize = { cols, rows };
       this.clientSize = { cols, rows };
+      this.clientSizeKnown = true;
       void this.applyLayout();
     }, RESIZE_DEBOUNCE_MS);
   }
@@ -548,6 +601,7 @@ export class HerdrControlSession {
     }
     this.lastClientSize = { cols, rows };
     this.clientSize = { cols, rows };
+    this.clientSizeKnown = true;
     await this.applyLayout();
   }
 
@@ -707,12 +761,15 @@ export const herdrControlSessions = new Map<string, HerdrControlSession>();
 export async function getOrCreateHerdrControlSession(sessionId: string): Promise<HerdrControlSession> {
   let session = herdrControlSessions.get(sessionId);
   if (session && !session.isDestroyed) {
+    // Concurrent callers during initialization share the same start — no one
+    // observes a half-started instance (empty tree, null workspaceId).
+    await session.startOnce();
     return session;
   }
   session = new HerdrControlSession(sessionId);
   herdrControlSessions.set(sessionId, session);
   try {
-    await session.start();
+    await session.startOnce();
   } catch (error) {
     session.destroy();
     throw error;

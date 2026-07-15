@@ -265,6 +265,9 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     controlSession = await getOrCreateHerdrControlSession(sessionId);
     controlSession.addClient();
     clientAdded = true;
+    // A live terminal client needs the per-pane control streams (raw input,
+    // frame-driven pushes, PTY sizing); read-only REST paths never do this.
+    controlSession.enableControllers();
 
     const sub: MuxSubscription = {
       controlSession,

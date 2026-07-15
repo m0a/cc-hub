@@ -296,23 +296,17 @@ export class PaneController {
 
   constructor(
     readonly herdrPaneId: string,
-    cols: number,
-    rows: number,
+    size: { cols: number; rows: number } | null,
     handlers: PaneControllerHandlers,
   ) {
+    // Without --cols/--rows the control client attaches at the pane's
+    // current size — important for read-only-ish attaches (REST captures on
+    // sessions no browser is viewing) so we don't forcibly reflow a pane a
+    // human is using elsewhere. Size is applied only when a real client
+    // geometry is known.
+    const sizeArgs = size ? ['--cols', String(size.cols), '--rows', String(size.rows)] : [];
     this.proc = Bun.spawn(
-      [
-        'herdr',
-        'terminal',
-        'session',
-        'control',
-        herdrPaneId,
-        '--takeover',
-        '--cols',
-        String(cols),
-        '--rows',
-        String(rows),
-      ],
+      ['herdr', 'terminal', 'session', 'control', herdrPaneId, '--takeover', ...sizeArgs],
       { stdin: 'pipe', stdout: 'pipe', stderr: 'ignore' },
     );
     this.stdinWriter = this.proc.stdin as unknown as { write(s: string): unknown };

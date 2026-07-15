@@ -281,8 +281,6 @@ Receive browser push notifications when Claude Code completes a response or need
 {
   "hooks": {
     "Stop": [{ "hooks": [{ "type": "command", "command": "cchub notify" }] }],
-    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "cchub notify" }] }],
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "cchub notify" }] }],
     "PostToolUse": [{
       "matcher": "AskUserQuestion",
       "hooks": [{ "type": "command", "command": "cchub notify" }]
@@ -292,6 +290,8 @@ Receive browser push notifications when Claude Code completes a response or need
 ```
 
 Add this to `~/.claude/settings.json`. The CC Hub server must be running. Allow browser notification permissions on first access.
+
+Session indicators (working / waiting / done) need no hooks at all — herdr reports agent status itself. These two hooks only carry what herdr can't see: the notification text and the name of the tool that asked a question.
 
 ## Development Setup
 

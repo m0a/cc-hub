@@ -14,6 +14,7 @@ import {
   listWorkspaces,
   readPaneText,
   toTmuxPaneId,
+  type HerdrAgentStatus,
   type HerdrWorkspace,
 } from './herdr-client';
 import { herdrControlSessions } from './herdr-control';
@@ -45,9 +46,12 @@ interface HerdrSessionInfo {
    *  herdr agent integration hook. Authoritative for .jsonl matching — two
    *  sessions in the same workingDir stay distinguishable. */
   agentSessionId?: string;
-  /** herdr's own detection says the agent is blocked waiting for input
-   *  (permission prompt etc.). */
-  agentBlocked?: boolean;
+  /** herdr's own agent detection, verified against Claude 2.x on herdr 0.7.3:
+   *  `working` while it responds, `blocked` while a TUI prompt waits on the
+   *  user (AskUserQuestion / permission), `idle` before a turn, `done` after
+   *  one, `unknown` when no agent is on the pane. Drives the indicator, so
+   *  hooks no longer have to report every state transition. */
+  agentStatus?: HerdrAgentStatus;
 }
 
 /** Session id for a workspace: label when present, else the workspace id. */
@@ -193,12 +197,14 @@ export class HerdrService {
           // agent).
           let agent: AgentProvider | undefined;
           let agentPanePath: string | undefined;
+          let agentPaneStatus: HerdrAgentStatus | undefined;
           for (const p of wsPanes) {
             const { cmdlines } = await this.paneProcesses(p.pane_id);
             const detected = HerdrService.detectAgent(cmdlines);
             if (detected) {
               agent = detected;
               agentPanePath = p.foreground_cwd || p.cwd;
+              agentPaneStatus = p.agent_status;
               break;
             }
           }
@@ -224,7 +230,14 @@ export class HerdrService {
           const agentSessionId = wsPanes
             .map((p) => agentSessions.get(p.pane_id))
             .find((id) => id !== undefined);
-          const agentBlocked = wsPanes.some((p) => p.agent_status === 'blocked');
+          // `blocked` anywhere in the workspace wins: an agent waiting on a
+          // prompt is the state the user has to act on, even if the split it
+          // sits in isn't the one we matched an agent process to.
+          const agentStatus: HerdrAgentStatus | undefined = wsPanes.some(
+            (p) => p.agent_status === 'blocked',
+          )
+            ? 'blocked'
+            : agentPaneStatus;
           return {
             id: workspaceSessionId(ws),
             name: workspaceSessionId(ws),
@@ -238,7 +251,7 @@ export class HerdrService {
             preview,
             panes,
             agentSessionId,
-            agentBlocked,
+            agentStatus,
           };
         }),
       );

@@ -67,7 +67,8 @@ glasses/     # EVEN G2 smart glasses app (EvenHub SDK, built to out.ehpk)
 - **CodexUsageService** (`services/codex-usage.ts`) - Tracks Codex token usage and rate-limit state
 - **CodexHistoryService** (`services/codex-history.ts`) - Reads Codex rollout transcripts (`~/.codex/sessions`) and merges them into project history alongside Claude Code sessions
 - **ConversationWatcher** (`services/conversation-watcher.ts`) - Watches Claude Code / Codex `.jsonl` files and emits conversation updates to subscribed WebSocket clients
-- **HookStatusService** (`services/hook-status.ts`) - Tracks per-session indicator state driven by Claude Code / Codex hook events (`Stop`, `PreToolUse`, `UserPromptSubmit`, etc.)
+- **HookStatusService** (`services/hook-status.ts`) - Reports whether the hooks CC Hub still needs are installed (`Stop` for notification text, `PostToolUse`/`AskUserQuestion` for the question's tool name). Indicator transitions come from herdr, not hooks
+- **HerdrAgentStatusWatcher** (`services/herdr-agent-status.ts`) - Subscribes to herdr's per-pane `pane.agent_status_changed` (plus pane lifecycle events, which re-subscribe the pane set) and triggers an immediate sessions push. Decides *when* to rebuild the list, never what's in it — a dropped event costs latency, not correctness
 - **AuthService** (`services/auth.ts`) - Password-based authentication with session tokens
 - **PeerRegistry** (`services/peer-registry.ts`) - Persists peer server metadata to `peers.json` (with mutation locking), records per-peer success/failure state
 - **PeerAuth** (`services/peer-auth.ts`) - Proxy login to peer servers (`POST /api/auth/login`), stores JWT tokens for subsequent API/WS calls, marks peers `unauthorized` on 401
@@ -356,8 +357,6 @@ Hook → cchub notify (stdin JSON) → POST /api/notify → WebSocket broadcast 
 {
   "hooks": {
     "Stop": [{ "hooks": [{ "type": "command", "command": "cchub notify" }] }],
-    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "cchub notify" }] }],
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "cchub notify" }] }],
     "PostToolUse": [{
       "matcher": "AskUserQuestion",
       "hooks": [{ "type": "command", "command": "cchub notify" }]
@@ -365,6 +364,8 @@ Hook → cchub notify (stdin JSON) → POST /api/notify → WebSocket broadcast 
   }
 }
 ```
+
+`PreToolUse` / `UserPromptSubmit` はもう不要（v0.2.2〜）。インジケータの状態遷移は herdr の `pane.agent_status_changed` から取るようになったため、hook は herdr が持たない情報（通知本文・質問のツール名）だけを運ぶ。既に登録済みでも害はない。
 
 2. `cchub` バイナリにPATHが通っていることを確認（hookはClaude Code / Codex のプロセスから実行される）
 

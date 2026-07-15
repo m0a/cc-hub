@@ -4,14 +4,15 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { getHookStatus, parseHookJson, parseHookToml } from '../../src/services/hook-status';
 
+// Only Stop and PostToolUse/AskUserQuestion are tracked: herdr reports agent
+// status itself, so the transition hooks (PreToolUse / UserPromptSubmit) are no
+// longer installed and their absence must not be reported as missing (#390).
 describe('hook status parsing', () => {
   test('detects cchub notify in Claude-style JSON hooks', () => {
     const parsed = parseHookJson(
       JSON.stringify({
         hooks: {
           Stop: [{ hooks: [{ type: 'command', command: 'cchub notify' }] }],
-          PreToolUse: [{ hooks: [{ type: 'command', command: 'cchub notify' }] }],
-          UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'cchub notify' }] }],
           PostToolUse: [{ matcher: 'AskUserQuestion', hooks: [{ type: 'command', command: 'cchub notify' }] }],
         },
       }),
@@ -19,9 +20,23 @@ describe('hook status parsing', () => {
 
     expect(parsed).toEqual({
       stop: true,
-      preToolUse: true,
-      userPromptSubmit: true,
       askUserQuestion: true,
+    });
+  });
+
+  test('ignores hooks that are no longer required', () => {
+    const parsed = parseHookJson(
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [{ hooks: [{ type: 'command', command: 'cchub notify' }] }],
+          UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'cchub notify' }] }],
+        },
+      }),
+    );
+
+    expect(parsed).toEqual({
+      stop: false,
+      askUserQuestion: false,
     });
   });
 
@@ -29,16 +44,6 @@ describe('hook status parsing', () => {
     const parsed = parseHookToml(`
 [[hooks.Stop]]
 [[hooks.Stop.hooks]]
-type = "command"
-command = "cchub notify"
-
-[[hooks.PreToolUse]]
-[[hooks.PreToolUse.hooks]]
-type = "command"
-command = "cchub notify"
-
-[[hooks.UserPromptSubmit]]
-[[hooks.UserPromptSubmit.hooks]]
 type = "command"
 command = "cchub notify"
 
@@ -51,9 +56,26 @@ command = "cchub notify"
 
     expect(parsed).toEqual({
       stop: true,
-      preToolUse: true,
-      userPromptSubmit: true,
       askUserQuestion: true,
+    });
+  });
+
+  test('does not credit an untracked TOML section to the hook before it', () => {
+    const parsed = parseHookToml(`
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "smart-notify.py"
+
+[[hooks.PreToolUse]]
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "cchub notify"
+`);
+
+    expect(parsed).toEqual({
+      stop: false,
+      askUserQuestion: false,
     });
   });
 
@@ -68,8 +90,6 @@ command = "cchub notify"
 
     expect(parsed).toEqual({
       stop: false,
-      preToolUse: false,
-      userPromptSubmit: false,
       askUserQuestion: false,
     });
   });
@@ -85,8 +105,6 @@ command = "cchub notify"
 
     expect(parsed).toEqual({
       stop: false,
-      preToolUse: false,
-      userPromptSubmit: false,
       askUserQuestion: true,
     });
   });
@@ -103,8 +121,6 @@ command = "cchub notify"
         JSON.stringify({
           hooks: {
             Stop: [{ hooks: [{ type: 'command', command: 'cchub notify' }] }],
-            PreToolUse: [{ hooks: [{ type: 'command', command: 'cchub notify' }] }],
-            UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'cchub notify' }] }],
             PostToolUse: [{ matcher: 'AskUserQuestion', hooks: [{ type: 'command', command: 'cchub notify' }] }],
           },
         }),
@@ -116,15 +132,11 @@ command = "cchub notify"
       expect(status.providers.codex.configured).toBe(true);
       expect(status.providers.codex.events).toEqual({
         stop: true,
-        preToolUse: true,
-        userPromptSubmit: true,
         askUserQuestion: true,
       });
       expect(status.configured).toBe(true);
       expect(status.events).toEqual({
         stop: true,
-        preToolUse: true,
-        userPromptSubmit: true,
         askUserQuestion: true,
       });
     } finally {

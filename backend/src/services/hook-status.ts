@@ -2,10 +2,15 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
+/**
+ * Hooks CC Hub still needs. Indicator transitions used to need PreToolUse and
+ * UserPromptSubmit too; herdr reports agent status itself now (#390), so those
+ * are no longer expected — flagging their absence would be a false alarm.
+ * What's left is what herdr can't give us: the notification text (Stop) and the
+ * name of the tool a question came from (PostToolUse/AskUserQuestion).
+ */
 type HookEventStatus = {
   stop: boolean;
-  preToolUse: boolean;
-  userPromptSubmit: boolean;
   askUserQuestion: boolean;
 };
 
@@ -26,8 +31,6 @@ type HookStatus = HookProviderStatus & {
 
 const DEFAULT_EVENTS: HookEventStatus = {
   stop: false,
-  preToolUse: false,
-  userPromptSubmit: false,
   askUserQuestion: false,
 };
 
@@ -69,8 +72,6 @@ export function parseHookJson(content: string): HookEventStatus | null {
 
     return {
       stop: hasCchubNotify(hooks.Stop),
-      preToolUse: hasCchubNotify(hooks.PreToolUse),
-      userPromptSubmit: hasCchubNotify(hooks.UserPromptSubmit),
       askUserQuestion: hasCchubNotify(hooks.PostToolUse, 'AskUserQuestion'),
     };
   } catch {
@@ -99,16 +100,17 @@ export function parseHookToml(content: string): HookEventStatus | null {
     const line = rawLine.trim();
     if (!line || line.startsWith('#')) continue;
 
-    const sectionMatch = line.match(/^\[\[hooks\.(Stop|PreToolUse|UserPromptSubmit|PostToolUse)(?:\.hooks)?\]\]$/);
-    if (sectionMatch) {
-      currentEvent = sectionMatch[1] === 'Stop'
-        ? 'stop'
-        : sectionMatch[1] === 'PreToolUse'
-          ? 'preToolUse'
-          : sectionMatch[1] === 'UserPromptSubmit'
-            ? 'userPromptSubmit'
-            : 'askUserQuestion';
-      inHookItems = line.includes('.hooks]]');
+    // Any section header ends the previous one. Sections we don't track
+    // (PreToolUse etc.) must clear currentEvent, or their `cchub notify` line
+    // would be credited to whichever hook was parsed before them.
+    if (line.startsWith('[')) {
+      const sectionMatch = line.match(/^\[\[hooks\.(Stop|PostToolUse)(?:\.hooks)?\]\]$/);
+      currentEvent = sectionMatch
+        ? sectionMatch[1] === 'Stop'
+          ? 'stop'
+          : 'askUserQuestion'
+        : null;
+      inHookItems = !!sectionMatch && line.includes('.hooks]]');
       if (!inHookItems) {
         currentMatcher = null;
       }
@@ -161,8 +163,6 @@ async function getProviderStatus(paths: string[]): Promise<HookProviderStatus> {
     const events = await readHookFile(path);
     if (!events) continue;
     aggregated.stop ||= events.stop;
-    aggregated.preToolUse ||= events.preToolUse;
-    aggregated.userPromptSubmit ||= events.userPromptSubmit;
     aggregated.askUserQuestion ||= events.askUserQuestion;
   }
 
@@ -186,8 +186,6 @@ export async function getHookStatus(): Promise<HookStatus> {
 
   const events = {
     stop: claude.events.stop || codex.events.stop,
-    preToolUse: claude.events.preToolUse || codex.events.preToolUse,
-    userPromptSubmit: claude.events.userPromptSubmit || codex.events.userPromptSubmit,
     askUserQuestion: claude.events.askUserQuestion || codex.events.askUserQuestion,
   };
 

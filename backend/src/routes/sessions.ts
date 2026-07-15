@@ -139,6 +139,29 @@ async function sendTextToSession(
   });
 }
 
+/**
+ * herdr's agent status → CC Hub indicator.
+ *
+ * Verified against Claude 2.x on herdr 0.7.3: `working` while responding,
+ * `blocked` while a TUI prompt waits on the user (AskUserQuestion and
+ * permission prompts both), `idle` before the first turn, `done` after one.
+ * Anything else — `unknown`, or a state a future herdr adds — returns null so
+ * the caller falls back instead of showing a confidently wrong indicator.
+ */
+export function herdrStatusToIndicator(status?: string): IndicatorState | null {
+  switch (status) {
+    case 'working':
+      return 'processing';
+    case 'blocked':
+      return 'waiting_input';
+    case 'idle':
+    case 'done':
+      return 'completed';
+    default:
+      return null;
+  }
+}
+
 export const sessions = new Hono();
 
 /** Build the full sessions list (shared by HTTP handler and WS push) */
@@ -183,16 +206,16 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
         ? codexThread?.sessionId
         : undefined;
 
-    // Indicator state: hook events are the source of truth.
-    // Claude defaults to completed (idle/waiting for user input); Codex keeps
-    // tmux/process state unless a hook event has been received.
+    // Indicator state: herdr's own agent detection is the source of truth —
+    // it tracks the pane itself, so it can't go stale when a hook is missing,
+    // fails to fire, or the agent is killed mid-turn. Hooks only fill in what
+    // herdr can't see (an agent it hasn't detected) and carry the notification
+    // text / tool name.
     const hookResult = conversationSessionId ? getIndicatorOverride(conversationSessionId) : null;
     const hookState = hookResult?.state ?? null;
     const hookToolName = hookResult?.toolName;
-    // When hooks say "processing" but herdr's agent detection says the agent
-    // is blocked, Claude is waiting for permission (not actually processing).
-    // (Replaces the tmux-era ✳-pane-title heuristic.)
-    const indicatorState: IndicatorState = (hookState === 'processing' && s.agentBlocked) ? 'waiting_input' : (hookState ?? 'completed');
+    const herdrState = herdrStatusToIndicator(s.agentStatus);
+    const indicatorState: IndicatorState = herdrState ?? hookState ?? 'completed';
     // Use hook tool name for waiting state when jsonl doesn't have it yet
     const effectiveWaitingToolName = (indicatorState === 'waiting_input' && hookToolName && !ccSession?.waitingToolName)
       ? hookToolName : ccSession?.waitingToolName;
@@ -210,10 +233,12 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
     // ccSession.projectPath === s.currentPath.
     const isExactPathMatch = !!ccSession && !!s.currentPath && ccSession.projectPath === s.currentPath;
 
+    // Codex keeps hooks first: herdr detects Codex panes too, but its status
+    // accuracy there hasn't been verified the way it has for Claude (#390).
     const sessionIndicatorState = includeClaudeInfo
       ? indicatorState
       : includeCodexInfo
-        ? (hookState ?? undefined)
+        ? (hookState ?? herdrState ?? undefined)
         : undefined;
 
     const panePids: (number | undefined)[] = s.panes ? s.panes.map((p: { pid?: number }) => p.pid) : [];

@@ -127,8 +127,14 @@ async function sendTextToSession(
     const panes = await cs.listPanes();
     const target = panes.find((p) => p.isActive) || panes[0];
     if (!target) throw new Error('No pane found');
-    const payload = opts?.bracketed ? `\x1b[200~${text}\x1b[201~\r` : `${text}\r`;
+    const payload = opts?.bracketed ? `\x1b[200~${text}\x1b[201~` : text;
     await cs.sendInput(target.paneId, Buffer.from(payload, 'utf-8'));
+    // Deliver the submit \r as its own write, slightly later: agent TUIs
+    // can swallow a \r that arrives in the same chunk as the bracketed-paste
+    // terminator (treated as part of the paste), leaving the prompt sitting
+    // unsubmitted in the input box.
+    await new Promise((r) => setTimeout(r, 80));
+    await cs.sendInput(target.paneId, Buffer.from('\r', 'utf-8'));
     return target.paneId;
   });
 }
@@ -1065,20 +1071,9 @@ sessions.post('/:id/prompt', async (c) => {
   }
 
   try {
-    return await withControlSession(id, async (controlSession) => {
-      const panes = await controlSession.listPanes();
-      // Find the active pane, or fall back to the first pane
-      const targetPane = panes.find((p) => p.isActive) || panes[0];
-      if (!targetPane) {
-        return c.json({ error: 'No pane found' }, 404);
-      }
-
-      // Send using bracketed paste mode + Enter
-      const payload = `\x1b[200~${text}\x1b[201~\r`;
-      await controlSession.sendInput(targetPane.paneId, Buffer.from(payload, 'utf-8'));
-
-      return c.json({ success: true, paneId: targetPane.paneId });
-    });
+    // Bracketed paste + separately-delivered \r (see sendTextToSession)
+    const paneId = await sendTextToSession(id, text, { bracketed: true });
+    return c.json({ success: true, paneId });
   } catch (_error) {
     return c.json({ error: 'Failed to send prompt' }, 500);
   }

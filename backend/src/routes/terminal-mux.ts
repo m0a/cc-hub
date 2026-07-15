@@ -384,7 +384,8 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
       controlSession.removeClient();
     }
     try {
-      ws.send(JSON.stringify({ type: 'error', message: 'Failed to subscribe', sessionId }));
+      const detail = error instanceof Error ? error.message : String(error);
+      ws.send(JSON.stringify({ type: 'error', message: `Failed to subscribe: ${detail}`, sessionId }));
     } catch { /* disconnected */ }
   }
 }

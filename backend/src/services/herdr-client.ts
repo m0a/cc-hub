@@ -87,7 +87,8 @@ export interface HerdrPane {
   focused: boolean;
   agent_status: HerdrAgentStatus;
   revision: number;
-  scroll: HerdrScroll;
+  /** Absent on herdr servers older than protocol 16 (< v0.7.3). */
+  scroll?: HerdrScroll;
 }
 
 export interface HerdrWorkspace {

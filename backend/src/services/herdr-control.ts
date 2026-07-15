@@ -22,6 +22,7 @@
 import type { PaneCursor, PaneModes, PaneViewport, TmuxLayoutNode } from '../../../shared/types';
 import {
   getPane,
+  type HerdrPane,
   herdrRpc,
   herdrSubscribe,
   listPanes,
@@ -90,7 +91,7 @@ async function guessInitialAltScreen(
     const leader = res.process_info?.foreground_processes?.[0]?.name ?? '';
     if (!leader || SHELL_NAMES.has(leader)) return;
     const pane = await getPane(herdrPaneId);
-    if (!pane) return;
+    if (!pane?.scroll) return;
     const offset = pane.scroll.max_offset_from_bottom;
     // Allow up to one screenful of host scrollback: panes created by the
     // resume/create flows carry a few shell lines (the `cd … && claude -r`
@@ -104,6 +105,19 @@ async function guessInitialAltScreen(
     }
   } catch {
     // keep the default (normal screen)
+  }
+}
+
+/**
+ * herdr servers older than protocol 16 return panes without scroll state,
+ * which every viewport computation depends on. Fail the subscribe with the
+ * actual fix instead of letting it surface as a TypeError deep in start().
+ */
+export function assertPanesHaveScroll(panes: Array<Pick<HerdrPane, 'scroll'>>): void {
+  if (panes.some((p) => !p.scroll)) {
+    throw new Error(
+      'herdr server is too old: pane.list returned no scroll state (protocol >= 16 / v0.7.3+ required). Update herdr and restart the server.',
+    );
   }
 }
 
@@ -228,6 +242,7 @@ export class HerdrControlSession {
     this.workspaceId = ws.workspace_id;
 
     const panes = await listPanes(ws.workspace_id);
+    assertPanesHaveScroll(panes);
     const tmuxIds = panes
       .map((p) => toTmuxPaneId(p.pane_id))
       .filter((id): id is string => id !== null);
@@ -245,7 +260,7 @@ export class HerdrControlSession {
       if (tmuxId) {
         this.paneSizes.set(tmuxId, {
           cols: this.clientSize.cols,
-          rows: pane.scroll.viewport_rows || this.clientSize.rows,
+          rows: pane.scroll?.viewport_rows || this.clientSize.rows,
         });
       }
     }
@@ -844,7 +859,7 @@ export async function captureViewportHerdr(
   const pane = await getPane(herdrId);
   if (!pane) return null;
 
-  const rows = size?.rows ?? pane.scroll.viewport_rows;
+  const rows = size?.rows ?? pane.scroll?.viewport_rows ?? 0;
   const cols = size?.cols ?? 80;
   if (rows <= 0 || cols <= 0) return null;
 
@@ -854,7 +869,7 @@ export async function captureViewportHerdr(
   const runtimeCheck = cs.getRuntimeState(paneId);
   if (
     runtimeCheck?.altGuessed &&
-    pane.scroll.max_offset_from_bottom > (runtimeCheck.altGuessBaseline ?? 0)
+    (pane.scroll?.max_offset_from_bottom ?? 0) > (runtimeCheck.altGuessBaseline ?? 0)
   ) {
     runtimeCheck.altScreen = false;
     runtimeCheck.altGuessed = false;
@@ -864,7 +879,7 @@ export async function captureViewportHerdr(
   // what pane.read can actually reach (1000-line cap minus the window).
   const historySize = Math.max(
     0,
-    Math.min(pane.scroll.max_offset_from_bottom, HERDR_READ_CAP - rows),
+    Math.min(pane.scroll?.max_offset_from_bottom ?? 0, HERDR_READ_CAP - rows),
   );
   const clampedOffset = Math.max(0, Math.min(offset, historySize));
 

@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.2] - 2026-07-15
+
+### Changed
+- **セッションのインジケータを herdr のエージェント検出から取るようにした（hook 依存の解消, #390）**: これまでインジケータは hook イベント（`PreToolUse`/`UserPromptSubmit` → 処理中、`Stop` → 完了）で状態遷移を作り、その上に herdr の `blocked` 補正を乗せる二重構造だった。hook が未設定・発火漏れ・エージェントが途中で kill された場合に「自信を持って間違った」表示になる。herdr はペイン自体を見てエージェントの状態を判定するので、そちらを source of truth にした（herdr 0.7.3 / Claude 2.x で実測: `idle` ターン前 / `working` 応答中 / `blocked` AskUserQuestion・権限プロンプト待ち / `done` 応答後）。未知の状態（将来 herdr が追加するものを含む）は推測せず hook 状態にフォールバックする（`backend/src/routes/sessions.ts`, `backend/src/services/herdr.ts`）
+- **インジケータが即時になった**: herdr の `pane.agent_status_changed` を購読し、状態変化の瞬間にセッション一覧を push（従来は最大5秒のポーリング待ち）。購読はペイン単位（`pane_id` 必須）なので、ペインの生成・終了に合わせて購読を張り替える。ウォッチャーは「いつ再構築するか」だけを決め、値は従来通り `pane.list` から取るため、イベントの取りこぼしは遅延にはなっても不整合にはならない（`backend/src/services/herdr-agent-status.ts`）
+- **必要な hook が2つだけになった**: `Stop`（通知本文）と `PostToolUse`/`AskUserQuestion`（質問のツール名）。**`PreToolUse` と `UserPromptSubmit` は不要**になり、未設定でも警告しなくなった（設定済みのまま残しても害はない）。`PreToolUse` はツール呼び出しのたびに `cchub notify` プロセスを起動するので、外すと無駄がなくなる
+
+### Added
+- **herdr の版ズレ検知とダッシュボード通告（#393）**: `herdr update` はバイナリを置き換えるだけで稼働中のサーバは旧版のまま動き続ける。cchub はペイン制御に herdr の**バイナリ**を spawn するため、この間は「新しい CLI → 古いサーバ」の版ズレになり、「ターミナルが繋がらない」形で症状が出うる。`herdr status --json`（ディスク上のバイナリと稼働サーバを並記し、herdr 自身の `restart_needed` も返す）を 30 秒キャッシュで読み、ズレていればダッシュボードに警告を出す。判定できない出力（herdr 未インストール、形式変更、パース不能）は**警告を出さずに degrade** する（`backend/src/services/herdr-update.ts`）
+- **警告からの適用ボタン**: `POST /api/herdr/apply-update`（認証必須）で `herdr update` + 監視下の再起動（systemd: `systemctl --user restart herdr` / launchd: `launchctl kickstart -k`）を代行する。update に失敗したら再起動には進まない。**ユーザーが押したときだけ**実行し、`cchub update --auto` のタイマー経路からは決して呼ばれない。herdr が systemd/launchd の管理外で動いている場合はボタンを出さず手順の提示に留める。警告文には再起動のコスト（全ペインが張り直され、エージェントの会話は自動復元されるが実行中のコマンドは失われる）を明記
+
 ## [0.2.1] - 2026-07-15
 
 ### Fixed

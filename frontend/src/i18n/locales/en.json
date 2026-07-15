@@ -152,6 +152,7 @@
 		"latencyNA": "N/A",
 		"chartNow": "Now",
 		"chartReset": "Reset",
+		"scopedLimitActive": "(in effect)",
 		"clearCache": "Clear Cache & Reload",
 		"cpuUsage": "CPU Usage",
 		"memoryUsage": "Memory Usage",

@@ -409,9 +409,37 @@ export interface UsageCycleInfo {
   statusMessage?: string; // Human-readable prediction message
 }
 
+/**
+ * A usage limit that applies to a subset of usage rather than the whole plan —
+ * currently a single model (e.g. "Fable"). Read from the `limits[]` array of
+ * Anthropic's OAuth usage response, where entries with a non-null `scope` are
+ * the scoped ones; entries without a scope are the overall cycles already
+ * carried by `fiveHour` / `sevenDay`.
+ *
+ * These matter because the overall cycle can read as comfortable while a
+ * scoped limit is already exhausted, which is invisible on a chart that only
+ * plots the overall number.
+ */
+export interface UsageScopedLimit {
+  /** `${group}:${name}` — stable identity for history snapshots. */
+  key: string;
+  /** What the limit is scoped to, e.g. "Fable". */
+  name: string;
+  /** Which cycle this shares an axis with. */
+  group: 'session' | 'weekly';
+  utilization: number;
+  resetsAt: string;
+  /** True when this limit is the one currently constraining usage. */
+  isActive: boolean;
+  /** Anthropic's own severity verdict, e.g. 'normal' | 'critical'. */
+  severity?: string;
+}
+
 export interface UsageLimits {
   fiveHour: UsageCycleInfo;
   sevenDay: UsageCycleInfo;
+  /** Per-model limits; empty when the API reports none. */
+  scopedLimits?: UsageScopedLimit[];
 }
 
 // Usage limits derived from Codex rollouts (rate_limits in token_count events).
@@ -434,6 +462,12 @@ export interface UsageSnapshot {
   timestamp: string; // ISO 8601
   fiveHour: { utilization: number; resetsAt: string };
   sevenDay: { utilization: number; resetsAt: string };
+  /**
+   * Per-model utilization keyed by `UsageScopedLimit.key`. Absent on snapshots
+   * written before scoped limits were tracked, so readers must treat a missing
+   * key as "no sample" rather than 0%.
+   */
+  scoped?: Record<string, { utilization: number; resetsAt: string }>;
 }
 
 export interface UsageHistoryResponse {

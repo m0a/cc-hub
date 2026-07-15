@@ -55,6 +55,7 @@ export async function buildDashboard(): Promise<DashboardResponse> {
     usageHistoryService.recordSnapshot(
       { utilization: usageLimits.fiveHour.utilization, resetsAt: usageLimits.fiveHour.resetsAt },
       { utilization: usageLimits.sevenDay.utilization, resetsAt: usageLimits.sevenDay.resetsAt },
+      usageLimits.scopedLimits,
     );
   }
 

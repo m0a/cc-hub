@@ -20,6 +20,16 @@ function useIsLightMode() {
 	return light;
 }
 
+/** A per-model limit drawn as an extra line over the cycle's own usage line. */
+export interface UsageChartOverlay {
+	key: string;
+	name: string;
+	utilization: number;
+	isActive: boolean;
+	severity?: string;
+	color: string;
+}
+
 interface UsageChartProps {
 	label: string;
 	field: "fiveHour" | "sevenDay";
@@ -28,6 +38,7 @@ interface UsageChartProps {
 	resetsAt: string;
 	status: "safe" | "warning" | "danger" | "exceeded";
 	statusMessage: string;
+	overlays?: UsageChartOverlay[];
 }
 
 const CHART_WIDTH = 300;
@@ -44,6 +55,16 @@ function utilToY(util: number): number {
 // Map time ratio (0–1) to X coordinate
 function ratioToX(ratio: number): number {
 	return PADDING.left + Math.min(Math.max(ratio, 0), 1) * INNER_W;
+}
+
+function toPath(points: { x: number; y: number }[]): string {
+	return points.length > 1
+		? points
+				.map(
+					(p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`,
+				)
+				.join(" ")
+		: "";
 }
 
 function getStatusColor(status: string): string {
@@ -71,6 +92,23 @@ function getStatusTextColor(status: string): string {
 	}
 }
 
+// Anthropic sends its own verdict per limit, so trust it when present and only
+// fall back to thresholds for a severity string we don't recognize.
+function getOverlayTextColor(overlay: UsageChartOverlay): string {
+	switch (overlay.severity) {
+		case "critical":
+			return "text-red-400 font-medium";
+		case "warning":
+			return "text-yellow-400";
+		case "normal":
+			return "text-th-text-secondary";
+		default:
+			if (overlay.utilization >= 100) return "text-red-400 font-medium";
+			if (overlay.utilization >= 75) return "text-yellow-400";
+			return "text-th-text-secondary";
+	}
+}
+
 export function UsageChart({
 	label,
 	field,
@@ -79,6 +117,7 @@ export function UsageChart({
 	resetsAt,
 	status,
 	statusMessage,
+	overlays = [],
 }: UsageChartProps) {
 	const { t } = useTranslation();
 	const isLight = useIsLightMode();
@@ -134,6 +173,43 @@ export function UsageChart({
 		};
 		actualPoints.push(currentPoint);
 
+		// --- Per-model overlay lines ---
+		// Scoped limits reset with the cycle they belong to, so they share this
+		// chart's x-axis. Snapshots recorded before scoped tracking existed carry
+		// no `scoped` key at all; a missing sample means "not measured" and must
+		// be skipped rather than read as 0%.
+		const overlaySeries = overlays.map((overlay) => {
+			const samples = relevantSnapshots.flatMap((snap) => {
+				const sample = snap.scoped?.[overlay.key];
+				return sample
+					? [{ ts: new Date(snap.timestamp).getTime(), sample }]
+					: [];
+			});
+
+			const points: { x: number; y: number }[] = [];
+			const firstSampleRatio = samples[0]
+				? (samples[0].ts - cycleStart) / cycleDuration
+				: 1;
+			// Same 0% anchor as the primary line, for the same reason: utilization
+			// is cumulative, so a cycle missing early samples provably began at 0.
+			if (samples.length === 0 || firstSampleRatio > FIRST_GAP_THRESHOLD) {
+				points.push({ x: ratioToX(0), y: utilToY(0) });
+			}
+			for (const { ts, sample } of samples) {
+				points.push({
+					x: ratioToX((ts - cycleStart) / cycleDuration),
+					y: utilToY(sample.utilization),
+				});
+			}
+			const current = {
+				x: ratioToX(nowRatio),
+				y: utilToY(overlay.utilization),
+			};
+			points.push(current);
+
+			return { key: overlay.key, color: overlay.color, points, current };
+		});
+
 		// --- Projection line (from current point, extending at current pace) ---
 		let projectionEnd: { x: number; y: number } | null = null;
 		let hitLabel: string | null = null; // Date/time label at the hit point
@@ -183,8 +259,9 @@ export function UsageChart({
 			idealStart,
 			idealEnd,
 			markers,
+			overlaySeries,
 		};
-	}, [snapshots, field, currentUtilization, resetsAt]);
+	}, [snapshots, field, currentUtilization, resetsAt, overlays]);
 
 	const {
 		actualPoints,
@@ -195,21 +272,14 @@ export function UsageChart({
 		idealStart,
 		idealEnd,
 		markers,
+		overlaySeries,
 	} = chartData;
 
 	const lineColor = getStatusColor(status);
 	const gradientId = `grad-${field}`;
 
 	// Build actual usage path
-	const actualPath =
-		actualPoints.length > 1
-			? actualPoints
-					.map(
-						(p, i) =>
-							`${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`,
-					)
-					.join(" ")
-			: "";
+	const actualPath = toPath(actualPoints);
 
 	// Build area under actual usage
 	const areaPath =
@@ -374,6 +444,28 @@ export function UsageChart({
 					/>
 				)}
 
+				{/* 5) Per-model overlay lines — drawn above the cycle's own line so a
+				    maxed-out model stays visible when the overall usage looks fine */}
+				{overlaySeries.map((series) => (
+					<g key={series.key}>
+						<path
+							d={toPath(series.points)}
+							fill="none"
+							stroke={series.color}
+							strokeWidth="1.2"
+							strokeLinejoin="round"
+						/>
+						<circle
+							cx={series.current.x}
+							cy={series.current.y}
+							r="2"
+							fill={series.color}
+							stroke={isLight ? "#ffffff" : "#111827"}
+							strokeWidth="0.75"
+						/>
+					</g>
+				))}
+
 				{/* Current point dot */}
 				<circle
 					cx={currentPoint.x}
@@ -429,6 +521,30 @@ export function UsageChart({
 			<div className={`text-[10px] mt-0.5 ${getStatusTextColor(status)}`}>
 				{statusMessage}
 			</div>
+			{overlays.length > 0 && (
+				<div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+					{overlays.map((overlay) => (
+						<div
+							key={overlay.key}
+							className="flex items-center gap-1 text-[10px]"
+						>
+							<span
+								className="w-2.5 h-[2px] rounded-full shrink-0"
+								style={{ backgroundColor: overlay.color }}
+							/>
+							<span className="text-th-text-muted">{overlay.name}</span>
+							<span className={getOverlayTextColor(overlay)}>
+								{overlay.utilization.toFixed(0)}%
+							</span>
+							{overlay.isActive && (
+								<span className="text-th-text-muted">
+									{t("dashboard.scopedLimitActive")}
+								</span>
+							)}
+						</div>
+					))}
+				</div>
+			)}
 		</div>
 	);
 }

@@ -1,5 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import type { UsageSnapshot } from '../../../shared/types';
+import type { UsageScopedLimit, UsageSnapshot } from '../../../shared/types';
 
 const HISTORY_FILE = '/tmp/cchub-usage-history.json';
 const THROTTLE_MS = 30 * 1000; // 30 seconds
@@ -33,7 +33,11 @@ export class UsageHistoryService {
     }
   }
 
-  async recordSnapshot(fiveHour: { utilization: number; resetsAt: string }, sevenDay: { utilization: number; resetsAt: string }): Promise<void> {
+  async recordSnapshot(
+    fiveHour: { utilization: number; resetsAt: string },
+    sevenDay: { utilization: number; resetsAt: string },
+    scopedLimits?: UsageScopedLimit[],
+  ): Promise<void> {
     const now = Date.now();
     if (now - this.lastRecordTime < THROTTLE_MS) {
       return;
@@ -47,6 +51,14 @@ export class UsageHistoryService {
       fiveHour: { utilization: fiveHour.utilization, resetsAt: fiveHour.resetsAt },
       sevenDay: { utilization: sevenDay.utilization, resetsAt: sevenDay.resetsAt },
     };
+
+    // Omit the key entirely when there are no scoped limits, so a plan without
+    // them doesn't grow every snapshot by an empty object.
+    if (scopedLimits?.length) {
+      snapshot.scoped = Object.fromEntries(
+        scopedLimits.map((l) => [l.key, { utilization: l.utilization, resetsAt: l.resetsAt }]),
+      );
+    }
 
     snapshots.push(snapshot);
 

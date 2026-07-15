@@ -152,6 +152,7 @@
 		"latencyNA": "N/A",
 		"chartNow": "現在",
 		"chartReset": "リセット",
+		"scopedLimitActive": "（適用中）",
 		"clearCache": "キャッシュクリア & リロード",
 		"cpuUsage": "CPU使用率",
 		"memoryUsage": "メモリ使用率",

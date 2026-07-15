@@ -15,6 +15,7 @@ import { parseArgs, runCli, VERSION } from './cli';
 import { conditionalAuthMiddleware, isAuthRequired, getJwtSecret, initJwtSecret } from './middleware/auth';
 import { AuthService } from './services/auth';
 import { getDataDir } from './utils/storage';
+import { herdrRpc, herdrSocketPath } from './services/herdr-client';
 import { t } from './i18n';
 
 // Global error handlers to prevent silent crashes
@@ -211,12 +212,60 @@ if (whichResult.exitCode !== 0) {
   process.exit(1);
 }
 
-// Check if tmux command exists
-const tmuxWhichResult = Bun.spawnSync(['which', 'tmux']);
-if (tmuxWhichResult.exitCode !== 0) {
-  console.error(`❌ ${t('server.tmuxNotFound')}`);
-  console.error(`   ${t('server.tmuxInstallHint')}`);
+// herdr backend: verify the binary exists, then make sure the headless
+// server is reachable — auto-start it if not (it daemon-izes per user and
+// owns all pane PTYs, so cchub restarts don't kill running agents).
+const herdrWhichResult = Bun.spawnSync(['which', 'herdr']);
+if (herdrWhichResult.exitCode !== 0) {
+  console.error(`❌ ${t('server.herdrNotFound')}`);
+  console.error(`   ${t('server.herdrInstallHint')}`);
   process.exit(1);
+}
+
+// The socket API version this build was developed and tested against.
+// herdr auto-update only NOTIFIES (never self-applies), but a manual
+// `herdr update` + server restart can bump the protocol; surface that
+// loudly instead of failing on odd RPC shapes later.
+const HERDR_TESTED_PROTOCOL = 16;
+
+interface HerdrPong {
+  version?: string;
+  protocol?: number;
+}
+
+async function herdrPing(): Promise<HerdrPong | null> {
+  try {
+    return await herdrRpc<HerdrPong>('ping', {});
+  } catch {
+    return null;
+  }
+}
+
+let herdrPong = await herdrPing();
+if (!herdrPong) {
+  console.log('⏳ herdr server not running; starting it...');
+  Bun.spawn(['herdr', 'server'], {
+    stdin: 'ignore',
+    stdout: 'ignore',
+    stderr: 'ignore',
+  }).unref();
+  for (let i = 0; i < 20 && !herdrPong; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    herdrPong = await herdrPing();
+  }
+  if (!herdrPong) {
+    console.error(`❌ ${t('server.herdrStartFailed')}`);
+    console.error(`   socket: ${herdrSocketPath()}`);
+    process.exit(1);
+  }
+  console.log('✅ herdr server started');
+}
+console.log(`🐑 herdr ${herdrPong.version ?? '?'} (protocol ${herdrPong.protocol ?? '?'})`);
+if (herdrPong.protocol !== undefined && herdrPong.protocol !== HERDR_TESTED_PROTOCOL) {
+  console.warn(
+    `⚠️  herdr protocol ${herdrPong.protocol} differs from the tested protocol ${HERDR_TESTED_PROTOCOL}. ` +
+      'Terminal features may misbehave — check the herdr changelog before relying on this setup.',
+  );
 }
 
 // Get Tailscale hostname

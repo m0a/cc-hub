@@ -91,7 +91,7 @@ export function agentSupportsConversationMetadata(agent: string | undefined): bo
 export function agentResumeCommand(agent: AgentProvider, sessionId?: string): string {
   const base = AGENT_PROVIDERS[agent].resumeCommand;
   if (!sessionId) return base;
-  // The command is typed into an interactive shell via tmux send-keys, so the
+  // The command is typed into an interactive shell over the pane's control stream, so the
   // session id is single-quoted to guarantee it cannot break out of the
   // argument — defense-in-depth on top of SessionIdSchema at the routes. #234
   const quoted = `'${sessionId.replace(/'/g, `'\\''`)}'`;
@@ -147,7 +147,7 @@ export interface PaneInfo {
   isActive: boolean;
   isDead?: boolean;
   indicatorState?: IndicatorState;
-  pid?: number;            // tmux pane_pid (shell/subprocess PID)
+  pid?: number;            // shell/subprocess PID of the pane's foreground group
 }
 
 export interface SessionMetrics {
@@ -162,7 +162,7 @@ export interface SessionMetrics {
   memoryRssBytes?: number;             // total RSS across session's panes
 }
 
-// Session names land in tmux and downstream parsers split list-panes output on
+// Session names become herdr workspace labels; legacy parsers also split on
 // a multi-char sentinel ('||~~||'). Allowing arbitrary characters in `name`
 // lets a request like `weird||~~||name` shift every parsed field and silently
 // misattribute panes to phantom sessions. Tighten to the same alphabet used
@@ -608,10 +608,10 @@ export interface ConversationResponse {
 }
 
 // =============================================================================
-// tmux Control Mode Types
+// Terminal Control Types (tmux-convention pane ids / layout rects, herdr-backed)
 // =============================================================================
 
-// tmux layout tree node (parsed from layout string)
+// Layout tree node (tmux rect conventions; produced by herdr-layout.ts)
 export interface TmuxLayoutNode {
   type: 'leaf' | 'horizontal' | 'vertical';
   width: number;
@@ -625,10 +625,10 @@ export interface TmuxLayoutNode {
 // -----------------------------------------------------------------------------
 // Server-side scrollback (viewport on demand)
 //
-// tmux is the authoritative store for both the visible region and the
+// herdr is the authoritative store for both the visible region and the
 // scrollback. The frontend keeps no buffer of its own; it asks for a
 // `viewport` window (offset rows above the live edge) and the server
-// answers with the lines tmux currently has for that range.
+// answers with the lines herdr currently has for that range.
 // -----------------------------------------------------------------------------
 
 export interface PaneCursor {
@@ -648,7 +648,7 @@ export interface PaneViewport {
   lines: string[];         // exactly `rows` entries, top-to-bottom, ANSI-encoded
   cursor: PaneCursor;      // cursor.visible=false when offset>0 (scrolled away)
   modes: PaneModes;
-  // tmux history_size at capture time. Total scrollback extent above the
+  // Scrollback extent at capture time (capped by herdr's read limit) above the
   // live edge — the frontend uses this to size its ScrollOverlay.
   historySize: number;
   // Echo of the request's offset (0 = live edge, N = N rows scrolled up).
@@ -679,7 +679,7 @@ export type ControlClientMessage =
 export type ControlServerMessage =
   | { type: 'layout'; layout: TmuxLayoutNode }
   // Viewport payload. Sent in reply to `request-viewport` and pushed
-  // unsolicited to live-mode (offset=0) subscribers when tmux emits output.
+  // unsolicited to live-mode (offset=0) subscribers when the pane emits output.
   | { type: 'viewport'; viewport: PaneViewport }
   | { type: 'ready' }
   | { type: 'pong'; timestamp: number }
@@ -702,7 +702,7 @@ export type MuxClientMessage =
 
 // Runtime validation for client→server /ws/mux frames. The unions above are
 // compile-time only; the WS handler receives untrusted JSON and interpolates
-// paneId/cols/rows into tmux control-mode command strings, so every frame is
+// paneId/cols/rows into backend RPC parameters, so every frame is
 // validated here before dispatch (#231). Unknown keys are stripped (zod
 // default), so forward-compatible clients are unaffected.
 const WsPaneDim = z.number().int().min(1).max(2000);

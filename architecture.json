@@ -1,30 +1,22 @@
 {
   "name": "CC Hub",
   "version": "0.1.192",
-  "generated": "2026-07-14",
-  "summary": "Web-based terminal session manager for Claude Code / Codex. Runs agents in tmux sessions and provides a web UI for remote access from tablets/mobile devices. Also ships a local TUI (cchub tui), an EVEN G2 smart-glasses app, and multi-server federation over Tailscale (peers).",
+  "generated": "2026-07-15",
+  "summary": "Web-based terminal session manager for Claude Code / Codex. Runs agents in herdr workspaces and provides a web UI for remote access from tablets/mobile devices",
   "stack": {
     "backend": "Bun runtime + Hono",
     "frontend": "React 19 + Vite + Tailwind v4 + xterm.js",
     "shared": "Zod v4 schemas in shared/types.ts",
-    "transport": "Multiplexed WebSocket /ws/mux + tmux -CC control mode。ターミナル表示はサーバーサイドスクロールバック方式: tmux capture-pane による PaneViewport フレーム (rows 行 + cursor/modes + offset) を配信し、フロントは VT シーケンスへ変換して xterm.js (scrollback:0) に書き込む render-only 構成"
+    "transport": "Multiplexed WebSocket /ws/mux + herdr socket API (NDJSON RPC) + per-pane control streams。ターミナル表示はサーバーサイドスクロールバック方式: pane.read による PaneViewport フレーム配信 (履歴は herdr が保持、最大1000行)"
   },
   "workspaces": [
     {
       "name": "backend",
-      "desc": "Hono API サーバ (Bun)。tmux 制御・履歴・peer 連携・CLI (cchub) を提供"
+      "desc": "Hono API サーバ (Bun)。herdr 制御・履歴・peer 連携・CLI (cchub) を提供"
     },
     {
       "name": "frontend",
       "desc": "React SPA。タブレット/モバイル/デスクトップの3レイアウト"
-    },
-    {
-      "name": "shared",
-      "desc": "Zod スキーマと型 (types.ts)。backend / frontend / tui が共有"
-    },
-    {
-      "name": "tui",
-      "desc": "cchub tui (Ink + React)。ローカル専用のセッション一覧/履歴検索、入室は native tmux attach"
     },
     {
       "name": "glasses",
@@ -40,8 +32,8 @@
     "            |",
     "            |  HTTPS / WSS (Tailscale certs)",
     "            v",
-    "   +------------------+  tmux -CC     +------+  pipe  +---------------------+",
-    "   | Hono API server  | <-----------> | tmux | <----> | Claude Code / Codex |",
+    "    +------------------+  NDJSON/ctrl  +-------+  PTY   +---------------------+",
+    "    | Hono API server  | <-----------> | herdr | <----> | Claude Code / Codex |",
     "   |   (Bun, :5923)   |  control mode +------+        |       (panes)       |",
     "   +--------+---------+                               +---------------------+",
     "            |",
@@ -54,39 +46,39 @@
   "backend": {
     "services": [
       {
-        "name": "TmuxControlSession",
-        "file": "backend/src/services/tmux-control.ts",
-        "summary": "tmux -CC (control mode) を管理するコア。%output (octal) / %layout-change / %begin / %end / %error / %exit を解析し、FIFO コマンドキュー + 直列化ロックでコマンド送信。raw byte 処理で分割 UTF-8 を保持。クライアント消滅後 30s のグレースピリオド、deviceType (mobile/desktop) 別のクライアント追跡を提供",
+        "name": "HerdrClient",
+        "file": "backend/src/services/herdr-client.ts",
+        "summary": "herdr socket API の低レベルクライアント。NDJSON RPC (1接続=1リクエスト、events.subscribe のみ維持)、streaming TextDecoder による UTF-8 安全な行リーダー、pane id 変換 (%N ↔ wK:pN)、PaneController (常駐 control stream: raw入力 base64 / terminal.resize / terminal.frame 受信)",
+        "deps": []
+      },
+      {
+        "name": "HerdrControlSession",
+        "file": "backend/src/services/herdr-control.ts",
+        "summary": "CC Hub セッション (= herdr workspace) ごとに1インスタンス。split 木の所有、フォーカス追跡、lazy controllers (WS購読/初回入力のみ、読み取りRESTは純RPC)、フレーム走査による cursor/alt-screen 追跡、30s grace。captureViewportHerdr で viewport 合成 (visible / recent スライス、1000行キャップ)",
         "deps": [
-          "TmuxLayoutParser",
-          "TmuxOctalDecoder"
+          "HerdrClient",
+          "HerdrLayout"
         ]
       },
       {
-        "name": "TmuxService",
-        "file": "backend/src/services/tmux.ts",
-        "summary": "tmux セッション一覧 (2s cache)。`ps -A -o tty,args` を 3s に1回だけ実行し、TTY↔エージェント対応・エージェント情報抽出に共用。~/.config/cchub/tmux.conf (F11/F12 バインド、mouse on、10k history) を自動生成してサーバ起動時に source",
+        "name": "HerdrLayout",
+        "file": "backend/src/services/herdr-layout.ts",
+        "summary": "CC Hub 自前の split 木 (headless では herdr グリッドがリサイズ不能)。split/close/zoom/ratio調整/絶対サイズ指定を tmux 慣習の TmuxLayoutNode 矩形にレンダリング",
         "deps": []
       },
       {
-        "name": "TmuxLayoutParser",
-        "file": "backend/src/services/tmux-layout-parser.ts",
-        "summary": "tmux layout 文字列 (checksum,WxH,X,Y{...}) を TmuxLayoutNode ツリーへ再帰パースし、フロントエンド描画用の構造に変換",
-        "deps": []
-      },
-      {
-        "name": "TmuxOctalDecoder",
-        "file": "backend/src/services/tmux-octal-decoder.ts",
-        "summary": "%output の octal エスケープ (\\NNN) を復号し、send-keys -H 用の hex エンコードを提供。%output 行間で分割された UTF-8 マルチバイト列を raw byte 処理で保持",
-        "deps": []
-      },
-      {
-        "name": "PaneViewport",
-        "file": "backend/src/services/pane-viewport.ts",
-        "summary": "capture-pane -e -p -S/-E でペインの viewport (可視領域 + scrollback offset) を取得。tmux が表示と履歴の single source of truth。非 altScreen TUI (Claude Code 等) には padFill: 末尾 blank 行を cursor 行まで trim し scrollback を prepend して「void」を見せない。ペイン状態 (permission_prompt / ask_user_question / processing / idle) の regex 検出も提供",
+        "name": "HerdrService",
+        "file": "backend/src/services/herdr.ts",
+        "summary": "セッションレベル操作を herdr workspace にマッピング。一覧 (pane.process_info でエージェント検出、agent.list で native session id、blocked 状態)、作成/削除、プレビュー",
         "deps": [
-          "ViewportCursorPolicy"
+          "HerdrClient"
         ]
+      },
+      {
+        "name": "PaneState",
+        "file": "backend/src/services/pane-state.ts",
+        "summary": "stripAnsi / detectPaneState ヒューリスティック (cchub send --wait / peek 用のペイン状態判定)",
+        "deps": []
       },
       {
         "name": "ViewportCursorPolicy",
@@ -312,7 +304,7 @@
         "method": "GET",
         "path": "/api/sessions",
         "group": "Sessions",
-        "description": "全 tmux セッション一覧 (Claude Code 状態・ペイン情報付き)",
+        "description": "全セッション一覧 (Claude Code 状態・ペイン情報付き)",
         "file": "backend/src/routes/sessions.ts"
       },
       {
@@ -333,7 +325,7 @@
         "method": "DELETE",
         "path": "/api/sessions/:id",
         "group": "Sessions",
-        "description": "tmux セッションを kill。last-known 情報は保持",
+        "description": "セッション (herdr workspace) を close。last-known 情報は保持",
         "file": "backend/src/routes/sessions.ts"
       },
       {
@@ -368,7 +360,7 @@
         "method": "GET",
         "path": "/api/sessions/:id/copy-mode",
         "group": "Sessions",
-        "description": "tmux copy mode の選択状態を取得",
+        "description": "copy mode 状態を取得 (herdr では常に false)",
         "file": "backend/src/routes/sessions.ts"
       },
       {
@@ -424,7 +416,7 @@
         "method": "GET",
         "path": "/api/sessions/clipboard",
         "group": "Sessions",
-        "description": "tmux グローバルペーストバッファの内容を取得",
+        "description": "ペーストバッファの内容を取得 (herdr では常に null)",
         "file": "backend/src/routes/sessions.ts"
       },
       {
@@ -480,7 +472,7 @@
         "method": "POST",
         "path": "/api/sessions/history/resume",
         "group": "Session History",
-        "description": "履歴からセッションを resume (新規 tmux セッション作成)",
+        "description": "履歴からセッションを resume (新規 workspace 作成、会話記録の cwd を優先)",
         "file": "backend/src/routes/sessions.ts"
       },
       {
@@ -773,7 +765,7 @@
       {
         "name": "DesktopLayout",
         "file": "frontend/src/components/DesktopLayout.tsx",
-        "summary": "デスクトップ / タブレット向けメインレイアウト。tmux 制御モード統合、ペインツリー管理、キーボードショートカット",
+        "summary": "デスクトップ / タブレット向けメインレイアウト。ターミナル制御統合、ペインツリー管理、キーボードショートカット",
         "hooks": [
           "useMultiplexedTerminal",
           "usePeerConnection",
@@ -808,7 +800,7 @@
       {
         "name": "Terminal",
         "file": "frontend/src/components/Terminal.tsx",
-        "summary": "xterm.js ターミナル (WebGL、scrollback:0)。viewport フレームを VT シーケンスに変換して term.write() で反映。tmux サイズ同期 (setExactSize)、フォント調整、テキスト選択",
+        "summary": "xterm.js ターミナル (WebGL、scrollback:0)。viewport フレームを VT シーケンスに変換して term.write() で反映。レイアウト由来のサイズ同期 (setExactSize)、フォント調整、テキスト選択",
         "hooks": [
           "useSelectionMode"
         ],
@@ -1503,15 +1495,15 @@
         "ブラウザ (xterm onData / InputBar)",
         "useMultiplexedTerminal.sendInput → JSON { type:'input', sessionId, paneId, data: base64 }",
         "/ws/mux (terminal-mux.ts) で zod 検証",
-        "TmuxControlSession.sendKeys (hex エンコードで send-keys -H)",
-        "tmux pane → Claude Code / Codex プロセス"
+        "HerdrControlSession.sendInput (control stream に raw bytes / base64)",
+        "herdr pane PTY → Claude Code / Codex プロセス"
       ]
     },
     {
       "name": "ターミナル出力表示 (viewport)",
       "steps": [
-        "tmux %output (control mode)",
-        "TmuxControlSession が出力を検知",
+        "herdr terminal.frame (pane control stream)",
+        "HerdrControlSession が出力を検知 (フレーム到着)",
         "PaneViewport が capture-pane -e -p で可視領域を取得 (非 altScreen は padFill)",
         "viewport フレーム { paneId, lines, cursor, modes, historySize, offset, atTail } を live 購読者へ push",
         "フロント: viewportToVTSequence() で VT シーケンス化",
@@ -1532,8 +1524,8 @@
       "name": "レイアウト同期",
       "steps": [
         "ペイン操作 (split / close / resize / zoom)",
-        "tmux %layout-change イベント",
-        "TmuxLayoutParser がレイアウト文字列を TmuxLayoutNode へ変換",
+        "split/resize 操作 or pane イベント → reconcile",
+        "HerdrLayout が split 木を TmuxLayoutNode 矩形へ変換",
         "layout フレームを全購読クライアントへ配信",
         "PaneContainer がツリー再描画、Terminal.setExactSize() でサイズ確定"
       ]

@@ -2,7 +2,7 @@
 
 ## Goal
 
-CC Hub can create, detect, and display tmux sessions that run either Claude Code or OpenAI Codex CLI.
+CC Hub can create, detect, and display sessions (herdr workspaces) that run either Claude Code or OpenAI Codex CLI.
 
 Claude Code remains the default agent. Codex is supported as a first-class additional agent provider with detection, session metadata, conversation viewing (`useCodexConversation`), and usage tracking (`CodexUsageService`).
 
@@ -11,7 +11,7 @@ Claude Code remains the default agent. Codex is supported as a first-class addit
 - Add `claude` / `codex` as supported session agent providers.
 - Allow the session creation API to receive an optional `agent`.
 - Start the selected agent in the selected working directory.
-- Detect running Claude Code and Codex processes from tmux pane TTYs.
+- Detect running Claude Code and Codex processes from each pane's foreground process group (herdr `pane.process_info`).
 - Return the detected `agent` in session API responses.
 - Read basic Codex thread metadata from the local Codex state database.
 - Add a Claude/Codex selector to the new session modal.
@@ -47,7 +47,7 @@ The backend starts the selected agent with:
 cd '<workingDir>' && <agent>
 ```
 
-The working directory is shell-quoted before being sent to tmux.
+The working directory is shell-quoted before being typed into the pane.
 
 ### Duplicate Guard
 
@@ -61,7 +61,7 @@ For example:
 
 ### Process Detection
 
-The tmux service inspects processes by pane TTY and detects:
+The herdr service inspects each pane's foreground processes and detects:
 
 - Claude Code: `claude` or Claude versioned paths
 - Codex: `codex` or `@openai/codex` paths
@@ -72,7 +72,7 @@ When a supported agent is detected on a pane TTY:
 - session `agent` is set to `claude` or `codex`
 - pane `currentCommand` becomes `claude` or `codex`
 
-If no supported agent is detected, existing tmux command behavior remains.
+If no supported agent is detected, the pane is treated as a plain shell.
 
 ### UI
 
@@ -100,7 +100,7 @@ This metadata enriches Codex session cards and feeds the conversation viewer. Cl
   - Adds optional `agent` to `CreateSessionSchema`, defaulting to `claude`.
 - `backend/src/services/session-metadata.ts`
   - Persists optional `agent` in last-known session metadata.
-- `backend/src/services/tmux.ts`
+- `backend/src/services/herdr.ts`
   - Adds Codex process detection.
   - Adds TTY-to-agent mapping.
   - Selects an agent pane as the representative session pane when available.
@@ -154,7 +154,7 @@ The registry is used to derive:
 - `CreateSessionSchema` enum values
 - frontend selector options
 - backend start command
-- tmux process matching
+- pane process matching
 - provider capability checks
 
 Claude-specific services remain Claude-specific, but callers use capability checks such as `supportsConversationMetadata` where practical instead of relying only on direct `agent === 'claude'` checks.
@@ -175,7 +175,7 @@ Completed checks:
 ## Follow-Up Tasks
 
 1. Add route-level tests for duplicate handling by same agent and working directory.
-2. Add integration coverage for tmux process detection when a real Codex process is running.
+2. Add integration coverage for pane process detection when a real Codex process is running.
 3. Decide whether Claude and Codex should be allowed to share the same working directory at the same time.
 4. Add visible agent badges or filters to the session list if useful.
 5. Investigate whether Codex exposes additional stable metadata that can be shown alongside Claude Code metadata.

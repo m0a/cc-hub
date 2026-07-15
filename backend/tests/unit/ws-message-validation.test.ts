@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { MuxClientMessageSchema } from '../../../shared/types';
-import { assertPaneId } from '../../src/services/tmux-control';
+import { assertPaneId } from '../../src/services/herdr-control';
 
 // Regression for #231: the /ws/mux dispatch must validate every frame before
-// any field reaches a tmux control-mode command. paneId/cols/rows are
-// interpolated into command strings written to tmux stdin, which parses
-// line-by-line — a newline in an argument injects an arbitrary command (RCE).
+// any field reaches a backend command. paneId is mapped into herdr pane ids
+// and interpolated into RPC params, so every frame is validated up front and
+// assertPaneId remains the sink-level backstop.
 
 describe('MuxClientMessageSchema', () => {
   test('accepts valid control + subscription frames', () => {

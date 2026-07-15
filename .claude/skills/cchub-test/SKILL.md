@@ -5,7 +5,7 @@ description: CC Hub のブラウザテストを実行する。dev環境を起動
 
 # CC Hub Browser Test
 
-CC Hub の tmux control mode 機能をブラウザで自動テストするスキル。
+CC Hub のターミナル機能（herdr バックエンド）をブラウザで自動テストするスキル。
 
 ## Prerequisites
 
@@ -59,21 +59,21 @@ agent-browser screenshot
 
 #### 4-3. ペイン分割テスト (Ctrl+D)
 ```bash
-tmux list-panes -t <session> -F '#{pane_id} #{pane_width}x#{pane_height}'
+curl -sk "https://localhost:3456/api/sessions/<session>/panes/%251/viewport?lines=1" | jq '{rows, cols}'   # ペインPTYサイズ確認
 agent-browser press Control+d  # 横分割
 sleep 2
-tmux list-panes -t <session> -F '#{pane_id} #{pane_width}x#{pane_height}'
+curl -sk "https://localhost:3456/api/sessions/<session>/panes/%251/viewport?lines=1" | jq '{rows, cols}'   # ペインPTYサイズ確認
 agent-browser screenshot
 ```
 
 #### 4-4. ペインリサイズ ショートカットテスト
 ```bash
-echo "=== Before ===" && tmux list-panes -t <session> -F '#{pane_id} #{pane_width}x#{pane_height}'
+echo "=== Before ===" && curl -sk "https://localhost:3456/api/sessions/<session>/panes/%251/viewport?lines=1" | jq '{rows, cols}'   # ペインPTYサイズ確認
 
 # Ctrl+Shift+Right: 右に5カラム広げる
 agent-browser press Control+Shift+ArrowRight
 sleep 1
-echo "=== After Right ===" && tmux list-panes -t <session> -F '#{pane_id} #{pane_width}x#{pane_height}'
+echo "=== After Right ===" && curl -sk "https://localhost:3456/api/sessions/<session>/panes/%251/viewport?lines=1" | jq '{rows, cols}'   # ペインPTYサイズ確認
 
 # Ctrl+Shift+Left: 左に5カラム縮める
 agent-browser press Control+Shift+ArrowLeft
@@ -82,7 +82,7 @@ sleep 1
 # Ctrl+Shift+=: 均等化
 agent-browser press Control+Shift+Equal
 sleep 1
-echo "=== After equalize ===" && tmux list-panes -t <session> -F '#{pane_id} #{pane_width}x#{pane_height}'
+echo "=== After equalize ===" && curl -sk "https://localhost:3456/api/sessions/<session>/panes/%251/viewport?lines=1" | jq '{rows, cols}'   # ペインPTYサイズ確認
 ```
 
 **注意**: headless ブラウザで `Ctrl+Alt+Arrow` は動作しないが `Ctrl+Shift+Arrow` は動作する。
@@ -108,9 +108,9 @@ agent-browser mouse move $((CENTER_X - 150)) 360 --steps 20
 sleep 0.3
 agent-browser mouse up
 
-# tmuxサイズ変更確認
+# サイズ変更確認 (viewport REST の rows/cols で検証)
 sleep 3
-tmux list-panes -t <session> -F '#{pane_id} #{pane_width}x#{pane_height}'
+curl -sk "https://localhost:3456/api/sessions/<session>/panes/%251/viewport?lines=1" | jq '{rows, cols}'   # ペインPTYサイズ確認
 ```
 
 #### 4-6. リサイズ無限ループ確認
@@ -123,10 +123,10 @@ tail -100 /tmp/cchub-dev.log | grep -c '\[Resize\]'
 
 #### 4-7. リロード後の維持確認
 ```bash
-echo "=== Before reload ===" && tmux list-panes -t <session> -F '#{pane_id} #{pane_width}x#{pane_height}'
+echo "=== Before reload ===" && curl -sk "https://localhost:3456/api/sessions/<session>/panes/%251/viewport?lines=1" | jq '{rows, cols}'   # ペインPTYサイズ確認
 agent-browser open https://localhost:3456
 agent-browser wait 5000
-echo "=== After reload ===" && tmux list-panes -t <session> -F '#{pane_id} #{pane_width}x#{pane_height}'
+echo "=== After reload ===" && curl -sk "https://localhost:3456/api/sessions/<session>/panes/%251/viewport?lines=1" | jq '{rows, cols}'   # ペインPTYサイズ確認
 # サイズが同じであること
 ```
 

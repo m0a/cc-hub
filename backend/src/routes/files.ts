@@ -4,12 +4,12 @@ import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { FileService } from '../services/file-service';
 import { FileChangeTracker } from '../services/file-change-tracker';
-import { TmuxService } from '../services/tmux';
+import { HerdrService } from '../services/herdr';
 import type { FileListResponse, FileReadResponse, FileChangesResponse, FileInfo, GitChangesResponse, GitDiffResponse, GitFileChange, GitChangeStatus } from '../../../shared/types';
 
 const fileService = new FileService();
 const changeTracker = new FileChangeTracker();
-const tmuxService = new TmuxService();
+const tmuxService = new HerdrService();
 
 /**
  * The client supplies `sessionWorkingDir` as the base for file access. It MUST

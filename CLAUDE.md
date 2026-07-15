@@ -39,19 +39,17 @@ bun run stop
 backend/     # Hono API server (Bun runtime)
 frontend/    # React SPA (Vite + Tailwind v4)
 shared/      # Shared types and Zod schemas (types.ts)
-tui/         # Local terminal UI for `cchub tui` (embed-tui: full-screen, tmux-direct, plain Bun)
 glasses/     # EVEN G2 smart glasses app (EvenHub SDK, built to out.ehpk)
 ```
 
 ### Backend Services
 
-- **TmuxControlSession** (`services/tmux-control.ts`) - Core service for tmux `-CC` control mode. Manages subprocess lifecycle, processes structured protocol messages (`%output`, `%layout-change`, `%begin`/`%end`/`%error`, `%exit`), handles raw byte streams for UTF-8 preservation, command queuing with FIFO correlation, per-pane output routing, client lifecycle with 30s grace period
-- **TmuxService** (`services/tmux.ts`) - Manages tmux sessions, spawns Claude Code processes, collects all pane info per session, batch agent info extraction
-- **TmuxLayoutParser** (`services/tmux-layout-parser.ts`) - Parses tmux layout strings into `TmuxLayoutNode` tree for frontend rendering
-- **TmuxOctalDecoder** (`services/tmux-octal-decoder.ts`) - Decodes tmux octal-encoded output, raw byte processing for split UTF-8 sequences, hex encoding for `send-keys -H`
-- **PaneViewport** (`services/pane-viewport.ts`) - Captures a viewport (visible region + optional scrollback offset) from a pane via `capture-pane -e -p -S/-E`. tmux is the single source of truth for both visible content and history; the frontend is render-only with `scrollback: 0`. Includes `padFill` for normal-screen inline TUIs (Claude Code etc.) that don't paint the full pane height — trims trailing blanks down to the cursor row and prepends scrollback so the user never sees "void" rows, shifting the cursor `y` accordingly. altScreen TUIs (htop/vim/Codex) are returned untouched
-- **ViewportCursorPolicy** (`services/viewport-cursor-policy.ts`) - Per-agent cursor policy for viewport frames (`default` vs `codex-footer`), decides cursor visibility and padFill cursor shift
-- **ClaudeCodeService** (`services/claude-code.ts`) - Monitors Claude Code state from `.jsonl` files, PTY-based session matching
+- **HerdrClient** (`services/herdr-client.ts`) - Low-level herdr socket API client: NDJSON RPC over `~/.config/herdr/herdr.sock` (one connection per request; `events.subscribe` held open), streaming-safe UTF-8 line reader, pane id mapping (`%N ↔ wK:pN`), and `PaneController` — a persistent `herdr terminal session control` subprocess per pane carrying raw PTY input (base64, no sanitization), absolute PTY resizes, and `terminal.frame` output records
+- **HerdrControlSession** (`services/herdr-control.ts`) - One instance per CC Hub session (= one herdr workspace). Owns the pane split tree, tracks the focused pane, spawns lazy per-pane controllers (WS subscribe / first input only — read-only REST never takes over a pane), scans frames for cursor position and alt-screen state, client lifecycle with 30s grace period. Also `captureViewportHerdr`: viewport composition from `pane.read` (visible at offset 0, `recent` slice for scrollback, capped at herdr's 1000-line read limit)
+- **HerdrLayout** (`services/herdr-layout.ts`) - CC Hub-owned split tree (herdr's own grid can't be resized headlessly): split/close/zoom/ratio adjust/absolute pane sizing, rendered to tmux-convention `TmuxLayoutNode` rects for the frontend
+- **HerdrService** (`services/herdr.ts`) - Session-level operations mapping CC Hub sessions onto herdr workspaces: list (with agent detection from `pane.process_info`, native agent session ids from `agent.list`, `blocked` status), create/kill, previews
+- **PaneState** (`services/pane-state.ts`) - Backend-agnostic `stripAnsi` / `detectPaneState` heuristics for peer-dialog tooling (`cchub send --wait`, `cchub peek`)
+- **ClaudeCodeService** (`services/claude-code.ts`) - Monitors Claude Code state from `.jsonl` files; session matching via herdr's native agent session id, falling back to working-dir path matching
 - **SessionHistoryService** (`services/session-history.ts`) - Reads past Claude Code session history and conversations
 - **SessionMetadataService** (`services/session-metadata.ts`) - Persists session metadata (theme, title, session order, last known sessions for recovery after reboot)
 - **SessionsService** (`services/sessions.ts`) - Session CRUD operations with file-based persistence
@@ -268,22 +266,23 @@ glasses/     # EVEN G2 smart glasses app (EvenHub SDK, built to out.ehpk)
 ### Terminal Communication
 
 ```
-Browser <--WebSocket (/ws/mux, JSON+binary)--> Hono Server <--tmux -CC (control mode)--> tmux <--pipe--> Claude Code
+Browser <--WebSocket (/ws/mux, JSON)--> Hono Server <--NDJSON socket + per-pane control streams--> herdr server <--PTY--> Claude Code
 ```
 
-The backend upgrades HTTP to WebSocket at `/ws/mux`. A single multiplexed connection manages multiple session subscriptions. Each subscription creates a `TmuxControlSession` that manages `tmux -CC attach`, parsing structured protocol messages (`%output`, `%layout-change`, `%begin/%end/%error`, `%exit`). Terminal I/O is multiplexed per-pane and per-session using `MuxClientMessage` / `MuxServerMessage` types in `shared/types.ts`.
+The backend upgrades HTTP to WebSocket at `/ws/mux`. A single multiplexed connection manages multiple session subscriptions. Each subscription creates a `HerdrControlSession` (one per herdr workspace) that talks to the herdr server over its socket API and holds one `PaneController` (persistent `herdr terminal session control` subprocess) per pane for raw input, PTY sizing, and `terminal.frame` output events. Terminal I/O is multiplexed per-pane and per-session using `MuxClientMessage` / `MuxServerMessage` types in `shared/types.ts`.
 
-The frontend is **render-only**: xterm.js has `scrollback: 0`, and history is held exclusively by tmux. The server periodically and on-demand sends `PaneViewport` frames (a snapshot of `rows` lines at a given scrollback offset, plus cursor/mode metadata) which the client applies via `viewportToVTSequence()` + `term.write()`.
+The frontend is **render-only**: xterm.js has `scrollback: 0`, and history is held by herdr. The server periodically and on-demand sends `PaneViewport` frames (a snapshot of `rows` lines at a given scrollback offset, plus cursor/mode metadata) which the client applies via `viewportToVTSequence()` + `term.write()`.
 
 Key behaviors:
 - **Session push**: Server pushes `sessions-updated` every 5s with full session list (replaces polling)
-- **Layout sync**: `%layout-change` events update all connected clients in real-time
-- **Size management**: Client sends container size, tmux determines pane dimensions, xterm.js uses `setExactSize()` from layout. `setClientSize` absorbs ±1-row mobile noise so viewports don't re-emit on minor resize
-- **Viewport protocol**: Client sends `request-viewport { paneId, offset }`. Server replies (and live-mode subscribers also receive unsolicited pushes on tmux output) with `viewport { paneId, cols, rows, lines, cursor, modes, historySize, offset, atTail }`. `offset=0` = live edge; `offset>0` = N rows above into scrollback
+- **Layout**: CC Hub owns the split tree (`herdr-layout.ts`) because the herdr grid can't be resized headlessly; pane PTYs are sized individually via each pane's control stream, and layout updates go to all connected clients
+- **Size management**: Client sends container size, the split tree computes pane rects, xterm.js uses `setExactSize()` from layout. `setClientSize` absorbs ±1-row mobile noise so viewports don't re-emit on minor resize
+- **Viewport protocol**: Client sends `request-viewport { paneId, offset }`. Server replies (and live-mode subscribers also receive unsolicited pushes on frame arrival) with `viewport { paneId, cols, rows, lines, cursor, modes, historySize, offset, atTail }`. `offset=0` = live edge (pane.read visible); `offset>0` = `recent` slice N rows above — capped at herdr's 1000-line read limit
 - **Initial viewport**: Sent immediately on `subscribe` so mobile doesn't show a gray canvas while waiting for the first resize round-trip
-- **padFill (Claude TUI etc.)**: For non-altScreen panes the server trims trailing blanks down to the cursor row and prepends scrollback to fill the pane, so the user never sees a "void" of unrendered cells. Cursor `y` is shifted by the prepend length to track the shell's view
+- **Cursor / alt-screen**: Scanned from control-stream frames (trailing CUP + `?25h/l`, `1049h/l` transitions; initial alt state guessed from a non-shell foreground process with zero host scrollback)
+- **Lazy controllers**: Read-only REST access (`cchub peek`, viewport snapshots, previews) is pure RPC and never takes over a pane; control streams spawn on WS subscribe or first input
 - **Scroll to live**: Tapping the terminal or showing the soft keyboard forces the client back to `offset=0`
-- **UTF-8**: Raw byte processing to handle split multi-byte sequences across `%output` lines
+- **Input**: Raw bytes (base64) over the pane's control stream — mouse SGR, bracketed paste, and escape sequences pass through intact; ordering guaranteed by the single stdin pipe
 
 ## CLI Commands
 
@@ -312,9 +311,6 @@ cchub send local:dev:%1 --wait "y"  # Send, then snapshot viewport with detected
                                     # (--wait-ms <n> delay, --lines <n> rows)
 cchub peek local:dev:%1             # Snapshot a pane viewport (--lines <n>, default 20)
 
-# Local terminal UI (tui/ workspace, embed-tui)
-cchub tui               # Launch the full-screen session manager (sidebar + live terminal)
-
 # Debugging (Bun inspector on the running service)
 cchub debug status      # Show inspector state
 cchub debug enable      # Enable inspector (port 9229)
@@ -325,8 +321,6 @@ cchub debug profile --seconds 30   # Enable for N seconds then auto-disable
 cchub --help
 cchub --version
 ```
-
-The `cchub tui` subcommand is a local-only, full-screen terminal UI (`embed-tui`) implemented in the `tui/` workspace (plain Bun, no Ink/React). It uses **tmux as the backend only** (PTY + terminal rendering) and renders its own UI: a left sidebar + the selected session's live terminal (drawn from `capture-pane`), with input forwarded via `send-keys`. It talks to tmux directly (no HTTP/WS API), so it works even without the CC Hub server running. Features: mouse-driven selection/focus, new-session file-manager, resume-from-history (`~/.claude/projects` → `claude -r`), right-click close, wheel scroll. Requires a real raw-mode TTY (not a pipe/wrapper). See `tui/README.md`. Entry: `tui/src/embed/embed-tui.ts`.
 
 ### CLI Options
 
@@ -341,7 +335,8 @@ The `cchub tui` subcommand is a local-only, full-screen terminal UI (`embed-tui`
 - Tailscale must be running (used for HTTPS certificates)
 - Run `sudo tailscale set --operator=$USER` once to allow cert generation
 - macOS: Install Tailscale via `brew install tailscale` (App Store version lacks CLI)
-- tmux must be installed and accessible
+- herdr must be installed (`curl -fsSL https://herdr.dev/install.sh | sh` or `brew install herdr`); cchub auto-starts `herdr server` if it isn't running, but a supervised setup (systemd user unit with `Restart=always` + `~/.config/herdr/config.toml` with `resume_agents_on_restore = true`) is strongly recommended so agent sessions survive server restarts
+- For Claude session identity/restore, install the herdr agent integration once: `herdr integration install claude`
 
 ## Claude Code / Codex Hook通知連携
 
@@ -434,18 +429,14 @@ Frontend `console.log/warn/error/info` calls are automatically sent to the backe
 
 This enables debugging on mobile/tablet devices without access to browser DevTools. Use `tail -f /tmp/cc-hub-browser.log` to monitor frontend logs in real-time (also exposed via `GET /api/logs`).
 
-### TMUX Nesting Caveat
+### herdr Server State
 
-When running the dev server from within a tmux session (e.g., from a CC Hub terminal), the `$TMUX` environment variable is inherited by child processes. This causes `tmux -CC attach` (used by the backend for terminal control) to fail with "sessions should be nested with care".
+If all terminals show "Connecting..." / "Session exited", check the herdr server first:
 
-**Symptom**: All terminals show "Connecting..." / "Session exited: process exited"
-
-**Fix**: Start the dev server with `$TMUX` unset:
 ```bash
-nohup env -u TMUX bun run dev > /tmp/cchub-dev.log 2>&1 &
+herdr status server                 # running? protocol version?
+systemctl --user status herdr      # if supervised via systemd
 ```
 
-<!-- SPECKIT START -->
-Active feature plan: `specs/002-cchub-tui/plan.md` (CC Hub TUI — local `cchub tui` subcommand).
-For technologies, project structure, and constraints of in-flight feature work, read the current plan.
-<!-- SPECKIT END -->
+cchub auto-starts `herdr server` at boot when the socket (`~/.config/herdr/herdr.sock`, or `$HERDR_SOCKET_PATH`) is unreachable. herdr's own log lives at `~/.config/herdr/herdr-server.log`. Sessions (workspaces) live in the herdr server process — restarting cchub never kills them; restarting herdr restores workspaces from `session.json` and, with `resume_agents_on_restore`, resumes agent conversations natively.
+

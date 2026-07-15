@@ -2,8 +2,12 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { homedir } from 'node:os';
 import { AGENT_PROVIDERS, AGENT_PROVIDER_IDS, CreateSessionSchema, DEFAULT_AGENT_PROVIDER, PaneIdSchema, SessionIdSchema, agentResumeCommand, agentSupportsConversationMetadata, type AgentProvider, type IndicatorState, type PaneInfo, type ExtendedSessionResponse, type SessionState } from '../../../shared/types';
-import { TmuxService } from '../services/tmux';
-import { controlSessions, getOrCreateControlSession } from '../services/tmux-control';
+import { HerdrService } from '../services/herdr';
+import {
+  captureViewportHerdr,
+  getOrCreateHerdrControlSession,
+  type HerdrControlSession,
+} from '../services/herdr-control';
 import { ClaudeCodeService } from '../services/claude-code';
 import { CodexService } from '../services/codex';
 import { CodexConversationService } from '../services/codex-conversation';
@@ -14,11 +18,9 @@ import { getAllSessionMetadata, setSessionTheme, setSessionTitle, getSessionOrde
 import { computeSessionMetrics } from '../services/session-metrics';
 import { getIndicatorOverride } from './notify';
 import { pushSessionsNow } from './terminal-mux';
-import { captureViewport, detectPaneState, stripAnsi, type DetectedPaneState } from '../services/pane-viewport';
-import { resolveViewportCursorPolicy } from '../services/viewport-cursor-policy';
-import type { TmuxControlSession } from '../services/tmux-control';
+import { detectPaneState, stripAnsi, type DetectedPaneState } from '../services/pane-state';
 
-const tmuxService = new TmuxService();
+const tmuxService = new HerdrService();
 const claudeCodeService = new ClaudeCodeService();
 const codexService = new CodexService();
 const codexConversationService = new CodexConversationService();
@@ -60,10 +62,9 @@ function notifySessionChange(): void {
  * stripped variants plus a heuristic `detectedState`.
  */
 async function captureViewportSnapshot(
-  cs: TmuxControlSession,
+  cs: HerdrControlSession,
   paneId: string,
   lines: number,
-  cursorPolicy: ReturnType<typeof resolveViewportCursorPolicy> = 'default',
 ): Promise<{
   paneId: string;
   cols: number;
@@ -74,7 +75,7 @@ async function captureViewportSnapshot(
   cursor: { x: number; y: number; visible: boolean };
   detectedState: DetectedPaneState;
 } | null> {
-  const vp = await captureViewport(cs, paneId, 0, cursorPolicy);
+  const vp = await captureViewportHerdr(cs, paneId, 0);
   if (!vp) return null;
   const slice = lines > 0 ? vp.lines.slice(-lines) : vp.lines;
   const stripped = slice.map(stripAnsi);
@@ -90,10 +91,52 @@ async function captureViewportSnapshot(
   };
 }
 
-async function resolveSessionCursorPolicy(sessionId: string): Promise<ReturnType<typeof resolveViewportCursorPolicy>> {
-  const sessions = await tmuxService.listSessions();
-  const session = sessions.find(s => s.id === sessionId);
-  return resolveViewportCursorPolicy(session?.agent ?? session?.currentCommand);
+/**
+ * Run `fn` against the session's control session with REST client
+ * accounting: addClient/removeClient bracket the call so a control session
+ * created solely for a one-shot REST request (cchub peek/send, peer calls)
+ * starts its grace timer afterwards and gets cleaned up instead of leaking
+ * its per-pane controller subprocesses forever.
+ */
+async function withControlSession<T>(
+  sessionId: string,
+  fn: (cs: HerdrControlSession) => Promise<T>,
+): Promise<T> {
+  const cs = await getOrCreateHerdrControlSession(sessionId);
+  cs.addClient();
+  try {
+    return await fn(cs);
+  } finally {
+    cs.removeClient();
+  }
+}
+
+/**
+ * Deliver text to the session's active pane over the raw control stream.
+ * Unlike herdr's pane.send_input RPC (which strips ESC/newlines from text),
+ * raw bytes preserve multi-line payloads; `bracketed` wraps the text in
+ * bracketed-paste markers so agent TUIs (Claude/Codex) treat embedded
+ * newlines as literal lines and the trailing \r as submit.
+ */
+async function sendTextToSession(
+  sessionId: string,
+  text: string,
+  opts?: { bracketed?: boolean },
+): Promise<string> {
+  return withControlSession(sessionId, async (cs) => {
+    const panes = await cs.listPanes();
+    const target = panes.find((p) => p.isActive) || panes[0];
+    if (!target) throw new Error('No pane found');
+    const payload = opts?.bracketed ? `\x1b[200~${text}\x1b[201~` : text;
+    await cs.sendInput(target.paneId, Buffer.from(payload, 'utf-8'));
+    // Deliver the submit \r as its own write, slightly later: agent TUIs
+    // can swallow a \r that arrives in the same chunk as the bracketed-paste
+    // terminator (treated as part of the paste), leaving the prompt sitting
+    // unsubmitted in the input box.
+    await new Promise((r) => setTimeout(r, 80));
+    await cs.sendInput(target.paneId, Buffer.from('\r', 'utf-8'));
+    return target.paneId;
+  });
 }
 
 export const sessions = new Hono();
@@ -102,29 +145,6 @@ export const sessions = new Hono();
 export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
   const tmuxSessions = await tmuxService.listSessions();
   const sessionMetadata = await getAllSessionMetadata();
-
-  const allPaneTtys: string[] = [];
-  for (const s of tmuxSessions) {
-    if (s.panes) {
-      for (const p of s.panes) {
-        if (p.tty) allPaneTtys.push(p.tty.replace('/dev/', ''));
-      }
-    }
-  }
-
-  const processInfo = await tmuxService.batchProcessInfo(allPaneTtys);
-  const claudeOnPaneTtys = processInfo.claudeTtys;
-  const agentInfoByTty = processInfo.agentInfo;
-
-  const sessionIdByTmuxId = new Map<string, string>();
-  for (const s of tmuxSessions) {
-    if (agentSupportsConversationMetadata(s.agent ?? s.currentCommand) && s.paneTty) {
-      const sessionId = claudeCodeService.getSessionIdFromArgs(s.paneTty, processInfo.ttyArgs);
-      if (sessionId) {
-        sessionIdByTmuxId.set(s.id, sessionId);
-      }
-    }
-  }
 
   const claudePaths = tmuxSessions
     .filter((s): s is typeof s & { currentPath: string } => agentSupportsConversationMetadata(s.agent ?? s.currentCommand) && !!s.currentPath)
@@ -146,42 +166,13 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
     const codexThread = s.currentPath ? codexThreadsByPath.get(s.currentPath) : undefined;
 
     if (agentSupportsConversationMetadata(s.agent ?? s.currentCommand) && s.currentPath) {
-      const ptySessionId = sessionIdByTmuxId.get(s.id);
-
-      if (ptySessionId) {
-        ccSession = await claudeCodeService.getSessionById(ptySessionId, s.currentPath);
-        if (ccSession) {
-          const [newestSession] = await claudeCodeService.getRecentSessionsForPath(s.currentPath, 1);
-          if (
-            newestSession &&
-            newestSession.sessionId !== ccSession.sessionId &&
-            newestSession.modified && ccSession.modified
-          ) {
-            const newestMtime = new Date(newestSession.modified).getTime();
-            const currentMtime = new Date(ccSession.modified).getTime();
-            if (newestMtime - currentMtime > 5000) {
-              ccSession = newestSession;
-            }
-          }
-        }
-      }
-
-      if (!ccSession && s.paneTty) {
-        ccSession = await claudeCodeService.getSessionByTtyStartTime(s.paneTty, s.currentPath);
-      }
-
-      // Final fallback: pick the most recent `.jsonl` for the working dir. Earlier
-      // this branch required `ptySessionId` (i.e. only ran for `claude -r <uuid>`),
-      // which meant a freshly-started `claude` (no `-r`) whose tty-start-time
-      // detection failed (TZ skew on macOS launchd, etc.) ended up with no
-      // ccSession at all — and therefore no `ccSessionId` for hook events to
-      // match against, so the indicator never reacted.
-      if (!ccSession) {
-        const pathSession = ccSessionsByPath.get(s.currentPath);
-        if (pathSession) {
-          ccSession = pathSession;
-        }
-      }
+      // Prefer the native session id reported via the herdr agent
+      // integration — it keeps two sessions in the SAME workingDir
+      // distinguishable. Fall back to most-recent-.jsonl path matching.
+      ccSession = s.agentSessionId
+        ? ((await claudeCodeService.getSessionById(s.agentSessionId, s.currentPath)) ??
+          ccSessionsByPath.get(s.currentPath))
+        : ccSessionsByPath.get(s.currentPath);
     }
 
     const includeClaudeInfo = agentSupportsConversationMetadata(s.agent ?? s.currentCommand);
@@ -198,10 +189,10 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
     const hookResult = conversationSessionId ? getIndicatorOverride(conversationSessionId) : null;
     const hookState = hookResult?.state ?? null;
     const hookToolName = hookResult?.toolName;
-    // When pane title shows ✳ (Claude Code idle marker) but hook says "processing",
-    // Claude is waiting for permission (not actually processing).
-    const isPaneTitleIdle = s.paneTitle?.startsWith('✳');
-    const indicatorState: IndicatorState = (hookState === 'processing' && isPaneTitleIdle) ? 'waiting_input' : (hookState ?? 'completed');
+    // When hooks say "processing" but herdr's agent detection says the agent
+    // is blocked, Claude is waiting for permission (not actually processing).
+    // (Replaces the tmux-era ✳-pane-title heuristic.)
+    const indicatorState: IndicatorState = (hookState === 'processing' && s.agentBlocked) ? 'waiting_input' : (hookState ?? 'completed');
     // Use hook tool name for waiting state when jsonl doesn't have it yet
     const effectiveWaitingToolName = (indicatorState === 'waiting_input' && hookToolName && !ccSession?.waitingToolName)
       ? hookToolName : ccSession?.waitingToolName;
@@ -225,10 +216,6 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
         ? (hookState ?? undefined)
         : undefined;
 
-    // Push the state dot into tmux so it shows in the status bar
-    // (rendered by attachStatusRight's #{@cchub_state}). Deduped/fire-and-forget.
-    tmuxService.setSessionState(s.name, sessionIndicatorState);
-
     const panePids: (number | undefined)[] = s.panes ? s.panes.map((p: { pid?: number }) => p.pid) : [];
     const metrics = await computeSessionMetrics({
       ccSessionId: includeClaudeInfo ? ccSession?.sessionId : undefined,
@@ -242,16 +229,6 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
           totalTokens: codexThread.tokenUsage?.totalTokens ?? codexThread.tokensUsed,
         }
       : metrics;
-
-    // Push recap / branch / tokens / ctx into tmux user options so the local TUI
-    // (embed-tui) can show a rich detail panel by reading them directly (no API).
-    // Deduped/fire-and-forget, same pattern as setSessionState.
-    tmuxService.setSessionMeta(s.name, {
-      recap: includeClaudeInfo && isExactPathMatch ? ccSession?.lastRecap?.content : undefined,
-      branch: includeClaudeInfo ? ccSession?.gitBranch : includeCodexInfo ? codexThread?.gitBranch : undefined,
-      tokens: (sessionMetrics as { totalTokens?: number })?.totalTokens,
-      contextPercent: (sessionMetrics as { contextPercent?: number })?.contextPercent,
-    });
 
     return {
       id: s.id,
@@ -283,15 +260,11 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       customTitle: sessionMetadata[s.id]?.title,
       metrics: sessionMetrics,
       panes: s.panes ? s.panes.map((p: { paneId: string; command: string; path: string; title: string; tty: string; isActive: boolean; isDead: boolean; pid?: number }) => {
-        const ttyName = p.tty?.replace('/dev/', '');
-        const agentInfo = ttyName ? agentInfoByTty.get(ttyName) : undefined;
-        const paneAgent = ttyName ? processInfo.agentByTty.get(ttyName) : undefined;
+        // Pane command comes from herdr's pane.process_info (foreground group
+        // leader), so `command === agent id` identifies the agent pane.
         const sessionAgent = s.agent ?? s.currentCommand;
-        const isClaudeOnPane = !p.isDead && !!ttyName && claudeOnPaneTtys.has(ttyName);
-        const isSessionAgentOnPane = !p.isDead && (
-          (paneAgent !== undefined && paneAgent === sessionAgent) ||
-          (paneAgent === undefined && p.command === sessionAgent)
-        );
+        const isSessionAgentOnPane = !p.isDead && p.command === sessionAgent;
+        const isClaudeOnPane = isSessionAgentOnPane && includeClaudeInfo;
         let paneIndicator: IndicatorState | undefined;
         if (p.isDead) {
           paneIndicator = 'completed';
@@ -303,18 +276,11 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
         } else {
           paneIndicator = 'idle';
         }
-        // Prefer the ps-based detection over tmux's pane_current_command, which
-        // on macOS sometimes returns the Claude version (e.g. "2.1.123") when the
-        // binary is invoked via a non-standard path. The frontend relies on this
-        // string equaling "claude" to enable the conversation toggle.
-        const currentCommand = paneAgent ?? p.command;
         const pane: PaneInfo = {
           paneId: p.paneId,
-          currentCommand,
+          currentCommand: p.command,
           currentPath: p.path,
           title: p.title || undefined,
-          agentName: agentInfo?.agentName,
-          agentColor: agentInfo?.agentColor,
           isActive: p.isActive,
           isDead: p.isDead || undefined,
           indicatorState: isSessionAgentOnPane
@@ -374,10 +340,17 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
   const snapshot: LastKnownSession[] = [
     ...results.filter(s => s.state !== 'lost').map(s => {
       const prev = prevById.get(s.id);
+      // currentPath tracks the agent's cwd while an agent runs; once the
+      // agent exits, the pane cwd falls back to the shell's dir (often ~)
+      // and would DEGRADE the recorded project path, breaking lost-session
+      // resume. Keep the last agent-era value in that case.
+      const currentPath = s.agent
+        ? (s.currentPath ?? prev?.currentPath)
+        : (prev?.currentPath ?? s.currentPath);
       return {
         id: s.id,
         name: s.name,
-        currentPath: s.currentPath ?? prev?.currentPath,
+        currentPath,
         agent: s.agent ?? prev?.agent,
         theme: s.theme ?? prev?.theme,
         customTitle: s.customTitle ?? prev?.customTitle,
@@ -448,29 +421,29 @@ sessions.post('/', async (c) => {
 
     // Start the selected agent if workingDir is specified
     if (parsed.success && parsed.data.workingDir) {
-      await tmuxService.sendKeys(name, agentStartCommand(agent, parsed.data.workingDir));
+      await sendTextToSession(name, agentStartCommand(agent, parsed.data.workingDir));
 
       // Send initial prompt after the agent starts (interactive mode)
       if (parsed.data.initialPrompt) {
         const prompt = parsed.data.initialPrompt;
         const sessionName = name;
-        // Poll until the selected agent process is running on the session's TTY
+        // Poll until the selected agent process is running in the session
         (async () => {
           for (let i = 0; i < 30; i++) { // up to 30 seconds
             await new Promise(r => setTimeout(r, 1000));
             const sessions = await tmuxService.listSessions();
             const session = sessions.find(s => s.name === sessionName);
             if (session?.currentCommand === agent) {
-              // Wait a bit more for the TUI to be fully ready
+              // Wait a bit more for the TUI to be fully ready, then submit
+              // via bracketed paste (multi-line prompts stay multi-line).
               await new Promise(r => setTimeout(r, 2000));
-              await tmuxService.sendKeys(sessionName, prompt);
-              // Send extra Enter to submit the prompt
-              await new Promise(r => setTimeout(r, 500));
-              await tmuxService.sendKeys(sessionName, '');
+              await sendTextToSession(sessionName, prompt, { bracketed: true });
               return;
             }
           }
-        })();
+        })().catch((err) => {
+          console.warn(`[sessions] initial prompt delivery failed for ${name}:`, err);
+        });
       }
     }
 
@@ -670,8 +643,15 @@ sessions.post('/history/resume', async (c) => {
     return c.json({ error: 'Invalid request: sessionId and projectPath required' }, 400);
   }
 
-  const { sessionId, projectPath } = parsed.data;
+  const { sessionId } = parsed.data;
   const agent: AgentProvider = parsed.data.agent ?? DEFAULT_AGENT_PROVIDER;
+  // The provided projectPath can be stale (lost sessions record the pane's
+  // cwd, which falls back to the shell dir once the agent exits). The cwd
+  // recorded inside the conversation .jsonl is authoritative — `claude -r`
+  // only finds conversations from the project directory they belong to.
+  const recordedCwd =
+    agent === 'claude' ? await claudeCodeService.resolveSessionCwd(sessionId) : null;
+  const projectPath = recordedCwd ?? parsed.data.projectPath;
 
   try {
     // Generate a unique tmux session name based on project
@@ -694,9 +674,9 @@ sessions.post('/history/resume', async (c) => {
 
     // Change to project directory and run the agent's resume command
     const command = `cd ${shellQuote(expandHome(projectPath))} && ${agentResumeCommand(agent, sessionId)}`;
-    const success = await tmuxService.sendKeys(tmuxSessionName, command);
-
-    if (!success) {
+    try {
+      await sendTextToSession(tmuxSessionName, command);
+    } catch {
       // Clean up the session if command failed
       await tmuxService.killSession(tmuxSessionName);
       return c.json({ error: 'Failed to start agent session' }, 500);
@@ -799,10 +779,7 @@ sessions.post('/:id/resume', async (c) => {
     const agent: AgentProvider = requestedAgent ?? session.agent ?? DEFAULT_AGENT_PROVIDER;
     const command = agentResumeCommand(agent, sessionId);
 
-    const success = await tmuxService.sendKeys(id, command);
-    if (!success) {
-      return c.json({ error: 'Failed to send command' }, 500);
-    }
+    await sendTextToSession(id, command);
 
     return c.json({ success: true, command });
   } catch (_error) {
@@ -929,15 +906,7 @@ sessions.post('/:id/panes/focus', async (c) => {
   }
 
   try {
-    const proc = Bun.spawn(['tmux', 'select-pane', '-t', parsed.data.paneId], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    const exitCode = await proc.exited;
-    if (exitCode !== 0) {
-      const error = await new Response(proc.stderr).text();
-      return c.json({ error: `Failed to focus pane: ${error}` }, 500);
-    }
+    await withControlSession(id, (cs) => cs.selectPane(parsed.data.paneId));
     tmuxService.invalidateCache();
     notifySessionChange();
     return c.json({ success: true });
@@ -961,40 +930,16 @@ sessions.post('/:id/panes/close', async (c) => {
     return c.json({ error: 'Session not found' }, 404);
   }
 
-  // Check pane count - don't allow closing the last pane.
-  // Use `-s` so panes across ALL windows of the session are counted; without
-  // it tmux only lists the current window's panes, so a multi-window session
-  // (each window holding one pane) was mis-counted as 1 and wrongly refused.
   try {
-    const countProc = Bun.spawn(['tmux', 'list-panes', '-s', '-t', id, '-F', '#{pane_id}'], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    const countText = await new Response(countProc.stdout).text();
-    await countProc.exited;
-    const paneCount = countText.trim().split('\n').filter(l => l.length > 0).length;
-    if (paneCount <= 1) {
-      return c.json({ error: 'Cannot close the last pane' }, 400);
-    }
-  } catch {
-    // If we can't count panes, proceed cautiously
-  }
-
-  try {
-    const proc = Bun.spawn(['tmux', 'kill-pane', '-t', parsed.data.paneId], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    const exitCode = await proc.exited;
-    if (exitCode !== 0) {
-      const error = await new Response(proc.stderr).text();
-      return c.json({ error: `Failed to close pane: ${error}` }, 500);
-    }
+    // rejects the last pane itself
+    await withControlSession(id, (cs) => cs.closePane(parsed.data.paneId));
     tmuxService.invalidateCache();
     notifySessionChange();
     return c.json({ success: true });
-  } catch (_error) {
-    return c.json({ error: 'Failed to close pane' }, 500);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to close pane';
+    const status = message.includes('last pane') ? 400 : 500;
+    return c.json({ error: message }, status);
   }
 });
 
@@ -1014,15 +959,7 @@ sessions.post('/:id/panes/split', async (c) => {
   }
 
   try {
-    const proc = Bun.spawn(['tmux', 'split-window', parsed.data.direction === 'h' ? '-h' : '-v', '-t', parsed.data.paneId], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    const exitCode = await proc.exited;
-    if (exitCode !== 0) {
-      const error = await new Response(proc.stderr).text();
-      return c.json({ error: `Failed to split pane: ${error}` }, 500);
-    }
+    await withControlSession(id, (cs) => cs.splitPane(parsed.data.paneId, parsed.data.direction));
     tmuxService.invalidateCache();
     notifySessionChange();
     return c.json({ success: true });
@@ -1046,22 +983,8 @@ sessions.post('/:id/panes/respawn', async (c) => {
     return c.json({ error: 'Session not found' }, 404);
   }
 
-  try {
-    const proc = Bun.spawn(['tmux', 'respawn-pane', '-t', parsed.data.paneId], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    const exitCode = await proc.exited;
-    if (exitCode !== 0) {
-      const error = await new Response(proc.stderr).text();
-      return c.json({ error: `Failed to respawn pane: ${error}` }, 500);
-    }
-    tmuxService.invalidateCache();
-    notifySessionChange();
-    return c.json({ success: true });
-  } catch (_error) {
-    return c.json({ error: 'Failed to respawn pane' }, 500);
-  }
+  // herdr has no dead-pane/respawn concept; exited panes are closed.
+  return c.json({ error: 'respawn-pane is not supported' }, 501);
 });
 
 // POST /sessions/:id/panes/input - Send raw input bytes to a specific pane
@@ -1080,33 +1003,33 @@ sessions.post('/:id/panes/input', async (c) => {
   }
 
   try {
-    const controlSession = controlSessions.get(id) || await getOrCreateControlSession(id);
-    const panes = await controlSession.listPanes();
-    const targetPane = panes.find(p => p.paneId === parsed.data.paneId);
-    if (!targetPane) {
-      return c.json({ error: 'Pane not found' }, 404);
-    }
+    return await withControlSession(id, async (controlSession) => {
+      const panes = await controlSession.listPanes();
+      const targetPane = panes.find((p) => p.paneId === parsed.data.paneId);
+      if (!targetPane) {
+        return c.json({ error: 'Pane not found' }, 404);
+      }
 
-    const buffer = parsed.data.encoding === 'base64'
-      ? Buffer.from(parsed.data.data, 'base64')
-      : Buffer.from(parsed.data.data, 'utf-8');
-    await controlSession.sendInput(parsed.data.paneId, buffer);
+      const buffer = parsed.data.encoding === 'base64'
+        ? Buffer.from(parsed.data.data, 'base64')
+        : Buffer.from(parsed.data.data, 'utf-8');
+      await controlSession.sendInput(parsed.data.paneId, buffer);
 
-    if (!parsed.data.wait) {
-      return c.json({ success: true, paneId: parsed.data.paneId, bytes: buffer.length });
-    }
+      if (!parsed.data.wait) {
+        return c.json({ success: true, paneId: parsed.data.paneId, bytes: buffer.length });
+      }
 
-    // Give the TUI time to render before snapshotting.
-    if (parsed.data.waitMs > 0) {
-      await new Promise(resolve => setTimeout(resolve, parsed.data.waitMs));
-    }
-    const cursorPolicy = await resolveSessionCursorPolicy(id);
-    const viewport = await captureViewportSnapshot(controlSession, parsed.data.paneId, parsed.data.lines, cursorPolicy);
-    return c.json({
-      success: true,
-      paneId: parsed.data.paneId,
-      bytes: buffer.length,
-      viewport,
+      // Give the TUI time to render before snapshotting.
+      if (parsed.data.waitMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, parsed.data.waitMs));
+      }
+      const viewport = await captureViewportSnapshot(controlSession, parsed.data.paneId, parsed.data.lines);
+      return c.json({
+        success: true,
+        paneId: parsed.data.paneId,
+        bytes: buffer.length,
+        viewport,
+      });
     });
   } catch (_error) {
     return c.json({ error: 'Failed to send input' }, 500);
@@ -1130,17 +1053,17 @@ sessions.get('/:id/panes/:paneId/viewport', async (c) => {
   }
 
   try {
-    const controlSession = controlSessions.get(id) || await getOrCreateControlSession(id);
-    const panes = await controlSession.listPanes();
-    if (!panes.find(p => p.paneId === paneId)) {
-      return c.json({ error: 'Pane not found' }, 404);
-    }
-    const cursorPolicy = await resolveSessionCursorPolicy(id);
-    const viewport = await captureViewportSnapshot(controlSession, paneId, lines, cursorPolicy);
-    if (!viewport) {
-      return c.json({ error: 'Failed to capture viewport' }, 500);
-    }
-    return c.json(viewport);
+    return await withControlSession(id, async (controlSession) => {
+      const panes = await controlSession.listPanes();
+      if (!panes.find((p) => p.paneId === paneId)) {
+        return c.json({ error: 'Pane not found' }, 404);
+      }
+      const viewport = await captureViewportSnapshot(controlSession, paneId, lines);
+      if (!viewport) {
+        return c.json({ error: 'Failed to capture viewport' }, 500);
+      }
+      return c.json(viewport);
+    });
   } catch (_error) {
     return c.json({ error: 'Failed to capture viewport' }, 500);
   }
@@ -1162,19 +1085,9 @@ sessions.post('/:id/prompt', async (c) => {
   }
 
   try {
-    const controlSession = controlSessions.get(id) || await getOrCreateControlSession(id);
-    const panes = await controlSession.listPanes();
-    // Find the active pane, or fall back to the first pane
-    const targetPane = panes.find(p => p.isActive) || panes[0];
-    if (!targetPane) {
-      return c.json({ error: 'No pane found' }, 404);
-    }
-
-    // Send using bracketed paste mode + Enter
-    const payload = `\x1b[200~${text}\x1b[201~\r`;
-    await controlSession.sendInput(targetPane.paneId, Buffer.from(payload, 'utf-8'));
-
-    return c.json({ success: true, paneId: targetPane.paneId });
+    // Bracketed paste + separately-delivered \r (see sendTextToSession)
+    const paneId = await sendTextToSession(id, text, { bracketed: true });
+    return c.json({ success: true, paneId });
   } catch (_error) {
     return c.json({ error: 'Failed to send prompt' }, 500);
   }

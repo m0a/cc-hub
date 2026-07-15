@@ -21,8 +21,8 @@ Left: session list adapts to a single-column layout on smartphones. Right: termi
 ## Features
 
 - **Multi-session Management** - Run and switch between multiple Claude Code sessions
-- **Multi-pane Terminals** - Split panes horizontally/vertically with real-time layout sync across all clients via tmux control mode
-- **Pane Operations** - Zoom, resize, focus, close, respawn panes via keyboard shortcuts or session modal UI
+- **Multi-pane Terminals** - Split panes horizontally/vertically with real-time layout sync across all clients (herdr-backed panes, CC Hub-managed layout)
+- **Pane Operations** - Zoom, resize, focus, close panes via keyboard shortcuts or session modal UI
 - **Team Agent Display** - Shows agent names and colors in pane list and mobile tab bar
 - **Session Color Themes** - Assign colors to sessions for visual distinction
 - **Desktop Support** - Text selection with auto-copy, font size adjustment (Ctrl+=/-)
@@ -81,7 +81,7 @@ source ~/.bashrc
 | Dependency | Required | Installation |
 |------------|----------|--------------|
 | [Tailscale](https://tailscale.com/) | Yes | Linux: https://tailscale.com/download / macOS: `brew install tailscale` |
-| [tmux](https://github.com/tmux/tmux) 3.0+ | Yes | `apt install tmux` / `brew install tmux` |
+| [herdr](https://herdr.dev/) | Yes | `curl -fsSL https://herdr.dev/install.sh \| sh` / `brew install herdr` |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | Yes | `npm install -g @anthropic-ai/claude-code` |
 
 ## Quick Start
@@ -137,10 +137,6 @@ cchub status
 cchub send <target> [text]   # Send input to a pane on a local or peer server
 cchub peek <target>          # Snapshot a pane's current viewport
 
-# Local terminal UI
-cchub tui                    # Session list + history search in the terminal
-cchub tui --popup            # One-shot mode for tmux display-popup (bound to F11)
-
 # Debugging
 cchub debug <sub>            # Bun inspector on the running service
                              # sub: enable | disable | profile | status
@@ -180,15 +176,11 @@ sudo tailscale set --operator=$USER
 
 > **macOS**: Install via `brew install tailscale`, not the App Store version. The App Store version lacks CLI commands needed for certificate generation.
 
-### tmux Configuration (Optional)
+### herdr Backend
 
-CC Hub works with default tmux settings, but these are recommended:
+CC Hub runs every session as a [herdr](https://herdr.dev/) workspace. `cchub setup` provisions everything: a supervised `herdr server` (systemd on Linux, launchd on macOS), `~/.config/herdr/config.toml` with `resume_agents_on_restore = true` (agent conversations survive server restarts), and the Claude Code integration hook (native session identity).
 
-```bash
-# ~/.tmux.conf
-set -g mouse on              # Enable mouse support
-set -g history-limit 10000   # Increase scrollback history
-```
+To update herdr later: `herdr update`, then restart the supervised server (`systemctl --user restart herdr`). Do **not** use `herdr update --handoff` under systemd/launchd — the handed-off server escapes supervision.
 
 ## Usage
 
@@ -199,7 +191,7 @@ set -g history-limit 10000   # Increase scrollback history
 
 ### Keyboard Shortcuts
 
-CC Hub uses tmux control mode (`tmux -CC`) for real-time pane synchronization. All connected clients see the same pane layout.
+CC Hub streams pane frames from herdr and owns the split layout server-side. All connected clients see the same pane layout.
 
 **Pane & Session Operations**:
 | Shortcut | Action |
@@ -337,7 +329,7 @@ bun run lint            # Lint all packages
 
 - **Backend**: Bun, Hono, WebSocket
 - **Frontend**: React 19, Vite, Tailwind CSS v4, xterm.js, react-i18next
-- **Terminal**: tmux control mode (`tmux -CC`)
+- **Terminal**: [herdr](https://herdr.dev/) socket API + per-pane control streams
 
 ## Architecture
 

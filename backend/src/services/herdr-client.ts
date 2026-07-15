@@ -15,10 +15,6 @@
 import { connect } from 'node:net';
 import { homedir } from 'node:os';
 
-export function isHerdrMode(): boolean {
-  return process.env.CCHUB_MUX === 'herdr';
-}
-
 export function herdrSocketPath(): string {
   return process.env.HERDR_SOCKET_PATH || `${homedir()}/.config/herdr/herdr.sock`;
 }

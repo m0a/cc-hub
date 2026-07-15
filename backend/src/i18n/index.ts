@@ -36,8 +36,9 @@ const translations: Record<string, Translations> = {
       tailscaleCheckRunning: "Check if Tailscale is running",
       tailscaleParseError: "Error: Cannot parse Tailscale status",
       tailscaleCertError: "Error: Failed to generate Tailscale certificate",
-      tmuxNotFound: "Error: tmux command not found",
-      tmuxInstallHint: "Install: brew install tmux (macOS) or apt install tmux (Linux)",
+      herdrNotFound: "Error: herdr command not found",
+      herdrInstallHint: "Install: curl -fsSL https://herdr.dev/install.sh | sh (or brew install herdr)",
+      herdrStartFailed: "Error: failed to start herdr server",
       passwordEnabled: "Password auth: Enabled",
       passwordNotSet: "Password not set: Use -P option to set",
       serverStarting: "Server starting on {{url}}"
@@ -113,8 +114,9 @@ const translations: Record<string, Translations> = {
       tailscaleCheckRunning: "Tailscale が起動しているか確認してください",
       tailscaleParseError: "エラー: Tailscale のステータスを解析できません",
       tailscaleCertError: "エラー: Tailscale 証明書の生成に失敗しました",
-      tmuxNotFound: "エラー: tmux コマンドが見つかりません",
-      tmuxInstallHint: "インストール: brew install tmux (macOS) または apt install tmux (Linux)",
+      herdrNotFound: "エラー: herdr コマンドが見つかりません",
+      herdrInstallHint: "インストール: curl -fsSL https://herdr.dev/install.sh | sh (または brew install herdr)",
+      herdrStartFailed: "エラー: herdr サーバの起動に失敗しました",
       passwordEnabled: "パスワード認証: 有効",
       passwordNotSet: "パスワード未設定: -P オプションで設定を推奨",
       serverStarting: "サーバー起動: {{url}}"

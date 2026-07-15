@@ -1,18 +1,13 @@
 /**
- * HerdrService — herdr-backed drop-in for TmuxService.
+ * HerdrService — session-level operations on the herdr backend.
  *
- * Implements the TmuxService surface `routes/sessions.ts` and
- * `routes/terminal-mux.ts` consume, mapping CC Hub sessions onto herdr
- * workspaces (session id = workspace label, falling back to workspace_id).
- *
- * Notable degradations vs the tmux backend (interim, see
- * poc/herdr/FINDINGS.md): panes expose no TTY (ps-based enrichment finds
- * nothing; agent detection uses pane process info instead), copy-mode and
- * paste-buffer APIs are inert, and status-bar metadata (setSessionState /
- * setSessionMeta) is a no-op.
+ * Maps CC Hub sessions onto herdr workspaces (session id = workspace label,
+ * falling back to workspace_id). Panes expose no TTY; agent detection uses
+ * the pane's foreground process group instead. Copy-mode and paste-buffer
+ * APIs are inert (no herdr equivalent).
  */
 
-import { detectAgentProviderFromArgs, type AgentProvider, type IndicatorState } from '../../../shared/types';
+import { detectAgentProviderFromArgs, type AgentProvider } from '../../../shared/types';
 import {
   herdrRpc,
   listPanes,
@@ -21,7 +16,6 @@ import {
   toTmuxPaneId,
   type HerdrWorkspace,
 } from './herdr-client';
-import type { ParsedProcessInfo } from './tmux';
 
 interface HerdrPaneInfo {
   paneId: string;
@@ -46,17 +40,6 @@ interface HerdrSessionInfo {
   paneTty?: string;
   preview?: string;
   panes?: HerdrPaneInfo[];
-}
-
-function emptyProcessInfo(): ParsedProcessInfo {
-  return {
-    claudeTtys: new Set(),
-    codexTtys: new Set(),
-    agentTtys: new Map(),
-    agentByTty: new Map(),
-    agentInfo: new Map(),
-    ttyArgs: new Map(),
-  };
 }
 
 /** Session id for a workspace: label when present, else the workspace id. */
@@ -222,29 +205,6 @@ export class HerdrService {
     } catch {
       return [];
     }
-  }
-
-  async batchProcessInfo(_ttyNames: string[]): Promise<ParsedProcessInfo> {
-    // herdr panes expose no TTYs; ps-based enrichment has nothing to key on.
-    return emptyProcessInfo();
-  }
-
-  async batchCheckClaudeOnTtys(_ttyNames: string[]): Promise<Set<string>> {
-    return new Set();
-  }
-
-  async batchGetAgentInfo(
-    _ttyNames: string[],
-  ): Promise<Map<string, { agentName: string; agentColor?: string }>> {
-    return new Map();
-  }
-
-  async isClaudeRunningOnTty(_tty: string): Promise<boolean> {
-    return false;
-  }
-
-  setSessionState(_sessionName: string, _state?: IndicatorState): void {
-    // tmux status-bar dot; no herdr equivalent wired up yet
   }
 
   async capturePane(sessionId: string, lines: number = 15): Promise<string | null> {

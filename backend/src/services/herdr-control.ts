@@ -32,7 +32,6 @@ import {
   toTmuxPaneId,
 } from './herdr-client';
 import { PaneLayoutTree } from './herdr-layout';
-import { toFrontendLayout } from './tmux-layout-parser';
 
 const GRACE_PERIOD_MS = 30_000;
 const RESIZE_DEBOUNCE_MS = 50;
@@ -41,16 +40,13 @@ const HERDR_READ_CAP = 1000;
 
 const PANE_ID_RE = /^%\d+$/;
 
-function assertPaneId(paneId: string): void {
+export function assertPaneId(paneId: string): void {
   if (typeof paneId !== 'string' || !PANE_ID_RE.test(paneId)) {
     throw new Error(`Invalid pane id: ${JSON.stringify(paneId)}`);
   }
 }
 
-type LayoutListener = (
-  layout: TmuxLayoutNode,
-  frontendLayout: ReturnType<typeof toFrontendLayout>,
-) => void;
+type LayoutListener = (layout: TmuxLayoutNode) => void;
 type ExitListener = (reason: string) => void;
 type PaneDeadListener = (paneId: string) => void;
 
@@ -391,9 +387,8 @@ export class HerdrControlSession {
   private emitLayout(): void {
     const layout = this.tree.toTmuxLayout(this.clientSize.cols, this.clientSize.rows);
     if (!layout) return;
-    const frontendLayout = toFrontendLayout(layout);
     for (const listener of this.layoutListeners) {
-      listener(layout, frontendLayout);
+      listener(layout);
     }
   }
 

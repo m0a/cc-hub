@@ -1,15 +1,11 @@
 import type { ServerWebSocket } from 'bun';
-import { TmuxService } from '../services/tmux';
-import { getOrCreateControlSession, type TmuxControlSession } from '../services/tmux-control';
 import { HerdrService } from '../services/herdr';
 import {
   captureViewportHerdr,
   getOrCreateHerdrControlSession,
-  HerdrControlSession,
+  type HerdrControlSession,
 } from '../services/herdr-control';
-import { isHerdrMode } from '../services/herdr-client';
 import { ConversationWatcher } from '../services/conversation-watcher';
-import { captureViewport } from '../services/pane-viewport';
 import type {
   ControlClientMessage,
   MuxClientMessage,
@@ -17,7 +13,6 @@ import type {
 } from '../../../shared/types';
 import { MuxClientMessageSchema } from '../../../shared/types';
 import { buildSessionsList } from './sessions';
-import { resolveViewportCursorPolicy, type ViewportCursorPolicy } from '../services/viewport-cursor-policy';
 
 // Output → push debounce. Wait this long after the last %output for a pane
 // before recapturing. Shorter = lower latency; longer = fewer captures.
@@ -32,12 +27,9 @@ const PUSH_MIN_INTERVAL_MS = 200;
 
 const DEBUG_MUX = process.env.DEBUG_MUX === '1' || process.env.DEBUG_MUX === 'true';
 
-/** Backend-agnostic control session (tmux or herdr, same public surface) */
-type ControlSession = TmuxControlSession | HerdrControlSession;
-
 /** Per-session subscription state for a mux client */
 interface MuxSubscription {
-  controlSession: ControlSession;
+  controlSession: HerdrControlSession;
   cleanupFns: Array<() => void>;
   // True once the client has sent at least one `resize` message. The first
   // resize uses setClientSizeImmediate (synchronous tmux size adoption);
@@ -53,9 +45,8 @@ interface MuxSubscription {
   // Wall-clock of the last unsolicited push, for PUSH_MIN_INTERVAL_MS.
   lastPushAt: Map<string, number>;
   // Pane IDs the subscription has ever touched (request-viewport, push).
-  // Used by resize to re-push known panes after tmux reflows.
+  // Used by resize to re-push known panes after the layout reflows.
   knownPanes: Set<string>;
-  cursorPolicy: ViewportCursorPolicy;
 }
 
 export interface MuxData {
@@ -69,7 +60,7 @@ export interface MuxData {
   lastPingAt: number;
 }
 
-const tmuxService = isHerdrMode() ? new HerdrService() : new TmuxService();
+const tmuxService = new HerdrService();
 
 // Track mux connections for broadcast
 const activeMuxConnections = new Set<ServerWebSocket<MuxData>>();
@@ -267,18 +258,14 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     return;
   }
 
-  let controlSession: ControlSession | null = null;
+  let controlSession: HerdrControlSession | null = null;
   let clientAdded = false;
   const cleanupFns: Array<() => void> = [];
   try {
-    controlSession = isHerdrMode()
-      ? await getOrCreateHerdrControlSession(sessionId)
-      : await getOrCreateControlSession(sessionId);
+    controlSession = await getOrCreateHerdrControlSession(sessionId);
     controlSession.addClient();
     clientAdded = true;
 
-    const sessions = await tmuxService.listSessions();
-    const session = sessions.find(s => s.id === sessionId);
     const sub: MuxSubscription = {
       controlSession,
       cleanupFns,
@@ -287,7 +274,6 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
       pushTimers: new Map(),
       lastPushAt: new Map(),
       knownPanes: new Set(),
-      cursorPolicy: resolveViewportCursorPolicy(session?.agent ?? session?.currentCommand),
     };
 
     // %output → schedule a push for any pane this subscription is viewing
@@ -352,21 +338,9 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     ws.data.subscriptions.set(sessionId, sub);
 
     try {
-      if (controlSession instanceof HerdrControlSession) {
-        const layout = controlSession.getCurrentLayout();
-        if (layout) {
-          ws.send(JSON.stringify({ type: 'layout', layout, sessionId }));
-        }
-      } else {
-        const layoutOutput = await controlSession.sendCommand(
-          `list-windows -F "#{window_layout}"`
-        );
-        const layoutString = layoutOutput.trim().split('\n')[0];
-        if (layoutString) {
-          const { parseTmuxLayout } = await import('../services/tmux-layout-parser');
-          const layout = parseTmuxLayout(layoutString);
-          ws.send(JSON.stringify({ type: 'layout', layout, sessionId }));
-        }
+      const layout = controlSession.getCurrentLayout();
+      if (layout) {
+        ws.send(JSON.stringify({ type: 'layout', layout, sessionId }));
       }
     } catch (err) {
       console.error(`[mux] Failed to send initial layout for ${sessionId}:`, err);
@@ -453,12 +427,9 @@ async function pushViewport(
   offset: number,
 ) {
   if (sub.controlSession.isDestroyed) return;
-  let viewport: Awaited<ReturnType<typeof captureViewport>> = null;
+  let viewport: Awaited<ReturnType<typeof captureViewportHerdr>> = null;
   try {
-    viewport =
-      sub.controlSession instanceof HerdrControlSession
-        ? await captureViewportHerdr(sub.controlSession, paneId, offset)
-        : await captureViewport(sub.controlSession, paneId, offset, sub.cursorPolicy);
+    viewport = await captureViewportHerdr(sub.controlSession, paneId, offset);
   } catch (err) {
     console.warn(`[mux] captureViewport failed for ${paneId}:`, err);
     return;
@@ -480,7 +451,7 @@ async function emitInitialViewports(
   sessionId: string,
   sub: MuxSubscription,
 ) {
-  let panes: Awaited<ReturnType<TmuxControlSession['listPanes']>> = [];
+  let panes: Awaited<ReturnType<HerdrControlSession['listPanes']>> = [];
   try {
     panes = await sub.controlSession.listPanes();
   } catch (err) {

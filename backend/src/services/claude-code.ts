@@ -48,9 +48,6 @@ interface CachedSessionData {
 export class ClaudeCodeService {
   private claudeDir: string;
 
-  // Cache for TTY → SessionID mappings (avoids ps subprocess per session)
-  private ttySessionCache = new Map<string, { sessionId: string | null; timestamp: number }>();
-  private static readonly TTY_SESSION_CACHE_TTL = 10_000; // 10 seconds
 
   // Cache for session data keyed by file path (avoids re-reading JSONL files).
   // Longer than the 5s sessions-push interval so back-to-back pushes stay on the
@@ -136,127 +133,6 @@ export class ClaudeCodeService {
     return claudeProjectDirName(path);
   }
 
-  /**
-   * Get Claude Code session ID from PTY by checking the running process args.
-   * Uses pre-fetched process info to avoid spawning ps.
-   */
-  getSessionIdFromArgs(tty: string, ttyArgs: Map<string, string[]>): string | null {
-    const ttyMatch = tty.match(/(pts\/\d+|ttys\d+)$/);
-    if (!ttyMatch) return null;
-    const ttyName = ttyMatch[0];
-
-    // Check cache first
-    const cached = this.ttySessionCache.get(ttyName);
-    if (cached && Date.now() - cached.timestamp < ClaudeCodeService.TTY_SESSION_CACHE_TTL) {
-      return cached.sessionId;
-    }
-
-    // Look for "claude -r <session-id>" in pre-fetched args
-    const args = ttyArgs.get(ttyName) || [];
-    for (const line of args) {
-      const match = line.match(/claude\s+-r\s+([a-f0-9-]{36})/i);
-      if (match) {
-        ClaudeCodeService.evictAndCap(this.ttySessionCache, ClaudeCodeService.TTY_SESSION_CACHE_TTL);
-        this.ttySessionCache.set(ttyName, { sessionId: match[1], timestamp: Date.now() });
-        return match[1];
-      }
-    }
-
-    ClaudeCodeService.evictAndCap(this.ttySessionCache, ClaudeCodeService.TTY_SESSION_CACHE_TTL);
-    this.ttySessionCache.set(ttyName, { sessionId: null, timestamp: Date.now() });
-    return null;
-  }
-
-  /**
-   * Get Claude Code session for a PTY by process start time
-   * Used when -r flag is not present
-   */
-  async getSessionByTtyStartTime(tty: string, workingDir: string): Promise<ClaudeCodeSession | null> {
-    const cacheKey = `tty:${tty}:${workingDir}`;
-    const cached = this.getPathCached<ClaudeCodeSession | null>(cacheKey);
-    if (cached !== undefined) return cached;
-
-    const result = await this.getSessionByTtyStartTimeUncached(tty, workingDir);
-    this.setPathCached(cacheKey, result);
-    return result;
-  }
-
-  private async getSessionByTtyStartTimeUncached(tty: string, workingDir: string): Promise<ClaudeCodeSession | null> {
-    try {
-      // Get tty name from path (Linux: pts/10, macOS: ttys004)
-      const ttyMatch = tty.match(/(pts\/\d+|ttys\d+)$/);
-      if (!ttyMatch) return null;
-      const ttyName = ttyMatch[0];
-
-      // Get process start time
-      const proc = Bun.spawn(['ps', '-t', ttyName, '-o', 'lstart=,args='], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-
-      const text = await new Response(proc.stdout).text();
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) return null;
-
-      // Find claude process line and extract start time
-      let processStartTime: Date | null = null;
-      for (const line of text.split('\n')) {
-        if (line.includes('claude') && !line.includes('-r')) {
-          // Parse date from line (format: "Sun Feb  1 18:28:29 2026 claude")
-          const dateMatch = line.match(/^([A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+\d+:\d+:\d+\s+\d+)/);
-          if (dateMatch) {
-            processStartTime = new Date(dateMatch[1]);
-            break;
-          }
-        }
-      }
-
-      if (!processStartTime) {
-        return null;
-      }
-
-      // Find session file modified after process start time
-      const projectName = this.pathToProjectName(workingDir);
-      const projectDir = join(this.claudeDir, projectName);
-
-      try {
-        const files = await readdir(projectDir);
-        const jsonlFiles = files.filter(f => f.endsWith('.jsonl') && !f.startsWith('agent-'));
-
-        // Get stats for all files
-        const fileStats = await Promise.all(
-          jsonlFiles.map(async (file) => {
-            try {
-              const filePath = join(projectDir, file);
-              const fileStat = await stat(filePath);
-              return { name: file, mtime: fileStat.mtimeMs, ctime: fileStat.ctimeMs };
-            } catch {
-              return null;
-            }
-          })
-        );
-
-        // Find files modified after process start (using mtime, not ctime)
-        // This handles both new sessions and resumed sessions
-        const validStats = fileStats
-          .filter((s): s is { name: string; mtime: number; ctime: number } => s !== null)
-          .filter(s => s.mtime >= processStartTime?.getTime() - 5000) // 5s tolerance
-          .sort((a, b) => b.mtime - a.mtime); // Most recently modified first
-
-        if (validStats.length > 0) {
-          const sessionFile = validStats[0];
-          const sessionId = sessionFile.name.replace('.jsonl', '');
-          return await this.getSessionById(sessionId, workingDir);
-        }
-      } catch {
-        // Directory doesn't exist
-      }
-
-      return null;
-    } catch {
-      return null;
-    }
-  }
 
   /**
    * Read the last user message from a session jsonl file (for current conversation)

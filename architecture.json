@@ -1,6 +1,6 @@
 {
   "name": "CC Hub",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "generated": "2026-07-16",
   "summary": "Web-based terminal session manager for Claude Code / Codex. Runs agents in herdr workspaces and provides a web UI for remote access from tablets/mobile devices",
   "stack": {
@@ -140,7 +140,7 @@
       {
         "name": "AnthropicUsageService",
         "file": "backend/src/services/anthropic-usage.ts",
-        "summary": "Anthropic API から使用量リミット (5時間 / 7日サイクル) を取得。60s cache、429 時は 5min backoff、in-flight リクエストの合流 (coalescing)。現在ペースからのリミット到達予測も算出",
+        "summary": "Anthropic API から使用量リミット (5時間 / 7日サイクル) を取得。60s cache、429 時は 5min backoff、in-flight リクエストの合流 (coalescing)。現在ペースからのリミット到達予測も算出。`limits[]` の scope 付きエントリからモデル別リミット (Fable 等) も抽出 — 全体サイクルが余裕でもモデル別が振り切っていることがあるため。解釈できないエントリは推測せず捨てる",
         "deps": []
       },
       {
@@ -158,7 +158,7 @@
       {
         "name": "UsageHistoryService",
         "file": "backend/src/services/usage-history.ts",
-        "summary": "使用量スナップショットを /tmp/cchub-usage-history.json に 30s スロットルで記録。最大 8 日分保持し、利用率トレンドのチャートに使用",
+        "summary": "使用量スナップショットを /tmp/cchub-usage-history.json に 30s スロットルで記録。最大 8 日分保持し、利用率トレンドのチャートに使用。モデル別リミットの値も `scoped` に記録 (このキーを持たない旧スナップショットは 0% ではなく「未計測」扱い)",
         "deps": []
       },
       {

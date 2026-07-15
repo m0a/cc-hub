@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.4] - 2026-07-16
+
+### Added
+- **モデル別（Fable 等）の使用量リミットをチャートに表示**: Anthropic の `GET /api/oauth/usage` に `limits[]` 配列が増え、**特定モデルにスコープされたリミットはそこにしか現れない**ようになっていた。cchub は `five_hour` / `seven_day` しか読んでいなかったため、ダッシュボードが「余裕十分（68%）」と表示している裏で Fable の週次リミットが既に 100% / critical / 適用中、という状態がまったく見えなかった。`scope` が非 null のエントリ（= モデル別）を抽出し、`group` に対応するチャート（`session`→5時間 / `weekly`→7日間）に追加のラインとして重ね、凡例に Anthropic 自身の `severity` に沿った色でパーセントを出す。`"Fable"` という名前には依存しておらず、API が scope したものがそのまま線になるので将来モデルが増えても変更は要らない。サイクル本体は従来どおり `five_hour` / `seven_day` 由来で、`limits[]` が想定外の形でも既存チャートは壊れない（全フィールドを検証し、解釈できないエントリは推測せず捨てる）。モデル別の値は使用量履歴にも記録され、線は直線補間ではなく実データになる（これ以前のスナップショットに `scoped` キーは無く、「未計測」として扱われる。0% ではない）（`backend/src/services/anthropic-usage.ts`, `usage-history.ts`, `frontend/src/components/dashboard/UsageChart.tsx`, `UsageLimits.tsx`）
+  - 現時点で API がモデル別に分けているのは週次のみ（5時間は全モデル共通の1本）。`group: "session"` の scoped リミットが返り始めたら、コード変更なしで5時間チャートにも線が出る
+
 ## [0.2.3] - 2026-07-16
 
 ### Fixed

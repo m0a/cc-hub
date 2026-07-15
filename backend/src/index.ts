@@ -222,33 +222,50 @@ if (herdrWhichResult.exitCode !== 0) {
   process.exit(1);
 }
 
-async function herdrReachable(): Promise<boolean> {
+// The socket API version this build was developed and tested against.
+// herdr auto-update only NOTIFIES (never self-applies), but a manual
+// `herdr update` + server restart can bump the protocol; surface that
+// loudly instead of failing on odd RPC shapes later.
+const HERDR_TESTED_PROTOCOL = 16;
+
+interface HerdrPong {
+  version?: string;
+  protocol?: number;
+}
+
+async function herdrPing(): Promise<HerdrPong | null> {
   try {
-    await herdrRpc('ping', {});
-    return true;
+    return await herdrRpc<HerdrPong>('ping', {});
   } catch {
-    return false;
+    return null;
   }
 }
 
-if (!(await herdrReachable())) {
+let herdrPong = await herdrPing();
+if (!herdrPong) {
   console.log('⏳ herdr server not running; starting it...');
   Bun.spawn(['herdr', 'server'], {
     stdin: 'ignore',
     stdout: 'ignore',
     stderr: 'ignore',
   }).unref();
-  let up = false;
-  for (let i = 0; i < 20 && !up; i++) {
+  for (let i = 0; i < 20 && !herdrPong; i++) {
     await new Promise((r) => setTimeout(r, 250));
-    up = await herdrReachable();
+    herdrPong = await herdrPing();
   }
-  if (!up) {
+  if (!herdrPong) {
     console.error(`❌ ${t('server.herdrStartFailed')}`);
     console.error(`   socket: ${herdrSocketPath()}`);
     process.exit(1);
   }
   console.log('✅ herdr server started');
+}
+console.log(`🐑 herdr ${herdrPong.version ?? '?'} (protocol ${herdrPong.protocol ?? '?'})`);
+if (herdrPong.protocol !== undefined && herdrPong.protocol !== HERDR_TESTED_PROTOCOL) {
+  console.warn(
+    `⚠️  herdr protocol ${herdrPong.protocol} differs from the tested protocol ${HERDR_TESTED_PROTOCOL}. ` +
+      'Terminal features may misbehave — check the herdr changelog before relying on this setup.',
+  );
 }
 
 // Get Tailscale hostname

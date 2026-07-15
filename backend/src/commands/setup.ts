@@ -121,9 +121,163 @@ function buildLaunchdUpdatePlist(execPath: string): string {
 `;
 }
 
+// ─── herdr provisioning ───
+
+const HERDR_SYSTEMD_SERVICE = `[Unit]
+Description=herdr terminal multiplexer server (CC Hub backend)
+
+[Service]
+Type=simple
+ExecStart=__HERDR_PATH__ server
+Restart=always
+RestartSec=2
+Environment=LANG=en_US.UTF-8
+
+[Install]
+WantedBy=default.target
+`;
+
+function buildHerdrLaunchdPlist(herdrPath: string): string {
+  const logPath = join(homedir(), '.cc-hub', 'herdr.log');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.herdr.server</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${escapeXml(herdrPath)}</string>
+    <string>server</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${escapeXml(logPath)}</string>
+  <key>StandardErrorPath</key>
+  <string>${escapeXml(logPath)}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
+  </dict>
+</dict>
+</plist>
+`;
+}
+
+const HERDR_CONFIG_TOML = `# CC Hub herdr backend configuration (written by \`cchub setup\`)
+
+[session]
+# Restart agent panes (Claude Code etc.) in their native conversation
+# sessions after a server restart.
+resume_agents_on_restore = true
+
+[experimental]
+# Persist recent pane screen contents across server restarts.
+pane_history = true
+`;
+
+/**
+ * Provision the herdr backend: supervised server (systemd / launchd),
+ * config.toml with agent-resume enabled, and the Claude Code integration
+ * hook (native session identity for restore).
+ */
+async function provisionHerdr(): Promise<void> {
+  console.log('🐑 herdr バックエンドのセットアップ');
+
+  const which = Bun.spawnSync(['which', 'herdr']);
+  if (which.exitCode !== 0) {
+    console.error('⚠️  herdr が見つかりません。先にインストールしてください:');
+    console.error('   curl -fsSL https://herdr.dev/install.sh | sh  (または brew install herdr)');
+    console.log('');
+    return;
+  }
+  const herdrPath = which.stdout.toString().trim();
+
+  // config.toml: create with our defaults; never clobber an existing file.
+  const herdrConfigDir = join(homedir(), '.config', 'herdr');
+  const configPath = join(herdrConfigDir, 'config.toml');
+  await mkdir(herdrConfigDir, { recursive: true });
+  const existingConfig = await Bun.file(configPath)
+    .text()
+    .catch(() => null);
+  if (existingConfig === null) {
+    await writeFile(configPath, HERDR_CONFIG_TOML);
+    console.log(`✅ herdr 設定を作成: ${configPath}`);
+  } else if (!existingConfig.includes('resume_agents_on_restore')) {
+    console.log('⚠️  既存の herdr config.toml に resume_agents_on_restore がありません。');
+    console.log('   [session] resume_agents_on_restore = true の追記を推奨します');
+  }
+
+  // Supervised server.
+  const wasRunning = Bun.spawnSync(['herdr', 'status', 'server'])
+    .stdout.toString()
+    .includes('status: running');
+  if (platform() === 'darwin') {
+    const plistPath = join(homedir(), 'Library', 'LaunchAgents', 'com.herdr.server.plist');
+    await writeFile(plistPath, buildHerdrLaunchdPlist(herdrPath));
+    console.log(`✅ herdr サービスファイル: ${plistPath}`);
+    if (wasRunning) {
+      console.log('⚠️  herdr サーバが既に稼働中のため、launchd への切替は手動で行ってください:');
+      console.log(`   herdr server stop && launchctl bootstrap gui/$(id -u) ${plistPath}`);
+      console.log('   (resume_agents_on_restore 有効ならエージェント会話は自動復元されます)');
+    } else {
+      Bun.spawnSync(['launchctl', 'bootout', `gui/${process.getuid?.() ?? 501}`, plistPath]);
+      Bun.spawnSync(['launchctl', 'bootstrap', `gui/${process.getuid?.() ?? 501}`, plistPath]);
+      console.log('✅ herdr サーバを launchd で起動しました');
+    }
+  } else {
+    const systemdDir = join(homedir(), '.config', 'systemd', 'user');
+    await mkdir(systemdDir, { recursive: true });
+    const unitPath = join(systemdDir, 'herdr.service');
+    await writeFile(unitPath, HERDR_SYSTEMD_SERVICE.replace(/__HERDR_PATH__/g, herdrPath));
+    console.log(`✅ herdr サービスファイル: ${unitPath}`);
+    Bun.spawnSync(['systemctl', '--user', 'daemon-reload']);
+    if (wasRunning && !isHerdrSystemdActive()) {
+      Bun.spawnSync(['systemctl', '--user', 'enable', 'herdr']);
+      console.log('⚠️  herdr サーバが systemd 管理外で稼働中です。切替は手動で:');
+      console.log('   herdr server stop && systemctl --user start herdr');
+      console.log('   (resume_agents_on_restore 有効ならエージェント会話は自動復元されます)');
+    } else {
+      const res = Bun.spawnSync(['systemctl', '--user', 'enable', '--now', 'herdr']);
+      if (res.exitCode === 0) {
+        console.log('✅ herdr サーバを systemd で常駐化しました');
+      } else {
+        console.error('⚠️  herdr サービスの起動に失敗しました');
+        console.error(res.stderr.toString());
+      }
+    }
+  }
+
+  // Claude Code integration: reports native session ids to herdr so agent
+  // conversations survive server restarts. Adds a SessionStart hook to
+  // ~/.claude/settings.json (coexists with cchub notify hooks).
+  const integ = Bun.spawnSync(['herdr', 'integration', 'install', 'claude']);
+  if (integ.exitCode === 0) {
+    console.log('✅ herdr Claude integration を設定しました (~/.claude/settings.json に SessionStart hook)');
+  } else {
+    console.error('⚠️  herdr integration install claude に失敗しました:');
+    console.error(integ.stderr.toString());
+  }
+  console.log('');
+}
+
+function isHerdrSystemdActive(): boolean {
+  return (
+    Bun.spawnSync(['systemctl', '--user', 'is-active', 'herdr']).stdout.toString().trim() ===
+    'active'
+  );
+}
+
 // ─── Setup entry point ───
 
 export async function setupService(port: number, password?: string): Promise<void> {
+  await provisionHerdr();
   if (platform() === 'darwin') {
     await setupLaunchd(port, password);
   } else {

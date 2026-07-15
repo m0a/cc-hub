@@ -1,6 +1,6 @@
 ---
 name: cchub-send
-description: CC Hub の `cchub send` で、ローカル or peer サーバの tmux パネルにテキスト/コマンドを送信する。「/cchub-send」「ペインに送って」「セッションに入力」「peerに送信」「リモートセッションに送って」などで起動する。
+description: CC Hub の `cchub send` で、ローカル or peer サーバのターミナルペイン (herdr) にテキスト/コマンドを送信する。「/cchub-send」「ペインに送って」「セッションに入力」「peerに送信」「リモートセッションに送って」などで起動する。
 ---
 
 # cchub-send
@@ -20,8 +20,8 @@ description: CC Hub の `cchub send` で、ローカル or peer サーバの tmu
 `<peer>:<session>:<paneId>` の3パート構成。
 
 - `<peer>`: `local` / `self` / peer id (`p_xxxx`) / peer の nickname
-- `<session>`: tmux セッション名 (= cchub の session id)
-- `<paneId>`: tmux pane id (例: `%7`)
+- `<session>`: cchub の session id (= herdr workspace のラベル)
+- `<paneId>`: pane id (tmux 形式 `%N`, 例: `%7`)
 
 ## 基本コマンド
 
@@ -129,7 +129,7 @@ stdout と stderr を意図的に分けてる:
 
 3. **自分の pane を特定**:
    ```bash
-   tmux display-message -p '#{session_name}:#{pane_id}'   # 例: cchub-work-1:%1
+   curl -sk https://localhost:5923/api/sessions | jq -r '.sessions[] | select(.state!="lost") | .id'   # session 一覧
    ```
 
 4. **送信時に返信先と返し方を明記**:
@@ -143,7 +143,7 @@ stdout と stderr を意図的に分けてる:
 - 返信は `--submit` を使うよう明示。`--newline` 1回だと長文では submit されない
 - 返事が複数ターン続く場合に備えて、終了マーカー (`[reply-done]` 等) を最後に別送するよう指示すると追跡しやすい (※実際には相手の Claude Code が本文末尾に連結して1回の send で済ませてくることが多いので、マーカーは本文末尾でも追跡可能な文字列にしておく)
 - 受信側 (= こちらの pane) に返事が届くと、それは「ユーザーからの新しい入力」として Claude Code TUI に流し込まれる。すなわち相手の応答が次のターンのプロンプトになる
-- **届いた返事が submit されないまま入力欄に溜まることがある** (相手側で `--submit` が抜けた / 古い cchub バイナリ)。peer に対しては自分の tmux から手出しできないので、追い打ちで `cchub send <target> "" --submit` を送ると確定する。同じ pane なら `tmux send-keys -t <自分のpane> Enter` でもよい
+- **届いた返事が submit されないまま入力欄に溜まることがある** (相手側で `--submit` が抜けた / 古い cchub バイナリ)。追い打ちで `cchub send <target> "" --submit` を送ると確定する
 - ✅ **v0.1.158 以降: `--submit` は bracketed paste でラップして送るので長さ無関係に submit される**。`\r\r` 末尾追加だった ~v0.1.157 までは ~300 bytes 以上の payload が paste 内に吸収されて入力欄に溜まる事故が出ていたが、根本対応済み。古い cchub と通信する場合 (相手側 cchub が v0.1.157 以下) は依然として長文で submit が吸収される可能性があるので、念のため `--wait` で viewport 確認すると安全
 
 ### デバッグ: 「届いてるのか?」を確かめる
@@ -239,7 +239,7 @@ dismiss できたかは `cchub peek <target>` で確認 (`detectedState` が `id
 - `cchub send` はデフォルトで `-p 5923` (本番ポート) を見にいく。dev サーバ (3456) に送りたいときは `-p 3456` を付ける
 - `--newline` を忘れるとシェルに入力されてもコマンドが実行されない (画面に文字列だけが残る)
 - **Claude Code / Codex TUI に送るときは `--submit`** を使う。v0.1.158 以降は bracketed paste markers (`\x1b[200~…\x1b[201~\r`) でラップするので、長さ無関係に確実に submit される。`--newline` (CR 1回) は shell コマンド実行用 — TUI に送ると multi-line として扱われ submit されない
-- peer の paneId はその peer の tmux サーバから見た id なので、ローカルで `tmux list-panes` しても出てこない。peer の `/api/sessions` を叩いて確認すること
+- peer の paneId はその peer から見た id。peer の `/api/sessions` を叩いて確認すること
 - `peers.json` は `~/.cc-hub/peers.json` (`CC_HUB_DATA_DIR` で上書き可)。CLI は peer-registry 経由で読むので環境変数があれば自動で従う
 
 ## トラブルシュート
@@ -249,7 +249,7 @@ dismiss できたかは `cchub peek <target>` で確認 (`detectedState` が `id
 | `target は <peer>:<session>:<paneId> 形式で指定してください` | コロン区切りが3つ揃っていない | `<peer>:<session>:<paneId>` に直す |
 | `peer "<name>" が見つかりません` | nickname/id 不一致 | UI の Settings → Peers で確認 |
 | `HTTP 404 Pane not found` | paneId がそのセッションに存在しない | `GET /api/sessions` で再確認 |
-| `HTTP 404 Session not found` | tmux に session 自体が無い | `tmux ls` または UI で確認 |
+| `HTTP 404 Session not found` | session (herdr workspace) 自体が無い | `herdr workspace list` または UI で確認 |
 | `HTTP 401` | peer の token 期限切れ/不正 | UI で peer を作り直して再ログイン |
 | `peer に接続できません` | peer の URL/port 違い、サーバ停止 | URL と起動状態を確認 |
 | 文字列は届くが Claude Code が応答しない | submit されていない | `--submit` を付ける (bracketed paste でラップ + Enter) |

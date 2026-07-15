@@ -5,11 +5,13 @@ import { homedir } from 'node:os';
 import { FileService } from '../services/file-service';
 import { FileChangeTracker } from '../services/file-change-tracker';
 import { TmuxService } from '../services/tmux';
+import { HerdrService } from '../services/herdr';
+import { isHerdrMode } from '../services/herdr-client';
 import type { FileListResponse, FileReadResponse, FileChangesResponse, FileInfo, GitChangesResponse, GitDiffResponse, GitFileChange, GitChangeStatus } from '../../../shared/types';
 
 const fileService = new FileService();
 const changeTracker = new FileChangeTracker();
-const tmuxService = new TmuxService();
+const tmuxService = isHerdrMode() ? new HerdrService() : new TmuxService();
 
 /**
  * The client supplies `sessionWorkingDir` as the base for file access. It MUST

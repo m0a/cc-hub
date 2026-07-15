@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2026-07-15
+
+### Fixed
+- **systemd / launchd 配下で `herdr command not found` になり起動できない問題（v0.2.0 のリグレッション）**: サービスの `ExecStart` は `zsh -lc`（非対話ログインシェル = `.zshrc` を読まない）のため、herdr の公式インストール先である `~/.local/bin` が PATH に入らず、herdr がインストール済み・稼働中でも起動に失敗して再起動ループに入っていた。herdr バイナリを `$HERDR_BIN` → PATH → 既知のインストール先（`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`）の順に一度だけ解決し、以降のすべての herdr 起動（起動時チェック、サーバ自動起動、ペインの制御ストリーム、`cchub setup` のプロビジョニング）を絶対パスで行うようにした（`backend/src/services/herdr-client.ts`）
+
 ## [0.2.0] - 2026-07-15
 
 ターミナルバックエンドを tmux から **herdr** へ全面移行しました。**herdr のインストールが必須** になり、tmux 上の既存セッションは引き継がれません（移行手順は後述）。

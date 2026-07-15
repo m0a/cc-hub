@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-07-15
+
+ターミナルバックエンドを tmux から **herdr** へ全面移行しました。**herdr のインストールが必須** になり、tmux 上の既存セッションは引き継がれません（移行手順は後述）。
+
+### Changed
+- **ターミナルバックエンドを tmux から herdr へ全面移行**: セッションは herdr の workspace、ペインは herdr の pane にマッピングされ、端末 I/O は herdr サーバの NDJSON ソケット API（`~/.config/herdr/herdr.sock`）経由になった。ペインごとに `herdr terminal session control` を常駐させ、raw バイト（base64）で入力をパススルー、`terminal.frame` で出力を受ける。tmux の octal デコード・レイアウト文字列パース・`send-keys` のエスケープ制約が不要になり、マウス SGR / bracketed paste / エスケープシーケンスがそのまま透過する（`backend/src/services/herdr-client.ts`, `herdr-control.ts`, `herdr.ts`）
+- **セッションが CC Hub の再起動から独立**: セッションは herdr サーバのプロセス内に存在するため、cchub の再起動・更新でセッションが落ちなくなった。herdr サーバ側も `resume_agents_on_restore` で workspace と agent 会話を復元する
+- **分割レイアウトを CC Hub 側で保持**: herdr のグリッドはヘッドレスでリサイズできないため、split ツリー（比率・ペイン矩形）を CC Hub が所有し、ペイン PTY を個別に絶対サイズで制御する（`backend/src/services/herdr-layout.ts`）
+- **セッション識別に herdr のネイティブ agent session id を使用**: `agent.list` が返す Claude のセッション ID で紐付けるようになり、同一ディレクトリに複数セッションがある場合の取り違えが解消（従来はパス一致のフォールバック）
+- **`cchub setup` が herdr をプロビジョニング**: systemd user unit / launchd plist、`~/.config/herdr/config.toml`（`resume_agents_on_restore` + `pane_history`）、`herdr integration install claude` を自動セットアップする（既存設定は上書きしない）
+- **起動時に herdr のバージョン/プロトコルを検査**: 未検証プロトコルでは警告をログに出す
+
+### Added
+- **インジケータの `waiting_input` を herdr の agent status から補正**: パーミッション確認待ちなど、hook が来ない状態でもペインの `blocked` 状態を反映する
+
+### Removed
+- **tmux 関連コードを全削除**: `tmux-control.ts` / `tmux.ts` / `pane-viewport.ts` / `viewport-cursor-policy.ts` / `tmux-layout-parser.ts` / `tmux-octal-decoder.ts` とそのテスト
+- **`cchub tui`（embed-tui）を削除**: tmux をレンダリングバックエンドとして直接使う設計だったため、herdr 移行に伴い撤去（`tui/` ワークスペースごと削除）
+- **ペインの respawn / copy-mode**: herdr に対応機能がないため撤去
+
+### Fixed
+- **UTF-8 のチャンク分断による文字化け**: ソケットの NDJSON リーダーをストリーミング対応の共通実装に統一（絵文字・日本語がパケット境界で壊れない）
+- **入力の取りこぼしと順序逆転**: ペインごとに単一の制御ストリーム stdin へ流すことで順序を保証。制御ストリームがない状態での送信は成功扱いにせずエラーを返す
+- **Claude / Codex TUI への複数行プロンプト送信**: bracketed paste で送り、送信の `\r` は 80ms 遅らせて別チャンクで送る（同一チャンクだと TUI が改行を飲む）
+- **履歴からの再開後に画面が空白のままリロードが必要だった問題**: セッション切替時に viewport の配送先登録を一括破棄していたのを修正。加えて workspace 削除後にゾンビ制御セッションが残り同名セッションの再開を壊す問題も修正
+- **再開時の「No conversation found」**: Claude 終了後に作業ディレクトリが `~` へ劣化するため、会話ログ（`.jsonl`）に記録された cwd を優先して復帰する
+- **alt-screen 判定でスクロールできない問題**: 再開直後のシェルのエコー行を alt-screen と誤判定していたのを緩和し、スクロールバック増加で自己修正するようにした
+- **ペインのドラッグリサイズが元に戻る / 分割の競合**: レイアウトツリー側で絶対サイズと重複リーフを扱うよう修正
+- **読み取り専用 REST がペインを乗っ取る問題**: `cchub peek` や viewport スナップショットは RPC のみで行い、制御ストリームは WebSocket 購読・入力時にのみ起動する（lazy controllers）
+- **メタデータストアを tmux 版と分離**: `~/.cc-hub` を共有する tmux 版と衝突しないよう `herdr-session-metadata.json` / `herdr-last-known-sessions.json` に分離
+
+### Notes
+- **移行手順**: `curl -fsSL https://herdr.dev/install.sh | sh`（または `brew install herdr`）で herdr を入れ、`cchub update` 後に `cchub setup` を各マシンで再実行する。tmux 上の既存セッションは引き継がれないため、必要な作業は事前に区切っておくこと
+- **既知の制限**: スクロールバックは herdr の `pane.read` 1000 行キャップが上限（upstream の offset 対応待ち）
+- **herdr の更新運用**: `herdr update`（バイナリ置換のみ）→ `systemctl --user restart herdr`。systemd/launchd 配下では `--handoff` を使わないこと（監視外の新サーバに切り替わるため）
+
 ## [0.1.192] - 2026-07-14
 
 ### Fixed

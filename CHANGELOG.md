@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.6] - 2026-07-17
+
+### Fixed
+- **OS通知をタップしても対象セッションへ遷移しない問題（#400）**: 既存ウィンドウには Service Worker から `postMessage` して SPA を再読込せずに切り替え、ウィンドウがない場合だけ deep link で開くようにした。通知先は Claude の `ccSessionId` と Codex の `agentSessionId` の両方から解決し、未オープンのセッションもライブAPI一覧から追加して開く。desktop / tablet の保存済みペイン状態、remote peer の `peerId`、Service Workerを使わない通常ブラウザ通知にも同じ遷移を配線した（`frontend/public/sw-notification.js`, `frontend/src/App.tsx`, `frontend/src/components/DesktopLayout.tsx`, `frontend/src/utils/notificationNavigation.ts`）
+
 ## [0.2.5] - 2026-07-16
 
 ### Added

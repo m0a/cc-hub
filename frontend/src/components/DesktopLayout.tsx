@@ -61,6 +61,10 @@ interface DesktopState {
 interface DesktopLayoutProps {
 	sessions: OpenSession[];
 	activeSessionId: string | null;
+	sessionSwitchRequest?: {
+		sessionId: string;
+		requestId: number;
+	} | null;
 	onSessionStateChange: (id: string, state: SessionState) => void;
 	isTablet?: boolean;
 	keyboardControlRef?: React.RefObject<{
@@ -257,6 +261,7 @@ const KEYBOARD_VISIBLE_KEY = "cchub-floating-keyboard-visible";
 export function DesktopLayout({
 	sessions: propSessions,
 	activeSessionId,
+	sessionSwitchRequest,
 	onSessionStateChange,
 	isTablet = false,
 	keyboardControlRef,
@@ -426,6 +431,27 @@ export function DesktopLayout({
 			}));
 		}
 	}, [activeSessionId, desktopState.root]);
+
+	// Notification navigation is an explicit external switch. Keep the ordinary
+	// activeSessionId prop from overwriting the user's persisted desktop state,
+	// while still allowing a notification to move every pane to its target.
+	const appliedSessionSwitchRequestRef = useRef(0);
+	useEffect(() => {
+		if (
+			!sessionSwitchRequest ||
+			sessionSwitchRequest.requestId === appliedSessionSwitchRequestRef.current
+		) {
+			return;
+		}
+		appliedSessionSwitchRequestRef.current = sessionSwitchRequest.requestId;
+		setDesktopState((previous) => ({
+			...previous,
+			root: updateAllSessionIds(
+				previous.root,
+				sessionSwitchRequest.sessionId,
+			),
+		}));
+	}, [sessionSwitchRequest]);
 
 	// =========================================================================
 	// Control Mode
@@ -614,7 +640,14 @@ export function DesktopLayout({
 			setTimeout(() => requestAllViewports(), 500);
 		},
 		onHookEvent: (event, cwd, sessionId, data, message) => {
-			fireHookNotification(event, cwd, sessionId, data, message);
+			fireHookNotification(
+				event,
+				cwd,
+				sessionId,
+				data,
+				message,
+				peerConn.peerId,
+			);
 			// 全useSessions インスタンスのindicatorStateを即座に更新
 			updateCachedSessionsByHookEvent(event, sessionId);
 		},

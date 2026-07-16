@@ -6,6 +6,7 @@
  */
 
 import { toHomeShortPath } from "./path";
+import { dispatchNotificationNavigation } from "./notificationNavigation";
 
 const EVENT_MESSAGES: Record<string, string> = {
 	Stop: "応答が完了しました",
@@ -38,6 +39,16 @@ async function showNotification(title: string, options: NotificationOptions) {
 		const notification = new Notification(title, options);
 		notification.onclick = () => {
 			window.focus();
+			const sessionId = options.data?.sessionId;
+			if (typeof sessionId === "string") {
+				dispatchNotificationNavigation({
+					sessionId,
+					peerId:
+						typeof options.data?.peerId === "string"
+							? options.data.peerId
+							: undefined,
+				});
+			}
 			notification.close();
 		};
 	} catch {
@@ -54,13 +65,14 @@ export function fireHookNotification(
 	_sessionId?: string,
 	_data?: Record<string, unknown>,
 	smartMessage?: string,
+	peerId?: string,
 ) {
 	if (!("Notification" in window) || Notification.permission !== "granted") {
 		return;
 	}
 
 	// デバウンス
-	const key = `${event}:${cwd || ""}`;
+	const key = `${peerId || "local"}:${_sessionId || ""}:${event}:${cwd || ""}`;
 	const now = Date.now();
 	if (
 		key === lastNotification.key &&
@@ -79,6 +91,6 @@ export function fireHookNotification(
 		body,
 		icon: "/icon-192.png",
 		tag: `hook-${event}-${now}`,
-		data: { sessionId: _sessionId, event },
+		data: { sessionId: _sessionId, peerId, event },
 	});
 }

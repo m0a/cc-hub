@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { initRemoteLogger } from "./utils/remoteLogger";
 import { applyUiScale, getStoredUiScale } from "./utils/uiScale";
+import { dispatchNotificationNavigation } from "./utils/notificationNavigation";
 import "./i18n";
 import "./index.css";
 
@@ -52,6 +53,18 @@ if ("serviceWorker" in navigator) {
 	navigator.serviceWorker.addEventListener("message", (event) => {
 		if (event.data?.type === "sw-log") {
 			console.log(event.data.message);
+		}
+		if (
+			event.data?.type === "notification-click" &&
+			typeof event.data.sessionId === "string"
+		) {
+			dispatchNotificationNavigation({
+				sessionId: event.data.sessionId,
+				peerId:
+					typeof event.data.peerId === "string"
+						? event.data.peerId
+						: undefined,
+			});
 		}
 	});
 }

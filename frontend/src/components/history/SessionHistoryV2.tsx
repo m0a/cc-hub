@@ -36,6 +36,17 @@ interface SessionHistoryV2Props {
 
 const SIDEBAR_MIN_WIDTH = 760;
 
+const SIDEBAR_WIDTH_KEY = "cchub-history-sidebar-width";
+const SIDEBAR_WIDTH_DEFAULT = 240;
+const SIDEBAR_WIDTH_MIN = 180;
+const SIDEBAR_WIDTH_MAX = 480;
+
+function loadSidebarWidth(): number {
+	const raw = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+	if (!Number.isFinite(raw) || raw <= 0) return SIDEBAR_WIDTH_DEFAULT;
+	return Math.max(SIDEBAR_WIDTH_MIN, Math.min(raw, SIDEBAR_WIDTH_MAX));
+}
+
 function facetKey(s: FacetState): string {
 	return JSON.stringify({
 		p: [...s.projects].sort(),
@@ -134,6 +145,52 @@ export function SessionHistoryV2({
 	useEffect(() => {
 		if (wide) setDrawerOpen(false);
 	}, [wide]);
+
+	// Drag-resizable sidebar width, persisted across sessions.
+	const [sidebarWidth, setSidebarWidth] = useState(loadSidebarWidth);
+	const isResizingSidebar = useRef(false);
+	const bodyRef = useRef<HTMLDivElement>(null);
+
+	const handleSidebarResizeStart = useCallback(
+		(e: React.MouseEvent | React.TouchEvent) => {
+			e.preventDefault();
+			isResizingSidebar.current = true;
+			document.body.style.cursor = "col-resize";
+			document.body.style.userSelect = "none";
+		},
+		[],
+	);
+
+	useEffect(() => {
+		const handleMove = (e: MouseEvent | TouchEvent) => {
+			if (!isResizingSidebar.current || !bodyRef.current) return;
+			const rect = bodyRef.current.getBoundingClientRect();
+			const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+			const width = Math.max(
+				SIDEBAR_WIDTH_MIN,
+				Math.min(clientX - rect.left, SIDEBAR_WIDTH_MAX, rect.width - 320),
+			);
+			setSidebarWidth(width);
+			localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(width)));
+		};
+		const handleEnd = () => {
+			if (isResizingSidebar.current) {
+				isResizingSidebar.current = false;
+				document.body.style.cursor = "";
+				document.body.style.userSelect = "";
+			}
+		};
+		document.addEventListener("mousemove", handleMove);
+		document.addEventListener("mouseup", handleEnd);
+		document.addEventListener("touchmove", handleMove);
+		document.addEventListener("touchend", handleEnd);
+		return () => {
+			document.removeEventListener("mousemove", handleMove);
+			document.removeEventListener("mouseup", handleEnd);
+			document.removeEventListener("touchmove", handleMove);
+			document.removeEventListener("touchend", handleEnd);
+		};
+	}, []);
 
 	const isSearchMode = searchQuery.trim().length > 0;
 	const sourceItems = isSearchMode ? searchResults : items;
@@ -257,11 +314,22 @@ export function SessionHistoryV2({
 			)}
 
 			{/* Body: sidebar (wide) + list */}
-			<div className="flex-1 min-h-0 flex">
+			<div ref={bodyRef} className="flex-1 min-h-0 flex">
 				{wide && (
-					<aside className="w-[240px] shrink-0 overflow-y-auto border-r border-white/[0.06] px-3 py-3">
-						{sidebar}
-					</aside>
+					<>
+						<aside
+							style={{ width: sidebarWidth }}
+							className="shrink-0 overflow-y-auto border-r border-white/[0.06] px-3 py-3"
+						>
+							{sidebar}
+						</aside>
+						{/* biome-ignore lint/a11y/noStaticElementInteractions: drag handle */}
+						<div
+							className="w-1 -ml-0.5 shrink-0 cursor-col-resize touch-none hover:bg-blue-500/60 transition-colors"
+							onMouseDown={handleSidebarResizeStart}
+							onTouchStart={handleSidebarResizeStart}
+						/>
+					</>
 				)}
 				<div className="flex-1 min-h-0 flex flex-col">
 					{/* Status line */}

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.5] - 2026-07-16
+
+### Added
+- **履歴のファセットサイドバーをドラッグで幅調整できるようにした**: プロジェクトのパスが長いと 240px 固定では途中で切れて区別がつかなかった。サイドバー右端のハンドルをマウス/タッチでドラッグして 180〜480px の範囲で調整でき（リスト側は最低 320px 確保）、幅は `localStorage`（`cchub-history-sidebar-width`）に保存されてリロード後も維持される。実装は FileViewer の既存リサイズパターンと同じ（`frontend/src/components/history/SessionHistoryV2.tsx`）
+
 ## [0.2.4] - 2026-07-16
 
 ### Added

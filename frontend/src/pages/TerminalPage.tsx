@@ -198,7 +198,16 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 					controlTerminal.requestViewport(pane.paneId, offset);
 				}
 			},
-			onHookEvent: fireHookNotification,
+			onHookEvent: (event, cwd, agentSessionId, data, message) => {
+				fireHookNotification(
+					event,
+					cwd,
+					agentSessionId,
+					data,
+					message,
+					sessionPeerId,
+				);
+			},
 			onDisconnect: () => {
 				onStateChange?.("disconnected");
 			},

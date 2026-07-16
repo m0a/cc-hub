@@ -149,6 +149,7 @@ function openWatcher(peer: PeerClientView) {
 					ccSessionId,
 					msg.data,
 					msg.message,
+					peer.id,
 				);
 				return;
 			}

@@ -35,6 +35,13 @@ import { useAuth } from "./hooks/useAuth";
 import { useSessions } from "./hooks/useSessions";
 import { TerminalPage } from "./pages/TerminalPage";
 import { authFetch, isTransientNetworkError } from "./services/api";
+import {
+	findNotificationSession,
+	isSameNotificationPeer,
+	NOTIFICATION_NAVIGATION_EVENT,
+	parseNotificationTarget,
+	type NotificationTarget,
+} from "./utils/notificationNavigation";
 
 // Loading screen with phase display and timeout detection
 function LoadingScreen({
@@ -292,6 +299,14 @@ export function App() {
 
 	const [openSessions, setOpenSessions] = useState<OpenSession[]>([]);
 	const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+	const [pendingNotificationTarget, setPendingNotificationTarget] =
+		useState<NotificationTarget | null>(null);
+	const notificationRequestIdRef = useRef(0);
+	const notificationNavigationHandledRef = useRef(false);
+	const [desktopSessionSwitchRequest, setDesktopSessionSwitchRequest] = useState<{
+		sessionId: string;
+		requestId: number;
+	} | null>(null);
 
 	const [isLoading, setIsLoading] = useState(true);
 	const [loadError, setLoadError] = useState<string | null>(null);
@@ -565,22 +580,31 @@ export function App() {
 					.map(apiToOpenSession);
 
 				if (sessionsToOpen.length > 0) {
-					setOpenSessions(sessionsToOpen);
+					if (!notificationNavigationHandledRef.current) {
+						setOpenSessions(sessionsToOpen);
+					}
 					const validIds = sessionsToOpen.map((s) => s.id);
 					const activeId =
 						lastSessionId && validIds.includes(lastSessionId)
 							? lastSessionId
 							: validIds[0];
-					setActiveSessionId(activeId);
+					if (!notificationNavigationHandledRef.current) {
+						setActiveSessionId(activeId);
+					}
 				} else if (allSessions.length > 0) {
 					const mostRecent = apiToOpenSession(allSessions[0]);
-					setOpenSessions([mostRecent]);
-					setActiveSessionId(mostRecent.id);
+					if (!notificationNavigationHandledRef.current) {
+						setOpenSessions([mostRecent]);
+						setActiveSessionId(mostRecent.id);
+					}
 				} else {
+					if (notificationNavigationHandledRef.current) return;
 					const initialSession = await createInitialSession();
 					if (initialSession) {
-						setOpenSessions([initialSession]);
-						setActiveSessionId(initialSession.id);
+						if (!notificationNavigationHandledRef.current) {
+							setOpenSessions([initialSession]);
+							setActiveSessionId(initialSession.id);
+						}
 					} else {
 						setShowSessionList(true);
 					}
@@ -830,35 +854,90 @@ export function App() {
 		};
 	}, [showOverlay, showSessionList, isLoading, startOverlayTimer]);
 
-	// Navigate to session from notification tap
-	// SW client.navigate() reloads page with ?notify-session=<ccSessionId>
-	// Store in ref until openSessions loads, then switch once
-	const pendingNotifyRef = useRef<string | null>(null);
-
+	// Receive notification navigation from either a deep link (new window) or
+	// Service Worker / Notification click event (existing window, no reload).
 	useEffect(() => {
-		const params = new URLSearchParams(window.location.search);
-		const urlSessionId = params.get("notify-session");
-		if (urlSessionId) {
-			pendingNotifyRef.current = urlSessionId;
-			window.history.replaceState({}, "", "/");
-			// Auto-clear after 15s to prevent stale switches
-			setTimeout(() => {
-				pendingNotifyRef.current = null;
-			}, 15_000);
+		const handleNotificationNavigation = (event: Event) => {
+			const detail = (event as CustomEvent<NotificationTarget>).detail;
+			if (detail && typeof detail.sessionId === "string") {
+				setPendingNotificationTarget(detail);
+			}
+		};
+		window.addEventListener(
+			NOTIFICATION_NAVIGATION_EVENT,
+			handleNotificationNavigation,
+		);
+
+		const deepLinkTarget = parseNotificationTarget(window.location.search);
+		if (deepLinkTarget) {
+			setPendingNotificationTarget(deepLinkTarget);
+			const url = new URL(window.location.href);
+			url.searchParams.delete("notify-session");
+			url.searchParams.delete("notify-peer");
+			window.history.replaceState(
+				{},
+				"",
+				`${url.pathname}${url.search}${url.hash}`,
+			);
 		}
+
+		return () => {
+			window.removeEventListener(
+				NOTIFICATION_NAVIGATION_EVENT,
+				handleNotificationNavigation,
+			);
+		};
 	}, []);
 
-	// When openSessions updates, check if we have a pending notification switch
+	// Give session watchers time to deliver a newly-created target, but do not
+	// retain an unresolved click indefinitely.
 	useEffect(() => {
-		const pending = pendingNotifyRef.current;
-		if (!pending || openSessions.length === 0) return;
-		const match = openSessions.find((s) => s.ccSessionId === pending);
-		if (match) {
-			pendingNotifyRef.current = null;
-			setActiveSessionId(match.id);
-			setShowSessionList(false);
-		}
-	}, [openSessions]);
+		if (!pendingNotificationTarget) return;
+		const target = pendingNotificationTarget;
+		const timer = window.setTimeout(() => {
+			setPendingNotificationTarget((current) =>
+				current === target ? null : current,
+			);
+		}, 15_000);
+		return () => window.clearTimeout(timer);
+	}, [pendingNotificationTarget]);
+
+	// Resolve against the full live API list first so notifications can open a
+	// session that this device has never opened before. openSessions remains a
+	// fallback while the watcher is still hydrating.
+	useEffect(() => {
+		if (!pendingNotificationTarget) return;
+		const match = findNotificationSession(
+			[...apiSessions, ...openSessions],
+			pendingNotificationTarget,
+		);
+		if (!match) return;
+
+		const apiMatch = apiSessions.find(
+			(session) =>
+				session.id === match.id &&
+				isSameNotificationPeer(session.peerId, match.peerId),
+		);
+		const openMatch = apiMatch ? apiToOpenSession(apiMatch) : (match as OpenSession);
+		notificationNavigationHandledRef.current = true;
+		setOpenSessions((previous) =>
+			previous.some(
+				(session) =>
+					session.id === openMatch.id &&
+					isSameNotificationPeer(session.peerId, openMatch.peerId),
+			)
+				? previous
+				: [...previous, openMatch],
+		);
+		setPendingNotificationTarget(null);
+		setActiveSessionId(openMatch.id);
+		setDesktopSessionSwitchRequest({
+			sessionId: openMatch.id,
+			requestId: ++notificationRequestIdRef.current,
+		});
+		setShowSessionList(false);
+		setMobileActivePaneId(null);
+	}, [apiSessions, openSessions, pendingNotificationTarget]);
 
 	// Diagnostic: log render state for debugging black screen issues
 	useEffect(() => {
@@ -923,6 +1002,7 @@ export function App() {
 				<DesktopLayout
 					sessions={openSessions}
 					activeSessionId={activeSessionId}
+					sessionSwitchRequest={desktopSessionSwitchRequest}
 					onSessionStateChange={updateSessionState}
 				/>
 				{showOnboarding && <Onboarding onComplete={completeOnboarding} />}
@@ -937,6 +1017,7 @@ export function App() {
 				<DesktopLayout
 					sessions={openSessions}
 					activeSessionId={activeSessionId}
+					sessionSwitchRequest={desktopSessionSwitchRequest}
 					onSessionStateChange={updateSessionState}
 					isTablet={true}
 					keyboardControlRef={keyboardControlRef}

@@ -20,7 +20,7 @@ import { getIndicatorOverride } from './notify';
 import { pushSessionsNow } from './terminal-mux';
 import { detectPaneState, stripAnsi, type DetectedPaneState } from '../services/pane-state';
 
-const tmuxService = new HerdrService();
+const herdrService = new HerdrService();
 const claudeCodeService = new ClaudeCodeService();
 const codexService = new CodexService();
 const codexConversationService = new CodexConversationService();
@@ -166,14 +166,14 @@ export const sessions = new Hono();
 
 /** Build the full sessions list (shared by HTTP handler and WS push) */
 export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
-  const tmuxSessions = await tmuxService.listSessions();
+  const herdrSessions = await herdrService.listSessions();
   const sessionMetadata = await getAllSessionMetadata();
 
-  const claudePaths = tmuxSessions
+  const claudePaths = herdrSessions
     .filter((s): s is typeof s & { currentPath: string } => agentSupportsConversationMetadata(s.agent ?? s.currentCommand) && !!s.currentPath)
     .map(s => s.currentPath);
   const ccSessionsByPath = await claudeCodeService.getSessionsForPaths(claudePaths);
-  const codexPaths = tmuxSessions
+  const codexPaths = herdrSessions
     .filter((s): s is typeof s & { currentPath: string } => (s.agent ?? s.currentCommand) === 'codex' && !!s.currentPath)
     .map(s => s.currentPath);
   const codexThreadsByPath = await codexService.getThreadsForPaths(codexPaths);
@@ -182,7 +182,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
   // Read once per build (cheap: a handful of small ~/.claude/sessions/*.json).
   const bridgeSessionIds = await claudeCodeService.getBridgeSessionIds();
 
-  const results = await Promise.all(tmuxSessions.map(async (s) => {
+  const results = await Promise.all(herdrSessions.map(async (s) => {
     let ccSession: Awaited<ReturnType<typeof claudeCodeService.getSessionForPath>> | undefined;
     const codexThread = s.currentPath ? codexThreadsByPath.get(s.currentPath) : undefined;
 
@@ -316,7 +316,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
     };
   }));
 
-  // Add lost sessions (existed before reboot but not in tmux now)
+  // Add lost sessions (existed before reboot but not in herdr now)
   const activeIds = new Set(results.map(s => s.id));
   const activePaths = new Set(results.map(s => s.currentPath).filter(Boolean));
   const lastKnown = await getLastKnownSessions();
@@ -356,7 +356,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
   }
 
   // Save snapshot: active sessions + still-lost sessions (so lost ones persist across refreshes).
-  // Fall back to previously-known values when tmux didn't report a field this round —
+  // Fall back to previously-known values when herdr did not report a field this round —
   // otherwise a transient gap (e.g. currentPath missing on first capture) erases the data
   // and lost-session resume can't find the project path.
   const prevById = new Map(lastKnown.map(s => [s.id, s]));
@@ -400,13 +400,13 @@ const ResumeSessionSchema = z.object({
   agent: z.enum(AGENT_PROVIDER_IDS).optional(),
 });
 
-// GET /sessions - List all tmux sessions (debug/fallback only, frontend uses WS push)
+// GET /sessions - List all sessions (debug/fallback only, frontend uses WS push)
 sessions.get('/', async (c) => {
   const sessionsList = await buildSessionsList();
   return c.json({ sessions: sessionsList });
 });
 
-// POST /sessions - Create a new tmux session
+// POST /sessions - Create a new session
 sessions.post('/', async (c) => {
   notifySessionChange();
   const body = await c.req.json().catch(() => ({}));
@@ -414,27 +414,27 @@ sessions.post('/', async (c) => {
   const agent = parsed.success ? parsed.data.agent : DEFAULT_AGENT_PROVIDER;
 
   // Generate session name
-  const tmuxSessions = await tmuxService.listSessions();
+  const herdrSessions = await herdrService.listSessions();
   const name = parsed.success && parsed.data.name
     ? parsed.data.name
-    : `session-${tmuxSessions.length + 1}`;
+    : `session-${herdrSessions.length + 1}`;
 
   // Check if session already exists
-  const exists = await tmuxService.sessionExists(name);
+  const exists = await herdrService.sessionExists(name);
   if (exists) {
     return c.json({ error: 'Session already exists' }, 400);
   }
 
   // Guard: reject if the same agent is already running in the same directory
   if (parsed.success && parsed.data.workingDir) {
-    const conflicting = findDuplicateAgentWorkingDirSession(tmuxSessions, agent, parsed.data.workingDir);
+    const conflicting = findDuplicateAgentWorkingDirSession(herdrSessions, agent, parsed.data.workingDir);
     if (conflicting) {
       return c.json({ error: 'duplicate_working_dir', existingSession: conflicting.name }, 409);
     }
   }
 
   try {
-    await tmuxService.createSession(name);
+    await herdrService.createSession(name);
 
     // Start the selected agent if workingDir is specified
     if (parsed.success && parsed.data.workingDir) {
@@ -448,7 +448,7 @@ sessions.post('/', async (c) => {
         (async () => {
           for (let i = 0; i < 30; i++) { // up to 30 seconds
             await new Promise(r => setTimeout(r, 1000));
-            const sessions = await tmuxService.listSessions();
+            const sessions = await herdrService.listSessions();
             const session = sessions.find(s => s.name === sessionName);
             if (session?.currentCommand === agent) {
               // Wait a bit more for the TUI to be fully ready, then submit
@@ -644,7 +644,7 @@ sessions.get('/prompts/search', async (c) => {
   return c.json({ prompts });
 });
 
-// POST /sessions/history/resume - Resume a session from history (creates new tmux session)
+// POST /sessions/history/resume - Resume a session from history (creates a new session)
 // NOTE: Must be defined BEFORE /:id routes
 const ResumeHistorySchema = z.object({
   sessionId: SessionIdSchema,
@@ -671,37 +671,37 @@ sessions.post('/history/resume', async (c) => {
   const projectPath = recordedCwd ?? parsed.data.projectPath;
 
   try {
-    // Generate a unique tmux session name based on project
+    // Generate a unique session name based on project
     const projectName = projectPath.split('/').pop() || 'session';
-    const tmuxSessions = await tmuxService.listSessions();
+    const herdrSessions = await herdrService.listSessions();
 
     // Guard: reject if the same agent is already running in the same directory
-    const conflicting = findDuplicateAgentWorkingDirSession(tmuxSessions, agent, projectPath);
+    const conflicting = findDuplicateAgentWorkingDirSession(herdrSessions, agent, projectPath);
     if (conflicting) {
       return c.json({ error: 'duplicate_working_dir', existingSession: conflicting.name }, 409);
     }
-    let tmuxSessionName = projectName;
+    let sessionName = projectName;
     let counter = 1;
-    while (tmuxSessions.some(s => s.name === tmuxSessionName)) {
-      tmuxSessionName = `${projectName}-${counter++}`;
+    while (herdrSessions.some(s => s.name === sessionName)) {
+      sessionName = `${projectName}-${counter++}`;
     }
 
-    // Create new tmux session
-    await tmuxService.createSession(tmuxSessionName);
+    // Create new session
+    await herdrService.createSession(sessionName);
 
     // Change to project directory and run the agent's resume command
     const command = `cd ${shellQuote(expandHome(projectPath))} && ${agentResumeCommand(agent, sessionId)}`;
     try {
-      await sendTextToSession(tmuxSessionName, command);
+      await sendTextToSession(sessionName, command);
     } catch {
       // Clean up the session if command failed
-      await tmuxService.killSession(tmuxSessionName);
+      await herdrService.killSession(sessionName);
       return c.json({ error: 'Failed to start agent session' }, 500);
     }
 
     return c.json({
       success: true,
-      tmuxSessionId: tmuxSessionName,
+      tmuxSessionId: sessionName,
       ccSessionId: sessionId,
       agent,
     });
@@ -710,21 +710,11 @@ sessions.post('/history/resume', async (c) => {
   }
 });
 
-// GET /sessions/clipboard - Get tmux paste buffer (global)
-// NOTE: Must be defined BEFORE /:id routes
-sessions.get('/clipboard', async (c) => {
-  const buffer = await tmuxService.getBuffer();
-  if (buffer === null) {
-    return c.json({ error: 'No buffer content' }, 404);
-  }
-  return c.json({ content: buffer });
-});
-
 // GET /sessions/:id - Get a specific session
 sessions.get('/:id', async (c) => {
   const id = c.req.param('id');
-  const tmuxSessions = await tmuxService.listSessions();
-  const session = tmuxSessions.find(s => s.id === id);
+  const herdrSessions = await herdrService.listSessions();
+  const session = herdrSessions.find(s => s.id === id);
 
   if (!session) {
     return c.json({ error: 'Session not found' }, 404);
@@ -742,25 +732,12 @@ sessions.get('/:id', async (c) => {
   });
 });
 
-// GET /sessions/:id/copy-mode - Check if session is in copy mode
-sessions.get('/:id/copy-mode', async (c) => {
-  const id = c.req.param('id');
-
-  const exists = await tmuxService.sessionExists(id);
-  if (!exists) {
-    return c.json({ error: 'Session not found' }, 404);
-  }
-
-  const inCopyMode = await tmuxService.isInCopyMode(id);
-  return c.json({ inCopyMode });
-});
-
-// DELETE /sessions/:id - Delete (kill) a tmux session
+// DELETE /sessions/:id - Delete (kill) a session
 sessions.delete('/:id', async (c) => {
   notifySessionChange();
   const id = c.req.param('id');
 
-  const exists = await tmuxService.sessionExists(id);
+  const exists = await herdrService.sessionExists(id);
   if (!exists) {
     // Already lost — purge from last-known so it disappears from the list.
     await removeLastKnownSession(id).catch(() => {});
@@ -768,7 +745,7 @@ sessions.delete('/:id', async (c) => {
   }
 
   try {
-    await tmuxService.killSession(id);
+    await herdrService.killSession(id);
     // Keep the entry in last-known so the session shows up as "Lost" and can
     // be resumed via the Resume button without going to the history tab.
     // To purge entirely, delete the Lost session again.
@@ -778,14 +755,14 @@ sessions.delete('/:id', async (c) => {
   }
 });
 
-// POST /sessions/:id/resume - Resume an agent session in an existing tmux session
+// POST /sessions/:id/resume - Resume an agent session in an existing session
 sessions.post('/:id/resume', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => ({}));
   const parsed = ResumeSessionSchema.safeParse(body);
 
-  const tmuxSessions = await tmuxService.listSessions();
-  const session = tmuxSessions.find(s => s.id === id);
+  const herdrSessions = await herdrService.listSessions();
+  const session = herdrSessions.find(s => s.id === id);
   if (!session) {
     return c.json({ error: 'Session not found' }, 404);
   }
@@ -818,7 +795,7 @@ sessions.put('/:id/theme', async (c) => {
     return c.json({ error: 'Invalid theme' }, 400);
   }
 
-  const exists = await tmuxService.sessionExists(id);
+  const exists = await herdrService.sessionExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
   }
@@ -845,7 +822,7 @@ sessions.put('/:id/title', async (c) => {
     return c.json({ error: 'Invalid title' }, 400);
   }
 
-  const exists = await tmuxService.sessionExists(id);
+  const exists = await herdrService.sessionExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
   }
@@ -869,7 +846,7 @@ sessions.post('/:id/move', async (c) => {
     return c.json({ error: 'Invalid index' }, 400);
   }
   try {
-    const moved = await tmuxService.moveSession(id, index);
+    const moved = await herdrService.moveSession(id, index);
     if (!moved) return c.json({ error: 'Session not found' }, 404);
     notifySessionChange();
     return c.json({ success: true });
@@ -924,14 +901,14 @@ sessions.post('/:id/panes/focus', async (c) => {
     return c.json({ error: 'Invalid pane ID' }, 400);
   }
 
-  const exists = await tmuxService.sessionExists(id);
+  const exists = await herdrService.sessionExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
   }
 
   try {
     await withControlSession(id, (cs) => cs.selectPane(parsed.data.paneId));
-    tmuxService.invalidateCache();
+    herdrService.invalidateCache();
     notifySessionChange();
     return c.json({ success: true });
   } catch (_error) {
@@ -949,7 +926,7 @@ sessions.post('/:id/panes/close', async (c) => {
     return c.json({ error: 'Invalid pane ID' }, 400);
   }
 
-  const exists = await tmuxService.sessionExists(id);
+  const exists = await herdrService.sessionExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
   }
@@ -957,7 +934,7 @@ sessions.post('/:id/panes/close', async (c) => {
   try {
     // rejects the last pane itself
     await withControlSession(id, (cs) => cs.closePane(parsed.data.paneId));
-    tmuxService.invalidateCache();
+    herdrService.invalidateCache();
     notifySessionChange();
     return c.json({ success: true });
   } catch (error) {
@@ -977,14 +954,14 @@ sessions.post('/:id/panes/split', async (c) => {
     return c.json({ error: 'Invalid request' }, 400);
   }
 
-  const exists = await tmuxService.sessionExists(id);
+  const exists = await herdrService.sessionExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
   }
 
   try {
     await withControlSession(id, (cs) => cs.splitPane(parsed.data.paneId, parsed.data.direction));
-    tmuxService.invalidateCache();
+    herdrService.invalidateCache();
     notifySessionChange();
     return c.json({ success: true });
   } catch (_error) {
@@ -1002,7 +979,7 @@ sessions.post('/:id/panes/respawn', async (c) => {
     return c.json({ error: 'Invalid request' }, 400);
   }
 
-  const exists = await tmuxService.sessionExists(id);
+  const exists = await herdrService.sessionExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
   }
@@ -1021,7 +998,7 @@ sessions.post('/:id/panes/input', async (c) => {
     return c.json({ error: 'Invalid request', issues: parsed.error.issues }, 400);
   }
 
-  const exists = await tmuxService.sessionExists(id);
+  const exists = await herdrService.sessionExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
   }
@@ -1071,7 +1048,7 @@ sessions.get('/:id/panes/:paneId/viewport', async (c) => {
     return c.json({ error: 'paneId must start with %' }, 400);
   }
 
-  const exists = await tmuxService.sessionExists(id);
+  const exists = await herdrService.sessionExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
   }
@@ -1103,7 +1080,7 @@ sessions.post('/:id/prompt', async (c) => {
     return c.json({ error: 'text is required' }, 400);
   }
 
-  const exists = await tmuxService.sessionExists(id);
+  const exists = await herdrService.sessionExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
   }

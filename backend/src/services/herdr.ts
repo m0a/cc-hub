@@ -359,12 +359,4 @@ export class HerdrService {
   async sessionExists(sessionId: string): Promise<boolean> {
     return (await this.resolveWorkspace(sessionId)) !== null;
   }
-
-  async isInCopyMode(_sessionId: string): Promise<boolean> {
-    return false;
-  }
-
-  async getBuffer(): Promise<string | null> {
-    return null;
-  }
 }

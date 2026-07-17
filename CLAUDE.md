@@ -6,7 +6,7 @@ Codex and other coding agents should use this file as the single source of repos
 
 ## Project Overview
 
-CC Hub is a web-based terminal session manager for Claude Code. It runs Claude Code instances in tmux sessions and provides a web UI for remote access from tablets/mobile devices.
+CC Hub is a web-based terminal session manager for Claude Code. It runs Claude Code instances in herdr workspaces and provides a web UI for remote access from tablets/mobile devices.
 
 ## Commands
 
@@ -79,7 +79,7 @@ glasses/     # EVEN G2 smart glasses app (EvenHub SDK, built to out.ehpk)
 ### Key API Routes
 
 **Sessions** (`/api/sessions`):
-- `GET /` - List all tmux sessions with Claude Code state and pane info
+- `GET /` - List all sessions with Claude Code state and pane info
 - `POST /` - Create new Claude Code session
 - `GET /:id` - Get session details
 - `DELETE /:id` - Close session
@@ -91,11 +91,9 @@ glasses/     # EVEN G2 smart glasses app (EvenHub SDK, built to out.ehpk)
 - `POST /:id/panes/input` - Send input to a pane over REST (used by `cchub send` / peers)
 - `GET /:id/panes/:paneId/viewport` - Capture a pane viewport over REST (used by `cchub peek` / `--wait`)
 - `POST /:id/prompt` - Send a prompt to the session's agent
-- `GET /:id/copy-mode` - Get tmux copy mode selection
 - `PUT /:id/theme` - Set session color theme
 - `PUT /:id/title` - Set session custom title
 - `POST /:id/move` - Move a session to `{ index }` in the display order (writes straight through to herdr's workspace order — cchub stores no order of its own)
-- `GET /clipboard` - Get clipboard content
 - `GET /prompts/search` - Search prompt history
 
 **Session History** (`/api/sessions/history`):
@@ -157,12 +155,12 @@ glasses/     # EVEN G2 smart glasses app (EvenHub SDK, built to out.ehpk)
 ### Frontend Components
 
 **Layout**:
-- **DesktopLayout.tsx** - Main layout with tmux control mode integration, pane tree management, keyboard shortcuts. Supports desktop and tablet modes
-- **PaneContainer.tsx** - Tree-based pane renderer with `ControlModeContext` for tmux pane operations (split, close, zoom, resize)
+- **DesktopLayout.tsx** - Main layout with herdr control mode integration, pane tree management, keyboard shortcuts. Supports desktop and tablet modes
+- **PaneContainer.tsx** - Tree-based pane renderer with `ControlModeContext` for pane operations (split, close, zoom, resize)
 - **SessionModal.tsx** - Session picker modal (Ctrl+B) with pane count badges and expandable pane list
 
 **Terminal**:
-- **Terminal.tsx** - xterm.js terminal with WebGL rendering, **`scrollback: 0`** (server-side scrollback). `ControlModeConfig` for tmux size sync (`proposeDimensions()` instead of `fit()`, `setExactSize()` from tmux layout) and viewport delivery (`registerOnViewport`, `scrollBy`, `scrollToLive`). Each new viewport is converted to a VT escape sequence (`viewport-render.ts`) and `term.write()`-ed to refresh the screen. Supports font size adjustment, desktop text selection with auto-copy, touch selection mode for mobile/tablet
+- **Terminal.tsx** - xterm.js terminal with WebGL rendering, **`scrollback: 0`** (server-side scrollback). `ControlModeConfig` for pane size sync (`proposeDimensions()` instead of `fit()`, `setExactSize()` from the layout) and viewport delivery (`registerOnViewport`, `scrollBy`, `scrollToLive`). Each new viewport is converted to a VT escape sequence (`viewport-render.ts`) and `term.write()`-ed to refresh the screen. Supports font size adjustment, desktop text selection with auto-copy, touch selection mode for mobile/tablet
 - **SelectionOverlay.tsx** - Touch-selection overlay rendered above the terminal: draggable start/end handles, copy/cancel controls, computed from xterm `_core` cell metrics
 - **viewport-render.ts** (`utils/viewport-render.ts`) - Converts a `PaneViewport` into a VT sequence (`\x1b[?25l` + per-row `\x1b[r;1H\x1b[2K<line>` + cursor restore) that xterm.js can apply with a single `term.write()`
 

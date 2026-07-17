@@ -1216,27 +1216,11 @@ export const TerminalComponent = memo(
 			const viewport = window.visualViewport;
 			if (!viewport) return;
 
-			let prevViewportHeight = viewport.height;
-
 			const updateKeyboardOffset = async () => {
 				const isStandalone = window.matchMedia(
 					"(display-mode: standalone)",
 				).matches;
 				const isBrowserFullscreen = document.fullscreenElement !== null;
-
-				const heightDiff = prevViewportHeight - viewport.height;
-				if (heightDiff > 100) {
-					try {
-						const res = await authFetch(
-							`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/copy-mode`,
-						);
-						if (res.ok) {
-							const data = await res.json();
-							if (data.inCopyMode) sendRef.current("q");
-						}
-					} catch {}
-				}
-				prevViewportHeight = viewport.height;
 
 				if (isStandalone || !isBrowserFullscreen) {
 					setKeyboardOffset(0);

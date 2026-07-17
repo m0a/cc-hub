@@ -46,15 +46,14 @@ detect_platform() {
 check_dependencies() {
   info "依存関係を確認中..."
 
-  # tmux
-  if ! command -v tmux &> /dev/null; then
-    warn "tmuxがインストールされていません"
-    echo "  Ubuntu/Debian: sudo apt install tmux"
-    echo "  macOS: brew install tmux"
-    echo "  Arch: sudo pacman -S tmux"
+  # herdr — CC Hub runs every session in a herdr workspace, so this is required.
+  if ! command -v herdr &> /dev/null; then
+    warn "herdrがインストールされていません"
+    echo "  curl -fsSL https://herdr.dev/install.sh | sh"
+    echo "  macOS: brew install herdr"
     exit 1
   fi
-  info "  tmux: $(tmux -V)"
+  info "  herdr: $(herdr --version 2>/dev/null || echo 'installed')"
 
   # Tailscale
   if ! command -v tailscale &> /dev/null; then

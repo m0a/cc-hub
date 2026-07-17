@@ -24,7 +24,6 @@ import {
 	updateCachedSessionsByHookEvent,
 	useSessions,
 } from "../hooks/useSessions";
-import { authFetch } from "../services/api";
 import { fireHookNotification } from "../utils/hookNotification";
 import { uploadImage } from "../utils/upload-image";
 import { makePseudoViewport } from "../utils/viewport-pseudo";
@@ -39,7 +38,6 @@ import {
 import { SessionModal } from "./SessionModal";
 import type { ControlModeConfig, TerminalRef } from "./Terminal";
 
-const API_BASE = import.meta.env.VITE_API_URL || "";
 const DESKTOP_STATE_KEY = "cchub-desktop-state";
 
 interface OpenSession {
@@ -1046,12 +1044,11 @@ export function DesktopLayout({
 				return;
 			}
 
-			// Ctrl/Cmd + C: Copy from tmux buffer or terminal selection
+			// Ctrl/Cmd + C: Copy the terminal selection
 			if (!e.shiftKey && e.key.toLowerCase() === "c") {
 				const ref = terminalRefs.current?.get(activePaneRef.current);
 				const selection = ref?.getSelection();
 
-				// First try xterm selection
 				if (selection) {
 					e.preventDefault();
 					navigator.clipboard.writeText(selection).catch((err) => {
@@ -1060,20 +1057,9 @@ export function DesktopLayout({
 					return;
 				}
 
-				// Then try tmux buffer
+				// No selection: suppress the browser's own copy and leave the key to
+				// xterm, which sends it on to the pane as SIGINT.
 				e.preventDefault();
-				authFetch(`${API_BASE}/api/sessions/clipboard`)
-					.then((res) => res.json())
-					.then((data) => {
-						if (data.content) {
-							navigator.clipboard.writeText(data.content).catch((err) => {
-								console.error("Clipboard write failed:", err);
-							});
-						}
-					})
-					.catch(() => {
-						// No buffer content, ignore
-					});
 				return;
 			}
 

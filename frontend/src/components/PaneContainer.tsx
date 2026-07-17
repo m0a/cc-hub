@@ -780,6 +780,80 @@ function SplitContainer({
 	const [isDragging, setIsDragging] = useState<number | null>(null);
 	const draggingRef = useRef<number | null>(null);
 
+	// Always-current node so the drag handlers read the latest ratios without
+	// re-subscribing document listeners on every move.
+	const nodeRef = useRef(node);
+	nodeRef.current = node;
+
+	// Coalesce ratio updates to one per animation frame. A tablet drag fires
+	// pointer AND touch events for the same finger, so without this each physical
+	// move rebuilt the whole pane tree twice and the divider lagged behind.
+	const rafRef = useRef<number | null>(null);
+	const pendingRatioRef = useRef<number[] | null>(null);
+	const flushRatio = useCallback(() => {
+		const pending = pendingRatioRef.current;
+		pendingRatioRef.current = null;
+		if (pending) onSplitRatioChange(nodeRef.current.id, pending);
+	}, [onSplitRatioChange]);
+	const scheduleRatioChange = useCallback(
+		(ratio: number[]) => {
+			pendingRatioRef.current = ratio;
+			if (rafRef.current !== null) return;
+			rafRef.current = requestAnimationFrame(() => {
+				rafRef.current = null;
+				flushRatio();
+			});
+		},
+		[flushRatio],
+	);
+	const endDrag = useCallback(() => {
+		if (rafRef.current !== null) {
+			cancelAnimationFrame(rafRef.current);
+			rafRef.current = null;
+		}
+		flushRatio(); // land exactly under the finger, not on the last frame
+		setIsDragging(null);
+		draggingRef.current = null;
+	}, [flushRatio]);
+
+	// Shared ratio math for both the pointer and touch drag paths.
+	const computeNewRatio = useCallback((clientPos: number): number[] | null => {
+		const dragIndex = draggingRef.current;
+		if (dragIndex === null || !containerRef.current) return null;
+		const currentNode = nodeRef.current;
+		const rect = containerRef.current.getBoundingClientRect();
+		const containerSize =
+			currentNode.direction === "horizontal" ? rect.width : rect.height;
+		const offset =
+			currentNode.direction === "horizontal" ? rect.left : rect.top;
+
+		const newRatio = [...currentNode.ratio];
+		const beforeSum = currentNode.ratio
+			.slice(0, dragIndex + 1)
+			.reduce((a, b) => a + b, 0);
+		const afterSum = currentNode.ratio
+			.slice(dragIndex + 1)
+			.reduce((a, b) => a + b, 0);
+		const position = ((clientPos - offset) / containerSize) * 100;
+		const minRatio = 10;
+		const newBefore = Math.max(
+			minRatio,
+			Math.min(beforeSum + afterSum - minRatio, position),
+		);
+		const diff = newBefore - beforeSum;
+
+		if (
+			newRatio[dragIndex] === undefined ||
+			newRatio[dragIndex + 1] === undefined
+		)
+			return null;
+		newRatio[dragIndex] = newRatio[dragIndex] + diff;
+		newRatio[dragIndex + 1] = newRatio[dragIndex + 1] - diff;
+		if (newRatio[dragIndex] < minRatio || newRatio[dragIndex + 1] < minRatio)
+			return null;
+		return newRatio;
+	}, []);
+
 	// Pointer-capture based drag: all pointer events go to the captured element
 	const handlePointerDown = useCallback(
 		(index: number) => (e: React.PointerEvent) => {
@@ -793,54 +867,25 @@ function SplitContainer({
 
 	const handlePointerMove = useCallback(
 		(e: React.PointerEvent) => {
-			const dragIndex = draggingRef.current;
-			if (dragIndex === null) return;
+			if (draggingRef.current === null) return;
 			e.preventDefault();
-			if (!containerRef.current) return;
-			const rect = containerRef.current.getBoundingClientRect();
-			const clientPos = node.direction === "horizontal" ? e.clientX : e.clientY;
-			const containerSize =
-				node.direction === "horizontal" ? rect.width : rect.height;
-			const offset = node.direction === "horizontal" ? rect.left : rect.top;
-
-			const newRatio = [...node.ratio];
-			const beforeSum = node.ratio
-				.slice(0, dragIndex + 1)
-				.reduce((a, b) => a + b, 0);
-			const afterSum = node.ratio
-				.slice(dragIndex + 1)
-				.reduce((a, b) => a + b, 0);
-			const position = ((clientPos - offset) / containerSize) * 100;
-			const minRatio = 10;
-			const newBefore = Math.max(
-				minRatio,
-				Math.min(beforeSum + afterSum - minRatio, position),
-			);
-			const diff = newBefore - beforeSum;
-
-			if (
-				newRatio[dragIndex] !== undefined &&
-				newRatio[dragIndex + 1] !== undefined
-			) {
-				newRatio[dragIndex] = newRatio[dragIndex] + diff;
-				newRatio[dragIndex + 1] = newRatio[dragIndex + 1] - diff;
-				if (
-					newRatio[dragIndex] >= minRatio &&
-					newRatio[dragIndex + 1] >= minRatio
-				) {
-					onSplitRatioChange(node.id, newRatio);
-				}
-			}
+			const currentNode = nodeRef.current;
+			const clientPos =
+				currentNode.direction === "horizontal" ? e.clientX : e.clientY;
+			const ratio = computeNewRatio(clientPos);
+			if (ratio) scheduleRatioChange(ratio);
 		},
-		[node, onSplitRatioChange],
+		[computeNewRatio, scheduleRatioChange],
 	);
 
-	const handlePointerUp = useCallback((e: React.PointerEvent) => {
-		if (draggingRef.current === null) return;
-		e.currentTarget.releasePointerCapture(e.pointerId);
-		setIsDragging(null);
-		draggingRef.current = null;
-	}, []);
+	const handlePointerUp = useCallback(
+		(e: React.PointerEvent) => {
+			if (draggingRef.current === null) return;
+			e.currentTarget.releasePointerCapture(e.pointerId);
+			endDrag();
+		},
+		[endDrag],
+	);
 
 	// Touch fallback for devices that don't support pointer capture well
 	const handleTouchStart = useCallback(
@@ -853,64 +898,35 @@ function SplitContainer({
 	);
 
 	useEffect(() => {
-		const dragIndex = draggingRef.current;
-		if (dragIndex === null) return;
+		if (draggingRef.current === null) return;
 
 		const handleTouchMove = (e: TouchEvent) => {
 			e.preventDefault();
-			if (!containerRef.current) return;
-			const rect = containerRef.current.getBoundingClientRect();
+			const touch = e.touches[0];
+			if (!touch) return;
+			const currentNode = nodeRef.current;
 			const clientPos =
-				node.direction === "horizontal"
-					? e.touches[0].clientX
-					: e.touches[0].clientY;
-			const containerSize =
-				node.direction === "horizontal" ? rect.width : rect.height;
-			const offset = node.direction === "horizontal" ? rect.left : rect.top;
-
-			const newRatio = [...node.ratio];
-			const beforeSum = node.ratio
-				.slice(0, dragIndex + 1)
-				.reduce((a, b) => a + b, 0);
-			const afterSum = node.ratio
-				.slice(dragIndex + 1)
-				.reduce((a, b) => a + b, 0);
-			const position = ((clientPos - offset) / containerSize) * 100;
-			const minRatio = 10;
-			const newBefore = Math.max(
-				minRatio,
-				Math.min(beforeSum + afterSum - minRatio, position),
-			);
-			const diff = newBefore - beforeSum;
-
-			if (
-				newRatio[dragIndex] !== undefined &&
-				newRatio[dragIndex + 1] !== undefined
-			) {
-				newRatio[dragIndex] = newRatio[dragIndex] + diff;
-				newRatio[dragIndex + 1] = newRatio[dragIndex + 1] - diff;
-				if (
-					newRatio[dragIndex] >= minRatio &&
-					newRatio[dragIndex + 1] >= minRatio
-				) {
-					onSplitRatioChange(node.id, newRatio);
-				}
-			}
-		};
-
-		const handleTouchEnd = () => {
-			setIsDragging(null);
-			draggingRef.current = null;
+				currentNode.direction === "horizontal" ? touch.clientX : touch.clientY;
+			const ratio = computeNewRatio(clientPos);
+			if (ratio) scheduleRatioChange(ratio);
 		};
 
 		document.addEventListener("touchmove", handleTouchMove, { passive: false });
-		document.addEventListener("touchend", handleTouchEnd);
+		document.addEventListener("touchend", endDrag);
 
 		return () => {
 			document.removeEventListener("touchmove", handleTouchMove);
-			document.removeEventListener("touchend", handleTouchEnd);
+			document.removeEventListener("touchend", endDrag);
 		};
-	}, [isDragging, node, onSplitRatioChange]);
+	}, [isDragging, computeNewRatio, scheduleRatioChange, endDrag]);
+
+	// Cancel any pending frame if the divider unmounts mid-drag.
+	useEffect(
+		() => () => {
+			if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+		},
+		[],
+	);
 
 	const isHorizontal = node.direction === "horizontal";
 

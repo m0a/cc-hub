@@ -311,6 +311,38 @@ export class HerdrService {
     return name;
   }
 
+  /**
+   * Move a session's workspace to `targetIndex` in herdr's workspace order.
+   * herdr IS the session order — there is no cchub-side order to keep in sync.
+   *
+   * herdr's `insert_index` means "insert before the workspace currently at
+   * that index", evaluated against the list with the moved workspace still in
+   * it. Moving backward (to a smaller index) therefore lands exactly on the
+   * index, but moving forward lands one slot short, so compensate. Verified
+   * against herdr 0.7.3/0.7.4: index 13 → insert 0 lands at 0; index 0 →
+   * insert 5 lands at 4.
+   */
+  async moveSession(sessionId: string, targetIndex: number): Promise<boolean> {
+    const workspaces = await listWorkspaces();
+    const current = workspaces.findIndex(
+      (w) => workspaceSessionId(w) === sessionId || w.workspace_id === sessionId,
+    );
+    if (current === -1) return false;
+
+    const clamped = Math.max(0, Math.min(targetIndex, workspaces.length - 1));
+    if (clamped === current) return true;
+
+    const insertIndex = current < clamped ? clamped + 1 : clamped;
+    await herdrRpc('workspace.move', {
+      workspace_id: workspaces[current].workspace_id,
+      insert_index: insertIndex,
+    });
+    // The 2s list cache would otherwise serve the pre-move order back to the
+    // very next sessions push and snap the dragged row back.
+    this.invalidateCache();
+    return true;
+  }
+
   async killSession(sessionId: string): Promise<void> {
     this.invalidateCache();
     const ws = await this.resolveWorkspace(sessionId);

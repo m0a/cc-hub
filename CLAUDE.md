@@ -47,12 +47,12 @@ glasses/     # EVEN G2 smart glasses app (EvenHub SDK, built to out.ehpk)
 - **HerdrClient** (`services/herdr-client.ts`) - Low-level herdr socket API client: NDJSON RPC over `~/.config/herdr/herdr.sock` (one connection per request; `events.subscribe` held open), streaming-safe UTF-8 line reader, pane id mapping (`%N ↔ wK:pN`), and `PaneController` — a persistent `herdr terminal session control` subprocess per pane carrying raw PTY input (base64, no sanitization), absolute PTY resizes, and `terminal.frame` output records
 - **HerdrControlSession** (`services/herdr-control.ts`) - One instance per CC Hub session (= one herdr workspace). Owns the pane split tree, tracks the focused pane, spawns lazy per-pane controllers (WS subscribe / first input only — read-only REST never takes over a pane), scans frames for cursor position and alt-screen state, client lifecycle with 30s grace period. Also `captureViewportHerdr`: viewport composition from `pane.read` (visible at offset 0, `recent` slice for scrollback, capped at herdr's 1000-line read limit)
 - **HerdrLayout** (`services/herdr-layout.ts`) - CC Hub-owned split tree (herdr's own grid can't be resized headlessly): split/close/zoom/ratio adjust/absolute pane sizing, rendered to tmux-convention `TmuxLayoutNode` rects for the frontend
-- **HerdrService** (`services/herdr.ts`) - Session-level operations mapping CC Hub sessions onto herdr workspaces: list (with agent detection from `pane.process_info`, native agent session ids from `agent.list`, `blocked` status), create/kill, previews
+- **HerdrService** (`services/herdr.ts`) - Session-level operations mapping CC Hub sessions onto herdr workspaces: list (with agent detection from `pane.process_info`, native agent session ids from `agent.list`, `blocked` status), create/kill, previews, and `moveSession` — herdr's workspace order **is** the session display order, so a reorder is a `workspace.move` and nothing is stored on the cchub side
 - **HerdrUpdateService** (`services/herdr-update.ts`) - Detects herdr binary-vs-server version skew (`herdr update` swaps the binary but leaves the running server old) by parsing `herdr status --json`, cached 30s and refreshed off the dashboard poll. Reports only — applying (`herdr update` + supervised restart) is an explicit user action via `POST /api/herdr/apply-update`; never the `cchub update --auto` timer, never `--handoff`. Unreadable status degrades to no warning
 - **PaneState** (`services/pane-state.ts`) - Backend-agnostic `stripAnsi` / `detectPaneState` heuristics for peer-dialog tooling (`cchub send --wait`, `cchub peek`)
 - **ClaudeCodeService** (`services/claude-code.ts`) - Monitors Claude Code state from `.jsonl` files; session matching via herdr's native agent session id, falling back to working-dir path matching
 - **SessionHistoryService** (`services/session-history.ts`) - Reads past Claude Code session history and conversations
-- **SessionMetadataService** (`services/session-metadata.ts`) - Persists session metadata (theme, title, session order, last known sessions for recovery after reboot)
+- **SessionMetadataService** (`services/session-metadata.ts`) - Persists session metadata (theme, title, last known sessions for recovery after reboot). Deliberately *not* session order — that lives in herdr
 - **SessionsService** (`services/sessions.ts`) - Session CRUD operations with file-based persistence
 - **PromptHistoryService** (`services/prompt-history.ts`) - Searches prompt history across sessions
 - **FileService** (`services/file-service.ts`) - Secure file operations with path traversal prevention
@@ -94,7 +94,7 @@ glasses/     # EVEN G2 smart glasses app (EvenHub SDK, built to out.ehpk)
 - `GET /:id/copy-mode` - Get tmux copy mode selection
 - `PUT /:id/theme` - Set session color theme
 - `PUT /:id/title` - Set session custom title
-- `PUT /order` - Set session display order
+- `POST /:id/move` - Move a session to `{ index }` in the display order (writes straight through to herdr's workspace order — cchub stores no order of its own)
 - `GET /clipboard` - Get clipboard content
 - `GET /prompts/search` - Search prompt history
 
@@ -128,7 +128,6 @@ glasses/     # EVEN G2 smart glasses app (EvenHub SDK, built to out.ehpk)
 - `POST /` - Register a peer / `DELETE /:id` - Remove a peer
 - `POST /:id/verify` - Re-verify connectivity and auth for a peer
 - `PUT /order` - Set peer display order
-- `GET|PUT /session-order` - Get/set cross-peer session display order
 - `GET /sessions` - Aggregate active sessions across all peers
 - `GET /history/projects` - Aggregate project history across peers
 - `GET /history/:peerId/projects/:dirName` - Sessions for a peer's project

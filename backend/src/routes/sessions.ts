@@ -14,7 +14,7 @@ import { CodexConversationService } from '../services/codex-conversation';
 import { SessionHistoryService } from '../services/session-history';
 import { CodexHistoryService } from '../services/codex-history';
 import { PromptHistoryService } from '../services/prompt-history';
-import { getAllSessionMetadata, setSessionTheme, setSessionTitle, getSessionOrder, setSessionOrder, getLastKnownSessions, saveLastKnownSessions, removeLastKnownSession, type LastKnownSession } from '../services/session-metadata';
+import { getAllSessionMetadata, setSessionTheme, setSessionTitle, getLastKnownSessions, saveLastKnownSessions, removeLastKnownSession, type LastKnownSession } from '../services/session-metadata';
 import { computeSessionMetrics } from '../services/session-metrics';
 import { getIndicatorOverride } from './notify';
 import { pushSessionsNow } from './terminal-mux';
@@ -181,8 +181,6 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
   // Remote Control deep-link map: Claude Code sessionId -> bridgeSessionId.
   // Read once per build (cheap: a handful of small ~/.claude/sessions/*.json).
   const bridgeSessionIds = await claudeCodeService.getBridgeSessionIds();
-
-  const order = await getSessionOrder();
 
   const results = await Promise.all(tmuxSessions.map(async (s) => {
     let ccSession: Awaited<ReturnType<typeof claudeCodeService.getSessionForPath>> | undefined;
@@ -388,15 +386,9 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
   // Fire async, don't block response
   saveLastKnownSessions(snapshot).catch(() => {});
 
-  // Apply custom order if set
-  if (order.length > 0) {
-    const orderMap = new Map(order.map((id, i) => [id, i]));
-    results.sort((a, b) => {
-      const ai = orderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
-      const bi = orderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
-      return ai - bi;
-    });
-  }
+  // No sort: `results` is already in herdr's workspace order (listSessions
+  // maps over `workspace.list`), and herdr is the only source of session
+  // order. Lost sessions have no workspace, so they trail the live ones.
 
   return results;
 }
@@ -866,19 +858,26 @@ sessions.put('/:id/title', async (c) => {
   }
 });
 
-// PUT /sessions/order - Save session display order
-sessions.put('/order', async (c) => {
+// POST /sessions/:id/move - Move a session to `index` in the display order.
+// The order lives in herdr (workspace order), not in cchub — so this is a
+// write straight through to herdr rather than to a cchub-side store.
+sessions.post('/:id/move', async (c) => {
+  const id = c.req.param('id');
   const body = await c.req.json().catch(() => ({}));
-  const order = body.order;
-  if (!Array.isArray(order) || !order.every((id: unknown) => typeof id === 'string')) {
-    return c.json({ error: 'Invalid order' }, 400);
+  const index = (body as { index?: unknown }).index;
+  if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) {
+    return c.json({ error: 'Invalid index' }, 400);
   }
   try {
-    await setSessionOrder(order);
+    const moved = await tmuxService.moveSession(id, index);
+    if (!moved) return c.json({ error: 'Session not found' }, 404);
     notifySessionChange();
     return c.json({ success: true });
-  } catch {
-    return c.json({ error: 'Failed to save order' }, 500);
+  } catch (error) {
+    return c.json(
+      { error: error instanceof Error ? error.message : 'Failed to move session' },
+      500,
+    );
   }
 });
 

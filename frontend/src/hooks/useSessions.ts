@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	type AgentProvider,
 	DEFAULT_AGENT_PROVIDER,
@@ -8,7 +8,7 @@ import {
 	type SessionResponse,
 	type SessionTheme,
 } from "../../../shared/types";
-import { authFetch, isTransientNetworkError } from "../services/api";
+import { isTransientNetworkError } from "../services/api";
 import { sessionFetch } from "../services/peer-fetch";
 import {
 	applyHookIndicatorUpdate,
@@ -16,60 +16,20 @@ import {
 } from "./usePeerSessionsWatcher";
 import { usePeers } from "./usePeers";
 
-const API_BASE = import.meta.env.VITE_API_URL || "";
-
 // Module-level merged cache produced by the peer sessions watcher.
 // Every peer — including the local Hub — pushes `sessions-updated` over its
 // own WS, so this is the single source of truth.
 let cachedSessions: ExtendedSessionResponse[] = [];
 
-// Cross-peer session order persisted on the Hub. Each entry is the composite
-// key `${peerId}:${sessionId}`. `null` = not yet fetched.
-let cachedMergedOrder: string[] | null = null;
-let mergedOrderFetched = false;
-
-function compositeKey(s: ExtendedSessionResponse): string {
-	return `${s.peerId ?? "local"}:${s.id}`;
-}
-
-function sortByMergedOrder(
-	list: ExtendedSessionResponse[],
-): ExtendedSessionResponse[] {
-	if (!cachedMergedOrder || cachedMergedOrder.length === 0) return list;
-	const orderMap = new Map(cachedMergedOrder.map((key, i) => [key, i]));
-	return [...list].sort((a, b) => {
-		const ai = orderMap.get(compositeKey(a)) ?? Number.MAX_SAFE_INTEGER;
-		const bi = orderMap.get(compositeKey(b)) ?? Number.MAX_SAFE_INTEGER;
-		return ai - bi;
-	});
-}
-
 /**
- * Apply a new cross-peer order locally and re-sort the cached sessions.
- * Used by the drag-end handler for optimistic update — the same value is
- * also PUT to the Hub so reload / other clients pick it up.
+ * Optimistically show a drag reorder before the round-trip completes. The
+ * next `sessions-updated` push overwrites this with herdr's order, which is
+ * authoritative — so a rejected/failed move self-corrects within one push
+ * instead of needing a rollback path.
  */
-export function applyLocalSessionOrder(order: string[]) {
-	cachedMergedOrder = order;
-	cachedSessions = sortByMergedOrder(cachedSessions);
+export function applyLocalSessionReorder(ordered: ExtendedSessionResponse[]) {
+	cachedSessions = ordered;
 	window.dispatchEvent(new CustomEvent("cchub-sessions-reorder"));
-}
-
-async function fetchMergedOrderOnce(): Promise<void> {
-	if (mergedOrderFetched) return;
-	mergedOrderFetched = true;
-	try {
-		const res = await authFetch(`${API_BASE}/api/peers/session-order`);
-		if (!res.ok) return;
-		const data = (await res.json()) as { order?: string[] };
-		if (Array.isArray(data.order)) {
-			cachedMergedOrder = data.order;
-			cachedSessions = sortByMergedOrder(cachedSessions);
-			window.dispatchEvent(new CustomEvent("cchub-sessions-reorder"));
-		}
-	} catch {
-		mergedOrderFetched = false;
-	}
 }
 
 /** hookイベントで Hub local セッションの indicatorState を即座に更新する */
@@ -119,12 +79,28 @@ interface UseSessionsReturn {
 	) => Promise<boolean>;
 }
 
+/**
+ * Session order comes from each peer's herdr workspace order — every peer's
+ * `/api/sessions` already returns its sessions in it — so the merged list only
+ * has to concatenate peers in their display order. `sessionsByPeer` is keyed
+ * by insertion (whichever watcher delivered first), which isn't stable across
+ * reconnects, hence the explicit ordering. Peers missing from `peerOrder`
+ * (a watcher outliving a peer removal) trail in map order.
+ */
 function flattenPeerSessions(
 	sessionsByPeer: ReadonlyMap<string, PeerSession[]>,
+	peerOrder: string[],
 ): ExtendedSessionResponse[] {
 	const out: ExtendedSessionResponse[] = [];
-	for (const sessions of sessionsByPeer.values()) {
-		out.push(...sessions);
+	const seen = new Set<string>();
+	for (const peerId of peerOrder) {
+		const list = sessionsByPeer.get(peerId);
+		if (!list) continue;
+		seen.add(peerId);
+		out.push(...list);
+	}
+	for (const [peerId, list] of sessionsByPeer) {
+		if (!seen.has(peerId)) out.push(...list);
 	}
 	return out;
 }
@@ -141,18 +117,26 @@ export function useSessions(): UseSessionsReturn {
 		const reorderHandler = () => setSessions(cachedSessions);
 		window.addEventListener("cchub-hook-event", hookHandler);
 		window.addEventListener("cchub-sessions-reorder", reorderHandler);
-		void fetchMergedOrderOnce();
 		return () => {
 			window.removeEventListener("cchub-hook-event", hookHandler);
 			window.removeEventListener("cchub-sessions-reorder", reorderHandler);
 		};
 	}, []);
 
+	// Read through a ref: `usePeers()` hands back a fresh array on every poll,
+	// so depending on it directly would re-register the watcher listener (and
+	// re-fire it) constantly.
+	const peerOrderRef = useRef<string[]>([]);
+	peerOrderRef.current = peers.map((p) => p.id);
+
 	// Per-peer WS watcher already dedups by payload before notifying, so a
 	// listener firing here implies the data actually changed for some peer.
 	const handlePeerSessions = useCallback(
 		(sessionsByPeer: ReadonlyMap<string, PeerSession[]>) => {
-			cachedSessions = sortByMergedOrder(flattenPeerSessions(sessionsByPeer));
+			cachedSessions = flattenPeerSessions(
+				sessionsByPeer,
+				peerOrderRef.current,
+			);
 			setSessions(cachedSessions);
 			setIsLoading(false);
 		},

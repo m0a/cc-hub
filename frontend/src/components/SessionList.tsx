@@ -39,7 +39,7 @@ import {
 import { openClaudeAppSession } from "../utils/claude-app";
 import { usePeers } from "../hooks/usePeers";
 import {
-	applyLocalSessionOrder,
+	applyLocalSessionReorder,
 	useSessions,
 } from "../hooks/useSessions";
 import { sessionFetch } from "../services/peer-fetch";
@@ -1535,10 +1535,12 @@ export function SessionList({
 		[sessions, peers],
 	);
 
-	// Drag-to-reorder handler. Session order is a cross-peer merged list stored
-	// on the Hub (`/api/peers/session-order`) so the same ordering applies to
-	// every peer's sessions, including drags across peer boundaries. Each entry
-	// in the saved order is a `${peerId}:${sessionId}` composite key.
+	// Drag-to-reorder handler. The order lives in herdr (workspace order) and
+	// nowhere else, so a drag writes straight through to the owning peer's
+	// herdr and the resulting `sessions-updated` push is what actually reorders
+	// the list. A herdr only knows its own machine's workspaces, so the list is
+	// grouped by peer and a drag across a peer boundary has nowhere to be
+	// stored — ignore it rather than half-applying it.
 	const handleDragEnd = useCallback(
 		async (event: DragEndEvent) => {
 			const { active, over } = event;
@@ -1552,26 +1554,43 @@ export function SessionList({
 			);
 			if (oldIndex === -1 || newIndex === -1) return;
 
+			const moved = sessions[oldIndex];
+			const peerOf = (s: ExtendedSessionResponse) => s.peerId ?? LOCAL_PEER_ID;
+			if (peerOf(moved) !== peerOf(sessions[newIndex])) return;
+
 			const reordered = [...sessions];
-			const [moved] = reordered.splice(oldIndex, 1);
+			reordered.splice(oldIndex, 1);
 			reordered.splice(newIndex, 0, moved);
 
-			const compositeOrder = reordered.map(sessionCompositeKey);
+			// herdr indexes within one machine's workspaces, so translate the
+			// merged-list position into the target's index among its own peer.
+			const targetIndex = reordered
+				.filter((s) => peerOf(s) === peerOf(moved))
+				.findIndex((s) => sessionCompositeKey(s) === active.id);
+			if (targetIndex === -1) return;
 
 			// Optimistic local update so the UI reorders before the round-trip.
-			applyLocalSessionOrder(compositeOrder);
+			applyLocalSessionReorder(reordered);
 
 			try {
-				await authFetch(`${API_BASE}/api/peers/session-order`, {
-					method: "PUT",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ order: compositeOrder }),
-				});
+				const res = await sessionFetch(
+					moved,
+					peers,
+					`/api/sessions/${encodeURIComponent(moved.id)}/move`,
+					{
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ index: targetIndex }),
+					},
+				);
+				if (!res.ok) {
+					console.error("Failed to move session:", await res.text());
+				}
 			} catch (err) {
-				console.error("Failed to save session order:", err);
+				console.error("Failed to move session:", err);
 			}
 		},
-		[sessions],
+		[sessions, peers],
 	);
 
 	const [createError, setCreateError] = useState<string | null>(null);

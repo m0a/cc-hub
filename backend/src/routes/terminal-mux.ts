@@ -33,7 +33,7 @@ interface MuxSubscription {
   controlSession: HerdrControlSession;
   cleanupFns: Array<() => void>;
   // True once the client has sent at least one `resize` message. The first
-  // resize uses setClientSizeImmediate (synchronous tmux size adoption);
+  // resize uses setClientSizeImmediate (synchronous PTY size adoption);
   // subsequent resizes use the dedup'd path.
   firstResizeReceived: boolean;
   // Last `offset` the client requested for each pane. 0 means live mode;
@@ -61,7 +61,7 @@ export interface MuxData {
   lastPingAt: number;
 }
 
-const tmuxService = new HerdrService();
+const herdrService = new HerdrService();
 
 // Track mux connections for broadcast
 const activeMuxConnections = new Set<ServerWebSocket<MuxData>>();
@@ -176,7 +176,7 @@ export async function muxMessage(ws: ServerWebSocket<MuxData>, message: string |
     return;
   }
 
-  // Validate the frame before any field reaches a tmux control-mode command.
+  // Validate the frame before any field reaches a herdr control-stream command.
   // Invalid/unknown frames (incl. paneId or cols/rows injection attempts) are
   // dropped here. #231.
   const parsed = MuxClientMessageSchema.safeParse(raw);
@@ -259,7 +259,7 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     return;
   }
 
-  const exists = await tmuxService.sessionExists(sessionId);
+  const exists = await herdrService.sessionExists(sessionId);
   if (!exists) {
     ws.send(JSON.stringify({ type: 'error', message: 'Session not found', sessionId }));
     return;
@@ -335,7 +335,7 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     // The client can disconnect while the awaits above are in flight. muxClose
     // has already run at that point and didn't see this subscription, so the
     // listeners and addClient() would leak (the grace period would never
-    // start and the tmux -CC subprocess would live forever). #346
+    // start and the pane control-stream subprocess would live forever). #346
     if (!activeMuxConnections.has(ws)) {
       console.log(`[mux] client disconnected during subscribe to ${sessionId}; rolling back`);
       for (const fn of cleanupFns) {
@@ -364,7 +364,7 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     // its viewport callback, and start expecting content before they
     // measure / send a resize — leaving a blank canvas if we wait.
     // sub.initialized stays false until a real resize comes in; the
-    // resize handler is responsible for actually setting tmux's pane
+    // resize handler is responsible for actually setting the pane's PTY
     // size and re-pushing viewports if dimensions change.
     void emitInitialViewports(ws, sessionId, sub).catch((err) => {
       console.warn(`[mux] initial viewport emit failed for ${sessionId}:`, err);
@@ -373,7 +373,7 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     console.error(`[mux] Failed to subscribe to ${sessionId}:`, error);
     // Roll back whatever was set up before the failure. Without this the
     // client count stays over-counted, the grace period never starts, and
-    // the tmux -CC subprocess lives forever (#332).
+    // the pane control-stream subprocess lives forever (#332).
     for (const fn of cleanupFns) {
       try { fn(); } catch { /* ignore */ }
     }
@@ -486,7 +486,7 @@ async function handleSubscribeConversation(ws: ServerWebSocket<MuxData>, session
 
   let workingDir: string | undefined;
   try {
-    const sessions = await tmuxService.listSessions();
+    const sessions = await herdrService.listSessions();
     const session = sessions.find(s => s.id === sessionId);
     workingDir = session?.currentPath;
   } catch (err) {
@@ -581,14 +581,13 @@ async function handleControlMessage(
       case 'resize': {
         try {
           if (!sub.firstResizeReceived) {
-            // First resize: force tmux to adopt the new pane size synchronously
-            // (refresh-client -C + resize-window). Subsequent resizes go through
-            // the dedup'd path.
+            // First resize: force the panes to adopt the new client size
+            // synchronously. Subsequent resizes go through the dedup'd path.
             await controlSession.setClientSizeImmediate(msg.cols, msg.rows);
             sub.firstResizeReceived = true;
-            // Brief settle window so tmux reflows before we capture, then push
-            // viewports at the new size (the ones we emitted at subscribe time
-            // were at whatever size tmux had previously).
+            // Brief settle window so the panes reflow before we capture, then
+            // push viewports at the new size (the ones we emitted at subscribe
+            // time were at whatever size the panes had previously).
             await new Promise(resolve => setTimeout(resolve, 100));
           } else {
             controlSession.setClientSize(msg.cols, msg.rows);

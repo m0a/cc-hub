@@ -3,8 +3,7 @@
  *
  * Maps CC Hub sessions onto herdr workspaces (session id = workspace label,
  * falling back to workspace_id). Panes expose no TTY; agent detection uses
- * the pane's foreground process group instead. Copy-mode and paste-buffer
- * APIs are inert (no herdr equivalent).
+ * the pane's foreground process group instead.
  */
 
 import { detectAgentProviderFromArgs, type AgentProvider } from '../../../shared/types';

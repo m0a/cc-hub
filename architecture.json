@@ -1,6 +1,6 @@
 {
   "name": "CC Hub",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "generated": "2026-07-17",
   "summary": "Web-based terminal session manager for Claude Code / Codex. Runs agents in herdr workspaces and provides a web UI for remote access from tablets/mobile devices",
   "stack": {
@@ -140,7 +140,7 @@
       {
         "name": "AnthropicUsageService",
         "file": "backend/src/services/anthropic-usage.ts",
-        "summary": "Anthropic API から使用量リミット (5時間 / 7日サイクル) を取得。60s cache、429 時は 5min backoff、in-flight リクエストの合流 (coalescing)。現在ペースからのリミット到達予測も算出。`limits[]` の scope 付きエントリからモデル別リミット (Fable 等) も抽出 — 全体サイクルが余裕でもモデル別が振り切っていることがあるため。解釈できないエントリは推測せず捨てる",
+        "summary": "Anthropic API から使用量リミット (5時間 / 7日サイクル) を取得。試行を開始時にスタンプして 60s TTL でゲートするため、前回が成功/失敗/例外のいずれで終わっても上流は 60s に1回まで (レート制限はアカウント単位なので、この絞りがポーリングと 429 の間の唯一の防壁)。429 は Retry-After に従いさらに長い窓で backoff、in-flight リクエストは合流 (coalescing)。現在ペースからのリミット到達予測も算出。`limits[]` の scope 付きエントリからモデル別リミット (Fable 等) も抽出 — 全体サイクルが余裕でもモデル別が振り切っていることがあるため。解釈できないエントリは推測せず捨てる",
         "deps": []
       },
       {
@@ -366,13 +366,6 @@
         "file": "backend/src/routes/sessions.ts"
       },
       {
-        "method": "GET",
-        "path": "/api/sessions/:id/copy-mode",
-        "group": "Sessions",
-        "description": "copy mode 状態を取得 (herdr では常に false)",
-        "file": "backend/src/routes/sessions.ts"
-      },
-      {
         "method": "POST",
         "path": "/api/sessions/:id/panes/focus",
         "group": "Sessions",
@@ -419,13 +412,6 @@
         "path": "/api/sessions/:id/prompt",
         "group": "Sessions",
         "description": "アクティブペインへプロンプトテキストを送信",
-        "file": "backend/src/routes/sessions.ts"
-      },
-      {
-        "method": "GET",
-        "path": "/api/sessions/clipboard",
-        "group": "Sessions",
-        "description": "ペーストバッファの内容を取得 (herdr では常に null)",
         "file": "backend/src/routes/sessions.ts"
       },
       {

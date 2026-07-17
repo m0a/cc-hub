@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.9] - 2026-07-17
+
+### Fixed
+- **使用量 API の失敗時にレート制御が全部外れていた問題**: `/api/oauth/usage` のレート制限は**アカウント単位**なので、cchub のキャッシュがダッシュボードのポーリング（30秒 × 開いているクライアント数）と 429 の間に立つ唯一の防壁になっている。そのキャッシュに穴があった — 判定が `if (this.lastSuccessfulResult && now - this.lastFetchAt < CACHE_TTL_MS)` で**成功結果が無いと成立せず**、`lastFetchAt` も**成功時にしか更新されない**。backoff を張るのは 429 のときだけだった。結果、**429 以外の失敗（500 / Claude Code がトークンを更新中の 401 / ネットワークエラー）でレート制御が同時に全部消え**、返せる結果もクールダウンも無いまま毎回のポーリングが上流に素通りしていた。**一番絞る必要がある「上流が不調な時」に限って絞りが無くなる**動作で、cchub 自身が 429 を作りかねなかった。試行を開始時にスタンプしてそれでゲートするようにし、前回がどう終わったかに関係なく TTL がリクエスト間の下限になるようにした（429 の backoff は従来どおりそれより長い窓で上書き）（`backend/src/services/anthropic-usage.ts`）
+  - 副産物として **#352 の no-credentials 専用クールダウンを吸収**（トークンが無いのも「何も得られなかった試行」の一種）。専用フィールドとタイマーが消え、永続化する状態が1つ減った
+  - `UsageLimitsStatus.lastFetchAt` は型定義で既に "when the last attempt happened" と書かれていたが実装は成功時しか入れていなかった。型の記述どおりの意味になり、失敗中の UI 表示としても正しくなった
+  - なお 2026-07-17 に観測された 429 の原因は cchub ではない（12時間で2回しか叩いておらず、どちらも正しく backoff していた）。同一アカウントを使う他プロセスが枠を使い切ると cchub も巻き添えを食うが、cchub 側のキャッシュは他プロセスを制御できない
+
+### Changed
+- **herdr 移行で取り残された tmux の残骸を削除**: 旧 tmux サービス自体は v0.2.0 で消えていたが、残骸が3種類残っていて、うち1つは実害があった
+  - **`install.sh` が tmux を必須にしていた** — 無いと exit 1 して `sudo apt install tmux` を案内する一方、**herdr のチェックは1つも無かった**（CC Hub が本当に無いと動かない方）。「使わないパッケージを要求し、必要なパッケージは案内しない」状態だったので herdr チェックに置き換えた
+  - **copy mode / paste buffer が死んだまま配線されていた** — どちらも herdr に対応物が無い tmux 固有機能で、移行時に `return false` / `return null` のスタブになったが配線は生きていた。`Terminal.tsx` は**ソフトキーボードが閉じるたびに** HTTP 往復して「常に false」を問い合わせており、その先の `q` 送信は絶対に発火しなかった。Ctrl+C（選択なし）も常に null のバッファを取りに行っていた。スタブ2つ・ルート2本（`GET /:id/copy-mode`, `GET /clipboard`）・呼び出し2箇所を削除（**Ctrl+C の挙動は厳密に維持** — ブラウザのコピーは従来どおり抑止し、キーは xterm に渡って SIGINT になる）
+  - **嘘になっていた命名** — `const tmuxService = new HerdrService()` や `tmuxSessions`、「tmux が報告しなかった場合」等のコメントを実態に合わせて改名
+  - CHANGELOG / specs / poc は歴史的記録なので変更していない。`TmuxLayoutNode` / `%N` ペイン ID は**フロントエンドと glasses アプリで共有する生きたワイヤ形式**、`tmuxSessionId` は peer 経由の resume も通るレスポンスフィールドのため、いずれも今回は据え置き
+
 ## [0.2.8] - 2026-07-17
 
 ### Fixed

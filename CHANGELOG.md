@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.8] - 2026-07-17
+
+### Fixed
+- **herdr 再起動後にセッションが開けず、会話も復元されなかった問題（#407）**: herdr サーバを再起動すると、セッションは一覧に並ぶのに開こうとすると真っ暗な "Connecting..." と `Failed to subscribe: herdr server is too old: pane.list returned no scroll state (protocol >= 16 / v0.7.3+ required)` が出ていた。**herdr が最新（v0.7.4 / protocol 16）でも出る完全な誤診**で、指示どおり更新しても直らない。原因は cchub と herdr の相互待ちデッドロック: ペインは terminal runtime を持つまで `scroll` を返さず、復元されたペインはエージェントが resume されるまで runtime を持たない。そして herdr はその resume を「クライアントが非ゼロのサイズで接続するまで」遅延させる（`pending_agent_resume_candidates()` が 0×0 の `terminal_area` で即 return）。cchub が `scroll` 欠損を「サーバが古い」と決めつけて subscribe を拒否 → サイズが付かない → resume が発火しない → runtime が無いまま、と互いに相手待ちで固まっていた。`scroll` 欠損は「このペインはまだ runtime を持たない」という**正常な過渡状態**として扱い、クライアント側の rows にフォールバックして subscribe を続行するようにした。これにより **セッションを開くだけで herdr が元の会話に復帰させる**（`claude --resume <元の会話 ID>`）（`backend/src/services/herdr-control.ts`）
+  - 版ズレ検知は推測をやめ、既存の正確な情報源（HerdrUpdateService が `herdr status --json` から実 protocol 番号を読む #393）に一本化
+  - このデッドロックは v0.2.3 の**前から**存在した（当時は `pane.scroll.viewport_rows` の TypeError で無言の "Failed to subscribe"）。v0.2.3 は原因ではなく誤った診断名を付けただけで、**herdr 移行（v0.2.0）以降ネイティブ復元は cchub 経由で一度も成立していなかった**可能性が高い。`resume_agents_on_restore = true` にしていても履歴タブからの手動 `-r` しか手段が無かったのはこのため
+  - なお `herdr agent list` は runtime の無いペインも「claude / idle」と報告する（復元計画から楽観的に状態を設定するため）が実プロセスは存在しない。cchub は実プロセスを見ているので正しく `agent=None` と報告する
+- **モバイルの下部バーでセッション名が切れる問題**: `cchub-work-1` が `cchub-work-…` になり、複数セッションを開いていると**どれを見ているのか判別できなかった**。名前を固定 `max-w-[84px]` で打ち切る一方、隣に `flex-1` のスペーサーを置いて余白を遊ばせていた（切れているすぐ横が空いている状態）。スペーサーではなくセレクタ側に余白を吸わせ、アクションボタンが使わない分の全幅を名前に回すようにした。本当にバーからあふれる時だけ truncate する（`frontend/src/App.tsx`）
+
 ## [0.2.7] - 2026-07-17
 
 ### Changed

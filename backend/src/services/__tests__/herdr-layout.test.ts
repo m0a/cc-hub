@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { PaneLayoutTree } from '../herdr-layout';
+import type { HerdrLayoutNode } from '../herdr-client';
+import { toTmuxPaneId } from '../herdr-client';
+import { herdrLayoutToNode, PaneLayoutTree } from '../herdr-layout';
 
 function twoPane(): PaneLayoutTree {
   const t = new PaneLayoutTree();
@@ -60,6 +62,88 @@ describe('PaneLayoutTree.setPaneSize', () => {
     t.setPaneSize('%1', 1000, 40, 160, 40);
     const rects = t.computeRects(160, 40);
     expect(rects.get('%2')?.width ?? 0).toBeGreaterThanOrEqual(15); // >= 10% of usable
+  });
+});
+
+describe('herdrLayoutToNode', () => {
+  test('a single pane becomes a single leaf', () => {
+    const node: HerdrLayoutNode = { type: 'pane', pane_id: 'w1:p1' };
+    expect(herdrLayoutToNode(node, toTmuxPaneId)).toEqual({ type: 'leaf', paneId: '%1' });
+  });
+
+  test('right split maps to h, down split maps to v; first/second become a/b', () => {
+    const right: HerdrLayoutNode = {
+      type: 'split',
+      direction: 'right',
+      ratio: 0.5,
+      first: { type: 'pane', pane_id: 'w1:p1' },
+      second: { type: 'pane', pane_id: 'w1:p2' },
+    };
+    expect(herdrLayoutToNode(right, toTmuxPaneId)).toEqual({
+      type: 'split',
+      dir: 'h',
+      ratio: 0.5,
+      a: { type: 'leaf', paneId: '%1' },
+      b: { type: 'leaf', paneId: '%2' },
+    });
+
+    const down: HerdrLayoutNode = { ...right, direction: 'down' };
+    expect(herdrLayoutToNode(down, toTmuxPaneId)).toMatchObject({ dir: 'v' });
+  });
+
+  test('reconstructs the nested tree herdr actually exports', () => {
+    // The exact shape observed from a live `layout.export`: split right {p1,
+    // split down {p2, p3}} — p1 on the left, p2 over p3 on the right.
+    const exported: HerdrLayoutNode = {
+      type: 'split',
+      direction: 'right',
+      ratio: 0.5,
+      first: { type: 'pane', pane_id: 'w10:p1' },
+      second: {
+        type: 'split',
+        direction: 'down',
+        ratio: 0.5,
+        first: { type: 'pane', pane_id: 'w10:p2' },
+        second: { type: 'pane', pane_id: 'w10:p3' },
+      },
+    };
+    const root = herdrLayoutToNode(exported, toTmuxPaneId);
+    expect(root).not.toBeNull();
+
+    const t = new PaneLayoutTree();
+    // biome-ignore lint/style/noNonNullAssertion: asserted non-null above
+    t.setInitialTree(root!);
+    expect(t.paneIds().sort()).toEqual(['%1', '%2', '%3']);
+
+    const rects = t.computeRects(160, 40);
+    // %1 is the whole left half; %2/%3 stack in the right half.
+    expect(rects.get('%1')?.height).toBe(40);
+    expect(rects.get('%2')?.x).toBe(rects.get('%3')?.x); // same column
+    expect((rects.get('%2')?.height ?? 0) + (rects.get('%3')?.height ?? 0)).toBeLessThan(40);
+  });
+
+  test('an unmappable pane id anywhere collapses the whole tree to null', () => {
+    const bad: HerdrLayoutNode = {
+      type: 'split',
+      direction: 'right',
+      ratio: 0.5,
+      first: { type: 'pane', pane_id: 'w1:p1' },
+      second: { type: 'pane', pane_id: 'not-a-herdr-id' },
+    };
+    expect(herdrLayoutToNode(bad, toTmuxPaneId)).toBeNull();
+  });
+
+  test('ratio is clamped into the tree\'s valid range', () => {
+    const hi: HerdrLayoutNode = {
+      type: 'split',
+      direction: 'right',
+      ratio: 0.99,
+      first: { type: 'pane', pane_id: 'w1:p1' },
+      second: { type: 'pane', pane_id: 'w1:p2' },
+    };
+    const lo: HerdrLayoutNode = { ...hi, ratio: 0.01 };
+    expect((herdrLayoutToNode(hi, toTmuxPaneId) as { ratio: number }).ratio).toBeCloseTo(0.9);
+    expect((herdrLayoutToNode(lo, toTmuxPaneId) as { ratio: number }).ratio).toBeCloseTo(0.1);
   });
 });
 

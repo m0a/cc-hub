@@ -16,8 +16,38 @@
 
 import { herdrSubscribe, listPanes } from './herdr-client';
 
-/** Events that change which panes exist — each one re-subscribes the pane set. */
-const LIFECYCLE_EVENTS = ['pane.created', 'pane.closed', 'pane.exited', 'pane.agent_detected'];
+/**
+ * herdr's event naming is asymmetric across three surfaces (verified live
+ * against herdr 0.7.4 / protocol 16):
+ *   1. Subscription *request* types are dotted — `events.subscribe` rejects
+ *      anything else (`unknown variant "pane_created"`).
+ *   2. Received lifecycle events echo back in snake_case (`pane_created`).
+ *   3. The received per-pane status event stays dotted
+ *      (`pane.agent_status_changed`).
+ * So the request list must stay dotted, while classification of *received*
+ * events has to accept both forms — hence the `.`→`_` normalization below.
+ */
+const LIFECYCLE_SUBSCRIPTION_TYPES = [
+  'pane.created',
+  'pane.closed',
+  'pane.exited',
+  'pane.agent_detected',
+];
+const LIFECYCLE_EVENT_NAMES = new Set([
+  'pane_created',
+  'pane_closed',
+  'pane_exited',
+  'pane_agent_detected',
+]);
+
+/** Classify a *received* herdr event, normalizing its two namings to snake_case. */
+export function classifyHerdrEvent(rawEvent: unknown): 'status' | 'lifecycle' | 'ignore' {
+  if (typeof rawEvent !== 'string') return 'ignore';
+  const kind = rawEvent.replace(/\./g, '_');
+  if (kind === 'pane_agent_status_changed') return 'status';
+  if (LIFECYCLE_EVENT_NAMES.has(kind)) return 'lifecycle';
+  return 'ignore';
+}
 
 const CHANGE_DEBOUNCE_MS = 150;
 const RESUBSCRIBE_DEBOUNCE_MS = 400;
@@ -77,17 +107,17 @@ async function subscribeToPanes(): Promise<void> {
   unsubscribe = null;
 
   const subscriptions: Array<Record<string, unknown>> = [
-    ...LIFECYCLE_EVENTS.map((type) => ({ type })),
+    ...LIFECYCLE_SUBSCRIPTION_TYPES.map((type) => ({ type })),
     ...panes.map((p) => ({ type: 'pane.agent_status_changed', pane_id: p.pane_id })),
   ];
 
   unsubscribe = herdrSubscribe(
     subscriptions,
     (ev) => {
-      const kind = typeof ev.event === 'string' ? ev.event : '';
-      if (kind === 'pane.agent_status_changed') {
+      const kind = classifyHerdrEvent(ev.event);
+      if (kind === 'status') {
         scheduleChangePush();
-      } else if (LIFECYCLE_EVENTS.includes(kind)) {
+      } else if (kind === 'lifecycle') {
         // A new pane needs its own status subscription; a closed one should
         // stop holding one. Push too — pane sets are user-visible.
         scheduleResubscribe();

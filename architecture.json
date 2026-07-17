@@ -1,6 +1,6 @@
 {
   "name": "CC Hub",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "generated": "2026-07-17",
   "summary": "Web-based terminal session manager for Claude Code / Codex. Runs agents in herdr workspaces and provides a web UI for remote access from tablets/mobile devices",
   "stack": {
@@ -53,7 +53,7 @@
       {
         "name": "HerdrControlSession",
         "file": "backend/src/services/herdr-control.ts",
-        "summary": "CC Hub セッション (= herdr workspace) ごとに1インスタンス。split 木の所有、フォーカス追跡、lazy controllers (WS購読/初回入力のみ、読み取りRESTは純RPC)、フレーム走査による cursor/alt-screen 追跡、30s grace。captureViewportHerdr で viewport 合成 (visible / recent スライス、1000行キャップ)",
+        "summary": "CC Hub セッション (= herdr workspace) ごとに1インスタンス。split 木の所有、フォーカス追跡、lazy controllers (WS購読/初回入力のみ、読み取りRESTは純RPC)、フレーム走査による cursor/alt-screen 追跡、30s grace。captureViewportHerdr で viewport 合成 (visible / recent スライス、1000行キャップ)。runtime 未起動のペインは scroll を返さないが、これは復元直後の正常な過渡状態なので拒否せずクライアントの rows にフォールバックして subscribe を続行する — 拒否すると herdr の resume (クライアントのサイズ待ち) と相互待ちになり永久に開けない (#407)",
         "deps": [
           "HerdrClient",
           "HerdrLayout"

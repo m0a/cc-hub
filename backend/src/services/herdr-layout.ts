@@ -9,6 +9,7 @@
  * `TmuxLayoutNode` unchanged.
  */
 
+import type { HerdrLayoutNode } from './herdr-client';
 import type { TmuxLayoutNode } from '../../../shared/types';
 
 export interface LeafNode {
@@ -37,9 +38,40 @@ export interface PaneRect {
 const MIN_RATIO = 0.1;
 const MAX_RATIO = 0.9;
 
+/**
+ * Convert a herdr `layout.export` tree into a CC Hub `LayoutNode`. `mapPaneId`
+ * maps a herdr pane id (`wK:pN`) to a tmux-style `%N`, returning null when the
+ * id is unmappable. Returns null if *any* node fails to convert, so the caller
+ * can fall back to a flat chain rather than render a partial/corrupt tree.
+ *
+ * herdr `right`/`down` split directions map to CC Hub `h`/`v`; `first`/`second`
+ * children map to `a`/`b`; the ratio is clamped into the tree's valid range.
+ */
+export function herdrLayoutToNode(
+  node: HerdrLayoutNode,
+  mapPaneId: (herdrPaneId: string) => string | null,
+): LayoutNode | null {
+  if (node.type === 'pane') {
+    const paneId = mapPaneId(node.pane_id);
+    return paneId ? { type: 'leaf', paneId } : null;
+  }
+  const a = herdrLayoutToNode(node.first, mapPaneId);
+  const b = herdrLayoutToNode(node.second, mapPaneId);
+  if (!a || !b) return null;
+  const rawRatio = Number.isFinite(node.ratio) ? node.ratio : 0.5;
+  const ratio = Math.min(MAX_RATIO, Math.max(MIN_RATIO, rawRatio));
+  return { type: 'split', dir: node.direction === 'right' ? 'h' : 'v', ratio, a, b };
+}
+
 export class PaneLayoutTree {
   private root: LayoutNode | null = null;
   private zoomedPane: string | null = null;
+
+  /** Hydrate directly from a prebuilt tree (e.g. herdr's exported layout). */
+  setInitialTree(root: LayoutNode): void {
+    this.root = root;
+    this.zoomedPane = null;
+  }
 
   /** Initialize from an existing pane list (chained side-by-side, even). */
   setInitialPanes(paneIds: string[]): void {

@@ -267,6 +267,46 @@ export async function getPane(herdrPaneId: string): Promise<HerdrPane | null> {
   }
 }
 
+/**
+ * A node in herdr's `layout.export` split tree (recursive). `direction`
+ * describes where the `second` child sits relative to `first`: `right` =
+ * side-by-side, `down` = stacked. `ratio` is the first child's share.
+ */
+export type HerdrLayoutNode =
+  | { type: 'pane'; pane_id: string }
+  | {
+      type: 'split';
+      direction: 'right' | 'down';
+      ratio: number;
+      first: HerdrLayoutNode;
+      second: HerdrLayoutNode;
+    };
+
+export interface HerdrLayoutExport {
+  workspace_id: string;
+  tab_id: string;
+  zoomed: boolean;
+  focused_pane_id: string | null;
+  root: HerdrLayoutNode;
+}
+
+/**
+ * Export a workspace's split tree via any pane it contains. herdr retains the
+ * real geometry (structure + direction) across a cchub restart, so this is how
+ * CC Hub rehydrates its layout instead of guessing a flat chain. Null on any
+ * failure — the caller falls back to a flat layout.
+ */
+export async function exportLayout(herdrPaneId: string): Promise<HerdrLayoutExport | null> {
+  try {
+    const res = await herdrRpc<{ layout?: HerdrLayoutExport }>('layout.export', {
+      pane_id: herdrPaneId,
+    });
+    return res.layout ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export interface HerdrReadResult {
   pane_id: string;
   source: string;

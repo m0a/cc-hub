@@ -21,6 +21,7 @@
 
 import type { PaneCursor, PaneModes, PaneViewport, TmuxLayoutNode } from '../../../shared/types';
 import {
+  exportLayout,
   getPane,
   type HerdrPane,
   herdrRpc,
@@ -32,7 +33,7 @@ import {
   toHerdrPaneId,
   toTmuxPaneId,
 } from './herdr-client';
-import { PaneLayoutTree } from './herdr-layout';
+import { herdrLayoutToNode, PaneLayoutTree } from './herdr-layout';
 
 const GRACE_PERIOD_MS = 30_000;
 const RESIZE_DEBOUNCE_MS = 50;
@@ -247,7 +248,7 @@ export class HerdrControlSession {
     const tmuxIds = panes
       .map((p) => toTmuxPaneId(p.pane_id))
       .filter((id): id is string => id !== null);
-    this.tree.setInitialPanes(tmuxIds);
+    await this.hydrateLayout(panes, tmuxIds);
 
     const focused = panes.find((p) => p.focused);
     this.activePaneId = (focused ? toTmuxPaneId(focused.pane_id) : null) ?? tmuxIds[0] ?? null;
@@ -279,6 +280,35 @@ export class HerdrControlSession {
     console.log(
       `[herdr-control] Session ready: ${this.sessionId} (workspace=${ws.workspace_id}, panes=${tmuxIds.length})`,
     );
+  }
+
+  /**
+   * Rebuild the split tree, preferring herdr's exported layout so a session's
+   * pane geometry (structure + direction) survives a cchub restart instead of
+   * collapsing to a flat horizontal chain. Falls back to a flat chain when the
+   * export is unavailable or its pane set disagrees with the live panes — the
+   * worst case is then exactly the old behavior, never a corrupt tree.
+   */
+  private async hydrateLayout(panes: HerdrPane[], tmuxIds: string[]): Promise<void> {
+    const anchor = panes[0]?.pane_id;
+    if (anchor) {
+      const exported = await exportLayout(anchor);
+      const root = exported ? herdrLayoutToNode(exported.root, toTmuxPaneId) : null;
+      if (root) {
+        this.tree.setInitialTree(root);
+        const treeIds = this.tree.paneIds();
+        const matches =
+          treeIds.length === tmuxIds.length && treeIds.every((id) => tmuxIds.includes(id));
+        if (matches) {
+          if (exported?.zoomed && exported.focused_pane_id) {
+            const zoomed = toTmuxPaneId(exported.focused_pane_id);
+            if (zoomed && this.tree.has(zoomed)) this.tree.toggleZoom(zoomed);
+          }
+          return;
+        }
+      }
+    }
+    this.tree.setInitialPanes(tmuxIds);
   }
 
   /** Map a tmux-style `%N` pane id to this session's herdr pane id. */

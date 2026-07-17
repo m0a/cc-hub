@@ -109,16 +109,18 @@ async function guessInitialAltScreen(
 }
 
 /**
- * herdr servers older than protocol 16 return panes without scroll state,
- * which every viewport computation depends on. Fail the subscribe with the
- * actual fix instead of letting it surface as a TypeError deep in start().
+ * A pane reports no scroll state until it has a terminal runtime, and a
+ * restored pane has none until its agent is resumed — herdr defers that resume
+ * until a client attaches with a non-zero size. So "no scroll" is a normal
+ * transient state on exactly the panes a subscribe is meant to revive, and
+ * refusing to subscribe over it deadlocks: no subscribe → no client size → no
+ * resume → still no scroll. It is NOT a signal about the server's version
+ * (version skew has its own accurate source in HerdrUpdateService, which reads
+ * the real protocol number from `herdr status --json`). Callers must treat a
+ * missing scroll as "unknown yet" and fall back to the client's own size.
  */
-export function assertPanesHaveScroll(panes: Array<Pick<HerdrPane, 'scroll'>>): void {
-  if (panes.some((p) => !p.scroll)) {
-    throw new Error(
-      'herdr server is too old: pane.list returned no scroll state (protocol >= 16 / v0.7.3+ required). Update herdr and restart the server.',
-    );
-  }
+export function paneViewportRows(pane: Pick<HerdrPane, 'scroll'>, fallbackRows: number): number {
+  return pane.scroll?.viewport_rows || fallbackRows;
 }
 
 /**
@@ -242,7 +244,6 @@ export class HerdrControlSession {
     this.workspaceId = ws.workspace_id;
 
     const panes = await listPanes(ws.workspace_id);
-    assertPanesHaveScroll(panes);
     const tmuxIds = panes
       .map((p) => toTmuxPaneId(p.pane_id))
       .filter((id): id is string => id !== null);
@@ -260,7 +261,7 @@ export class HerdrControlSession {
       if (tmuxId) {
         this.paneSizes.set(tmuxId, {
           cols: this.clientSize.cols,
-          rows: pane.scroll?.viewport_rows || this.clientSize.rows,
+          rows: paneViewportRows(pane, this.clientSize.rows),
         });
       }
     }

@@ -107,17 +107,23 @@ export interface UsageLimits {
 
 export class AnthropicUsageService {
   private lastSuccessfulResult: UsageLimits | null = null;
+  /**
+   * When the last attempt STARTED, whatever came of it. This gates every
+   * request, so the TTL is a hard floor between calls rather than a cache that
+   * only exists once one has succeeded. Keying it on success instead left every
+   * failure — a 500, a token mid-refresh 401ing, a network blip — with no
+   * cooldown at all: the cache could not engage without a stored result, and
+   * only a 429 set a backoff, so the dashboard's 30s poll (times every open
+   * client) went straight through to Anthropic and earned the very 429 this
+   * class exists to avoid. Also subsumes the #352 no-credentials cooldown: a
+   * missing token is just another attempt that yielded nothing.
+   */
   private lastFetchAt = 0;
   private inflight: Promise<UsageLimits | null> | null = null;
   // Anthropic /api/oauth/usage has strict rate limits. Cache for 60s.
   private readonly CACHE_TTL_MS = 60_000;
   // On 429, back off for 5 minutes before retrying.
   private rateLimitedUntil = 0;
-  // When no credentials are present there is nothing to fetch, but the
-  // dashboard still polls every few seconds. Without a cooldown each poll
-  // re-reads the credentials file (disk I/O). Skip refetching until this
-  // timestamp. #352
-  private noCredentialsUntil = 0;
   private lastErrorReason: UsageLimitsErrorReason | undefined;
 
   private async getAccessToken(): Promise<string | null> {
@@ -143,19 +149,15 @@ export class AnthropicUsageService {
   async getUsageLimits(): Promise<UsageLimits | null> {
     const now = Date.now();
 
-    // Serve from cache if fresh
-    if (this.lastSuccessfulResult && now - this.lastFetchAt < this.CACHE_TTL_MS) {
+    // At most one attempt per TTL, no matter how the last one ended. On success
+    // this serves the cached result; on failure it serves whatever we last had
+    // (possibly null) rather than retrying at the caller's polling rate.
+    if (now - this.lastFetchAt < this.CACHE_TTL_MS) {
       return this.lastSuccessfulResult;
     }
 
-    // Respect rate-limit backoff window
+    // Respect rate-limit backoff window (longer than the TTL floor above)
     if (now < this.rateLimitedUntil) {
-      return this.lastSuccessfulResult;
-    }
-
-    // Respect the no-credentials cooldown so polling doesn't re-read the
-    // credentials file on every request.
-    if (now < this.noCredentialsUntil) {
       return this.lastSuccessfulResult;
     }
 
@@ -173,11 +175,15 @@ export class AnthropicUsageService {
   }
 
   private async fetchUsageLimits(): Promise<UsageLimits | null> {
+    // Stamp the attempt up front so every exit below — a missing token, a
+    // non-429 status, a thrown network error — starts the cooldown. Stamping
+    // it only where a request "counted" is what left the failure paths
+    // unthrottled.
+    this.lastFetchAt = Date.now();
+
     const token = await this.getAccessToken();
     if (!token) {
       this.lastErrorReason = 'no-credentials';
-      this.lastFetchAt = Date.now();
-      this.noCredentialsUntil = Date.now() + this.CACHE_TTL_MS;
       return this.lastSuccessfulResult;
     }
 
@@ -234,7 +240,6 @@ export class AnthropicUsageService {
       };
 
       this.lastSuccessfulResult = result;
-      this.lastFetchAt = Date.now();
       return result;
     } catch (err) {
       console.error('Error fetching usage:', err);

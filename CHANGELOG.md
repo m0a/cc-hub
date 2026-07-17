@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.7] - 2026-07-17
+
+### Changed
+- **セッションの並び順を herdr 単一情報源にした**: 並び順は二重に持たれていた — herdr のワークスペース順の上に、cchub 独自の `sessionOrder`（`session-metadata.json` とクロス peer 用の `peers.json`）が乗っていた。どちらか一方で並べ替えるともう一方とズレ、実際に本番でズレていた（cchub 側は「ギガ残量通知」が先頭、herdr 側は5番目）。cchub 側のストアを両方消し、ドラッグは herdr の `workspace.move` へ直接書き込むようにした。`listSessions()` は元々 `workspace.list` の順で組み立てているので、実装はソート層2枚（`sessions.ts` のサーバ側ソートと `useSessions.ts` の `sortByMergedOrder`）の**削除**が主で、永続化する状態が1つ減った。herdr の TUI で並べ替えても cchub に反映されるようになり、逆も同様（`backend/src/services/herdr.ts`, `routes/sessions.ts`, `services/session-metadata.ts`, `services/peer-registry.ts`, `routes/peers.ts`, `frontend/src/hooks/useSessions.ts`, `components/SessionList.tsx`）
+  - `PUT /api/sessions/order` と `GET|PUT /api/peers/session-order` を廃止し、`POST /api/sessions/:id/move { index }` を新設。peer のセッションは `sessionFetch` 経由でその peer の cchub → その peer の herdr に届く
+  - herdr の `insert_index` は「そのインデックスに現在いるワークスペースの手前に挿入」という意味で、移動元がまだリストに居る状態で評価される。後方→前方の移動はインデックスちょうどに着地するが、前方→後方は1つ手前に着地するため補正している（herdr 0.7.3/0.7.4 で実測）
+  - **並び順は peer ごとにグループ化される**（peer 間は `PUT /api/peers/order` の表示順、peer 内は各 herdr の順）。herdr は自分のマシンのワークスペースしか知らないため、peer 境界をまたぐドラッグは保存先が無く無視される。`state: 'lost'` のセッションはワークスペースが無いので末尾に並ぶ
+  - 移行時、既存の cchub 側の並び順は破棄され herdr の順が正になる（`peers.json` の死んだ `sessionOrder` キーは次回保存時に自動削除）
+
 ## [0.2.6] - 2026-07-17
 
 ### Fixed

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.10] - 2026-07-18
+
+### Fixed
+- **herdr の agent-status 即時反映が一度も効いていなかった問題**: agent が動き始めた/終わった/入力待ちになった瞬間を herdr は push で教えてくれるが、その watcher（`herdr-agent-status.ts`）のライフサイクル分岐が**起動以来一度も発火していなかった**。UI は 5 秒間隔のセッションポーリングにサイレントにフォールバックしていた。原因は herdr のイベント命名が3面で非対称なこと（実機 herdr 0.7.4 / protocol 16 で確認）: **購読リクエストの type はドット**（`pane.created`、他は `unknown variant` で拒否）、**受信するライフサイクルイベントは snake_case**（`pane_created`）、**受信する per-pane status はドット**（`pane.agent_status_changed`）。watcher は受信イベント名をドットのリストと比較していたため snake_case のライフサイクルイベントが永遠に一致せず、(1) 起動後に新規作成されたペインが status 購読を張り直してもらえず、(2) ペインの生成/消滅が即時 push されず 5 秒待ちになっていた。docstring が「取りこぼしはレイテンシ低下のみで正しさは損なわない」と設計していたため、取りこぼし率100%が正常動作と見分けられず露見しなかった。購読リクエストはドットのまま維持し、受信イベントの分類だけ `.`→`_` 正規化で両形式を受理するよう分離した。dev 実機計測で、`pane_created` の即時 push が ~2.5–3.5s（間隔ポーリング）→ 79–173ms、新規ペインの status 変化が「到達せず」→ 46–183ms に改善（`backend/src/services/herdr-agent-status.ts`）
+  - なお `pane.agent_status_changed`（主機能）分岐はドット同士で一致しており動作していた。死んでいたのはライフサイクル分岐のみ
+  - 受信イベント名の両命名を固定する純粋関数（`classifyHerdrEvent`）のユニットテストを追加
+
 ## [0.2.9] - 2026-07-17
 
 ### Fixed

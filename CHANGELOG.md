@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.11] - 2026-07-18
+
+### Fixed
+- **バックエンド再構築時に複数ペインのレイアウトが横一列に潰れていた問題**: セッションの split tree は CC Hub 側が所有している（herdr のグリッドはヘッドレスでリサイズできないため）が、その復元処理（`setInitialPanes`）が tmux 時代の前提を引きずり、ペインを常に「均等な横一列」で組み直していた。そのため CC Hub が `HerdrControlSession` を作り直すたび — **バックエンド再起動後、または 30 秒グレースピリオドを過ぎたセッションへの再 subscribe 時** — に、2×2 や L 字のグリッドが横並び一列に潰れていた（herdr は実レイアウトを保持しているにもかかわらず）。herdr の `layout.export` が返す実際の split tree（`direction`/`ratio` 付きのネストした pane/split ノード）は CC Hub 自身の `LayoutNode` にほぼ 1:1 でマップできるため、これを優先して構造・分割方向・zoom/focus を復元するようにした。export が取得できない、またはそのペイン集合が実ペインと一致しない場合のみ従来の flat chain にフォールバックするので、**最悪でも従来挙動**で、壊れた木を描画することはない。実機 herdr 0.7.4 で L 字 workspace が `horizontal[leaf, vertical[leaf, leaf]]` として復元されることを確認（`backend/src/services/herdr-control.ts`, `herdr-layout.ts`, `herdr-client.ts`）
+
+### Changed
+- **tmux → herdr 移行で残った死にコード/誤記の掃除**: 呼び出し元ゼロで `not supported in herdr mode` を throw するだけの `HerdrControlSession.sendCommand` スタブを削除。`terminal-mux.ts` の file-local 変数 `tmuxService`（実体は `HerdrService`）を `herdrService` にリネームし、現在の挙動を tmux 用語で説明していたコメント（「tmux -CC subprocess」「tmux's pane size」等）を herdr の実態に修正。`%N` 形式や「tmux convention」等の意図的なアナロジーは理解を助けるため残置。実行時挙動の変化なし（`backend/src/routes/terminal-mux.ts`, `herdr-control.ts`）
+
 ## [0.2.10] - 2026-07-18
 
 ### Fixed

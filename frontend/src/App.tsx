@@ -1042,15 +1042,18 @@ export function App() {
 				showOverlay ? "opacity-100" : "opacity-0 pointer-events-none"
 			}`}
 		>
-			{/* Left: Session selector */}
+			{/* Left: Session selector. Takes the bar's free space so the name gets
+			    every pixel the action buttons don't need — a fixed cap truncated
+			    names like "cchub-work-1" while the bar sat half empty. The action
+			    group is shrink-0, so this only ever grows into real slack. */}
 			<button
 				type="button"
 				onClick={() => handleShowSessionList()}
-				className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-white/[0.06] transition-colors"
+				className="flex flex-1 min-w-0 items-center gap-1.5 px-2 py-1 rounded-md hover:bg-white/[0.06] transition-colors"
 				data-onboarding="session-list"
 			>
 				<div
-					className={`w-2 h-2 rounded-full ${
+					className={`w-2 h-2 rounded-full shrink-0 ${
 						activeSession?.state === "working"
 							? "bg-blue-500"
 							: (
@@ -1061,13 +1064,11 @@ export function App() {
 								: "bg-zinc-600"
 					}`}
 				/>
-				<span className="text-[13px] font-medium text-white truncate max-w-[84px]">
+				<span className="text-[13px] font-medium text-white truncate min-w-0">
 					{activeSession?.name || "-"}
 				</span>
-				<ChevronDown className="w-3 h-3 text-zinc-500" />
+				<ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" />
 			</button>
-
-			<div className="flex-1" />
 
 			{/* Right: Core actions */}
 			<div className="flex items-center gap-1 shrink-0">

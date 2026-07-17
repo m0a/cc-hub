@@ -21,7 +21,7 @@ afterEach(async () => {
 });
 
 describe('session-metadata mutation lock', () => {
-  test('concurrent theme/title/order updates do not overwrite each other', async () => {
+  test('concurrent theme/title updates do not overwrite each other', async () => {
     const meta = await import('../session-metadata');
 
     // Interleave updates that all do load→mutate→save on the same file.
@@ -31,14 +31,14 @@ describe('session-metadata mutation lock', () => {
     for (let i = 0; i < 20; i++) {
       ops.push(meta.setSessionTheme('ses-a', 'blue'));
       ops.push(meta.setSessionTitle('ses-b', `title ${i}`));
-      ops.push(meta.setSessionOrder([`ses-a`, `ses-b`, `ses-${i}`]));
+      ops.push(meta.setSessionTheme(`ses-${i}`, 'green'));
     }
     await Promise.all(ops);
 
     const sessions = await meta.getAllSessionMetadata();
     expect(sessions['ses-a']?.theme).toBe('blue');
     expect(sessions['ses-b']?.title).toBe('title 19');
-    expect(await meta.getSessionOrder()).toEqual(['ses-a', 'ses-b', 'ses-19']);
+    expect(sessions['ses-19']?.theme).toBe('green');
 
     // The file on disk must always be complete JSON (atomic temp+rename).
     const text = await readFile(join(tempDir, 'herdr-session-metadata.json'), 'utf-8');

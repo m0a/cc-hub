@@ -34,7 +34,6 @@ export interface LastKnownSession {
 
 interface MetadataStore {
   sessions: Record<string, SessionMeta>;
-  sessionOrder?: string[];
 }
 
 async function getFilePath(): Promise<string> {
@@ -52,7 +51,7 @@ async function load(): Promise<MetadataStore> {
   try {
     const data = await readFile(filePath, 'utf-8');
     const parsed = JSON.parse(data) as MetadataStore;
-    return { sessions: parsed.sessions || {}, sessionOrder: parsed.sessionOrder };
+    return { sessions: parsed.sessions || {} };
   } catch {
     // Fresh store. Deliberately NO migration from the tmux-era files
     // (session-metadata.json etc.) — they belong to the tmux install and
@@ -85,19 +84,6 @@ export async function setSessionTheme(sessionId: string, theme: SessionTheme | n
     } else {
       data.sessions[sessionId].theme = theme;
     }
-    await save(data);
-  });
-}
-
-export async function getSessionOrder(): Promise<string[]> {
-  const data = await load();
-  return data.sessionOrder || [];
-}
-
-export async function setSessionOrder(order: string[]): Promise<void> {
-  await withMetadataLock(async () => {
-    const data = await load();
-    data.sessionOrder = order;
     await save(data);
   });
 }

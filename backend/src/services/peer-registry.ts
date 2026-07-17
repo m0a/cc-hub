@@ -50,9 +50,6 @@ interface StoredPeer extends Peer {
 
 interface PeersStore {
   peers: StoredPeer[];
-  // Cross-peer session display order. Entries are `${peerId}:${sessionId}`
-  // composite keys so identical session names on different peers don't collide.
-  sessionOrder?: string[];
 }
 
 async function getFilePath(): Promise<string> {
@@ -68,7 +65,10 @@ async function load(): Promise<PeersStore> {
     if (!Array.isArray(parsed.peers)) {
       return { peers: [] };
     }
-    return parsed;
+    // Rebuild rather than pass `parsed` through, so keys we no longer own —
+    // notably the pre-herdr `sessionOrder` — get dropped on the next save
+    // instead of round-tripping forever.
+    return { peers: parsed.peers };
   } catch {
     return { peers: [] };
   }
@@ -256,23 +256,6 @@ export async function recordPeerFailure(id: string, message: string): Promise<vo
     if (!peer) return;
     peer.lastErrorAt = new Date().toISOString();
     peer.lastErrorMessage = message;
-    await save(store);
-  });
-}
-
-/**
- * Cross-peer session order persisted on the Hub. Each entry is a
- * `${peerId}:${sessionId}` composite key.
- */
-export async function getCrossPeerSessionOrder(): Promise<string[]> {
-  const store = await load();
-  return store.sessionOrder ?? [];
-}
-
-export async function setCrossPeerSessionOrder(order: string[]): Promise<void> {
-  return withMutationLock(async () => {
-    const store = await load();
-    store.sessionOrder = order;
     await save(store);
   });
 }

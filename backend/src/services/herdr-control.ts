@@ -518,11 +518,6 @@ export class HerdrControlSession {
   // Public API - Commands (mirrors TmuxControlSession)
   // ==========================================================================
 
-  /** tmux raw commands have no herdr equivalent; callers must branch. */
-  async sendCommand(command: string): Promise<string> {
-    throw new Error(`sendCommand is not supported in herdr mode: ${command}`);
-  }
-
   async sendInput(paneId: string, data: Buffer): Promise<void> {
     assertPaneId(paneId);
     if (data.length === 0) return;

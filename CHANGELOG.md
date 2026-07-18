@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.17] - 2026-07-19
+
+### Fixed
+- **herdr agent-status ウォッチャーの再購読ループを停止** (#433): `events.subscribe` が約2.5回/秒で開閉し続け、cchub がアイドルでも常時CPUを消費していた。herdr が購読のたびに既存paneのスナップショットを再送し、その replay バッファに `pane.list`/`workspace.list`/`pane.get` のどれにも存在しない亡霊 `pane_created`（実機 `w2N:p1`）を保持していたのが原因で、「再購読→スナップショット再送→再購読」の自己増殖ループになっていた。再購読の判定をイベントペイロードではなく `pane.list`（真実）の集合差分に変更し、pane集合が実際に変わった時だけ再購読するようにした（`paneSetRequiresResubscribe`）
+
 ## [0.2.16] - 2026-07-19
 
 ### Changed

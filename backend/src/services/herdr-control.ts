@@ -21,6 +21,7 @@
 
 import type { PaneCursor, PaneModes, PaneViewport, TmuxLayoutNode } from '../../../shared/types';
 import {
+  eventWorkspaceId,
   exportLayout,
   getPane,
   type HerdrPane,
@@ -267,11 +268,21 @@ export class HerdrControlSession {
       }
     }
 
-    // Structural events → reconcile pane set. Payload shapes are treated as
-    // opaque; any of these events triggers a pane.list diff.
+    // Structural events → reconcile pane set. herdr's lifecycle subscriptions
+    // accept no server-side filter (protocol 16), so every session receives
+    // every pane event; filter on the event's workspace here so pane churn in
+    // other workspaces (previews, throwaway workspaces, other sessions) does
+    // not fan out into a pane.list reconcile per session. An event with no
+    // recognizable workspace still reconciles — a wasted reconcile is
+    // harmless, a missed one would cost correctness.
     this.unsubscribeEvents = herdrSubscribe(
       [{ type: 'pane.created' }, { type: 'pane.closed' }, { type: 'pane.exited' }],
-      () => void this.reconcilePanes(),
+      (ev) => {
+        const wsId = eventWorkspaceId(ev);
+        if (wsId === null || wsId === this.workspaceId) {
+          void this.reconcilePanes();
+        }
+      },
       () => {
         if (!this.destroyed) this.handleExit('herdr event stream closed');
       },

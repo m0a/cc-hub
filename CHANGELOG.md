@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.13] - 2026-07-18
+
+### Changed
+- **pane ライフサイクルイベントを workspace でフィルタしてから reconcile するように**: 各セッションは pane.created/closed/exited を購読してペイン集合を reconcile するが、herdr のライフサイクル購読は**サーバー側フィルタ非対応**（protocol 16 で確認）で、ハンドラはペイロードを無視していた。そのため**どこかの workspace の pane イベント1つで全アクティブセッションが pane.list reconcile を実行**していた。さらに調査で、herdr は**新規購読に過去イベント約50件をリプレイ**することが実測で判明 — セッションを開くたびに無関係な reconcile の束が走っていた。受信イベントの workspace（`pane_created` は `data.pane.workspace_id`、`pane_closed`/`exited` は `data.workspace_id`。実ペイロードをキャプチャしテストフィクスチャ化）を見て自 workspace 以外をスキップする。workspace を特定できないイベントは従来どおり reconcile（fail open）。実機 E2E で自 workspace への外部分割が温めた購読で ~180ms で layout push として届くことを確認（`backend/src/services/herdr-client.ts`, `herdr-control.ts`）
+  - 副産物の実測知見: herdr は**購読直後の配信が約4秒遅延**する（購読が温まると ~40ms。cchub 抜きの生ソケットでも同一 — herdr 側の挙動）
+- **CI から tmux インストールを削除**: herdr 移行後、テスト・実行時とも tmux を使う経路は無い。tmux 残渣の掃除（#416, v0.2.11）の最後の1件（`.github/workflows/test.yml`）
+
 ## [0.2.12] - 2026-07-18
 
 ### Fixed

@@ -165,7 +165,13 @@
 		"herdrUpdateApply": "Update & restart herdr",
 		"herdrUpdateApplying": "Updating…",
 		"herdrUpdateManualHint": "herdr isn't managed by systemd/launchd here, so restart the herdr server manually to apply.",
-		"herdrUpdateFailed": "Update failed: {{error}}"
+		"herdrUpdateFailed": "Update failed: {{error}}",
+		"grokUsage": "Grok Usage",
+		"grokLast24h": "Last 24 hours",
+		"grokLast7d": "Last 7 days",
+		"grokTurns": "{{count}} turns",
+		"grokModelBreakdown": "By model (7 days)",
+		"grokNoRateLimitInfo": "xAI does not expose rate-limit windows locally, so token totals are aggregated from Grok session logs instead of showing cycle utilization."
 	},
 	"files": {
 		"title": "File Browser",

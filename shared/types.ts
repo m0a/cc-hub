@@ -488,6 +488,33 @@ export interface CodexUsageLimits {
   rateLimitExceeded?: boolean;
 }
 
+/**
+ * Aggregated Grok Build token usage. xAI exposes no rate-limit windows in its
+ * local session data (unlike Codex's rate_limits events), so the dashboard
+ * shows consumption totals aggregated from `turn_completed` records instead
+ * of cycle utilization bars.
+ */
+export interface GrokUsageWindow {
+  /** Completed turns in the window. */
+  turns: number;
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export interface GrokUsageSummary {
+  last24h: GrokUsageWindow;
+  last7d: GrokUsageWindow;
+  /** Per-model totals over the 7-day window, largest first. */
+  models: Array<{ model: string; totalTokens: number }>;
+  /** Sessions active in the 7-day window. */
+  sessions7d: number;
+  /** 'Free' when the latest turns ran on a `*-free` model id. */
+  planType?: string;
+  /** ISO timestamp of the most recent turn seen. */
+  lastTurnAt?: string;
+}
+
 // Usage history snapshot for line chart
 export interface UsageSnapshot {
   timestamp: string; // ISO 8601
@@ -557,6 +584,7 @@ export interface DashboardResponse {
   usageLimits: UsageLimits | null; // New: from Anthropic API
   usageLimitsStatus?: UsageLimitsStatus; // Error/state info for UI
   codexUsageLimits?: CodexUsageLimits | null; // From Codex rollouts
+  grokUsage?: GrokUsageSummary | null; // From Grok updates.jsonl turn_completed records
   usageHistory: UsageSnapshot[]; // Usage history for line chart
   dailyActivity: DailyActivity[];
   modelUsage: ModelUsage[];

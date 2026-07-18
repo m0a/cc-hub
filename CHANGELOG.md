@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.12] - 2026-07-18
+
+### Fixed
+- **ペインのディバイダドラッグを境界セマンティクスに全面刷新（タブレット実機で検証）**: リサイズ周りの4つの不具合をまとめて修正。(1) **ドラッグ追従**: タブレットでは1回の指移動が pointer と touch の両方を発火させペインツリーを毎回2回再構築、さらに touch リスナーを move ごとに張り替えていた。rAF で1フレーム1更新に集約し、リスナーはドラッグ開始時に1回だけ登録、離した瞬間に最終位置を flush。(2) **4分割時の激しい振動**: viewport 到着時の `forceResize` がペイン1枚分の提案サイズをクライアント全体のサイズとして送信し、全体幅が 38↔151 で無限往復していた（実測）。複数ペイン時は forceResize を無効化。(3) **ドラッグ結果が反映されない/無関係ペインが動く**: 従来はドラッグ確定時に全ペインの丸め済みサイズを送り、各 resize-pane が共有祖先分割を奪い合っていた。ペインサイズ方式では入れ子同方向分割（h[h[A,B],C]）の外側ディバイダを原理的に指定できない。新設の `set-split-ratios` バッチメッセージ（各分割を両側リーフの最小共通祖先で特定）で離した瞬間に1回だけ原子的に適用し、ドラッグ中はローカル楽観更新のみ＆サーバーレイアウト適用を保留。`applyBoundaryDrag` により動かした境界の両隣だけが伸縮し、他ペインは絶対サイズを維持（tmux 同様）。(4) **分割 ID 衝突**: フロントの分割 ID が座標由来（`split-${x}-${y}`）だったため、親と左上角を共有する入れ子分割（2x2 の左列、4カラムの内側左）が親と同一 ID になり、一番左のディバイダを動かすとルートのディバイダが動いていた。木のパス由来 ID に変更（`frontend/src/components/DesktopLayout.tsx`, `PaneContainer.tsx`, `useMultiplexedTerminal.ts`, `shared/types.ts`, `backend/src/services/herdr-layout.ts`, `herdr-control.ts`, `backend/src/routes/terminal-mux.ts`）
+  - backend に `PaneLayoutTree.setSplitRatio`（LCA 特定＋クランプ、ユニットテスト7件）と `setSplitRatios` バッチ（applyLayout 1回）を追加。実機 herdr + `/ws/mux` の E2E で、4カラム構成への3エントリバッチが1回の layout push で期待どおり適用されることを確認
+
 ## [0.2.11] - 2026-07-18
 
 ### Fixed

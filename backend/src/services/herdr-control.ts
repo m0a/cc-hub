@@ -49,7 +49,7 @@ export function assertPaneId(paneId: string): void {
   }
 }
 
-type LayoutListener = (layout: TmuxLayoutNode) => void;
+type LayoutListener = (layout: TmuxLayoutNode, zoomedPaneId: string | null) => void;
 type ExitListener = (reason: string) => void;
 type PaneDeadListener = (paneId: string) => void;
 
@@ -535,13 +535,19 @@ export class HerdrControlSession {
   private emitLayout(): void {
     const layout = this.tree.toTmuxLayout(this.clientSize.cols, this.clientSize.rows);
     if (!layout) return;
+    const zoomed = this.tree.zoomed;
     for (const listener of this.layoutListeners) {
-      listener(layout);
+      listener(layout, zoomed);
     }
   }
 
   getCurrentLayout(): TmuxLayoutNode | null {
     return this.tree.toTmuxLayout(this.clientSize.cols, this.clientSize.rows);
+  }
+
+  /** Which pane is zoomed (tmux-style `%N`), or null. Sent alongside layout. */
+  get zoomedPaneId(): string | null {
+    return this.tree.zoomed;
   }
 
   get layout(): TmuxLayoutNode | null {
@@ -683,9 +689,19 @@ export class HerdrControlSession {
     }
   }
 
-  async zoomPane(paneId: string): Promise<void> {
+  /**
+   * Zoom (or unzoom) a pane. `zoomed` states the intent explicitly; when
+   * omitted the zoom is toggled (legacy behavior for clients that don't send
+   * it). Explicit intent lets a client re-assert "this pane is zoomed" on
+   * reconnect without accidentally toggling it back off.
+   */
+  async zoomPane(paneId: string, zoomed?: boolean): Promise<void> {
     assertPaneId(paneId);
-    this.tree.toggleZoom(paneId);
+    if (zoomed === undefined) {
+      this.tree.toggleZoom(paneId);
+    } else {
+      this.tree.setZoom(zoomed ? paneId : null);
+    }
     await this.applyLayout();
   }
 

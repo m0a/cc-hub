@@ -300,9 +300,9 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
 
     // Layout listener
     cleanupFns.push(
-      controlSession.onLayoutChange((layout) => {
+      controlSession.onLayoutChange((layout, zoomedPaneId) => {
         try {
-          ws.send(JSON.stringify({ type: 'layout', layout, sessionId }));
+          ws.send(JSON.stringify({ type: 'layout', layout, zoomedPaneId, sessionId }));
         } catch { /* disconnected */ }
       })
     );
@@ -350,7 +350,14 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     try {
       const layout = controlSession.getCurrentLayout();
       if (layout) {
-        ws.send(JSON.stringify({ type: 'layout', layout, sessionId }));
+        ws.send(
+          JSON.stringify({
+            type: 'layout',
+            layout,
+            zoomedPaneId: controlSession.zoomedPaneId,
+            sessionId,
+          }),
+        );
       }
     } catch (err) {
       console.error(`[mux] Failed to send initial layout for ${sessionId}:`, err);
@@ -641,7 +648,7 @@ async function handleControlMessage(
       }
       case 'zoom-pane': {
         try {
-          await controlSession.zoomPane(msg.paneId);
+          await controlSession.zoomPane(msg.paneId, msg.zoomed);
           await new Promise(resolve => setTimeout(resolve, 100));
           // Zoom changes pane size; emit a fresh viewport in live mode.
           if ((sub.liveOffset.get(msg.paneId) ?? 0) === 0) {

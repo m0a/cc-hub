@@ -157,6 +157,11 @@ export class PaneLayoutTree {
     this.zoomedPane = this.zoomedPane === paneId ? null : paneId;
   }
 
+  /** Explicitly zoom `paneId` (or clear zoom with `null`). Idempotent. */
+  setZoom(paneId: string | null): void {
+    this.zoomedPane = paneId;
+  }
+
   /**
    * Nudge the split ratio of the nearest ancestor split matching the
    * direction. L/R adjust an 'h' split, U/D adjust a 'v' split; amount is
@@ -302,11 +307,13 @@ export class PaneLayoutTree {
   /**
    * Compute integer cell rects for every pane at the given client size,
    * tmux convention: children partition the parent with a 1-cell separator.
-   * A zoomed pane occupies the full client area.
+   * A zoomed pane occupies the full client area — unless `ignoreZoom` is set,
+   * in which case the full split geometry is returned regardless of zoom
+   * (used to render the wire layout tree, which always carries every pane).
    */
-  computeRects(cols: number, rows: number): Map<string, PaneRect> {
+  computeRects(cols: number, rows: number, opts?: { ignoreZoom?: boolean }): Map<string, PaneRect> {
     const rects = new Map<string, PaneRect>();
-    if (this.zoomedPane && this.has(this.zoomedPane)) {
+    if (!opts?.ignoreZoom && this.zoomedPane && this.has(this.zoomedPane)) {
       rects.set(this.zoomedPane, { x: 0, y: 0, width: cols, height: rows });
       return rects;
     }
@@ -333,20 +340,18 @@ export class PaneLayoutTree {
     return rects;
   }
 
-  /** Render the tree as a TmuxLayoutNode for the frontend. */
+  /**
+   * Render the tree as a TmuxLayoutNode for the frontend.
+   *
+   * Always the FULL split tree — a zoomed pane is NOT collapsed to a single
+   * leaf here. Zoom travels separately (see `zoomed` / the layout message's
+   * `zoomedPaneId`) so the client keeps the whole pane list and decides how to
+   * present zoom itself. Collapsing here is what made a zoomed multi-pane
+   * session indistinguishable from a genuine single-pane one on reconnect.
+   */
   toTmuxLayout(cols: number, rows: number): TmuxLayoutNode | null {
     if (!this.root) return null;
-    if (this.zoomedPane && this.has(this.zoomedPane)) {
-      return {
-        type: 'leaf',
-        width: cols,
-        height: rows,
-        x: 0,
-        y: 0,
-        paneId: paneNumber(this.zoomedPane),
-      };
-    }
-    const rects = this.computeRects(cols, rows);
+    const rects = this.computeRects(cols, rows, { ignoreZoom: true });
     const convert = (n: LayoutNode, rect: PaneRect): TmuxLayoutNode => {
       if (n.type === 'leaf') {
         const r = rects.get(n.paneId) ?? rect;

@@ -1260,6 +1260,14 @@ export function App() {
 										setMobileActivePaneId(null);
 									}
 								}}
+								onActivePaneChange={(paneId) => {
+									// Keep the tab-bar selection in sync with the pane the
+									// TerminalPage actually shows (e.g. server-restored zoom on a
+									// non-first pane after reload).
+									setMobileActivePaneId((prev) =>
+										prev === paneId ? prev : paneId,
+									);
+								}}
 								externalActivePaneId={mobileActivePaneId}
 								mainOverlay={chatOverlay}
 								mainOverlayVisible={showConversation}

@@ -787,7 +787,11 @@ export type ControlClientMessage =
       entries: Array<{ paneA: string; paneB: string; dir: 'h' | 'v'; ratio: number }>;
     }
   | { type: 'equalize-panes'; direction: 'horizontal' | 'vertical' }
-  | { type: 'zoom-pane'; paneId: string }
+  // Zoom a pane to fill the client area. `zoomed` makes the intent explicit
+  // (true = zoom, false = unzoom); when omitted the server toggles (kept for
+  // older clients / the glasses app). Mobile always sends an explicit value so
+  // that re-issuing zoom on reconnect is idempotent rather than a toggle.
+  | { type: 'zoom-pane'; paneId: string; zoomed?: boolean }
   | { type: 'respawn-pane'; paneId: string }
   // Ask the server for a viewport `offset` rows above the live edge.
   // offset=0 means live mode; the server will also push fresh viewports
@@ -796,7 +800,12 @@ export type ControlClientMessage =
 
 // Server → Client messages
 export type ControlServerMessage =
-  | { type: 'layout'; layout: TmuxLayoutNode }
+  // The layout tree is ALWAYS the full split tree, even while a pane is zoomed —
+  // zoom is carried separately as `zoomedPaneId` (tmux-style `%N`, or null when
+  // nothing is zoomed). This keeps a zoomed session distinguishable from a real
+  // single-pane one, so clients (esp. mobile) can render the full pane list /
+  // tab bar from server truth instead of guessing.
+  | { type: 'layout'; layout: TmuxLayoutNode; zoomedPaneId?: string | null }
   // Viewport payload. Sent in reply to `request-viewport` and pushed
   // unsolicited to live-mode (offset=0) subscribers when the pane emits output.
   | { type: 'viewport'; viewport: PaneViewport }

@@ -224,3 +224,66 @@ describe('PaneLayoutTree.split duplicate guard', () => {
     expect(ids.filter((id) => id === '%3').length).toBe(1);
   });
 });
+
+/**
+ * Zoom is metadata, never a structural collapse. `toTmuxLayout` must keep the
+ * full split tree even while a pane is zoomed — that is what makes a zoomed
+ * multi-pane session distinguishable from a genuine single-pane one on the
+ * wire, so the client can still render every pane (mobile tab bar) and decide
+ * how to present zoom itself. Regressing this reintroduces the "tab bar
+ * disappears on reload" bug.
+ */
+describe('PaneLayoutTree zoom', () => {
+  test('toTmuxLayout keeps the full tree while zoomed', () => {
+    const t = twoPane();
+    t.setZoom('%1');
+    const layout = t.toTmuxLayout(160, 40);
+    expect(layout?.type).not.toBe('leaf'); // still a split, not a lone leaf
+    expect(layout?.children?.length).toBe(2);
+  });
+
+  test('zoomed getter reflects setZoom / toggleZoom', () => {
+    const t = twoPane();
+    expect(t.zoomed).toBeNull();
+    t.setZoom('%2');
+    expect(t.zoomed).toBe('%2');
+    t.setZoom(null);
+    expect(t.zoomed).toBeNull();
+    t.toggleZoom('%1');
+    expect(t.zoomed).toBe('%1');
+    t.toggleZoom('%1'); // toggling the same pane clears it
+    expect(t.zoomed).toBeNull();
+  });
+
+  test('setZoom is idempotent (unlike toggle)', () => {
+    const t = twoPane();
+    t.setZoom('%1');
+    t.setZoom('%1');
+    expect(t.zoomed).toBe('%1'); // still zoomed, not toggled off
+  });
+
+  test('computeRects: zoomed pane fills the client for PTY sizing', () => {
+    const t = twoPane();
+    t.setZoom('%1');
+    const rects = t.computeRects(160, 40);
+    // Only the zoomed pane, at full size — this drives its PTY resize.
+    expect(rects.size).toBe(1);
+    expect(rects.get('%1')).toEqual({ x: 0, y: 0, width: 160, height: 40 });
+  });
+
+  test('computeRects(ignoreZoom): full split geometry regardless of zoom', () => {
+    const t = twoPane();
+    t.setZoom('%1');
+    const rects = t.computeRects(161, 40, { ignoreZoom: true });
+    expect(rects.size).toBe(2);
+    expect(rects.get('%1')?.width).toBeCloseTo(80, -1);
+    expect(rects.get('%2')?.width).toBeCloseTo(80, -1);
+  });
+
+  test('removing the zoomed pane clears zoom', () => {
+    const t = twoPane();
+    t.setZoom('%2');
+    t.remove('%2');
+    expect(t.zoomed).toBeNull();
+  });
+});

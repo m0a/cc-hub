@@ -684,9 +684,19 @@ export function DesktopLayout({
 			layoutSizeTimerRef.current = window.setTimeout(() => {
 				requestAnimationFrame(() => {
 					const sizes = extractPaneSizes(layout);
+					// The layout tree is always the full split tree now, even while a
+					// pane is zoomed. A zoomed pane's PTY fills the whole client, but
+					// its tree rect is still the normal (e.g. half-width) split rect —
+					// so size the zoomed pane to the full container to match its PTY.
+					const zoomedId = zoomedPaneIdRef.current;
 					for (const [paneId, size] of sizes) {
 						const ref = terminalRefs.current?.get(paneId);
-						ref?.setExactSize(size.cols, size.rows);
+						if (!ref) continue;
+						if (zoomedId && paneId === zoomedId) {
+							ref.setExactSize(layout.width, layout.height);
+						} else {
+							ref.setExactSize(size.cols, size.rows);
+						}
 					}
 					// Re-enable sendControlResize but do NOT send one here.
 					// The layout-change is tmux's response to our resize — sending
@@ -996,7 +1006,9 @@ export function DesktopLayout({
 			} else {
 				setZoomedPaneId(paneId);
 			}
-			controlTerminalRef.current.zoomPane(paneId);
+			// Send explicit intent so the server's zoom matches this client's
+			// frontend zoom state rather than relying on toggle parity.
+			controlTerminalRef.current.zoomPane(paneId, !isUnzooming);
 			setTimeout(() => {
 				sendControlResize();
 				if (isUnzooming) {

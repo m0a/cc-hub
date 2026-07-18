@@ -16,7 +16,10 @@ interface UseMultiplexedTerminalOptions {
 	// mux WebSocket is closed. #256
 	peerApiBase?: string | null;
 	onPaneViewport?: (paneId: string, viewport: PaneViewport) => void;
-	onLayoutChange?: (layout: TmuxLayoutNode) => void;
+	onLayoutChange?: (
+		layout: TmuxLayoutNode,
+		zoomedPaneId: string | null,
+	) => void;
 	onNewSession?: (sessionId: string, sessionName: string) => void;
 	onPaneDead?: (paneId: string) => void;
 	onHookEvent?: (
@@ -61,7 +64,7 @@ interface UseMultiplexedTerminalReturn {
 	// updates whenever output arrives. offset>0 silences unsolicited pushes
 	// until the next request-viewport.
 	requestViewport: (paneId: string, offset: number) => void;
-	zoomPane: (paneId: string) => void;
+	zoomPane: (paneId: string, zoomed?: boolean) => void;
 	respawnPane: (paneId: string) => void;
 	deadPanes: Set<string>;
 }
@@ -129,7 +132,10 @@ function flushConversationPending() {
 
 type MuxCallbacks = {
 	onPaneViewport?: (paneId: string, viewport: PaneViewport) => void;
-	onLayoutChange?: (layout: TmuxLayoutNode) => void;
+	onLayoutChange?: (
+		layout: TmuxLayoutNode,
+		zoomedPaneId: string | null,
+	) => void;
 	onNewSession?: (sessionId: string, sessionName: string) => void;
 	onPaneDead?: (paneId: string) => void;
 	onHookEvent?: (
@@ -332,7 +338,10 @@ function ensureConnection(token?: string | null, wsBase?: string | null) {
 			}
 			case "layout": {
 				if (msgSessionId !== currentSession) return;
-				cb?.onLayoutChange?.(msg.layout as TmuxLayoutNode);
+				cb?.onLayoutChange?.(
+					msg.layout as TmuxLayoutNode,
+					(msg.zoomedPaneId as string | null | undefined) ?? null,
+				);
 				break;
 			}
 			case "pong": {
@@ -571,7 +580,7 @@ export function useMultiplexedTerminal(
 	useEffect(() => {
 		activeCallbacks = {
 			onPaneViewport: (p, v) => onPaneViewportRef.current?.(p, v),
-			onLayoutChange: (l) => onLayoutChangeRef.current?.(l),
+			onLayoutChange: (l, z) => onLayoutChangeRef.current?.(l, z),
 			onNewSession: (s, n) => onNewSessionRef.current?.(s, n),
 			onPaneDead: (p) => onPaneDeadRef.current?.(p),
 			onHookEvent: (e, c, s, d, m) => onHookEventRef.current?.(e, c, s, d, m),
@@ -682,8 +691,8 @@ export function useMultiplexedTerminal(
 		sendSessionMessage({ type: "request-viewport", paneId, offset });
 	}, []);
 
-	const zoomPane = useCallback((paneId: string) => {
-		sendSessionMessage({ type: "zoom-pane", paneId });
+	const zoomPane = useCallback((paneId: string, zoomed?: boolean) => {
+		sendSessionMessage({ type: "zoom-pane", paneId, zoomed });
 	}, []);
 
 	const respawnPane = useCallback(

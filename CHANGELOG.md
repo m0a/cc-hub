@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.19] - 2026-07-19
+
+### Fixed
+- **スマホで複数paneセッションをzoom中にリロードするとタブバーが消える問題を修正** (#437): zoom はサーバ共有状態なのにプロトコル上「1-leaf layout」としてしか表現されず、本物の1paneセッションと区別できなかった。リロード時にサーバが1-leaf初期layoutを再送 → クライアントが「pane 1個」と誤認 → タブバーが消えてpane切替・zoom解除が不能になっていた。layout を常にフルツリーで送信し、zoom は `zoomedPaneId` メタデータとして別送する方式に変更（`toTmuxLayout` の 1-leaf collapse 廃止、`computeRects` に `ignoreZoom` opt、`zoom-pane` に明示 `zoomed` intent）。モバイルは `isZoomedRef` 推測を廃止してサーバの `zoomedPaneId` 基準に冪等に zoom を再表明し、リロード後のタブハイライトもサーバ復元 pane に一致させる。副次的に、スマホで zoom したセッションをデスクトップで開いても分割が潰れなくなった
+
 ## [0.2.18] - 2026-07-19
 
 ### Fixed

@@ -181,20 +181,17 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
   const herdrSessions = await herdrService.listSessions();
   const sessionMetadata = await getAllSessionMetadata();
 
-  const claudePaths = herdrSessions
-    .filter((s): s is typeof s & { currentPath: string } => agentSupportsConversationMetadata(s.agent ?? s.currentCommand) && !!s.currentPath)
-    .map(s => s.currentPath);
-  const ccSessionsByPath = await claudeCodeService.getSessionsForPaths(claudePaths);
-
-  // One thread map per thread-based agent (codex, grok, ...): latest thread
-  // in each working directory, resolved from the agent's own session store.
+  // Enrich thread-based agents by the exact native session ids from herdr.
+  // A missing integration means no id and therefore no active conversation;
+  // never guess from cwd, where multiple sessions are ambiguous.
   const threadsByAgent = new Map<AgentProvider, Map<string, AgentThread>>();
   await Promise.all((Object.entries(threadServices) as [AgentProvider, AgentThreadService][]).map(async ([agentId, service]) => {
-    const paths = herdrSessions
-      .filter((s): s is typeof s & { currentPath: string } => (s.agent ?? s.currentCommand) === agentId && !!s.currentPath)
-      .map(s => s.currentPath);
-    if (paths.length === 0) return;
-    threadsByAgent.set(agentId, await service.getThreadsForPaths(paths));
+    const sessionIds = herdrSessions
+      .filter((s): s is typeof s & { agentSessionId: string } =>
+        (s.agent ?? s.currentCommand) === agentId && !!s.agentSessionId)
+      .map(s => s.agentSessionId);
+    if (sessionIds.length === 0) return;
+    threadsByAgent.set(agentId, await service.getThreadsByIds(sessionIds));
   }));
 
   // Remote Control deep-link map: Claude Code sessionId -> bridgeSessionId.
@@ -204,25 +201,23 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
   const results = await Promise.all(herdrSessions.map(async (s) => {
     let ccSession: Awaited<ReturnType<typeof claudeCodeService.getSessionForPath>> | undefined;
     const threadAgent = threadAgentOf(s.agent ?? s.currentCommand);
-    const agentThread = threadAgent && s.currentPath
-      ? threadsByAgent.get(threadAgent)?.get(s.currentPath)
+    const agentThread = threadAgent && s.agentSessionId
+      ? threadsByAgent.get(threadAgent)?.get(s.agentSessionId)
       : undefined;
 
-    if (agentSupportsConversationMetadata(s.agent ?? s.currentCommand) && s.currentPath) {
-      // Prefer the native session id reported via the herdr agent
-      // integration — it keeps two sessions in the SAME workingDir
-      // distinguishable. Fall back to most-recent-.jsonl path matching.
-      ccSession = s.agentSessionId
-        ? ((await claudeCodeService.getSessionById(s.agentSessionId, s.currentPath)) ??
-          ccSessionsByPath.get(s.currentPath))
-        : ccSessionsByPath.get(s.currentPath);
+    if (
+      agentSupportsConversationMetadata(s.agent ?? s.currentCommand) &&
+      s.agentSessionId &&
+      s.currentPath
+    ) {
+      ccSession =
+        (await claudeCodeService.getSessionById(s.agentSessionId, s.currentPath)) ??
+        undefined;
     }
 
     const includeClaudeInfo = agentSupportsConversationMetadata(s.agent ?? s.currentCommand);
     const includeThreadInfo = !!threadAgent;
-    const conversationSessionId = includeClaudeInfo
-      ? ccSession?.sessionId
-      : agentThread?.sessionId;
+    const conversationSessionId = s.agentSessionId;
 
     // Indicator state: herdr's own agent detection is the source of truth —
     // it tracks the pane itself, so it can't go stale when a hook is missing,
@@ -262,7 +257,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
 
     const panePids: (number | undefined)[] = s.panes ? s.panes.map((p: { pid?: number }) => p.pid) : [];
     const metrics = await computeSessionMetrics({
-      ccSessionId: includeClaudeInfo ? ccSession?.sessionId : undefined,
+      ccSessionId: includeClaudeInfo ? s.agentSessionId : undefined,
       workingDir: s.currentPath,
       pids: panePids,
     });
@@ -290,12 +285,12 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       ccRecap: includeClaudeInfo && isExactPathMatch ? ccSession?.lastRecap?.content : undefined,
       ccRecapAt: includeClaudeInfo && isExactPathMatch ? ccSession?.lastRecap?.timestamp : undefined,
       indicatorState: sessionIndicatorState,
-      ccSessionId: includeClaudeInfo ? ccSession?.sessionId : undefined,
+      ccSessionId: includeClaudeInfo ? s.agentSessionId : undefined,
       bridgeSessionId:
-        includeClaudeInfo && ccSession?.sessionId
-          ? bridgeSessionIds.get(ccSession.sessionId)
+        includeClaudeInfo && s.agentSessionId
+          ? bridgeSessionIds.get(s.agentSessionId)
           : undefined,
-      agentSessionId: agentThread?.sessionId,
+      agentSessionId: includeThreadInfo ? s.agentSessionId : undefined,
       messageCount: includeClaudeInfo ? ccSession?.messageCount : undefined,
       gitBranch: includeClaudeInfo ? ccSession?.gitBranch : agentThread?.gitBranch,
       durationMinutes: includeClaudeInfo ? durationMinutes : agentThread?.updatedAt ? Math.round((Date.now() - new Date(agentThread.updatedAt).getTime()) / 60000) : undefined,
@@ -303,11 +298,8 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       theme: sessionMetadata[s.id]?.theme,
       customTitle: sessionMetadata[s.id]?.title,
       metrics: sessionMetrics,
-      panes: s.panes ? s.panes.map((p: { paneId: string; command: string; path: string; title: string; tty: string; isActive: boolean; isDead: boolean; pid?: number }) => {
-        // Pane command comes from herdr's pane.process_info (foreground group
-        // leader), so `command === agent id` identifies the agent pane.
-        const sessionAgent = s.agent ?? s.currentCommand;
-        const isSessionAgentOnPane = !p.isDead && p.command === sessionAgent;
+      panes: s.panes ? s.panes.map((p) => {
+        const isSessionAgentOnPane = !p.isDead && !!p.agent;
         const isClaudeOnPane = isSessionAgentOnPane && includeClaudeInfo;
         let paneIndicator: IndicatorState | undefined;
         if (p.isDead) {
@@ -324,6 +316,8 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
           paneId: p.paneId,
           currentCommand: p.command,
           currentPath: p.path,
+          agent: p.agent,
+          agentSessionId: p.agentSessionId,
           title: p.title || undefined,
           isActive: p.isActive,
           isDead: p.isDead || undefined,

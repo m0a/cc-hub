@@ -13,7 +13,8 @@ Claude Code remains the default agent. Codex is supported as a first-class addit
 - Start the selected agent in the selected working directory.
 - Detect running Claude Code and Codex processes from each pane's foreground process group (herdr `pane.process_info`).
 - Return the detected `agent` in session API responses.
-- Read basic Codex thread metadata from the local Codex state database.
+- Read basic Codex thread metadata from the local Codex state database, keyed
+  by the native session id reported by herdr.
 - Add a Claude/Codex selector to the new session modal.
 - Preserve existing Claude-specific metadata behavior.
 
@@ -66,7 +67,7 @@ The herdr service inspects each pane's foreground processes and detects:
 - Claude Code: `claude` or Claude versioned paths
 - Codex: `codex` or `@openai/codex` paths
 
-When a supported agent is detected on a pane TTY:
+When a supported agent is reported by herdr for a pane:
 
 - session `currentCommand` becomes `claude` or `codex`
 - session `agent` is set to `claude` or `codex`
@@ -86,7 +87,8 @@ Codex session cards use the session name instead of pane title for display, beca
 
 Codex does not expose the same JSONL recap fields that CC Hub reads for Claude Code. Instead, CC Hub reads:
 
-- Local SQLite state at `~/.codex/state_5.sqlite` for: thread ID, title, first user message, token count, git branch, updated time.
+- herdr `agent.list` for the authoritative active thread ID (requires `herdr integration install codex`).
+- Local SQLite state at `~/.codex/state_5.sqlite` for title, first user message, token count, git branch, and updated time, looked up by that ID.
 - Codex conversation transcripts via `CodexConversationService` (`backend/src/services/codex-conversation.ts`).
 - Codex token usage / rate limit state via `CodexUsageService` (`backend/src/services/codex-usage.ts`).
 

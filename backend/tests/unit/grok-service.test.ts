@@ -113,11 +113,11 @@ describe('parseGrokChatHistory', () => {
 });
 
 describe('GrokService', () => {
-  test('resolves the latest thread per cwd with token usage', async () => {
+  test('resolves an exact thread by native session id with token usage', async () => {
     const service = new GrokService(new GrokSessionStore(SESSIONS_DIR));
-    const threads = await service.getThreadsForPaths([CWD, '/nonexistent']);
+    const threads = await service.getThreadsByIds([SESSION_ID, 'nonexistent']);
     expect(threads.size).toBe(1);
-    const thread = threads.get(CWD);
+    const thread = threads.get(SESSION_ID);
     expect(thread?.sessionId).toBe(SESSION_ID);
     expect(thread?.title).toBe('Run the shell command: echo hello');
     expect(thread?.firstPrompt).toBe('Run the shell command: echo hello. Then report.');
@@ -127,7 +127,7 @@ describe('GrokService', () => {
 
   test('returns empty map when the sessions dir does not exist', async () => {
     const service = new GrokService(new GrokSessionStore(join(TEST_DIR, 'missing')));
-    expect((await service.getThreadsForPaths([CWD])).size).toBe(0);
+    expect((await service.getThreadsByIds([SESSION_ID])).size).toBe(0);
   });
 });
 

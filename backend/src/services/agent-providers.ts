@@ -21,7 +21,7 @@ export interface AgentTokenUsage {
   model?: string;
 }
 
-/** Latest thread/session of an agent in a working directory. */
+/** One exact agent thread/session, keyed by its native session id. */
 export interface AgentThread {
   sessionId: string;
   title?: string;
@@ -34,9 +34,9 @@ export interface AgentThread {
   updatedAt?: string;
 }
 
-/** Resolves the latest thread per working directory for active sessions. */
+/** Resolves exact threads by the native session ids reported by herdr. */
 export interface AgentThreadService {
-  getThreadsForPaths(paths: string[]): Promise<Map<string, AgentThread>>;
+  getThreadsByIds(sessionIds: string[]): Promise<Map<string, AgentThread>>;
 }
 
 /** Past-session history + conversation reader for one agent. */

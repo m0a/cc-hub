@@ -82,12 +82,12 @@ describe('CodexService', () => {
   test('returns an empty map when the state database does not exist', async () => {
     const service = new CodexService(join(TEST_DIR, 'missing.sqlite'));
 
-    const threads = await service.getThreadsForPaths(['/repo']);
+    const threads = await service.getThreadsByIds(['missing']);
 
     expect(threads.size).toBe(0);
   });
 
-  test('returns the latest unarchived thread for each cwd', async () => {
+  test('returns exact unarchived threads by native session id', async () => {
     const db = new Database(DB_PATH);
     createThreadsTable(db);
     insertThread(db, {
@@ -118,15 +118,15 @@ describe('CodexService', () => {
     db.close();
 
     const service = new CodexService(DB_PATH);
-    const threads = await service.getThreadsForPaths(['/repo', '/other', '/missing']);
+    const threads = await service.getThreadsByIds(['older', 'newer', 'other', 'missing']);
 
-    expect(threads.get('/repo')?.sessionId).toBe('newer');
-    expect(threads.get('/repo')?.title).toBe('Newer title');
-    expect(threads.get('/repo')?.firstPrompt).toBe('newer prompt');
-    expect(threads.get('/repo')?.tokensUsed).toBe(250);
-    expect(threads.get('/repo')?.gitBranch).toBe('feat/codex');
-    expect(threads.get('/other')?.sessionId).toBe('other');
-    expect(threads.has('/missing')).toBe(false);
+    expect(threads.get('older')?.sessionId).toBe('older');
+    expect(threads.get('newer')?.title).toBe('Newer title');
+    expect(threads.get('newer')?.firstPrompt).toBe('newer prompt');
+    expect(threads.get('newer')?.tokensUsed).toBe(250);
+    expect(threads.get('newer')?.gitBranch).toBe('feat/codex');
+    expect(threads.get('other')?.sessionId).toBe('other');
+    expect(threads.has('missing')).toBe(false);
   });
 
   test('ignores archived threads', async () => {
@@ -144,7 +144,7 @@ describe('CodexService', () => {
     db.close();
 
     const service = new CodexService(DB_PATH);
-    const threads = await service.getThreadsForPaths(['/repo']);
+    const threads = await service.getThreadsByIds(['archived']);
 
     expect(threads.size).toBe(0);
   });
@@ -207,7 +207,7 @@ describe('CodexService', () => {
     db.close();
 
     const service = new CodexService(DB_PATH);
-    const thread = (await service.getThreadsForPaths(['/repo'])).get('/repo');
+    const thread = (await service.getThreadsByIds(['with-rollout'])).get('with-rollout');
 
     expect(thread?.tokenUsage?.contextTokens).toBe(125);
     expect(thread?.tokenUsage?.contextMaxTokens).toBe(250);

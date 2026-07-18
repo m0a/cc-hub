@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { homedir, platform } from 'node:os';
 import { t } from '../i18n';
 import { herdrBinaryPath } from '../services/herdr-client';
+import { migrateCodexHooksToJson } from '../services/codex-hook-config';
 import { storePassword as storePasswordInKeychain } from '../utils/keychain';
 
 /** Escape special characters for safe inclusion in XML/plist content. */
@@ -185,8 +186,8 @@ pane_history = true
 
 /**
  * Provision the herdr backend: supervised server (systemd / launchd),
- * config.toml with agent-resume enabled, and the Claude Code integration
- * hook (native session identity for restore).
+ * config.toml with agent-resume enabled, and native identity integrations for
+ * the supported agents that herdr can integrate with.
  */
 async function provisionHerdr(): Promise<void> {
   console.log('🐑 herdr バックエンドのセットアップ');
@@ -254,15 +255,26 @@ async function provisionHerdr(): Promise<void> {
     }
   }
 
-  // Claude Code integration: reports native session ids to herdr so agent
-  // conversations survive server restarts. Adds a SessionStart hook to
-  // ~/.claude/settings.json (coexists with cchub notify hooks).
-  const integ = Bun.spawnSync([herdrPath, 'integration', 'install', 'claude']);
-  if (integ.exitCode === 0) {
-    console.log('✅ herdr Claude integration を設定しました (~/.claude/settings.json に SessionStart hook)');
-  } else {
-    console.error('⚠️  herdr integration install claude に失敗しました:');
-    console.error(integ.stderr.toString());
+  // Native session identity is authoritative in CC Hub. Install every herdr
+  // integration available for our supported agents; without one, that
+  // provider stays visible as a terminal but conversation history is disabled.
+  for (const agent of ['claude', 'codex'] as const) {
+    const integ = Bun.spawnSync([herdrPath, 'integration', 'install', agent]);
+    if (integ.exitCode === 0) {
+      console.log(`✅ herdr ${agent} integration を設定しました`);
+    } else {
+      console.error(`⚠️  herdr integration install ${agent} に失敗しました:`);
+      console.error(integ.stderr.toString());
+    }
+  }
+  try {
+    const migration = await migrateCodexHooksToJson(join(homedir(), '.codex'));
+    if (migration.changed) {
+      console.log('✅ Codex hook を ~/.codex/hooks.json に統合しました');
+    }
+  } catch (error) {
+    console.error('⚠️  Codex hook の hooks.json 統合に失敗しました:');
+    console.error(error instanceof Error ? error.message : String(error));
   }
   console.log('');
 }

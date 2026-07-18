@@ -171,6 +171,10 @@ export interface PaneInfo {
   paneId: string;          // "%0", "%1"
   currentCommand?: string;
   currentPath?: string;
+  /** Agent provider reported by herdr for this pane. */
+  agent?: AgentProvider;
+  /** Native agent session id reported by the pane's herdr integration. */
+  agentSessionId?: string;
   title?: string;          // pane_title set by Claude Code (task description)
   agentName?: string;      // Team agent name from --agent-name process arg
   agentColor?: string;     // Team agent color from --agent-color process arg

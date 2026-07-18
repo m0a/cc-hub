@@ -7,12 +7,11 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-	type AgentProvider,
-	type PaneInfo,
-	type SessionState,
-	type SessionTheme,
-	isAgentProvider,
+import type {
+	AgentProvider,
+	PaneInfo,
+	SessionState,
+	SessionTheme,
 } from "../../../shared/types";
 import { authFetch } from "../services/api";
 import { openClaudeAppSession } from "../utils/claude-app";
@@ -306,9 +305,13 @@ function TerminalPane({
 	// agent is running on the active pane. Without the loaded check, the very
 	// first render after remount (e.g. after a split) sees panes=undefined and
 	// would wrongly clear chat mode.
-	const activeTmuxPane = session?.panes?.find((p) => p.isActive);
-	const conversationAvailable = isAgentProvider(
-		activeTmuxPane?.currentCommand ?? "",
+	const controlledPaneId = controlModeContext.getControlConfig(paneId)?.paneId;
+	const activeTmuxPane =
+		session?.panes?.find((p) => p.paneId === controlledPaneId) ??
+		session?.panes?.find((p) => p.isActive) ??
+		(session?.panes?.length === 1 ? session.panes[0] : undefined);
+	const conversationAvailable = !!(
+		activeTmuxPane?.agent && activeTmuxPane.agentSessionId
 	);
 	const panesLoaded = !!session?.panes;
 	useEffect(() => {
@@ -688,8 +691,8 @@ function TerminalPane({
 						showComposer={!isTablet}
 						paneId={controlModeContext.getControlConfig(paneId)?.paneId}
 						theme={session?.theme}
-						agent={session?.agent}
-						agentSessionId={session?.agentSessionId}
+						agent={activeTmuxPane?.agent}
+						agentSessionId={activeTmuxPane?.agentSessionId}
 					/>
 				)}
 				{sessionId ? (

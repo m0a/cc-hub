@@ -803,13 +803,14 @@ function SessionItem({
 
 		// Remote Control session: let the user choose between jumping to the CC Hub
 		// terminal and opening the matching session in the Claude app.
+		// Multi-pane sessions skip the session-level jump menu — "go to terminal"
+		// is ambiguous there, so the actions live on the pane rows instead (row
+		// tap navigates; the Claude-app link nests under the bridge pane).
 		if (session.bridgeSessionId) {
-			setShowJumpMenu((prev) => !prev);
-			// Multi-pane: also toggle the pane list so per-pane access (focus /
-			// close / split) stays reachable for Remote Control sessions instead
-			// of being shadowed by the jump menu's early return.
 			if (session.panes && session.panes.length > 1) {
 				setPanesExpanded((prev) => !prev);
+			} else {
+				setShowJumpMenu((prev) => !prev);
 			}
 			return;
 		}
@@ -825,6 +826,14 @@ function SessionItem({
 
 	const extSession = session;
 	const agent = extSession.agent ?? extSession.currentCommand;
+	// Multi-pane Remote Control: the Claude-app link belongs to the pane running
+	// the session's agent (same detection as the backend's isClaudeOnPane), so
+	// nest it under that row instead of the session-level jump menu.
+	const bridgePaneId =
+		extSession.bridgeSessionId && extSession.panes
+			? extSession.panes.find((p) => !p.isDead && p.currentCommand === agent)
+					?.paneId
+			: undefined;
 	const supportsConversationMetadata = agentSupportsConversationMetadata(agent);
 	const agentLabel =
 		agent && isAgentProvider(agent)
@@ -1143,8 +1152,11 @@ function SessionItem({
 				)}
 			</div>
 
-			{/* Jump menu (Remote Control): choose CC Hub terminal vs the Claude app */}
-			{showJumpMenu && extSession.bridgeSessionId && (
+			{/* Jump menu (Remote Control): choose CC Hub terminal vs the Claude app.
+			    Single-pane only — multi-pane sessions carry these actions per pane. */}
+			{showJumpMenu &&
+				extSession.bridgeSessionId &&
+				(!extSession.panes || extSession.panes.length <= 1) && (
 				<div
 					className="mx-4 mb-3 pt-2 border-t border-white/[0.06] flex flex-col gap-1"
 					onClick={(e) => e.stopPropagation()}
@@ -1228,10 +1240,10 @@ function SessionItem({
 						let paneTimer: number | null = null;
 						let paneLongPressed = false;
 						return (
-							<button
-								type="button"
-								key={pane.paneId}
-								onClick={() => {
+							<div key={pane.paneId}>
+								<button
+									type="button"
+									onClick={() => {
 									if (paneLongPressed) {
 										paneLongPressed = false;
 										return;
@@ -1293,8 +1305,23 @@ function SessionItem({
 										active
 									</span>
 								)}
-								<ChevronRight className="w-3.5 h-3.5 text-zinc-700 shrink-0" />
-							</button>
+									<ChevronRight className="w-3.5 h-3.5 text-zinc-700 shrink-0" />
+								</button>
+								{pane.paneId === bridgePaneId && (
+									<button
+										type="button"
+										onClick={() => {
+											const bridgeId = extSession.bridgeSessionId;
+											if (!bridgeId) return;
+											openClaudeAppSession(bridgeId);
+										}}
+										className="ml-6 mt-1 inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-[12px] text-violet-200 bg-violet-500/15 hover:bg-violet-500/25 transition-colors"
+									>
+										<ExternalLink className="w-3.5 h-3.5" />
+										{t("session.openInClaudeApp")}
+									</button>
+								)}
+							</div>
 						);
 					})}
 				</div>

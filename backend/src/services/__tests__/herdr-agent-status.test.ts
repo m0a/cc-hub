@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { classifyHerdrEvent } from '../herdr-agent-status';
+import { classifyHerdrEvent, paneSetRequiresResubscribe } from '../herdr-agent-status';
 
 /**
  * herdr sends event names in two namings on one socket (verified live against
@@ -37,5 +37,44 @@ describe('classifyHerdrEvent', () => {
     expect(classifyHerdrEvent(undefined)).toBe('ignore');
     expect(classifyHerdrEvent(null)).toBe('ignore');
     expect(classifyHerdrEvent(42)).toBe('ignore');
+  });
+});
+
+/**
+ * The resubscribe gate, keyed off `pane.list` (ground truth) rather than the
+ * event payload. herdr replays lifecycle events on every subscribe, and its
+ * replay buffer can hold a phantom `pane_created` for a pane that no longer
+ * exists anywhere in `pane.list` (observed live: `w2N:p1`). Resubscribing on
+ * such an event reopened a stream that drew the same phantom — a self-sustaining
+ * ~2.5/s loop. Diffing the real pane set makes phantoms and echoes no-ops.
+ */
+describe('paneSetRequiresResubscribe', () => {
+  const subscribed = new Set(['w1:p1', 'w1:p2']);
+
+  it('does not resubscribe when the live pane set is unchanged', () => {
+    // The loop driver: a snapshot/phantom event leaves pane.list identical.
+    expect(paneSetRequiresResubscribe(new Set(['w1:p1', 'w1:p2']), subscribed, true)).toBe(false);
+  });
+
+  it('ignores a phantom pane that pane.list never reports', () => {
+    // pane.list still returns exactly the subscribed set even though herdr
+    // replayed pane_created for a phantom — no resubscribe, loop broken.
+    const listAfterPhantom = new Set(['w1:p1', 'w1:p2']);
+    expect(paneSetRequiresResubscribe(listAfterPhantom, subscribed, true)).toBe(false);
+  });
+
+  it('resubscribes when a pane is genuinely added or removed', () => {
+    expect(paneSetRequiresResubscribe(new Set(['w1:p1', 'w1:p2', 'w1:p3']), subscribed, true)).toBe(true);
+    expect(paneSetRequiresResubscribe(new Set(['w1:p1']), subscribed, true)).toBe(true);
+  });
+
+  it('resubscribes on a same-size membership swap', () => {
+    // p2 closed and p3 opened between polls — size matches, members differ.
+    expect(paneSetRequiresResubscribe(new Set(['w1:p1', 'w1:p3']), subscribed, true)).toBe(true);
+  });
+
+  it('always subscribes when there is no live subscription (startup / after a drop)', () => {
+    expect(paneSetRequiresResubscribe(subscribed, subscribed, false)).toBe(true);
+    expect(paneSetRequiresResubscribe(new Set(), new Set(), false)).toBe(true);
   });
 });

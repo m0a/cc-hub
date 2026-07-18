@@ -49,12 +49,47 @@ export function classifyHerdrEvent(rawEvent: unknown): 'status' | 'lifecycle' | 
   return 'ignore';
 }
 
+function setsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const x of a) if (!b.has(x)) return false;
+  return true;
+}
+
+/**
+ * Should a lifecycle event trigger a full resubscribe (rebuild of the per-pane
+ * `pane.agent_status_changed` subscriptions)? Only when the *actual* pane set —
+ * `pane.list`, the ground truth — differs from what we're subscribed to, or
+ * when there's no live subscription to keep.
+ *
+ * Crucially this ignores the event payload. herdr replays lifecycle events on
+ * every `events.subscribe` (a snapshot), and its replay buffer can hold a
+ * *phantom* `pane_created` for a pane that `pane.list`, `workspace.list` and
+ * `pane.get` all agree no longer exists (observed live: `w2N:p1`). The old code
+ * resubscribed on any such event; each resubscribe opened a fresh stream that
+ * drew the same phantom again — a ~2.5/s busy loop (one `pane.list` RPC + socket
+ * teardown per turn). An event-payload gate can't fix it: the phantom pane never
+ * appears in `pane.list`, so it reads as "new" forever. Diffing `pane.list`
+ * against the subscribed set makes phantoms and echoes no-ops while still
+ * catching genuine adds/removes.
+ */
+export function paneSetRequiresResubscribe(
+  nextPaneIds: ReadonlySet<string>,
+  subscribedPaneIds: ReadonlySet<string>,
+  hasLiveSubscription: boolean,
+): boolean {
+  if (!hasLiveSubscription) return true;
+  return !setsEqual(nextPaneIds, subscribedPaneIds);
+}
+
 const CHANGE_DEBOUNCE_MS = 150;
 const RESUBSCRIBE_DEBOUNCE_MS = 400;
 /** Backoff after a dropped/rejected subscription. herdr restarts land here. */
 const RETRY_DELAY_MS = 5_000;
 
 let unsubscribe: (() => void) | null = null;
+/** Pane ids our live subscription covers — diffed against pane.list to decide
+ *  whether a lifecycle event is a genuine change or a replay/phantom. */
+let subscribedPaneIds: Set<string> = new Set();
 let running = false;
 let changeTimer: ReturnType<typeof setTimeout> | null = null;
 let resubscribeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -103,8 +138,18 @@ async function subscribeToPanes(): Promise<void> {
   }
   if (!running) return;
 
+  // A lifecycle event schedules us, but the pane set may be unchanged — a herdr
+  // snapshot replay or the phantom `pane_created` (see paneSetRequiresResubscribe).
+  // Keep the live stream open in that case: tearing it down and reopening is what
+  // draws the next replay and sustains the loop.
+  const nextPaneIds = new Set(panes.map((p) => p.pane_id));
+  if (!paneSetRequiresResubscribe(nextPaneIds, subscribedPaneIds, unsubscribe !== null)) {
+    return;
+  }
+
   unsubscribe?.();
   unsubscribe = null;
+  subscribedPaneIds = nextPaneIds;
 
   const subscriptions: Array<Record<string, unknown>> = [
     ...LIFECYCLE_SUBSCRIPTION_TYPES.map((type) => ({ type })),
@@ -118,8 +163,8 @@ async function subscribeToPanes(): Promise<void> {
       if (kind === 'status') {
         scheduleChangePush();
       } else if (kind === 'lifecycle') {
-        // A new pane needs its own status subscription; a closed one should
-        // stop holding one. Push too — pane sets are user-visible.
+        // Re-check pane.list (debounced) and rebuild only if the set genuinely
+        // changed. Push either way — pane state is user-visible regardless.
         scheduleResubscribe();
         scheduleChangePush();
       }
@@ -147,6 +192,7 @@ export function stopAgentStatusWatcher(): void {
   onStatusChange = null;
   unsubscribe?.();
   unsubscribe = null;
+  subscribedPaneIds = new Set();
   changeTimer = clearTimer(changeTimer);
   resubscribeTimer = clearTimer(resubscribeTimer);
   retryTimer = clearTimer(retryTimer);

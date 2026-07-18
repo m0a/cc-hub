@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.14] - 2026-07-18
+
+### Changed
+- **セッションリストの `used`（累計トークン）表示を利用中モデル表示に置き換え** (#424): 累計トークン数はほぼ参照されていなかったため削除し、エージェントが現在使っているモデルを表示する。Claude は `.jsonl` から context 計算用に抽出済みだった `latestModel` を `metrics.model` として公開し、`claude-opus-4-8` → `Opus 4.8` のように短縮表示（旧形式 `claude-3-5-sonnet-*` → `Sonnet 3.5` も対応、フル id はツールチップ）。Codex は rollout 末尾スキャンで `token_count` と同時に最新 `turn_context` の `payload.model`（例: `gpt-5.6-sol`）を抽出し、そのまま表示（`shared/types.ts`, `backend/src/services/session-metrics.ts`, `codex.ts`, `frontend/src/components/SessionList.tsx`, `frontend/src/utils/format.ts`）
+
 ## [0.2.13] - 2026-07-18
 
 ### Changed

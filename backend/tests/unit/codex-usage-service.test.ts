@@ -141,7 +141,7 @@ describe('CodexUsageService', () => {
     expect(result?.capturedAt).toBe('2026-05-06T09:00:00Z');
   });
 
-  test('marks rate limit exceeded when latest event reports no credits', () => {
+  test('marks rate limit exceeded when latest event reports an explicit reached type', () => {
     const fiveHourReset = Math.floor(Date.UTC(2026, 4, 7, 16, 48, 0) / 1000);
     const sevenDayReset = Math.floor(Date.UTC(2026, 4, 14, 11, 48, 0) / 1000);
     placeRollout('2026/05/07', 'rollout-2026-05-07T09-47-05-aaa.jsonl', [
@@ -154,13 +154,14 @@ describe('CodexUsageService', () => {
           plan_type: 'plus',
         },
       }),
-      // Newer event after exhaustion: windows null, no credits
+      // Newer event after exhaustion: windows null with an explicit verdict
       makeRolloutLine({
         timestamp: '2026-05-07T14:03:01Z',
         rate_limits: {
           primary: null,
           secondary: null,
           credits: { has_credits: false, unlimited: false, balance: '0' },
+          rate_limit_reached_type: 'rate_limit_reached',
           plan_type: null,
         },
       }),
@@ -169,8 +170,8 @@ describe('CodexUsageService', () => {
     const svc = new CodexUsageService(sessionsDir);
     const result = svc.computeUsageLimits(Date.UTC(2026, 4, 7, 14, 5, 0));
     expect(result?.rateLimitExceeded).toBe(true);
-    expect(result?.fiveHour?.utilization).toBe(100);
-    expect(result?.fiveHour?.status).toBe('exceeded');
+    // Preserve the last measured utilization instead of inventing 100%.
+    expect(result?.fiveHour?.utilization).toBe(75.0);
     // 7d cycle still reports the last known windowed value
     expect(result?.sevenDay?.utilization).toBe(12.0);
     // capturedAt comes from the latest (exhausted) event
@@ -179,22 +180,23 @@ describe('CodexUsageService', () => {
     expect(result?.planType).toBe('plus');
   });
 
-  test('does not mark exhaustion when credits are unlimited', () => {
-    const fiveHourReset = Math.floor(Date.UTC(2026, 4, 7, 16, 48, 0) / 1000);
+  test('does not treat an empty purchased-credit balance as rate-limit exhaustion', () => {
+    const sevenDayReset = Math.floor(Date.UTC(2026, 4, 14, 16, 48, 0) / 1000);
     placeRollout('2026/05/07', 'rollout-2026-05-07T09-47-05-aaa.jsonl', [
       makeRolloutLine({
         rate_limits: {
-          primary: { used_percent: 50.0, window_minutes: 300, resets_at: fiveHourReset },
+          primary: { used_percent: 9.0, window_minutes: 10080, resets_at: sevenDayReset },
           secondary: null,
-          credits: { has_credits: false, unlimited: true, balance: '0' },
-          plan_type: 'enterprise',
+          credits: { has_credits: false, unlimited: false, balance: '0' },
+          rate_limit_reached_type: null,
+          plan_type: 'plus',
         },
       }),
     ]);
     const svc = new CodexUsageService(sessionsDir);
     const result = svc.computeUsageLimits(Date.UTC(2026, 4, 7, 14, 5, 0));
     expect(result?.rateLimitExceeded).toBeUndefined();
-    expect(result?.fiveHour?.utilization).toBe(50.0);
+    expect(result?.sevenDay?.utilization).toBe(9.0);
   });
 
   test('does not keep exhaustion after the cycle reset time has passed', () => {
@@ -215,6 +217,7 @@ describe('CodexUsageService', () => {
           primary: null,
           secondary: null,
           credits: { has_credits: false, unlimited: false, balance: '0' },
+          rate_limit_reached_type: 'rate_limit_reached',
           plan_type: null,
         },
       }),

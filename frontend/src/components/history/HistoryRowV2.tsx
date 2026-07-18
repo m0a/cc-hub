@@ -2,6 +2,7 @@
 import { Clock, FolderOpen, MessageCircle, Tag } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { HistorySession } from "../../../../shared/types";
+import { agentBadge } from "../../utils/agentDisplay";
 import { formatDuration, formatRelativeTime } from "../../utils/format";
 
 interface HistoryRowV2Props {
@@ -37,17 +38,7 @@ export function HistoryRowV2({
 		displayText.length > 70 ? `${displayText.substring(0, 70)}…` : displayText;
 
 	const duration = formatDuration(session.durationMinutes, t);
-	const agent = session.agent ?? "claude";
-	const agentBadge =
-		agent === "codex"
-			? {
-					label: "Codex",
-					className: "text-cyan-300 bg-cyan-400/10 border-cyan-400/20",
-				}
-			: {
-					label: "Claude",
-					className: "text-violet-300 bg-violet-400/10 border-violet-400/20",
-				};
+	const badge = agentBadge(session.agent);
 
 	const showPeer =
 		session.peerId && session.peerId !== "local" && session.peerNickname;
@@ -68,9 +59,9 @@ export function HistoryRowV2({
 						<FolderOpen className="w-3 h-3 shrink-0" />
 						<span className="truncate">{session.projectName}</span>
 						<span
-							className={`shrink-0 inline-flex items-center px-1.5 py-px rounded border text-[10px] font-medium ${agentBadge.className}`}
+							className={`shrink-0 inline-flex items-center px-1.5 py-px rounded border text-[10px] font-medium ${badge.badgeClassName}`}
 						>
-							{agentBadge.label}
+							{badge.label}
 						</span>
 						{showPeer && (
 							<span

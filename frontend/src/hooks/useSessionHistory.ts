@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+	AgentProvider,
 	ConversationMessage,
 	HistorySession,
 	PeerHistoryProject,
@@ -44,13 +45,13 @@ interface UseSessionHistoryResult {
 	resumeSession: (
 		sessionId: string,
 		projectPath: string,
-		agent?: "claude" | "codex",
+		agent?: AgentProvider,
 		peerId?: string,
 	) => Promise<{ tmuxSessionId: string } | null>;
 	fetchConversation: (
 		sessionId: string,
 		projectDirName?: string,
-		agent?: "claude" | "codex",
+		agent?: AgentProvider,
 		peerId?: string,
 	) => Promise<ConversationMessage[]>;
 }
@@ -152,7 +153,7 @@ export function useSessionHistory(): UseSessionHistoryResult {
 		async (
 			sessionId: string,
 			projectPath: string,
-			agent?: "claude" | "codex",
+			agent?: AgentProvider,
 			peerId?: string,
 		) => {
 			try {
@@ -185,7 +186,7 @@ export function useSessionHistory(): UseSessionHistoryResult {
 		async (
 			sessionId: string,
 			projectDirName?: string,
-			agent?: "claude" | "codex",
+			agent?: AgentProvider,
 			peerId?: string,
 		): Promise<ConversationMessage[]> => {
 			try {
@@ -197,8 +198,10 @@ export function useSessionHistory(): UseSessionHistoryResult {
 				if (projectDirName) {
 					url.searchParams.set("projectDirName", projectDirName);
 				}
-				if (agent === "codex") {
-					url.searchParams.set("agent", "codex");
+				// Thread agents (codex, grok, ...) read from their own transcript
+				// store; Claude stays on the default jsonl path.
+				if (agent && agent !== "claude") {
+					url.searchParams.set("agent", agent);
 				}
 				const response = await authFetch(url.toString(), { cache: "no-store" });
 				if (!response.ok) {

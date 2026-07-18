@@ -52,7 +52,8 @@
 		"agent": "Agent",
 		"agentProvider": {
 			"claude": "Claude",
-			"codex": "Codex"
+			"codex": "Codex",
+			"grok": "Grok"
 		},
 		"workingDirectory": "Working Directory",
 		"newFolder": "New Folder",
@@ -212,6 +213,7 @@
 		"you": "You",
 		"claude": "Claude",
 		"codex": "Codex",
+		"grok": "Grok",
 		"system": "System",
 		"errorTitle": "Conversation unavailable",
 		"errorMissingAgent": "Session has no agent information. Try refreshing the session list.",

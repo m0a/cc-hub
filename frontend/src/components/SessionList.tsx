@@ -35,6 +35,7 @@ import {
 	type PeerClientView,
 	type SessionResponse,
 	type SessionTheme,
+	threadAgentOf,
 } from "../../../shared/types";
 import { openClaudeAppSession } from "../utils/claude-app";
 import { usePeers } from "../hooks/usePeers";
@@ -458,7 +459,7 @@ function CreateSessionModal({
 					<div className="text-xs text-th-text-secondary mb-1">
 						{t("session.agent")}
 					</div>
-					<div className="grid grid-cols-2 gap-2">
+					<div className="grid grid-cols-3 gap-2">
 						{AGENT_PROVIDER_IDS.map((option) => (
 							<button
 								key={option}
@@ -1368,13 +1369,13 @@ export function SessionList({
 			try {
 				const session = sessions.find((s) => s.id === sessionId);
 				const isLost = session?.state === "lost";
-				// Per-agent conversation id: Claude → ccSessionId, Codex → agentSessionId.
-				// Pick the one matching the session's agent so we don't accidentally
-				// hand a Codex thread id to `claude -r` (or vice versa).
-				const conversationId =
-					session?.agent === "codex"
-						? session.agentSessionId
-						: (ccSessionId ?? session?.ccSessionId);
+				// Per-agent conversation id: Claude → ccSessionId, thread agents
+				// (codex / grok / ...) → agentSessionId. Pick the one matching the
+				// session's agent so we don't accidentally hand a Codex thread id to
+				// `claude -r` (or vice versa).
+				const conversationId = threadAgentOf(session?.agent)
+					? session?.agentSessionId
+					: (ccSessionId ?? session?.ccSessionId);
 
 				if (isLost && session?.currentPath) {
 					if (conversationId) {

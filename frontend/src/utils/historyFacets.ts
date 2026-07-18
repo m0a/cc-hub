@@ -1,4 +1,4 @@
-import type { HistorySession } from "../../../shared/types";
+import { agentDisplayName, type HistorySession } from "../../../shared/types";
 
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
 
@@ -152,9 +152,7 @@ export function computeFacetData(
 
 	return {
 		projects: sortedValues(tally(items, (s) => s.projectName), projectLabel),
-		agents: sortedValues(tally(items, agentOf), (v) =>
-			v === "codex" ? "Codex" : "Claude",
-		),
+		agents: sortedValues(tally(items, agentOf), agentDisplayName),
 		branches: sortedValues(tally(items, branchOf), (v) =>
 			v === UNKNOWN_BRANCH ? t("history.facetBranchUnknown") : v,
 		),

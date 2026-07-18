@@ -54,6 +54,7 @@ export const AGENT_PROVIDERS = {
     command: 'claude',
     resumeCommand: 'claude -r',
     labelKey: 'session.agentProvider.claude',
+    displayName: 'Claude',
     processPatterns: [/(?:^|\/)claude(?:\s|$)/, /\/claude\/versions\//],
     supportsConversationMetadata: true,
   },
@@ -62,7 +63,17 @@ export const AGENT_PROVIDERS = {
     command: 'codex',
     resumeCommand: 'codex resume',
     labelKey: 'session.agentProvider.codex',
+    displayName: 'Codex',
     processPatterns: [/(?:^|\/)codex(?:\s|$)/, /\/@openai\/codex\//],
+    supportsConversationMetadata: false,
+  },
+  grok: {
+    id: 'grok',
+    command: 'grok',
+    resumeCommand: 'grok --resume',
+    labelKey: 'session.agentProvider.grok',
+    displayName: 'Grok',
+    processPatterns: [/(?:^|\/)grok(?:\s|$)/],
     supportsConversationMetadata: false,
   },
 } as const;
@@ -86,6 +97,25 @@ export function detectAgentProviderFromArgs(args: string): AgentProvider | undef
 
 export function agentSupportsConversationMetadata(agent: string | undefined): boolean {
   return !!agent && isAgentProvider(agent) && AGENT_PROVIDERS[agent].supportsConversationMetadata;
+}
+
+/**
+ * Thread-based agents (everything except Claude): their conversation and
+ * identity come from the agent's own session store, keyed by `agentSessionId`,
+ * and the conversation is read via HTTP polling instead of the Claude
+ * WebSocket stream. Returns the provider id, or undefined for Claude /
+ * unknown commands — so it doubles as both a predicate and a narrowing cast.
+ */
+export function threadAgentOf(agent: string | undefined): AgentProvider | undefined {
+  if (!agent || !isAgentProvider(agent)) return undefined;
+  return AGENT_PROVIDERS[agent].supportsConversationMetadata ? undefined : agent;
+}
+
+/** Human-readable provider name; unknown/undefined falls back to Claude. */
+export function agentDisplayName(agent: string | undefined): string {
+  return agent && isAgentProvider(agent)
+    ? AGENT_PROVIDERS[agent].displayName
+    : AGENT_PROVIDERS.claude.displayName;
 }
 
 export function agentResumeCommand(agent: AgentProvider, sessionId?: string): string {

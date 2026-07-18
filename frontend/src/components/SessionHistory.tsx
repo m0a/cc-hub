@@ -21,6 +21,7 @@ import {
 	useSessionHistory,
 } from "../hooks/useSessionHistory";
 import { authFetch } from "../services/api";
+import { agentBadge } from "../utils/agentDisplay";
 import { formatRelativeTime } from "../utils/format";
 import { ConversationViewer } from "./ConversationViewer";
 
@@ -80,11 +81,7 @@ function HistoryItem({
 	const messageCount = session.messageCount;
 	const gitBranch = session.gitBranch;
 
-	const agent = session.agent ?? "claude";
-	const agentBadge =
-		agent === "codex"
-			? { label: "Codex", className: "text-cyan-300 bg-cyan-400/10 border-cyan-400/20" }
-			: { label: "Claude", className: "text-violet-300 bg-violet-400/10 border-violet-400/20" };
+	const badge = agentBadge(session.agent);
 
 	return (
 		<div
@@ -109,9 +106,9 @@ function HistoryItem({
 					)}
 					<div className="flex items-center gap-3 mt-1.5 text-[11px] text-zinc-600">
 						<span
-							className={`inline-flex items-center px-1.5 py-px rounded border text-[10px] font-medium ${agentBadge.className}`}
+							className={`inline-flex items-center px-1.5 py-px rounded border text-[10px] font-medium ${badge.badgeClassName}`}
 						>
-							{agentBadge.label}
+							{badge.label}
 						</span>
 						<span>
 							{formatRelativeTime(session.modified, t, i18n.language)}

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { homedir } from 'node:os';
-import { AGENT_PROVIDERS, AGENT_PROVIDER_IDS, CreateSessionSchema, DEFAULT_AGENT_PROVIDER, PaneIdSchema, SessionIdSchema, agentResumeCommand, agentSupportsConversationMetadata, type AgentProvider, type IndicatorState, type PaneInfo, type ExtendedSessionResponse, type SessionState } from '../../../shared/types';
+import { AGENT_PROVIDERS, AGENT_PROVIDER_IDS, CreateSessionSchema, DEFAULT_AGENT_PROVIDER, PaneIdSchema, SessionIdSchema, agentResumeCommand, agentSupportsConversationMetadata, isAgentProvider, threadAgentOf, type AgentProvider, type IndicatorState, type PaneInfo, type ExtendedSessionResponse, type SessionState } from '../../../shared/types';
 import { HerdrService } from '../services/herdr';
 import {
   captureViewportHerdr,
@@ -13,6 +13,9 @@ import { CodexService } from '../services/codex';
 import { CodexConversationService } from '../services/codex-conversation';
 import { SessionHistoryService } from '../services/session-history';
 import { CodexHistoryService } from '../services/codex-history';
+import { GrokService } from '../services/grok';
+import { GrokHistoryService } from '../services/grok-history';
+import type { AgentHistoryProvider, AgentThread, AgentThreadService } from '../services/agent-providers';
 import { PromptHistoryService } from '../services/prompt-history';
 import { getAllSessionMetadata, setSessionTheme, setSessionTitle, getLastKnownSessions, saveLastKnownSessions, removeLastKnownSession, type LastKnownSession } from '../services/session-metadata';
 import { computeSessionMetrics } from '../services/session-metrics';
@@ -22,11 +25,20 @@ import { detectPaneState, stripAnsi, type DetectedPaneState } from '../services/
 
 const herdrService = new HerdrService();
 const claudeCodeService = new ClaudeCodeService();
-const codexService = new CodexService();
 const codexConversationService = new CodexConversationService();
 // peers.ts からも参照するため export
 export const sessionHistoryService = new SessionHistoryService();
-export const codexHistoryService = new CodexHistoryService(undefined, codexConversationService);
+
+// Thread-based agents (everything except Claude). Adding an agent means adding
+// its two service instances here — the routes below iterate these maps.
+const threadServices: Partial<Record<AgentProvider, AgentThreadService>> = {
+  codex: new CodexService(),
+  grok: new GrokService(),
+};
+export const agentHistoryProviders: Partial<Record<AgentProvider, AgentHistoryProvider>> = {
+  codex: new CodexHistoryService(undefined, codexConversationService),
+  grok: new GrokHistoryService(),
+};
 const promptHistoryService = new PromptHistoryService();
 
 export function shellQuote(value: string): string {
@@ -173,10 +185,17 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
     .filter((s): s is typeof s & { currentPath: string } => agentSupportsConversationMetadata(s.agent ?? s.currentCommand) && !!s.currentPath)
     .map(s => s.currentPath);
   const ccSessionsByPath = await claudeCodeService.getSessionsForPaths(claudePaths);
-  const codexPaths = herdrSessions
-    .filter((s): s is typeof s & { currentPath: string } => (s.agent ?? s.currentCommand) === 'codex' && !!s.currentPath)
-    .map(s => s.currentPath);
-  const codexThreadsByPath = await codexService.getThreadsForPaths(codexPaths);
+
+  // One thread map per thread-based agent (codex, grok, ...): latest thread
+  // in each working directory, resolved from the agent's own session store.
+  const threadsByAgent = new Map<AgentProvider, Map<string, AgentThread>>();
+  await Promise.all((Object.entries(threadServices) as [AgentProvider, AgentThreadService][]).map(async ([agentId, service]) => {
+    const paths = herdrSessions
+      .filter((s): s is typeof s & { currentPath: string } => (s.agent ?? s.currentCommand) === agentId && !!s.currentPath)
+      .map(s => s.currentPath);
+    if (paths.length === 0) return;
+    threadsByAgent.set(agentId, await service.getThreadsForPaths(paths));
+  }));
 
   // Remote Control deep-link map: Claude Code sessionId -> bridgeSessionId.
   // Read once per build (cheap: a handful of small ~/.claude/sessions/*.json).
@@ -184,7 +203,10 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
 
   const results = await Promise.all(herdrSessions.map(async (s) => {
     let ccSession: Awaited<ReturnType<typeof claudeCodeService.getSessionForPath>> | undefined;
-    const codexThread = s.currentPath ? codexThreadsByPath.get(s.currentPath) : undefined;
+    const threadAgent = threadAgentOf(s.agent ?? s.currentCommand);
+    const agentThread = threadAgent && s.currentPath
+      ? threadsByAgent.get(threadAgent)?.get(s.currentPath)
+      : undefined;
 
     if (agentSupportsConversationMetadata(s.agent ?? s.currentCommand) && s.currentPath) {
       // Prefer the native session id reported via the herdr agent
@@ -197,12 +219,10 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
     }
 
     const includeClaudeInfo = agentSupportsConversationMetadata(s.agent ?? s.currentCommand);
-    const includeCodexInfo = (s.agent ?? s.currentCommand) === 'codex';
+    const includeThreadInfo = !!threadAgent;
     const conversationSessionId = includeClaudeInfo
       ? ccSession?.sessionId
-      : includeCodexInfo
-        ? codexThread?.sessionId
-        : undefined;
+      : agentThread?.sessionId;
 
     // Indicator state: herdr's own agent detection is the source of truth —
     // it tracks the pane itself, so it can't go stale when a hook is missing,
@@ -231,11 +251,12 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
     // ccSession.projectPath === s.currentPath.
     const isExactPathMatch = !!ccSession && !!s.currentPath && ccSession.projectPath === s.currentPath;
 
-    // Codex keeps hooks first: herdr detects Codex panes too, but its status
-    // accuracy there hasn't been verified the way it has for Claude (#390).
+    // Thread agents keep hooks first: herdr detects these panes too, but its
+    // status accuracy there hasn't been verified the way it has for Claude
+    // (#390), and Grok isn't integrated with herdr at all.
     const sessionIndicatorState = includeClaudeInfo
       ? indicatorState
-      : includeCodexInfo
+      : includeThreadInfo
         ? (hookState ?? herdrState ?? undefined)
         : undefined;
 
@@ -245,11 +266,11 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       workingDir: s.currentPath,
       pids: panePids,
     });
-    const sessionMetrics = includeCodexInfo && codexThread
+    const sessionMetrics = agentThread
       ? {
           ...metrics,
-          ...codexThread.tokenUsage,
-          totalTokens: codexThread.tokenUsage?.totalTokens ?? codexThread.tokensUsed,
+          ...agentThread.tokenUsage,
+          totalTokens: agentThread.tokenUsage?.totalTokens ?? agentThread.tokensUsed,
         }
       : metrics;
 
@@ -263,9 +284,9 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       agent: s.agent,
       currentPath: s.currentPath,
       paneTitle: s.paneTitle,
-      waitingToolName: includeClaudeInfo ? effectiveWaitingToolName : includeCodexInfo ? hookToolName : undefined,
-      ccSummary: includeClaudeInfo ? (isExactPathMatch ? ccSession?.summary : undefined) : includeCodexInfo ? codexThread?.title : undefined,
-      ccFirstPrompt: includeClaudeInfo ? (isExactPathMatch ? ccSession?.firstPrompt : undefined) : includeCodexInfo ? codexThread?.firstPrompt : undefined,
+      waitingToolName: includeClaudeInfo ? effectiveWaitingToolName : includeThreadInfo ? hookToolName : undefined,
+      ccSummary: includeClaudeInfo ? (isExactPathMatch ? ccSession?.summary : undefined) : agentThread?.title,
+      ccFirstPrompt: includeClaudeInfo ? (isExactPathMatch ? ccSession?.firstPrompt : undefined) : agentThread?.firstPrompt,
       ccRecap: includeClaudeInfo && isExactPathMatch ? ccSession?.lastRecap?.content : undefined,
       ccRecapAt: includeClaudeInfo && isExactPathMatch ? ccSession?.lastRecap?.timestamp : undefined,
       indicatorState: sessionIndicatorState,
@@ -274,10 +295,10 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
         includeClaudeInfo && ccSession?.sessionId
           ? bridgeSessionIds.get(ccSession.sessionId)
           : undefined,
-      agentSessionId: includeCodexInfo ? codexThread?.sessionId : undefined,
+      agentSessionId: agentThread?.sessionId,
       messageCount: includeClaudeInfo ? ccSession?.messageCount : undefined,
-      gitBranch: includeClaudeInfo ? ccSession?.gitBranch : includeCodexInfo ? codexThread?.gitBranch : undefined,
-      durationMinutes: includeClaudeInfo ? durationMinutes : includeCodexInfo && codexThread?.updatedAt ? Math.round((Date.now() - new Date(codexThread.updatedAt).getTime()) / 60000) : undefined,
+      gitBranch: includeClaudeInfo ? ccSession?.gitBranch : agentThread?.gitBranch,
+      durationMinutes: includeClaudeInfo ? durationMinutes : agentThread?.updatedAt ? Math.round((Date.now() - new Date(agentThread.updatedAt).getTime()) / 60000) : undefined,
       firstMessageId: includeClaudeInfo ? ccSession?.firstMessageId : undefined,
       theme: sessionMetadata[s.id]?.theme,
       customTitle: sessionMetadata[s.id]?.title,
@@ -294,7 +315,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
         } else if (isClaudeOnPane) {
           // Use session-level indicator for Claude panes (hook/jsonl based)
           paneIndicator = indicatorState === 'completed' ? 'waiting_input' : indicatorState;
-        } else if (includeCodexInfo && isSessionAgentOnPane) {
+        } else if (includeThreadInfo && isSessionAgentOnPane) {
           paneIndicator = hookState ?? 'idle';
         } else {
           paneIndicator = 'idle';
@@ -478,16 +499,17 @@ sessions.post('/', async (c) => {
 });
 
 // GET /sessions/history/projects - Get list of projects (fast, no file content reading)
-// Merges Claude (~/.claude/projects/*) and Codex (~/.codex/sessions/**) buckets
-// by encoded cwd so the same directory shows up once.
+// Merges Claude (~/.claude/projects/*) and every thread agent's buckets
+// (Codex rollouts, Grok sessions, ...) by encoded cwd so the same directory
+// shows up once.
 sessions.get('/history/projects', async (c) => {
-  const [claudeProjects, codexProjects] = await Promise.all([
+  const [claudeProjects, ...agentProjects] = await Promise.all([
     sessionHistoryService.getProjects(),
-    codexHistoryService.getProjects(),
+    ...Object.values(agentHistoryProviders).map(p => p.getProjects()),
   ]);
   const byDir = new Map<string, typeof claudeProjects[number]>();
   for (const p of claudeProjects) byDir.set(p.dirName, p);
-  for (const p of codexProjects) {
+  for (const p of agentProjects.flat()) {
     const existing = byDir.get(p.dirName);
     if (existing) {
       existing.sessionCount += p.sessionCount;
@@ -506,13 +528,13 @@ sessions.get('/history/projects', async (c) => {
 sessions.get('/history/search', async (c) => {
   const query = c.req.query('q') || '';
   const limit = parseInt(c.req.query('limit') || '50', 10);
-  const [claudeMatches, codexMatches] = await Promise.all([
+  const [claudeMatches, ...agentMatches] = await Promise.all([
     sessionHistoryService.searchSessions(query, limit),
-    codexHistoryService.searchSessions(query, limit),
+    ...Object.values(agentHistoryProviders).map(p => p.searchSessions(query, limit)),
   ]);
   const merged = [
     ...claudeMatches.map(s => ({ ...s, agent: s.agent ?? 'claude' as const })),
-    ...codexMatches,
+    ...agentMatches.flat(),
   ].sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime()).slice(0, limit);
   return c.json({ sessions: merged });
 });
@@ -533,9 +555,11 @@ sessions.get('/history/search/stream', async (c) => {
       let yielded = 0;
 
       try {
-        // Emit Codex matches up-front (small set, scanned in one pass).
-        const codexMatches = await codexHistoryService.searchSessions(query, limit);
-        for (const session of codexMatches) {
+        // Emit thread-agent matches up-front (small sets, scanned in one pass).
+        const agentMatches = await Promise.all(
+          Object.values(agentHistoryProviders).map(p => p.searchSessions(query, limit)),
+        );
+        for (const session of agentMatches.flat()) {
           if (yielded >= limit) break;
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(session)}\n\n`));
           yielded++;
@@ -567,16 +591,16 @@ sessions.get('/history/search/stream', async (c) => {
 });
 
 // GET /sessions/history/projects/:dirName - Get sessions for a specific project
-// Returns merged Claude + Codex sessions in the same project bucket.
+// Returns merged Claude + thread-agent sessions in the same project bucket.
 sessions.get('/history/projects/:dirName', async (c) => {
   const dirName = c.req.param('dirName');
-  const [claudeSessions, codexSessions] = await Promise.all([
+  const [claudeSessions, ...agentSessions] = await Promise.all([
     sessionHistoryService.getProjectSessions(dirName),
-    codexHistoryService.getProjectSessions(dirName),
+    ...Object.values(agentHistoryProviders).map(p => p.getProjectSessions(dirName)),
   ]);
   const merged = [
     ...claudeSessions.map(s => ({ ...s, agent: s.agent ?? 'claude' as const })),
-    ...codexSessions,
+    ...agentSessions.flat(),
   ].sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
   return c.json({ sessions: merged });
 });
@@ -585,28 +609,29 @@ sessions.get('/history/projects/:dirName', async (c) => {
 // NOTE: This must be defined BEFORE /:id to prevent "history" being interpreted as an id
 sessions.get('/history', async (c) => {
   const includeMetadata = c.req.query('metadata') === 'true';
-  const [claudeHistory, codexHistory] = await Promise.all([
+  const [claudeHistory, ...agentHistory] = await Promise.all([
     sessionHistoryService.getRecentSessions(30, includeMetadata),
-    codexHistoryService.getRecentSessions(30),
+    ...Object.values(agentHistoryProviders).map(p => p.getRecentSessions(30)),
   ]);
   const merged = [
     ...claudeHistory.map(s => ({ ...s, agent: s.agent ?? 'claude' as const })),
-    ...codexHistory,
+    ...agentHistory.flat(),
   ].sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime()).slice(0, 30);
   return c.json({ sessions: merged });
 });
 
 // GET /sessions/history/:sessionId/conversation - Get conversation history for a session
 // ?last=N returns only the last N messages (for lightweight clients like G2 glasses)
-// ?agent=codex routes to the Codex rollout reader instead of Claude's jsonl
+// ?agent=<provider> routes to that thread agent's reader instead of Claude's jsonl
 sessions.get('/history/:sessionId/conversation', async (c) => {
   const sessionId = c.req.param('sessionId');
   const projectDirName = c.req.query('projectDirName');
   const lastQuery = c.req.query('last');
   const last = lastQuery ? parseInt(lastQuery, 10) : undefined;
   const agent = c.req.query('agent');
-  const messages = agent === 'codex'
-    ? await codexHistoryService.getConversation(sessionId)
+  const provider = agent && isAgentProvider(agent) ? agentHistoryProviders[agent] : undefined;
+  const messages = provider
+    ? await provider.getConversation(sessionId)
     : await sessionHistoryService.getConversation(sessionId, projectDirName);
   return c.json({ messages: last ? messages.slice(-last) : messages });
 });

@@ -6,12 +6,15 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type {
-	ConversationMessage,
-	SessionTheme,
-	ToolResultInfo,
-	ToolUseInfo,
+import {
+	type AgentProvider,
+	type ConversationMessage,
+	type SessionTheme,
+	type ToolResultInfo,
+	type ToolUseInfo,
+	isAgentProvider,
 } from "../../../shared/types";
+import { agentBadge } from "../utils/agentDisplay";
 import { getTerminalThemes } from "./terminal-themes";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
@@ -408,19 +411,20 @@ const markdownComponents = {
 // Role → sidebar bar color + role-label color.
 // Terminal-style compact layout: a thin colored bar at the left edge
 // identifies the speaker; the role label sits on its own dim line and
-// the body is indented under the bar.
-function getRoleColors(kind: "you" | "claude" | "codex" | "system" | "summary") {
+// the body is indented under the bar. Agent kinds pull their colors from
+// the per-provider styles in agentDisplay.ts.
+function getRoleColors(kind: "you" | "system" | "summary" | AgentProvider) {
 	switch (kind) {
 		case "you":
 			return { bar: "bg-blue-400/70", label: "text-blue-300" };
-		case "claude":
-			return { bar: "bg-violet-400/70", label: "text-violet-300" };
-		case "codex":
-			return { bar: "bg-cyan-400/70", label: "text-cyan-300" };
 		case "summary":
 			return { bar: "bg-amber-400/70", label: "text-amber-300" };
-		default:
+		case "system":
 			return { bar: "bg-zinc-500/50", label: "text-zinc-500" };
+		default: {
+			const badge = agentBadge(kind);
+			return { bar: badge.barClassName, label: badge.labelClassName };
+		}
 	}
 }
 
@@ -446,7 +450,7 @@ const MessageItem = memo(function MessageItem({
 		msg.role === "user" && msg.content && isSystemSummary(msg.content);
 
 	let displayRole: string;
-	let kind: "you" | "claude" | "codex" | "system" | "summary";
+	let kind: "you" | "system" | "summary" | AgentProvider;
 
 	if (isSummaryMessage) {
 		displayRole = t("conversation.systemSummary");
@@ -457,12 +461,10 @@ const MessageItem = memo(function MessageItem({
 	} else if (msg.role === "user") {
 		displayRole = t("conversation.you");
 		kind = "you";
-	} else if (agent === "codex") {
-		displayRole = t("conversation.codex");
-		kind = "codex";
 	} else {
-		displayRole = t("conversation.claude");
-		kind = "claude";
+		// Assistant turn: label and color come from the session's provider.
+		kind = agent && isAgentProvider(agent) ? agent : "claude";
+		displayRole = t(`conversation.${kind}`);
 	}
 
 	const { bar, label } = getRoleColors(kind);

@@ -144,4 +144,37 @@ command = "cchub notify"
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  test('grok provider follows Claude-compat hook files', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cchub-hook-status-'));
+    const claudeDir = join(dir, '.claude');
+    const originalCwd = process.cwd();
+
+    try {
+      mkdirSync(claudeDir, { recursive: true });
+      // Grok Build scans Claude's settings.json hooks by default, so a
+      // cchub-notify entry there configures grok too.
+      writeFileSync(
+        join(claudeDir, 'settings.json'),
+        JSON.stringify({
+          hooks: {
+            Stop: [{ hooks: [{ type: 'command', command: 'cchub notify' }] }],
+            PostToolUse: [{ matcher: 'AskUserQuestion', hooks: [{ type: 'command', command: 'cchub notify' }] }],
+          },
+        }),
+      );
+
+      process.chdir(dir);
+      const status = await getHookStatus();
+
+      expect(status.providers.grok.configured).toBe(true);
+      expect(status.providers.grok.events).toEqual({
+        stop: true,
+        askUserQuestion: true,
+      });
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

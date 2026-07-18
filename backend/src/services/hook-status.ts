@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -26,6 +26,7 @@ type HookStatus = HookProviderStatus & {
   providers: {
     claude: HookProviderStatus;
     codex: HookProviderStatus;
+    grok: HookProviderStatus;
   };
 };
 
@@ -169,24 +170,43 @@ async function getProviderStatus(paths: string[]): Promise<HookProviderStatus> {
   return finalizeHookStatus(aggregated);
 }
 
+/** All .json files in a directory (for Grok's native `~/.grok/hooks/`). */
+async function listJsonFiles(dir: string): Promise<string[]> {
+  try {
+    const entries = await readdir(dir);
+    return entries.filter((name) => name.endsWith('.json')).map((name) => join(dir, name));
+  } catch {
+    return [];
+  }
+}
+
 export async function getHookStatus(): Promise<HookStatus> {
   const cwd = process.cwd();
-  const claude = await getProviderStatus([
+  const claudePaths = [
     join(cwd, '.claude', 'settings.json'),
     join(cwd, '.claude', 'hooks.json'),
     join(homedir(), '.claude', 'settings.json'),
     join(homedir(), '.claude', 'hooks.json'),
-  ]);
+  ];
+  const claude = await getProviderStatus(claudePaths);
   const codex = await getProviderStatus([
     join(cwd, '.codex', 'config.toml'),
     join(cwd, '.codex', 'hooks.json'),
     join(homedir(), '.codex', 'config.toml'),
     join(homedir(), '.codex', 'hooks.json'),
   ]);
+  // Grok Build scans Claude's settings.json hooks by default (compat layer),
+  // plus its own native hook files (same JSON shape as Claude's settings).
+  const grok = await getProviderStatus([
+    ...claudePaths,
+    ...(await listJsonFiles(join(homedir(), '.grok', 'hooks'))),
+  ]);
 
+  const providers = { claude, codex, grok };
+  const providerList = Object.values(providers);
   const events = {
-    stop: claude.events.stop || codex.events.stop,
-    askUserQuestion: claude.events.askUserQuestion || codex.events.askUserQuestion,
+    stop: providerList.some((p) => p.events.stop),
+    askUserQuestion: providerList.some((p) => p.events.askUserQuestion),
   };
 
   const missing = Object.entries(events)
@@ -194,9 +214,9 @@ export async function getHookStatus(): Promise<HookStatus> {
     .map(([key]) => key as keyof HookEventStatus);
 
   return {
-    configured: claude.configured || codex.configured,
+    configured: providerList.some((p) => p.configured),
     events,
     missing,
-    providers: { claude, codex },
+    providers,
   };
 }

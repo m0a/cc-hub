@@ -19,9 +19,6 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install tmux
-        run: sudo apt-get update && sudo apt-get install -y tmux
-
       - name: Install dependencies
         run: bun install
 

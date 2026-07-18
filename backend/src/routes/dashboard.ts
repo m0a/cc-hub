@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { StatsService } from '../services/stats-service';
 import { AnthropicUsageService } from '../services/anthropic-usage';
 import { CodexUsageService } from '../services/codex-usage';
+import { GrokUsageService } from '../services/grok-usage';
 import { UsageHistoryService } from '../services/usage-history';
 import { SystemMetricsService } from '../services/system-metrics';
 import { HerdrUpdateService } from '../services/herdr-update';
@@ -12,6 +13,7 @@ import type { DashboardResponse } from '../../../shared/types';
 const statsService = new StatsService();
 const anthropicUsageService = new AnthropicUsageService();
 const codexUsageService = new CodexUsageService();
+const grokUsageService = new GrokUsageService();
 const usageHistoryService = new UsageHistoryService();
 const systemMetricsService = new SystemMetricsService();
 // Shared with the /api/herdr apply route so an apply invalidates this cache.
@@ -38,9 +40,10 @@ async function getDiskUsage(): Promise<{ total: number; used: number; available:
 export async function buildDashboard(): Promise<DashboardResponse> {
   // The herdr skew check rides on this poll instead of its own timer (#393);
   // it is cached, so the extra spawn is far rarer than the request rate.
-  const [usageLimits, codexUsageLimits, dailyActivity, modelUsage, hourlyActivity, usageHistory, systemMetrics, diskUsage, herdrUpdate] = await Promise.all([
+  const [usageLimits, codexUsageLimits, grokUsage, dailyActivity, modelUsage, hourlyActivity, usageHistory, systemMetrics, diskUsage, herdrUpdate] = await Promise.all([
     anthropicUsageService.getUsageLimits(),
     codexUsageService.getUsageLimits(),
+    grokUsageService.getUsageSummary(),
     statsService.getDailyActivity(14),
     statsService.getModelUsage(),
     statsService.getHourlyActivity(),
@@ -64,6 +67,7 @@ export async function buildDashboard(): Promise<DashboardResponse> {
     usageLimits,
     usageLimitsStatus: anthropicUsageService.getStatus(),
     codexUsageLimits,
+    grokUsage,
     usageHistory,
     dailyActivity,
     modelUsage,

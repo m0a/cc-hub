@@ -26,6 +26,20 @@ export function formatRelativeTime(
  * "Opus 4.8" / "Sonnet 3.5"; anything else (e.g. Codex "gpt-5.6-sol") is
  * returned unchanged.
  */
+/** Compact token count: 1234 → "1.2K", 5_600_000 → "5.6M". */
+export function formatTokens(tokens: number): string {
+	if (tokens >= 1_000_000_000) {
+		return `${(tokens / 1_000_000_000).toFixed(1)}B`;
+	}
+	if (tokens >= 1_000_000) {
+		return `${(tokens / 1_000_000).toFixed(1)}M`;
+	}
+	if (tokens >= 1_000) {
+		return `${(tokens / 1_000).toFixed(1)}K`;
+	}
+	return tokens.toString();
+}
+
 export function formatModelName(modelId: string): string {
 	if (!modelId.startsWith("claude-")) return modelId;
 	const tokens = modelId

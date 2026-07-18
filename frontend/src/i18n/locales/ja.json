@@ -165,7 +165,13 @@
 		"herdrUpdateApply": "更新して herdr を再起動",
 		"herdrUpdateApplying": "更新中…",
 		"herdrUpdateManualHint": "herdr が systemd/launchd の管理下にないため、herdr サーバを手動で再起動してください。",
-		"herdrUpdateFailed": "更新に失敗しました: {{error}}"
+		"herdrUpdateFailed": "更新に失敗しました: {{error}}",
+		"grokUsage": "Grok 使用量",
+		"grokLast24h": "過去24時間",
+		"grokLast7d": "過去7日間",
+		"grokTurns": "{{count}} ターン",
+		"grokModelBreakdown": "モデル別（7日間）",
+		"grokNoRateLimitInfo": "xAI はレート制限情報をローカルに公開していないため、サイクル使用率の代わりに Grok セッションログから集計したトークン消費量を表示しています。"
 	},
 	"files": {
 		"title": "ファイルブラウザ",

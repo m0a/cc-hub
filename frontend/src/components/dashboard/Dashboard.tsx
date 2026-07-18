@@ -1,10 +1,12 @@
 import { Globe, Moon, Sun } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { agentDisplayName } from "../../../../shared/types";
 import { useDashboard } from "../../hooks/useDashboard";
 import { usePeers } from "../../hooks/usePeers";
 import { useTheme } from "../../hooks/useTheme";
 import { useUiScale } from "../../hooks/useUiScale";
+import { formatTokens } from "../../utils/format";
 import { nukeClientCache } from "../../utils/nuke-cache";
 import { DailyUsageChart } from "./DailyUsageChart";
 import { HourlyHeatmap } from "./HourlyHeatmap";
@@ -22,7 +24,7 @@ interface DashboardProps {
 	compact?: boolean; // true when in narrow side panel
 }
 
-type AgentTab = "claude" | "codex";
+type AgentTab = "claude" | "codex" | "grok";
 
 export function Dashboard({ className = "", compact = false }: DashboardProps) {
 	const { t, i18n } = useTranslation();
@@ -42,7 +44,7 @@ export function Dashboard({ className = "", compact = false }: DashboardProps) {
 	const [cacheClearing, setCacheClearing] = useState(false);
 	const [agentTab, setAgentTab] = useState<AgentTab>("claude");
 	const codexLimits = data?.codexUsageLimits;
-	const codexAvailable = !!codexLimits;
+	const grokUsage = data?.grokUsage;
 	// Claude is "available" when we have any actionable Claude data. The endpoint
 	// returns empty arrays / no-credentials errors on a Codex-only machine.
 	const claudeAvailable =
@@ -50,14 +52,17 @@ export function Dashboard({ className = "", compact = false }: DashboardProps) {
 		(!!data.usageLimits ||
 			(data.dailyActivity?.length ?? 0) > 0 ||
 			(data.modelUsage?.length ?? 0) > 0);
-	const showAgentTabs = claudeAvailable && codexAvailable;
-	// When only one provider is available we ignore `agentTab` and force the
-	// available one. Otherwise respect the user's tab selection (default Claude).
-	const effectiveTab: AgentTab = showAgentTabs
+	// Tabs render for every provider that has usage data. With one provider
+	// (or none) the tab bar is hidden and that provider is forced.
+	const availableTabs: AgentTab[] = [
+		...(claudeAvailable ? (["claude"] as const) : []),
+		...(codexLimits ? (["codex"] as const) : []),
+		...(grokUsage ? (["grok"] as const) : []),
+	];
+	const showAgentTabs = availableTabs.length > 1;
+	const effectiveTab: AgentTab = availableTabs.includes(agentTab)
 		? agentTab
-		: codexAvailable && !claudeAvailable
-			? "codex"
-			: "claude";
+		: (availableTabs[0] ?? "claude");
 
 	const handleClearCache = useCallback(async () => {
 		setCacheClearing(true);
@@ -102,9 +107,9 @@ export function Dashboard({ className = "", compact = false }: DashboardProps) {
 		>
 			{showAgentTabs && (
 				<div className="flex gap-1 mb-3 text-xs">
-					{(["claude", "codex"] as const).map((id) => {
-						const isActive = agentTab === id;
-						const label = id === "claude" ? "Claude" : "Codex";
+					{availableTabs.map((id) => {
+						const isActive = effectiveTab === id;
+						const label = agentDisplayName(id);
 						return (
 							<button
 								key={id}
@@ -123,7 +128,70 @@ export function Dashboard({ className = "", compact = false }: DashboardProps) {
 				</div>
 			)}
 
-			{effectiveTab === "codex" ? (
+			{effectiveTab === "grok" ? (
+				<div
+					className={
+						compact
+							? "space-y-3"
+							: "md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0"
+					}
+				>
+					<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2">
+						<div className="flex items-center justify-between mb-3">
+							<h3 className="text-xs font-medium text-th-text-secondary">
+								{t("dashboard.grokUsage")}
+							</h3>
+							{grokUsage?.planType && (
+								<span className="px-1.5 py-px rounded border text-[10px] font-medium text-emerald-300 bg-emerald-400/10 border-emerald-400/20">
+									{grokUsage.planType}
+								</span>
+							)}
+						</div>
+						<div className="grid grid-cols-2 gap-3">
+							{(
+								[
+									["grokLast24h", grokUsage?.last24h],
+									["grokLast7d", grokUsage?.last7d],
+								] as const
+							).map(([labelKey, window]) => (
+								<div
+									key={labelKey}
+									className="bg-white/[0.03] rounded-md p-3 border border-white/[0.06]"
+								>
+									<div className="text-[11px] text-th-text-muted mb-1">
+										{t(`dashboard.${labelKey}`)}
+									</div>
+									<div className="text-lg font-semibold text-th-text">
+										{formatTokens(window?.totalTokens ?? 0)}
+									</div>
+									<div className="text-[11px] text-th-text-muted mt-0.5">
+										{t("dashboard.grokTurns", { count: window?.turns ?? 0 })}
+									</div>
+								</div>
+							))}
+						</div>
+						{(grokUsage?.models.length ?? 0) > 0 && (
+							<div className="mt-3 space-y-1">
+								<div className="text-[11px] text-th-text-muted">
+									{t("dashboard.grokModelBreakdown")}
+								</div>
+								{grokUsage?.models.map((m) => (
+									<div
+										key={m.model}
+										className="flex justify-between text-xs text-th-text-secondary"
+									>
+										<span>{m.model}</span>
+										<span>{formatTokens(m.totalTokens)}</span>
+									</div>
+								))}
+							</div>
+						)}
+					</div>
+					<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2 text-th-text-muted text-xs">
+						{t("dashboard.grokNoRateLimitInfo")}
+					</div>
+				</div>
+			) : effectiveTab === "codex" ? (
 				<div
 					className={
 						compact

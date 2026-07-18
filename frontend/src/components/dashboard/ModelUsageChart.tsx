@@ -1,21 +1,9 @@
 import { useTranslation } from "react-i18next";
 import type { ModelUsage } from "../../../../shared/types";
+import { formatTokens } from "../../utils/format";
 
 interface ModelUsageChartProps {
 	data: ModelUsage[];
-}
-
-function formatTokens(tokens: number): string {
-	if (tokens >= 1_000_000_000) {
-		return `${(tokens / 1_000_000_000).toFixed(1)}B`;
-	}
-	if (tokens >= 1_000_000) {
-		return `${(tokens / 1_000_000).toFixed(1)}M`;
-	}
-	if (tokens >= 1_000) {
-		return `${(tokens / 1_000).toFixed(1)}K`;
-	}
-	return tokens.toString();
 }
 
 // Shades per model family; versions within a family cycle through shades

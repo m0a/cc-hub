@@ -178,7 +178,7 @@ sudo tailscale set --operator=$USER
 
 ### herdr Backend
 
-CC Hub runs every session as a [herdr](https://herdr.dev/) workspace. `cchub setup` provisions everything: a supervised `herdr server` (systemd on Linux, launchd on macOS), `~/.config/herdr/config.toml` with `resume_agents_on_restore = true` (agent conversations survive server restarts), and the Claude Code integration hook (native session identity).
+CC Hub runs every session as a [herdr](https://herdr.dev/) workspace. `cchub setup` provisions everything: a supervised `herdr server` (systemd on Linux, launchd on macOS), `~/.config/herdr/config.toml` with `resume_agents_on_restore = true` (agent conversations survive server restarts), and the Claude/Codex integration hooks (native session identity).
 
 To update herdr later: `herdr update`, then restart the supervised server (`systemctl --user restart herdr`). The update replaces the binary but leaves the running server on the old version, so the restart is what actually applies it — CC Hub notices that gap and shows a warning on the dashboard, with a button that does both steps for you. Restarting re-creates every pane: agent conversations come back automatically, but commands running in a pane do not, so it waits for you to press it.
 

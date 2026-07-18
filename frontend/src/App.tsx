@@ -823,9 +823,17 @@ export function App() {
 	// Show conversation history for current session
 	const handleShowConversation = useCallback(() => {
 		const activeSession = openSessions.find((s) => s.id === activeSessionId);
-		if (!activeSession?.ccSessionId && !activeSession?.agentSessionId) return;
+		const activePane =
+			activeSession?.panes?.find(
+				(p) => mobileActivePaneId && p.paneId === mobileActivePaneId,
+			) ??
+			activeSession?.panes?.find((p) => p.isActive) ??
+			(activeSession?.panes?.length === 1
+				? activeSession.panes[0]
+				: undefined);
+		if (!activePane?.agent || !activePane.agentSessionId) return;
 		setShowConversation(true);
-	}, [openSessions, activeSessionId]);
+	}, [openSessions, activeSessionId, mobileActivePaneId]);
 
 	// Keep overlay visible (no auto-hide)
 	const startOverlayTimer = useCallback(() => {
@@ -1034,6 +1042,17 @@ export function App() {
 
 	// Get current active session
 	const activeSession = openSessions.find((s) => s.id === activeSessionId);
+	const activeConversationPane =
+		activeSession?.panes?.find(
+			(p) => mobileActivePaneId && p.paneId === mobileActivePaneId,
+		) ??
+		activeSession?.panes?.find((p) => p.isActive) ??
+		(activeSession?.panes?.length === 1
+			? activeSession.panes[0]
+			: undefined);
+	const conversationAvailable = !!(
+		activeConversationPane?.agent && activeConversationPane.agentSessionId
+	);
 
 	// Overlay bar content (shared between positions)
 	const overlayBar = (
@@ -1072,7 +1091,7 @@ export function App() {
 
 			{/* Right: Core actions */}
 			<div className="flex items-center gap-1 shrink-0">
-				{activeSession?.ccSessionId &&
+				{conversationAvailable &&
 					(showConversation ? (
 						<button
 							type="button"
@@ -1170,7 +1189,7 @@ export function App() {
 						// avoiding the black/loading flash on every open.
 						const themeBg =
 							getTerminalThemes()[activeSession.theme || "default"].background;
-						const chatOverlay = activeSession.ccSessionId ? (
+						const chatOverlay = conversationAvailable ? (
 							<div
 								className="h-full flex flex-col"
 								style={{ backgroundColor: themeBg }}
@@ -1223,11 +1242,11 @@ export function App() {
 											/^\/home\/[^/]+\//,
 											"~/",
 										)}
-										inline
-										enabled
-										theme={activeSession.theme}
-										agent={activeSession.agent}
-										agentSessionId={activeSession.agentSessionId}
+									inline
+									enabled
+									theme={activeSession.theme}
+									agent={activeConversationPane?.agent}
+									agentSessionId={activeConversationPane?.agentSessionId}
 										onScrollGesture={() =>
 											mobileTerminalRef.current?.hideKeyboard()
 										}
@@ -1433,9 +1452,7 @@ export function App() {
 					sessionName={activeSession?.name}
 					sessionStatus={activeSession?.state}
 					onShowConversation={
-						activeSession?.ccSessionId || activeSession?.agentSessionId
-							? handleShowConversation
-							: undefined
+						conversationAvailable ? handleShowConversation : undefined
 					}
 					onShowDashboard={() => setShowMobileDashboard(true)}
 				/>

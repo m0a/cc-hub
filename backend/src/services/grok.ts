@@ -213,7 +213,7 @@ export function readLatestGrokTokenUsage(sessionDir: string): AgentTokenUsage | 
   return undefined;
 }
 
-/** Latest Grok session per working directory, for the active-sessions list. */
+/** Exact Grok sessions by native session id, for the active-sessions list. */
 export class GrokService implements AgentThreadService {
   private store: GrokSessionStore;
 
@@ -221,27 +221,21 @@ export class GrokService implements AgentThreadService {
     this.store = store;
   }
 
-  async getThreadsForPaths(paths: string[]): Promise<Map<string, AgentThread>> {
-    const uniquePaths = new Set(paths.filter(Boolean));
-    if (uniquePaths.size === 0) return new Map();
+  async getThreadsByIds(sessionIds: string[]): Promise<Map<string, AgentThread>> {
+    const uniqueIds = new Set(sessionIds.filter(Boolean));
+    if (uniqueIds.size === 0) return new Map();
 
     const sessions = await this.store.listSessions();
-    const latestByCwd = new Map<string, GrokSessionInfo>();
-    for (const s of sessions) {
-      if (!uniquePaths.has(s.cwd)) continue;
-      const existing = latestByCwd.get(s.cwd);
-      if (!existing || s.updatedAt > existing.updatedAt) latestByCwd.set(s.cwd, s);
-    }
-
     const result = new Map<string, AgentThread>();
-    for (const [cwd, s] of latestByCwd) {
+    for (const s of sessions) {
+      if (!uniqueIds.has(s.sessionId)) continue;
       const tokenUsage = readLatestGrokTokenUsage(s.dir);
-      result.set(cwd, {
+      result.set(s.sessionId, {
         sessionId: s.sessionId,
         title: s.title,
         firstPrompt: s.firstPrompt,
         tokenUsage: s.modelId ? { ...tokenUsage, model: s.modelId } : tokenUsage,
-        cwd,
+        cwd: s.cwd,
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,
       });

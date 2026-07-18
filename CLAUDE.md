@@ -50,7 +50,7 @@ glasses/     # EVEN G2 smart glasses app (EvenHub SDK, built to out.ehpk)
 - **HerdrService** (`services/herdr.ts`) - Session-level operations mapping CC Hub sessions onto herdr workspaces: list (with agent detection from `pane.process_info`, native agent session ids from `agent.list`, `blocked` status), create/kill, previews, and `moveSession` — herdr's workspace order **is** the session display order, so a reorder is a `workspace.move` and nothing is stored on the cchub side
 - **HerdrUpdateService** (`services/herdr-update.ts`) - Detects herdr binary-vs-server version skew (`herdr update` swaps the binary but leaves the running server old) by parsing `herdr status --json`, cached 30s and refreshed off the dashboard poll. Reports only — applying (`herdr update` + supervised restart) is an explicit user action via `POST /api/herdr/apply-update`; never the `cchub update --auto` timer, never `--handoff`. Unreadable status degrades to no warning
 - **PaneState** (`services/pane-state.ts`) - Backend-agnostic `stripAnsi` / `detectPaneState` heuristics for peer-dialog tooling (`cchub send --wait`, `cchub peek`)
-- **ClaudeCodeService** (`services/claude-code.ts`) - Monitors Claude Code state from `.jsonl` files; session matching via herdr's native agent session id, falling back to working-dir path matching
+- **ClaudeCodeService** (`services/claude-code.ts`) - Monitors Claude Code state from `.jsonl` files; active-session matching uses only herdr's native agent session id
 - **SessionHistoryService** (`services/session-history.ts`) - Reads past Claude Code session history and conversations
 - **SessionMetadataService** (`services/session-metadata.ts`) - Persists session metadata (theme, title, last known sessions for recovery after reboot). Deliberately *not* session order — that lives in herdr
 - **SessionsService** (`services/sessions.ts`) - Session CRUD operations with file-based persistence
@@ -340,7 +340,7 @@ cchub --version
 - Run `sudo tailscale set --operator=$USER` once to allow cert generation
 - macOS: Install Tailscale via `brew install tailscale` (App Store version lacks CLI)
 - herdr must be installed (`curl -fsSL https://herdr.dev/install.sh | sh` or `brew install herdr`); cchub auto-starts `herdr server` if it isn't running, but a supervised setup (systemd user unit with `Restart=always` + `~/.config/herdr/config.toml` with `resume_agents_on_restore = true`) is strongly recommended so agent sessions survive server restarts
-- For Claude session identity/restore, install the herdr agent integration once: `herdr integration install claude`
+- For native session identity/restore, install the herdr integrations once: `herdr integration install claude` and `herdr integration install codex` (`cchub setup` installs both)
 
 ## Claude Code / Codex / Grok Hook通知連携
 
@@ -356,7 +356,7 @@ Hook → cchub notify (stdin JSON) → POST /api/notify → WebSocket broadcast 
 
 ### セットアップ手順
 
-1. Claude Code は `~/.claude/settings.json` の `hooks` に `cchub notify` を追加する。Codex は `~/.codex/config.toml` または `~/.codex/hooks.json` に追加する:
+1. Claude Code は `~/.claude/settings.json` の `hooks` に `cchub notify` を追加する。Codex は `~/.codex/hooks.json` に追加する（`config.toml` と併用するとCodexが警告するため、`cchub setup` が既存のCC Hub hookをJSONへ移行する）:
 
 ```json
 {
@@ -445,4 +445,3 @@ systemctl --user status herdr      # if supervised via systemd
 ```
 
 cchub auto-starts `herdr server` at boot when the socket (`~/.config/herdr/herdr.sock`, or `$HERDR_SOCKET_PATH`) is unreachable. herdr's own log lives at `~/.config/herdr/herdr-server.log`. Sessions (workspaces) live in the herdr server process — restarting cchub never kills them; restarting herdr restores workspaces from `session.json` and, with `resume_agents_on_restore`, resumes agent conversations natively.
-

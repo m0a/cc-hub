@@ -2,11 +2,11 @@
  * HerdrService — session-level operations on the herdr backend.
  *
  * Maps CC Hub sessions onto herdr workspaces (session id = workspace label,
- * falling back to workspace_id). Panes expose no TTY; agent detection uses
- * the pane's foreground process group instead.
+ * falling back to workspace_id). herdr's agent.list response is authoritative
+ * for the agent provider and native session identity of each pane.
  */
 
-import { detectAgentProviderFromArgs, type AgentProvider } from '../../../shared/types';
+import { isAgentProvider, type AgentProvider } from '../../../shared/types';
 import {
   herdrRpc,
   listPanes,
@@ -22,6 +22,9 @@ interface HerdrPaneInfo {
   paneId: string;
   command: string;
   path: string;
+  agent?: AgentProvider;
+  agentSessionId?: string;
+  agentStatus?: HerdrAgentStatus;
   title: string;
   tty: string;
   isActive: boolean;
@@ -53,6 +56,41 @@ interface HerdrSessionInfo {
   agentStatus?: HerdrAgentStatus;
 }
 
+export interface HerdrAgentRecord {
+  pane_id?: string;
+  agent?: string;
+  agent_status?: HerdrAgentStatus;
+  agent_session?: { kind?: string; value?: string };
+}
+
+export interface HerdrAgentPane {
+  agent: AgentProvider;
+  sessionId?: string;
+  status?: HerdrAgentStatus;
+}
+
+export function indexHerdrAgentPanes(
+  agents: HerdrAgentRecord[],
+): Map<string, HerdrAgentPane> {
+  const map = new Map<string, HerdrAgentPane>();
+  for (const record of agents) {
+    if (!record.pane_id || !record.agent || !isAgentProvider(record.agent)) continue;
+    map.set(record.pane_id, {
+      agent: record.agent,
+      sessionId:
+        record.agent_session?.kind === 'id' && record.agent_session.value
+          ? record.agent_session.value
+          : undefined,
+      status: record.agent_status,
+    });
+  }
+  return map;
+}
+
+export function herdrPaneCommand(leader: string, agentPane?: HerdrAgentPane): string {
+  return agentPane?.agent ?? leader.split(/\s+/)[0]?.split('/').pop() ?? '';
+}
+
 /** Session id for a workspace: label when present, else the workspace id. */
 function workspaceSessionId(ws: HerdrWorkspace): string {
   return ws.label && ws.label.trim() !== '' ? ws.label : ws.workspace_id;
@@ -64,7 +102,7 @@ export class HerdrService {
   // pane process info cache (pane_id → foreground process snapshot)
   private processCmdCache = new Map<
     string,
-    { cmdlines: string[]; leader: string; pid?: number; timestamp: number }
+    { leader: string; pid?: number; timestamp: number }
   >();
   private static readonly PROCESS_CMD_CACHE_TTL = 3000;
 
@@ -83,7 +121,7 @@ export class HerdrService {
 
   private async paneProcesses(
     herdrPaneId: string,
-  ): Promise<{ cmdlines: string[]; leader: string; pid?: number }> {
+  ): Promise<{ leader: string; pid?: number }> {
     const cached = this.processCmdCache.get(herdrPaneId);
     if (cached && Date.now() - cached.timestamp < HerdrService.PROCESS_CMD_CACHE_TTL) {
       return cached;
@@ -100,16 +138,11 @@ export class HerdrService {
           }>;
         };
       }>('pane.process_info', { pane_id: herdrPaneId });
-      // foreground_processes lists the whole foreground group: its first
-      // entry is the group leader (e.g. `claude`), later entries are its
-      // children (MCP servers etc.). Agent detection scans all of them.
+      // The first foreground process is used only as the plain-shell command
+      // and metrics PID. Agent identity comes exclusively from agent.list.
       const procs = res.process_info?.foreground_processes ?? [];
-      const cmdlines = procs
-        .map((p) => p.cmdline || p.argv?.join(' ') || p.name || '')
-        .filter((c) => c.length > 0);
       const leaderProc = procs[0];
       const entry = {
-        cmdlines,
         leader: leaderProc?.name || leaderProc?.cmdline || '',
         pid: typeof leaderProc?.pid === 'number' ? leaderProc.pid : undefined,
         timestamp: Date.now(),
@@ -117,43 +150,25 @@ export class HerdrService {
       this.processCmdCache.set(herdrPaneId, entry);
       return entry;
     } catch {
-      const entry = { cmdlines: [], leader: '', timestamp: Date.now() };
+      const entry = { leader: '', timestamp: Date.now() };
       this.processCmdCache.set(herdrPaneId, entry);
       return entry;
     }
   }
 
-  private static detectAgent(cmdlines: string[]): AgentProvider | undefined {
-    for (const cmd of cmdlines) {
-      const detected = detectAgentProviderFromArgs(cmd);
-      if (detected) return detected;
-    }
-    return undefined;
-  }
-
   /**
-   * pane_id → native agent session id (Claude conversation UUID etc.),
-   * reported to herdr by its agent integration hooks. Best-effort: without
-   * the integration installed the map is simply empty.
+   * pane_id → agent provider + native session id, as reported by herdr.
+   * The provider is available from herdr's runtime detection; sessionId is
+   * present only when that provider's herdr integration is installed.
    */
-  private async listAgentSessions(): Promise<Map<string, string>> {
-    const map = new Map<string, string>();
+  private async listAgentPanes(): Promise<Map<string, HerdrAgentPane>> {
     try {
-      const res = await herdrRpc<{
-        agents?: Array<{
-          pane_id?: string;
-          agent_session?: { kind?: string; value?: string };
-        }>;
-      }>('agent.list', {});
-      for (const a of res.agents ?? []) {
-        if (a.pane_id && a.agent_session?.kind === 'id' && a.agent_session.value) {
-          map.set(a.pane_id, a.agent_session.value);
-        }
-      }
+      const res = await herdrRpc<{ agents?: HerdrAgentRecord[] }>('agent.list', {});
+      return indexHerdrAgentPanes(res.agents ?? []);
     } catch {
       // enrichment only
     }
-    return map;
+    return new Map();
   }
 
   async listSessions(): Promise<HerdrSessionInfo[]> {
@@ -165,10 +180,10 @@ export class HerdrService {
     }
 
     try {
-      const [workspaces, allPanes, agentSessions] = await Promise.all([
+      const [workspaces, allPanes, agentPanes] = await Promise.all([
         listWorkspaces(),
         listPanes(),
-        this.listAgentSessions(),
+        this.listAgentPanes(),
       ]);
 
       const result: HerdrSessionInfo[] = await Promise.all(
@@ -178,10 +193,14 @@ export class HerdrService {
             wsPanes.map(async (p) => {
               const tmuxId = toTmuxPaneId(p.pane_id) ?? p.pane_id;
               const { leader, pid } = await this.paneProcesses(p.pane_id);
+              const agentPane = agentPanes.get(p.pane_id);
               return {
                 paneId: tmuxId,
-                command: leader.split(/\s+/)[0]?.split('/').pop() ?? '',
+                command: herdrPaneCommand(leader, agentPane),
                 path: p.foreground_cwd || p.cwd || '',
+                agent: agentPane?.agent,
+                agentSessionId: agentPane?.sessionId,
+                agentStatus: agentPane?.status ?? p.agent_status,
                 title: '',
                 tty: '',
                 isActive: p.focused,
@@ -191,22 +210,11 @@ export class HerdrService {
             }),
           );
 
-          // Agent detection from the pane's foreground process group (herdr
-          // also exposes agent_status natively, but it doesn't tell us WHICH
-          // agent).
-          let agent: AgentProvider | undefined;
-          let agentPanePath: string | undefined;
-          let agentPaneStatus: HerdrAgentStatus | undefined;
-          for (const p of wsPanes) {
-            const { cmdlines } = await this.paneProcesses(p.pane_id);
-            const detected = HerdrService.detectAgent(cmdlines);
-            if (detected) {
-              agent = detected;
-              agentPanePath = p.foreground_cwd || p.cwd;
-              agentPaneStatus = p.agent_status;
-              break;
-            }
-          }
+          // Keep the representative session fields paired to one pane. Prefer
+          // the currently focused agent pane, then the first agent pane.
+          const agentPane =
+            panes.find((p) => p.isActive && p.agent) ?? panes.find((p) => p.agent);
+          const agent = agentPane?.agent;
 
           const rootPane = wsPanes[0];
           const rootHerdrId = rootPane?.pane_id;
@@ -225,10 +233,8 @@ export class HerdrService {
             }
           }
 
-          const currentPath = agentPanePath ?? rootPane?.foreground_cwd ?? rootPane?.cwd;
-          const agentSessionId = wsPanes
-            .map((p) => agentSessions.get(p.pane_id))
-            .find((id) => id !== undefined);
+          const currentPath = agentPane?.path ?? rootPane?.foreground_cwd ?? rootPane?.cwd;
+          const agentSessionId = agentPane?.agentSessionId;
           // `blocked` anywhere in the workspace wins: an agent waiting on a
           // prompt is the state the user has to act on, even if the split it
           // sits in isn't the one we matched an agent process to.
@@ -236,7 +242,7 @@ export class HerdrService {
             (p) => p.agent_status === 'blocked',
           )
             ? 'blocked'
-            : agentPaneStatus;
+            : agentPane?.agentStatus;
           return {
             id: workspaceSessionId(ws),
             name: workspaceSessionId(ws),

@@ -175,31 +175,27 @@ export class CodexService {
     this.dbPath = dbPath;
   }
 
-  async getThreadsForPaths(paths: string[]): Promise<Map<string, CodexThread>> {
-    const uniquePaths = [...new Set(paths.filter(Boolean))];
-    if (uniquePaths.length === 0) return new Map();
+  async getThreadsByIds(sessionIds: string[]): Promise<Map<string, CodexThread>> {
+    const uniqueIds = [...new Set(sessionIds.filter(Boolean))];
+    if (uniqueIds.length === 0) return new Map();
 
     if (this.cache && Date.now() - this.cache.timestamp < CodexService.CACHE_TTL) {
-      return new Map(uniquePaths.flatMap(path => {
-        const thread = this.cache?.data.get(path);
-        return thread ? [[path, thread] as const] : [];
+      return new Map(uniqueIds.flatMap(sessionId => {
+        const thread = this.cache?.data.get(sessionId);
+        return thread ? [[sessionId, thread] as const] : [];
       }));
     }
 
-    const allThreads = this.loadLatestThreadsByCwd();
+    const allThreads = this.loadThreadsById();
     this.cache = { timestamp: Date.now(), data: allThreads };
 
-    return new Map(uniquePaths.flatMap(path => {
-      const thread = allThreads.get(path);
-      return thread ? [[path, thread] as const] : [];
+    return new Map(uniqueIds.flatMap(sessionId => {
+      const thread = allThreads.get(sessionId);
+      return thread ? [[sessionId, thread] as const] : [];
     }));
   }
 
-  async getThreadForPath(path: string): Promise<CodexThread | undefined> {
-    return (await this.getThreadsForPaths([path])).get(path);
-  }
-
-  private loadLatestThreadsByCwd(): Map<string, CodexThread> {
+  private loadThreadsById(): Map<string, CodexThread> {
     const result = new Map<string, CodexThread>();
     if (!existsSync(this.dbPath)) return result;
 
@@ -221,13 +217,10 @@ export class CodexService {
           updated_at_ms
         FROM threads
         WHERE archived = 0
-        ORDER BY COALESCE(updated_at_ms, updated_at * 1000, 0) DESC
       `).all();
 
       for (const row of rows) {
-        if (!result.has(row.cwd)) {
-          result.set(row.cwd, rowToThread(row));
-        }
+        result.set(row.id, rowToThread(row));
       }
     } catch {
       return new Map();

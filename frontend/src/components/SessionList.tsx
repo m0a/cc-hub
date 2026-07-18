@@ -1088,6 +1088,14 @@ function SessionItem({
 						{agentLabel && (
 							<span className="inline-flex items-center px-2 py-0.5 rounded-full font-medium bg-zinc-500/15 text-zinc-400">
 								{agentLabel}
+								{extSession.metrics?.model && (
+									<span
+										className="ml-1.5 text-zinc-500"
+										title={extSession.metrics.model}
+									>
+										{formatModelName(extSession.metrics.model)}
+									</span>
+								)}
 							</span>
 						)}
 						{typeof extSession.metrics?.contextPercent === "number" && (
@@ -1125,11 +1133,6 @@ function SessionItem({
 									{formatBytes(extSession.metrics.memoryRssBytes)}
 								</span>
 							)}
-						{extSession.metrics?.model && (
-							<span title={extSession.metrics.model}>
-								{formatModelName(extSession.metrics.model)}
-							</span>
-						)}
 					</div>
 				)}
 

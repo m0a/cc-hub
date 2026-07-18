@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.15] - 2026-07-19
+
+### Added
+- **Grok Build (xAI) を3つ目のエージェントとしてサポート** (#426): セッション作成 UI に Grok が並び、プロセス検出・resume（`grok --resume '<id>'`）・履歴/検索・会話ビュー・トークン/モデル metrics・hook 通知が Claude / Codex と同等に動く
+  - セッションストア: `~/.grok/sessions/<URLエンコードcwd>/<uuid>/` を走査（`summary.json` メタ、`chat_history.jsonl` 会話、`prompt_history.jsonl` 初回プロンプト、`updates.jsonl` の `turn_completed` トークン使用量）。エンコード照合はディレクトリ名の `decodeURIComponent` で行い、再エンコードによる不一致を構造的に排除
+  - hook 通知: Grok は `~/.claude/settings.json` の hooks を互換レイヤで読むため設定不要で発火するが、stdin JSON が camelCase 独自形式（`hookEventName: "stop"` / `sessionId` / `transcriptPath`）のため `/api/notify` で Claude 形式に正規化（`normalizeHookBody`、実キャプチャしたペイロードをフィクスチャ化）。Grok transcript（updates.jsonl）用の通知本文生成も追加
+  - herdr は Grok 未対応のため、インジケータは hook ベース（Codex と同方式）
+- **ダッシュボードに Grok タブ** (#429): xAI はレート制限ウィンドウをローカルに保存しないため、サイクル使用率の代わりに消費量を集計表示 — 24時間/7日間のトークン合計・ターン数、モデル別内訳、プランバッジ（`*-free` モデル → Free）。タブバーは「使用量データがあるプロバイダを並べる」方式に汎用化
+- **MIT LICENSE** (#428)
+
+### Changed
+- **エージェント追加をレジストリ+インターフェース実装だけで済む構造に抽象化** (#426): `AGENT_PROVIDERS`（shared/types.ts）に `displayName` を追加し `threadAgentOf()` を新設。backend は `AgentThreadService` / `AgentHistoryProvider` 共通インターフェース（`services/agent-providers.ts`）のプロバイダマップをルートがループする方式にし、約20箇所の `=== 'codex'` ハードコード分岐を排除。frontend は `useCodexConversation` を `useThreadConversation(agent, ...)` に汎用化、バッジ色は `utils/agentDisplay.ts` に集約
+- **セッションリストのモデル名表示をエージェントバッジに統合** (#427): `Claude ⏺ Opus 4.8` のようにバッジ内へ表示し、行のスペースを節約
+
 ## [0.2.14] - 2026-07-18
 
 ### Changed

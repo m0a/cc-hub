@@ -172,6 +172,7 @@ export async function computeSessionMetrics(input: MetricsInput): Promise<Sessio
       metrics.totalOutputTokens = usage.totalOutputTokens;
       // Effective usage = input + cache_creation + output (cache_read is billed at 10%, treated as noise)
       metrics.totalTokens = usage.totalInputTokens + usage.totalCacheCreationTokens + usage.totalOutputTokens;
+      metrics.model = usage.latestModel;
     }
   }
 

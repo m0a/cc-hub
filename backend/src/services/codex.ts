@@ -11,6 +11,7 @@ interface CodexTokenUsage {
   totalCacheReadTokens?: number;
   totalOutputTokens?: number;
   totalTokens?: number;
+  model?: string;
 }
 
 export interface CodexThread {
@@ -101,15 +102,30 @@ function tokenUsageFromLine(line: string): CodexTokenUsage | undefined {
   };
 }
 
+function modelFromLine(line: string): string | undefined {
+  try {
+    const event = JSON.parse(line) as { type?: string; payload?: { model?: unknown } };
+    if (event.type !== 'turn_context') return undefined;
+    const model = event.payload?.model;
+    return typeof model === 'string' && model ? model : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function findLatestTokenUsageInText(text: string): CodexTokenUsage | undefined {
   const lines = text.split('\n');
+  let usage: CodexTokenUsage | undefined;
+  let model: string | undefined;
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]?.trim();
-    if (!line?.includes('"token_count"')) continue;
-    const usage = tokenUsageFromLine(line);
-    if (usage) return usage;
+    if (!line) continue;
+    if (!usage && line.includes('"token_count"')) usage = tokenUsageFromLine(line);
+    if (!model && line.includes('"turn_context"')) model = modelFromLine(line);
+    if (usage && model) break;
   }
-  return undefined;
+  if (!usage && !model) return undefined;
+  return { ...usage, model };
 }
 
 function readLatestTokenUsage(rolloutPath?: string | null): CodexTokenUsage | undefined {

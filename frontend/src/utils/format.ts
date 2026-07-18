@@ -21,6 +21,25 @@ export function formatRelativeTime(
 }
 
 /**
+ * Compress a model id into a short display name.
+ * Claude ids ("claude-opus-4-8-20250815", "claude-3-5-sonnet-20241022") become
+ * "Opus 4.8" / "Sonnet 3.5"; anything else (e.g. Codex "gpt-5.6-sol") is
+ * returned unchanged.
+ */
+export function formatModelName(modelId: string): string {
+	if (!modelId.startsWith("claude-")) return modelId;
+	const tokens = modelId
+		.slice("claude-".length)
+		.split("-")
+		.filter((tok) => !/^\d{8}$/.test(tok)); // drop the release-date suffix
+	const family = tokens.find((tok) => /^[a-z]/i.test(tok));
+	if (!family) return modelId;
+	const version = tokens.filter((tok) => /^\d+$/.test(tok)).join(".");
+	const name = family.charAt(0).toUpperCase() + family.slice(1);
+	return version ? `${name} ${version}` : name;
+}
+
+/**
  * Format a duration in minutes into a localized "Xm" / "Xh Ym" / "Xh" string.
  * Returns null for zero/undefined so callers can omit the field entirely.
  */

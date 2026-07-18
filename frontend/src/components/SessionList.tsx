@@ -43,7 +43,7 @@ import {
 	useSessions,
 } from "../hooks/useSessions";
 import { sessionFetch } from "../services/peer-fetch";
-import { formatRelativeTime } from "../utils/format";
+import { formatModelName, formatRelativeTime } from "../utils/format";
 import { toHomeShortPath } from "../utils/path";
 
 // Theme color mapping
@@ -1124,16 +1124,11 @@ function SessionItem({
 									{formatBytes(extSession.metrics.memoryRssBytes)}
 								</span>
 							)}
-						{typeof extSession.metrics?.totalTokens === "number" &&
-							extSession.metrics.totalTokens > 0 && (
-								<span
-									className="font-mono tabular-nums"
-									title={`input + cache_creation + output (excludes cache_read)\n\nin: ${extSession.metrics.totalInputTokens?.toLocaleString() ?? 0}\ncache create: ${extSession.metrics.totalCacheCreationTokens?.toLocaleString() ?? 0}\ncache read: ${extSession.metrics.totalCacheReadTokens?.toLocaleString() ?? 0}\nout: ${extSession.metrics.totalOutputTokens?.toLocaleString() ?? 0}`}
-								>
-									<span className="text-zinc-600">used</span>{" "}
-									{formatTokenCount(extSession.metrics.totalTokens)}
-								</span>
-							)}
+						{extSession.metrics?.model && (
+							<span title={extSession.metrics.model}>
+								{formatModelName(extSession.metrics.model)}
+							</span>
+						)}
 					</div>
 				)}
 

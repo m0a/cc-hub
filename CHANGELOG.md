@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.16] - 2026-07-19
+
+### Changed
+- **複数paneセッションのジャンプメニューをpane配下に移動** (#431): Remote Control セッションのジャンプメニュー（「このターミナルへ移動」「Claudeアプリで開く」）はセッションカード単位だったため、複数pane（claude + grok 等）では対象paneが曖昧だった。複数paneのカードタップはpaneリストを直接展開し（「移動」はpane行タップが担当）、「Claudeアプリで開く」はbridge対象のagent pane行の直下にネスト表示。1paneセッションは従来のメニューを維持
+
 ## [0.2.15] - 2026-07-19
 
 ### Added

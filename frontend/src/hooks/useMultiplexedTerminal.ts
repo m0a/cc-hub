@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { PaneViewport, TmuxLayoutNode } from "../../../shared/types";
+import type { PaneDemand, PaneViewport, TmuxLayoutNode } from "../../../shared/types";
 import { authFetch, fetchWithTimeout } from "../services/api";
 import { reportWsLatency } from "../services/latency-store";
 import { appendWsToken } from "../services/peer-ws";
@@ -59,6 +59,10 @@ interface UseMultiplexedTerminalReturn {
 	) => void;
 	equalizePanes: (direction: "horizontal" | "vertical") => void;
 	sendClientInfo: (deviceType: "mobile" | "tablet" | "desktop") => void;
+	// Report the sizes at which this client currently renders each pane it shows
+	// (per-client sizing). Additive to `resize`; the server reconciles one PTY
+	// size per pane across clients.
+	sendPaneDemands: (demands: Record<string, PaneDemand>) => void;
 	// Ask the server for the viewport `offset` rows above the live edge.
 	// offset=0 == live mode; the server will keep pushing unsolicited
 	// updates whenever output arrives. offset>0 silences unsolicited pushes
@@ -687,6 +691,13 @@ export function useMultiplexedTerminal(
 		[],
 	);
 
+	const sendPaneDemands = useCallback(
+		(demands: Record<string, PaneDemand>) => {
+			sendSessionMessage({ type: "pane-demands", demands });
+		},
+		[],
+	);
+
 	const requestViewport = useCallback((paneId: string, offset: number) => {
 		sendSessionMessage({ type: "request-viewport", paneId, offset });
 	}, []);
@@ -748,6 +759,7 @@ export function useMultiplexedTerminal(
 		setSplitRatios,
 		equalizePanes,
 		sendClientInfo,
+		sendPaneDemands,
 		requestViewport,
 		zoomPane,
 		respawnPane,

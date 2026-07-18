@@ -297,9 +297,13 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 					isConnected: controlTerminal.isConnected,
 					onResize: (cols: number, rows: number) => {
 						controlTerminal.resize(cols, rows);
+						// Mobile shows exactly one pane at a time, so its per-client
+						// demand is that pane at the full-screen size (per-client sizing).
+						controlTerminal.sendPaneDemands({ [currentPaneId]: { cols, rows } });
 					},
 					forceResize: (cols: number, rows: number) => {
 						controlTerminal.resize(cols, rows);
+						controlTerminal.sendPaneDemands({ [currentPaneId]: { cols, rows } });
 					},
 					scrollBy: (lines: number) => {
 						// Same sign convention as `term.scrollLines`: positive = toward live

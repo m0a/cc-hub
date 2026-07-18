@@ -755,6 +755,16 @@ export interface PaneModes {
   altScreen: boolean;      // alternate screen buffer active (vim, htop, etc.)
 }
 
+// A client's reported render size for one pane it is currently displaying.
+// Part of the per-client sizing model (see `pane-demands`): instead of one
+// shared session size + a shared zoom, each client reports the size at which
+// it shows each visible pane, and the server reconciles a single PTY size per
+// pane. A client that shows only one pane (mobile) reports just that pane.
+export interface PaneDemand {
+  cols: number;
+  rows: number;
+}
+
 export interface PaneViewport {
   paneId: string;
   cols: number;            // pane width (cells)
@@ -780,6 +790,12 @@ export type ControlClientMessage =
   | { type: 'select-pane'; paneId: string }
   | { type: 'ping'; timestamp: number }
   | { type: 'client-info'; deviceType: 'mobile' | 'tablet' | 'desktop' }
+  // Per-client sizing (see `PaneDemand`): the sizes at which THIS client is
+  // currently rendering each pane it displays. Keyed by tmux-style `%N`. The
+  // server reconciles one PTY size per pane across all clients' demands. A
+  // client sends only the panes it shows (mobile: one; desktop: its split
+  // rects). Additive to `resize`; ignored unless per-client sizing is enabled.
+  | { type: 'pane-demands'; demands: Record<string, PaneDemand> }
   | { type: 'adjust-pane'; paneId: string; direction: 'L' | 'R' | 'U' | 'D'; amount: number }
   // Set the ratios of specific splits in one shot. Each entry identifies a
   // split as the lowest common ancestor of paneA and paneB (expected direction
@@ -866,9 +882,17 @@ const controlClientMessageOptions = [
       .max(32),
   }),
   z.object({ type: z.literal('equalize-panes'), direction: z.enum(['horizontal', 'vertical']) }),
-  z.object({ type: z.literal('zoom-pane'), paneId: PaneIdSchema }),
+  // `zoomed` carries the explicit zoom/unzoom intent; without it here zod
+  // strips the field and the server silently falls back to toggle semantics.
+  z.object({ type: z.literal('zoom-pane'), paneId: PaneIdSchema, zoomed: z.boolean().optional() }),
   z.object({ type: z.literal('respawn-pane'), paneId: PaneIdSchema }),
   z.object({ type: z.literal('request-viewport'), paneId: PaneIdSchema, offset: WsOffset }),
+  z.object({
+    type: z.literal('pane-demands'),
+    demands: z
+      .record(PaneIdSchema, z.object({ cols: WsPaneDim, rows: WsPaneDim }))
+      .refine((d) => Object.keys(d).length <= 64, { message: 'too many pane demands' }),
+  }),
 ] as const;
 
 export const MuxClientMessageSchema = z.discriminatedUnion('type', [

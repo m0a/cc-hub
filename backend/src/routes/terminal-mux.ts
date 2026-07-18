@@ -631,6 +631,10 @@ async function handleControlMessage(
         await controlSession.adjustPaneSize(msg.paneId, msg.direction, msg.amount);
         break;
       }
+      case 'set-split-ratios': {
+        await controlSession.setSplitRatios(msg.entries);
+        break;
+      }
       case 'equalize-panes': {
         await controlSession.equalizePanes(msg.direction);
         break;

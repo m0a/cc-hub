@@ -98,6 +98,18 @@ function findPaneById(node: PaneNode, id: string): PaneNode | null {
 	return null;
 }
 
+// First terminal (leaf) pane id under a node, in depth-first order.
+function firstLeafId(node: PaneNode): string | null {
+	if (node.type === "terminal") return node.id;
+	if (node.type === "split") {
+		for (const child of node.children) {
+			const id = firstLeafId(child);
+			if (id) return id;
+		}
+	}
+	return null;
+}
+
 // Compute total tmux window size by summing pane sizes from the layout tree.
 // tmux needs: horizontal splits → sum cols + borders, vertical → sum rows + borders.
 // When useProposed=true, uses proposeDimensions() (what fits the container) instead of
@@ -149,22 +161,89 @@ function getAllPaneIds(node: PaneNode): string[] {
 	return [node.id];
 }
 
-// Update split ratio in tree
-function updateRatio(
+// Boundary-style divider drag. Moving the divider between children[i] and
+// children[i+1] of `splitId` must move ONLY that boundary on screen: the two
+// panes touching it absorb the delta, every other pane keeps its absolute
+// size (tmux semantics). Inside each adjacent child, same-direction splits
+// along the touching edge renormalize their ratios to hold the interior
+// boundaries still; cross-direction splits pass the change through to all
+// children (each of their rows/columns touches the dragged boundary).
+// Returns the original root unchanged when any resulting ratio would leave
+// [10, 90] — the drag hard-stops at the limit instead of crushing a pane.
+function applyBoundaryDrag(
 	root: PaneNode,
-	nodeId: string,
-	ratio: number[],
+	splitId: string,
+	newRatio: number[],
+	dividerIndex: number,
 ): PaneNode {
-	if (root.id === nodeId && root.type === "split") {
-		return { ...root, ratio };
-	}
-	if (root.type === "split") {
+	let valid = true;
+
+	// `node`'s extent along `dir` changes oldExtent→newExtent (any consistent
+	// unit); only the pane touching the dragged boundary — via `edge` — absorbs
+	// the difference.
+	const renormalize = (
+		node: PaneNode,
+		dir: "horizontal" | "vertical",
+		edge: "start" | "end",
+		oldExtent: number,
+		newExtent: number,
+	): PaneNode => {
+		if (node.type !== "split" || oldExtent <= 0 || newExtent <= 0) return node;
+		if (node.direction !== dir) {
+			return {
+				...node,
+				children: node.children.map((c) =>
+					renormalize(c, dir, edge, oldExtent, newExtent),
+				),
+			};
+		}
+		const abs = node.ratio.map((r) => (r / 100) * oldExtent);
+		const idx = edge === "end" ? abs.length - 1 : 0;
+		const absorbedOld = abs[idx] ?? 0;
+		const absorbedNew = absorbedOld + (newExtent - oldExtent);
+		abs[idx] = absorbedNew;
+		const ratio = abs.map((w) => (w / newExtent) * 100);
+		for (const r of ratio) {
+			if (r < 10 || r > 90) valid = false;
+		}
 		return {
-			...root,
-			children: root.children.map((c) => updateRatio(c, nodeId, ratio)),
+			...node,
+			ratio,
+			children: node.children.map((c, i) =>
+				i === idx ? renormalize(c, dir, edge, absorbedOld, absorbedNew) : c,
+			),
 		};
-	}
-	return root;
+	};
+
+	const walk = (node: PaneNode): PaneNode => {
+		if (node.type !== "split") return node;
+		if (node.id !== splitId) {
+			return { ...node, children: node.children.map(walk) };
+		}
+		const i = dividerIndex;
+		const oldA = node.ratio[i];
+		const oldB = node.ratio[i + 1];
+		const newA = newRatio[i];
+		const newB = newRatio[i + 1];
+		if (
+			oldA === undefined ||
+			oldB === undefined ||
+			newA === undefined ||
+			newB === undefined
+		) {
+			return node;
+		}
+		const children = node.children.map((c, ci) => {
+			if (ci === i) return renormalize(c, node.direction, "end", oldA, newA);
+			if (ci === i + 1)
+				return renormalize(c, node.direction, "start", oldB, newB);
+			return c;
+		});
+		return { ...node, ratio: newRatio, children };
+	};
+
+	const next = walk(root);
+	return valid ? next : root;
 }
 
 // Update session ID in tree
@@ -199,10 +278,16 @@ function updateAllSessionIds(root: PaneNode, sessionId: string): PaneNode {
 	return root;
 }
 
-// Convert TmuxLayoutNode to PaneNode with session IDs
+// Convert TmuxLayoutNode to PaneNode with session IDs.
+// Split ids derive from the node's PATH in the tree, not its x/y position:
+// a nested split starting at the same corner as its parent (e.g. the left
+// column of a 2x2, or the inner-left split of 4 columns) would collide under
+// position-based ids, and ratio updates addressed by id would then hit the
+// ancestor instead of the dragged split.
 function tmuxLayoutToPaneNode(
 	node: TmuxLayoutNode,
 	sessionId: string,
+	path = "r",
 ): PaneNode {
 	if (node.type === "leaf") {
 		return {
@@ -212,8 +297,8 @@ function tmuxLayoutToPaneNode(
 		};
 	}
 
-	const children = (node.children || []).map((c) =>
-		tmuxLayoutToPaneNode(c, sessionId),
+	const children = (node.children || []).map((c, i) =>
+		tmuxLayoutToPaneNode(c, sessionId, `${path}.${i}`),
 	);
 	const isHorizontal = node.type === "horizontal";
 	const totalSize = (node.children || []).reduce(
@@ -232,7 +317,7 @@ function tmuxLayoutToPaneNode(
 		direction: isHorizontal ? "horizontal" : "vertical",
 		children,
 		ratio,
-		id: `split-${node.x}-${node.y}`,
+		id: `split-${path}`,
 	};
 }
 
@@ -761,19 +846,35 @@ export function DesktopLayout({
 		return tmuxLayoutToPaneNode(controlLayout, controlSessionId);
 	}, [controlLayout, controlSessionId]);
 
-	// Update desktopState when control pane tree changes
-	useEffect(() => {
-		if (!controlPaneTree) return;
-		const allPanes = getAllPaneIds(controlPaneTree);
+	// While a divider is actively dragged (real pointer/touch down..up, reported
+	// by SplitContainer), keep the optimistic local ratios and defer any
+	// incoming server tree. Applying it mid-drag would snap every divider to
+	// the server's freshly-rounded ratios, so dragging one divider visibly
+	// nudges the others.
+	const dividerDragActiveRef = useRef(false);
+	const pendingControlTreeRef = useRef<PaneNode | null>(null);
+
+	const applyControlTree = useCallback((tree: PaneNode) => {
+		const allPanes = getAllPaneIds(tree);
 		setDesktopState((prev) => ({
-			root: controlPaneTree,
+			root: tree,
 			activePane: allPanes.includes(prev.activePane)
 				? prev.activePane
 				: allPanes[0] || prev.activePane,
 		}));
+	}, []);
+
+	// Update desktopState when control pane tree changes
+	useEffect(() => {
+		if (!controlPaneTree) return;
+		if (dividerDragActiveRef.current) {
+			pendingControlTreeRef.current = controlPaneTree;
+			return;
+		}
 		// Note: tmux zoom does NOT change %layout-change notifications.
 		// Zoom state is tracked purely in frontend via zoomedPaneId.
-	}, [controlPaneTree]);
+		applyControlTree(controlPaneTree);
+	}, [controlPaneTree, applyControlTree]);
 
 	// Build control mode context for PaneContainer.
 	// Always defined - Terminal components always use control mode.
@@ -818,6 +919,14 @@ export function DesktopLayout({
 				},
 				forceResize: (cols: number, rows: number) => {
 					if (!controlTerminalRef.current.isConnected) return;
+					// forceResize sets the WHOLE client size. That is only correct when a
+					// single pane fills the window (pane size == client size). With
+					// multiple panes, a per-pane proposal (~1/N of the width) must NOT be
+					// sent as the client size — doing so collapses the layout and the
+					// client oscillates violently between one pane's width and the real
+					// window width. Let normal convergence (sendControlResize + the ±3
+					// tolerance) reconcile the per-pane rounding instead.
+					if (getAllPaneIds(desktopStateRef.current.root).length > 1) return;
 					// Send the requested geometry without consulting the dedup cache;
 					// this is the escape hatch when tmux's pane size disagrees with
 					// what we last sent (e.g. window-size policy held it stuck).
@@ -1285,41 +1394,64 @@ export function DesktopLayout({
 		[],
 	);
 
-	// Debounced per-pane resize after drag: sends resize-pane to tmux for each pane
-	const paneResizeTimerRef = useRef<number | null>(null);
+	// True when at least one ratio change happened during the current drag, so
+	// drag-end knows whether there is anything to sync to the server.
+	const dividerDragDirtyRef = useRef(false);
 
-	const sendPaneResizes = useCallback(() => {
-		if (paneResizeTimerRef.current) {
-			clearTimeout(paneResizeTimerRef.current);
-		}
-		paneResizeTimerRef.current = window.setTimeout(() => {
-			if (!controlTerminalRef.current.isConnected) return;
-			const root = desktopStateRef.current.root;
-			const allPanes = getAllPaneIds(root);
-			for (const paneId of allPanes) {
-				const ref = terminalRefs.current?.get(paneId);
-				const proposed = ref?.getProposedSize?.();
-				if (proposed && proposed.cols > 0 && proposed.rows > 0) {
-					controlTerminalRef.current.resizePane(
-						paneId,
-						proposed.cols,
-						proposed.rows,
-					);
-				}
-			}
-		}, 200);
-	}, []);
-
+	// During a drag, only the local (optimistic) tree updates — nothing is
+	// sent. On release, handleSplitDragStateChange syncs the ratios once.
 	const handleSplitRatioChange = useCallback(
-		(nodeId: string, ratio: number[]) => {
+		(nodeId: string, ratio: number[], dividerIndex: number) => {
+			dividerDragDirtyRef.current = true;
 			setDesktopState((prev) => ({
 				...prev,
-				root: updateRatio(prev.root, nodeId, ratio),
+				root: applyBoundaryDrag(prev.root, nodeId, ratio, dividerIndex),
 			}));
-			// After CSS ratio changes, tell tmux to resize individual panes
-			sendPaneResizes();
 		},
-		[sendPaneResizes],
+		[],
+	);
+
+	const handleSplitDragStateChange = useCallback(
+		(active: boolean) => {
+			dividerDragActiveRef.current = active;
+			if (active) return;
+			// Drag ended. Any tree deferred mid-drag predates the final ratios —
+			// drop it; the layout push answering set-split-ratios supersedes it.
+			pendingControlTreeRef.current = null;
+			const dirty = dividerDragDirtyRef.current;
+			dividerDragDirtyRef.current = false;
+			if (!dirty || !controlTerminalRef.current.isConnected) return;
+			// A boundary drag renormalizes several splits, so sync ALL split
+			// ratios in one atomic relayout — idempotent, no diffing needed. Each
+			// split is identified for the server by one leaf from each side:
+			// their lowest common ancestor is exactly that split, which sidesteps
+			// the "deepest same-direction ancestor" ambiguity of pane-size-based
+			// resizing (h[h[A,B],C]'s outer divider is unreachable per-pane).
+			const entries: Array<{
+				paneA: string;
+				paneB: string;
+				dir: "h" | "v";
+				ratio: number;
+			}> = [];
+			const collect = (node: PaneNode): void => {
+				if (node.type !== "split") return;
+				node.children.forEach(collect);
+				if (node.children.length !== 2) return; // server splits are binary
+				const paneA = firstLeafId(node.children[0]);
+				const paneB = firstLeafId(node.children[1]);
+				const share = (node.ratio[0] ?? 50) / 100;
+				if (!paneA || !paneB || !Number.isFinite(share)) return;
+				entries.push({
+					paneA,
+					paneB,
+					dir: node.direction === "horizontal" ? "h" : "v",
+					ratio: Math.min(0.9, Math.max(0.1, share)),
+				});
+			};
+			collect(desktopStateRef.current.root);
+			controlTerminalRef.current.setSplitRatios(entries.slice(0, 32));
+		},
+		[],
 	);
 
 	// Compute the display root: when zoomed, show only the zoomed pane full-screen.
@@ -1515,6 +1647,7 @@ export function DesktopLayout({
 						onSelectSession={handleSelectSessionForPane}
 						onSessionStateChange={onSessionStateChange}
 						onSplitRatioChange={handleSplitRatioChange}
+						onSplitDragStateChange={handleSplitDragStateChange}
 						onClosePane={handleClosePane}
 						onSplit={handleSplit}
 						sessions={sessions}

@@ -147,6 +147,73 @@ describe('herdrLayoutToNode', () => {
   });
 });
 
+describe('PaneLayoutTree.setSplitRatio', () => {
+	test('sets the ratio of a simple two-pane split', () => {
+		const t = twoPane(); // h[%1, %2]
+		expect(t.setSplitRatio('%1', '%2', 'h', 0.25)).toBe(true);
+		const rects = t.computeRects(161, 40); // usable 160
+		expect(rects.get('%1')?.width).toBeCloseTo(40, -1);
+	});
+
+	test('reversed pane order inverts the share', () => {
+		const t = twoPane();
+		expect(t.setSplitRatio('%2', '%1', 'h', 0.25)).toBe(true);
+		// %2's side gets 25% → %1 gets 75%
+		const rects = t.computeRects(161, 40);
+		expect(rects.get('%1')?.width).toBeCloseTo(120, -1);
+	});
+
+	test('nested same-direction splits: outer divider is addressable', () => {
+		// h[h[%1,%3], %2] — the exact shape setPaneSize cannot reach: every
+		// pane's deepest h-ancestor is the inner split.
+		const t = new PaneLayoutTree();
+		t.setInitialPanes(['%1']);
+		t.split('%1', 'h', '%2');
+		t.split('%1', 'h', '%3');
+		expect(t.setSplitRatio('%3', '%2', 'h', 0.75)).toBe(true);
+		const rects = t.computeRects(161, 40);
+		// Outer first side (containing %1+%3) gets ~75% of usable 160 = ~120.
+		const leftSide = (rects.get('%1')?.width ?? 0) + (rects.get('%3')?.width ?? 0) + 1;
+		expect(leftSide).toBeCloseTo(120, -1);
+		// Inner split untouched: %1 and %3 still share their side evenly.
+		expect(Math.abs((rects.get('%1')?.width ?? 0) - (rects.get('%3')?.width ?? 0))).toBeLessThanOrEqual(1);
+	});
+
+	test('2x2 grid: root ratio changes, column-internal splits untouched', () => {
+		// h[v[%1,%3], v[%2,%4]]
+		const t = new PaneLayoutTree();
+		t.setInitialPanes(['%1']);
+		t.split('%1', 'h', '%2');
+		t.split('%1', 'v', '%3');
+		t.split('%2', 'v', '%4');
+		expect(t.setSplitRatio('%1', '%2', 'h', 0.25)).toBe(true);
+		const rects = t.computeRects(161, 41);
+		expect(rects.get('%1')?.width).toBeCloseTo(40, -1);
+		expect(rects.get('%3')?.width).toBeCloseTo(40, -1);
+		// Vertical splits keep their even share.
+		expect(Math.abs((rects.get('%1')?.height ?? 0) - (rects.get('%3')?.height ?? 0))).toBeLessThanOrEqual(1);
+	});
+
+	test('direction mismatch is rejected without modifying the tree', () => {
+		const t = twoPane(); // h split
+		expect(t.setSplitRatio('%1', '%2', 'v', 0.25)).toBe(false);
+		const rects = t.computeRects(161, 40);
+		expect(rects.get('%1')?.width).toBeCloseTo(80, -1); // still ~50%
+	});
+
+	test('unknown pane is rejected', () => {
+		const t = twoPane();
+		expect(t.setSplitRatio('%1', '%9', 'h', 0.25)).toBe(false);
+	});
+
+	test('ratio is clamped to the valid range', () => {
+		const t = twoPane();
+		expect(t.setSplitRatio('%1', '%2', 'h', 0.01)).toBe(true);
+		const rects = t.computeRects(161, 40);
+		expect(rects.get('%1')?.width ?? 0).toBeGreaterThanOrEqual(16); // >= 10%
+	});
+});
+
 describe('PaneLayoutTree.split duplicate guard', () => {
   test('splitting with an id already in the tree does not create a duplicate leaf', () => {
     const t = twoPane();

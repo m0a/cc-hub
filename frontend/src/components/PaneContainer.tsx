@@ -73,7 +73,16 @@ interface PaneContainerProps {
 	onFocusPane: (paneId: string) => void;
 	onSelectSession: (paneId: string, sessionId?: string) => void;
 	onSessionStateChange: (sessionId: string, state: SessionState) => void;
-	onSplitRatioChange: (nodeId: string, ratio: number[]) => void;
+	// dividerIndex = which divider moved (between children[i] and children[i+1]);
+	// parents use it for boundary-style renormalization of nested splits.
+	onSplitRatioChange: (
+		nodeId: string,
+		ratio: number[],
+		dividerIndex: number,
+	) => void;
+	// Fires when a divider drag physically starts (pointer/touch down) and
+	// ends (release). Lets the parent defer server layout application mid-drag.
+	onSplitDragStateChange?: (active: boolean) => void;
 	onClosePane: (paneId: string) => void;
 	onSplit?: (direction: "horizontal" | "vertical") => void;
 	sessions: ExtendedSession[];
@@ -90,6 +99,7 @@ export function PaneContainer({
 	onSelectSession,
 	onSessionStateChange,
 	onSplitRatioChange,
+	onSplitDragStateChange,
 	onClosePane,
 	onSplit,
 	sessions,
@@ -127,6 +137,7 @@ export function PaneContainer({
 				onSelectSession={onSelectSession}
 				onSessionStateChange={onSessionStateChange}
 				onSplitRatioChange={onSplitRatioChange}
+				onSplitDragStateChange={onSplitDragStateChange}
 				onClosePane={onClosePane}
 				onSplit={onSplit}
 				sessions={sessions}
@@ -751,7 +762,12 @@ interface SplitContainerProps {
 	onFocusPane: (paneId: string) => void;
 	onSelectSession: (paneId: string, sessionId?: string) => void;
 	onSessionStateChange: (sessionId: string, state: SessionState) => void;
-	onSplitRatioChange: (nodeId: string, ratio: number[]) => void;
+	onSplitRatioChange: (
+		nodeId: string,
+		ratio: number[],
+		dividerIndex: number,
+	) => void;
+	onSplitDragStateChange?: (active: boolean) => void;
 	onClosePane: (paneId: string) => void;
 	onSplit?: (direction: "horizontal" | "vertical") => void;
 	sessions: ExtendedSession[];
@@ -768,6 +784,7 @@ function SplitContainer({
 	onSelectSession,
 	onSessionStateChange,
 	onSplitRatioChange,
+	onSplitDragStateChange,
 	onClosePane,
 	onSplit,
 	sessions,
@@ -789,15 +806,18 @@ function SplitContainer({
 	// pointer AND touch events for the same finger, so without this each physical
 	// move rebuilt the whole pane tree twice and the divider lagged behind.
 	const rafRef = useRef<number | null>(null);
-	const pendingRatioRef = useRef<number[] | null>(null);
+	const pendingRatioRef = useRef<{ ratio: number[]; index: number } | null>(
+		null,
+	);
 	const flushRatio = useCallback(() => {
 		const pending = pendingRatioRef.current;
 		pendingRatioRef.current = null;
-		if (pending) onSplitRatioChange(nodeRef.current.id, pending);
+		if (pending)
+			onSplitRatioChange(nodeRef.current.id, pending.ratio, pending.index);
 	}, [onSplitRatioChange]);
 	const scheduleRatioChange = useCallback(
-		(ratio: number[]) => {
-			pendingRatioRef.current = ratio;
+		(ratio: number[], index: number) => {
+			pendingRatioRef.current = { ratio, index };
 			if (rafRef.current !== null) return;
 			rafRef.current = requestAnimationFrame(() => {
 				rafRef.current = null;
@@ -806,6 +826,10 @@ function SplitContainer({
 		},
 		[flushRatio],
 	);
+	// Keep the latest drag-state callback in a ref so drag handlers stay stable.
+	const dragStateChangeRef = useRef(onSplitDragStateChange);
+	dragStateChangeRef.current = onSplitDragStateChange;
+
 	const endDrag = useCallback(() => {
 		if (rafRef.current !== null) {
 			cancelAnimationFrame(rafRef.current);
@@ -814,6 +838,7 @@ function SplitContainer({
 		flushRatio(); // land exactly under the finger, not on the last frame
 		setIsDragging(null);
 		draggingRef.current = null;
+		dragStateChangeRef.current?.(false);
 	}, [flushRatio]);
 
 	// Shared ratio math for both the pointer and touch drag paths.
@@ -861,19 +886,21 @@ function SplitContainer({
 			e.currentTarget.setPointerCapture(e.pointerId);
 			setIsDragging(index);
 			draggingRef.current = index;
+			dragStateChangeRef.current?.(true);
 		},
 		[],
 	);
 
 	const handlePointerMove = useCallback(
 		(e: React.PointerEvent) => {
-			if (draggingRef.current === null) return;
+			const dragIndex = draggingRef.current;
+			if (dragIndex === null) return;
 			e.preventDefault();
 			const currentNode = nodeRef.current;
 			const clientPos =
 				currentNode.direction === "horizontal" ? e.clientX : e.clientY;
 			const ratio = computeNewRatio(clientPos);
-			if (ratio) scheduleRatioChange(ratio);
+			if (ratio) scheduleRatioChange(ratio, dragIndex);
 		},
 		[computeNewRatio, scheduleRatioChange],
 	);
@@ -893,6 +920,7 @@ function SplitContainer({
 			e.preventDefault();
 			setIsDragging(index);
 			draggingRef.current = index;
+			dragStateChangeRef.current?.(true);
 		},
 		[],
 	);
@@ -902,13 +930,15 @@ function SplitContainer({
 
 		const handleTouchMove = (e: TouchEvent) => {
 			e.preventDefault();
+			const dragIndex = draggingRef.current;
+			if (dragIndex === null) return;
 			const touch = e.touches[0];
 			if (!touch) return;
 			const currentNode = nodeRef.current;
 			const clientPos =
 				currentNode.direction === "horizontal" ? touch.clientX : touch.clientY;
 			const ratio = computeNewRatio(clientPos);
-			if (ratio) scheduleRatioChange(ratio);
+			if (ratio) scheduleRatioChange(ratio, dragIndex);
 		};
 
 		document.addEventListener("touchmove", handleTouchMove, { passive: false });
@@ -954,6 +984,7 @@ function SplitContainer({
 					onSelectSession={onSelectSession}
 					onSessionStateChange={onSessionStateChange}
 					onSplitRatioChange={onSplitRatioChange}
+					onSplitDragStateChange={onSplitDragStateChange}
 					onClosePane={onClosePane}
 					onSplit={onSplit}
 					sessions={sessions}

@@ -46,6 +46,14 @@ interface UseMultiplexedTerminalReturn {
 		direction: "L" | "R" | "U" | "D",
 		amount: number,
 	) => void;
+	setSplitRatios: (
+		entries: Array<{
+			paneA: string;
+			paneB: string;
+			dir: "h" | "v";
+			ratio: number;
+		}>,
+	) => void;
 	equalizePanes: (direction: "horizontal" | "vertical") => void;
 	sendClientInfo: (deviceType: "mobile" | "tablet" | "desktop") => void;
 	// Ask the server for the viewport `offset` rows above the live edge.
@@ -641,6 +649,24 @@ export function useMultiplexedTerminal(
 		[],
 	);
 
+	// Set several split ratios atomically (one server relayout). Each entry
+	// targets the split whose divider separates paneA from paneB; ratio =
+	// paneA's side's share, 0..1.
+	const setSplitRatios = useCallback(
+		(
+			entries: Array<{
+				paneA: string;
+				paneB: string;
+				dir: "h" | "v";
+				ratio: number;
+			}>,
+		) => {
+			if (entries.length === 0) return;
+			sendSessionMessage({ type: "set-split-ratios", entries });
+		},
+		[],
+	);
+
 	const equalizePanes = useCallback((direction: "horizontal" | "vertical") => {
 		sendSessionMessage({ type: "equalize-panes", direction });
 	}, []);
@@ -710,6 +736,7 @@ export function useMultiplexedTerminal(
 		resizePane,
 		selectPane,
 		adjustPane,
+		setSplitRatios,
 		equalizePanes,
 		sendClientInfo,
 		requestViewport,

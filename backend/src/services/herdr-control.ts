@@ -635,6 +635,28 @@ export class HerdrControlSession {
     await this.applyLayout();
   }
 
+  /**
+   * Set the ratios of several splits atomically (one relayout). Each entry
+   * targets the split whose divider separates paneA from paneB. Boundary-style
+   * divider drags renormalize a set of same-direction splits together, so
+   * applying them one-by-one would flash intermediate layouts.
+   */
+  async setSplitRatios(
+    entries: Array<{ paneA: string; paneB: string; dir: 'h' | 'v'; ratio: number }>,
+  ): Promise<void> {
+    let changed = false;
+    for (const e of entries) {
+      assertPaneId(e.paneA);
+      assertPaneId(e.paneB);
+      if (this.tree.setSplitRatio(e.paneA, e.paneB, e.dir, e.ratio)) {
+        changed = true;
+      }
+    }
+    if (changed) {
+      await this.applyLayout();
+    }
+  }
+
   async equalizePanes(direction: 'horizontal' | 'vertical'): Promise<void> {
     this.tree.equalize(direction);
     await this.applyLayout();

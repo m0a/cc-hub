@@ -718,6 +718,15 @@ export type ControlClientMessage =
   | { type: 'ping'; timestamp: number }
   | { type: 'client-info'; deviceType: 'mobile' | 'tablet' | 'desktop' }
   | { type: 'adjust-pane'; paneId: string; direction: 'L' | 'R' | 'U' | 'D'; amount: number }
+  // Set the ratios of specific splits in one shot. Each entry identifies a
+  // split as the lowest common ancestor of paneA and paneB (expected direction
+  // `dir`). Sent when a divider drag ends: boundary-style dragging adjusts the
+  // dragged split plus the same-direction splits along the boundary, so the
+  // whole consistent set is applied atomically (one relayout).
+  | {
+      type: 'set-split-ratios';
+      entries: Array<{ paneA: string; paneB: string; dir: 'h' | 'v'; ratio: number }>;
+    }
   | { type: 'equalize-panes'; direction: 'horizontal' | 'vertical' }
   | { type: 'zoom-pane'; paneId: string }
   | { type: 'respawn-pane'; paneId: string }
@@ -770,6 +779,20 @@ const controlClientMessageOptions = [
   z.object({ type: z.literal('ping'), timestamp: z.number() }),
   z.object({ type: z.literal('client-info'), deviceType: z.enum(['mobile', 'tablet', 'desktop']) }),
   z.object({ type: z.literal('adjust-pane'), paneId: PaneIdSchema, direction: z.enum(['L', 'R', 'U', 'D']), amount: WsAmount }),
+  z.object({
+    type: z.literal('set-split-ratios'),
+    entries: z
+      .array(
+        z.object({
+          paneA: PaneIdSchema,
+          paneB: PaneIdSchema,
+          dir: z.enum(['h', 'v']),
+          ratio: z.number().gt(0).lt(1),
+        }),
+      )
+      .min(1)
+      .max(32),
+  }),
   z.object({ type: z.literal('equalize-panes'), direction: z.enum(['horizontal', 'vertical']) }),
   z.object({ type: z.literal('zoom-pane'), paneId: PaneIdSchema }),
   z.object({ type: z.literal('respawn-pane'), paneId: PaneIdSchema }),

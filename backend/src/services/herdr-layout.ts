@@ -242,6 +242,51 @@ export class PaneLayoutTree {
     f.node.ratio = Math.min(MAX_RATIO, Math.max(MIN_RATIO, ratio));
   }
 
+  /**
+   * Set the ratio of the lowest common ancestor split of two panes — the one
+   * split whose divider separates paneA's subtree from paneB's, i.e. exactly
+   * the divider the user dragged. setPaneSize cannot express this: it reaches
+   * a pane's *deepest* same-direction ancestor, so the outer divider of
+   * nested same-direction splits (h[h[A,B],C]) is unaddressable per-pane.
+   * `ratio` is paneA's side's share. Returns false (no-op) when the panes
+   * don't meet at a split of the expected direction.
+   */
+  setSplitRatio(paneA: string, paneB: string, dir: 'h' | 'v', ratio: number): boolean {
+    if (!this.root || !Number.isFinite(ratio)) return false;
+    const contains = (n: LayoutNode, id: string): boolean => {
+      if (n.type === 'leaf') return n.paneId === id;
+      return contains(n.a, id) || contains(n.b, id);
+    };
+    let target: SplitNode | null = null;
+    let aInFirst = true;
+    const walk = (n: LayoutNode): void => {
+      if (n.type !== 'split') return;
+      const firstHasA = contains(n.a, paneA);
+      const firstHasB = contains(n.a, paneB);
+      if (firstHasA && firstHasB) {
+        walk(n.a);
+        return;
+      }
+      if (!firstHasA && !firstHasB) {
+        walk(n.b);
+        return;
+      }
+      const secondHasA = contains(n.b, paneA);
+      const secondHasB = contains(n.b, paneB);
+      if ((firstHasA && secondHasB) || (firstHasB && secondHasA)) {
+        target = n;
+        aInFirst = firstHasA;
+      }
+    };
+    walk(this.root);
+    if (!target) return false;
+    const split = target as SplitNode;
+    if (split.dir !== dir) return false;
+    const share = aInFirst ? ratio : 1 - ratio;
+    split.ratio = Math.min(MAX_RATIO, Math.max(MIN_RATIO, share));
+    return true;
+  }
+
   /** Reset every split of the given orientation to an even ratio. */
   equalize(direction: 'horizontal' | 'vertical'): void {
     const dir: 'h' | 'v' = direction === 'horizontal' ? 'h' : 'v';

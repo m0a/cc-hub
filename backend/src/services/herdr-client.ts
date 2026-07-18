@@ -236,6 +236,25 @@ export function herdrSubscribe(
   };
 }
 
+/**
+ * Workspace id of a received pane lifecycle event, or null when absent.
+ * Wire shapes differ per event (verified live against herdr 0.7.4 /
+ * protocol 16): `pane_created` nests it as `data.pane.workspace_id`, while
+ * `pane_closed` / `pane_exited` carry `data.workspace_id` directly.
+ */
+export function eventWorkspaceId(ev: Record<string, unknown>): string | null {
+  const data = ev.data;
+  if (!data || typeof data !== 'object') return null;
+  const d = data as Record<string, unknown>;
+  if (typeof d.workspace_id === 'string') return d.workspace_id;
+  const pane = d.pane;
+  if (pane && typeof pane === 'object') {
+    const p = pane as Record<string, unknown>;
+    if (typeof p.workspace_id === 'string') return p.workspace_id;
+  }
+  return null;
+}
+
 /** `w1:p3` → `%3` (null if the id doesn't match the herdr shape) */
 export function toTmuxPaneId(herdrPaneId: string): string | null {
   const m = herdrPaneId.match(/:p(\d+)$/);

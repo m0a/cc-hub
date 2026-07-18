@@ -14,6 +14,7 @@ export interface GrokSessionInfo {
   firstPrompt?: string;
   createdAt?: string;
   updatedAt: string;
+  modelId?: string;
 }
 
 interface GrokSummaryJson {
@@ -23,6 +24,7 @@ interface GrokSummaryJson {
   created_at?: string;
   updated_at?: string;
   last_active_at?: string;
+  current_model_id?: string;
 }
 
 /**
@@ -102,6 +104,7 @@ export class GrokSessionStore {
           firstPrompt: firstPrompts.get(sessionId) ?? summary.session_summary,
           createdAt: summary.created_at,
           updatedAt,
+          modelId: summary.current_model_id,
         });
       }));
     }));
@@ -237,7 +240,7 @@ export class GrokService implements AgentThreadService {
         sessionId: s.sessionId,
         title: s.title,
         firstPrompt: s.firstPrompt,
-        tokenUsage,
+        tokenUsage: s.modelId ? { ...tokenUsage, model: s.modelId } : tokenUsage,
         cwd,
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,

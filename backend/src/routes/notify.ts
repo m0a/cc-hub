@@ -100,6 +100,9 @@ function generateGrokSmartMessage(entries: Array<Record<string, unknown>>): stri
       case 'tool_call': {
         const name = typeof update.title === 'string' ? update.title : undefined;
         if (name && !tools.includes(name)) tools.push(name);
+        // Chunks before a tool call are intermediate narration; the summary
+        // should quote the FINAL message of the turn (same as the Claude path).
+        responseText = '';
         break;
       }
     }

@@ -9,18 +9,13 @@ interface RateLimitWindow {
   resets_at?: number; // unix epoch seconds
 }
 
-interface RateLimitsCredits {
-  has_credits?: boolean;
-  unlimited?: boolean;
-  balance?: string;
-}
-
 interface RateLimitsPayload {
   limit_id?: string;
   primary?: RateLimitWindow | null;
   secondary?: RateLimitWindow | null;
-  credits?: RateLimitsCredits | null;
   plan_type?: string;
+  /** Explicit Codex verdict; null while requests are still allowed. */
+  rate_limit_reached_type?: string | null;
 }
 
 interface TokenCountEvent {
@@ -124,7 +119,7 @@ function classifyWindow(minutes: number | undefined): 'fiveHour' | 'sevenDay' | 
 }
 
 interface RolloutScan {
-  /** Most recent rate_limits event regardless of populated windows. Carries plan/credits state. */
+  /** Most recent rate_limits event regardless of populated windows. Carries plan/limit state. */
   latest?: { event: TokenCountEvent; rateLimits: RateLimitsPayload };
   /** Most recent rate_limits event with at least one populated window. Carries cycle data. */
   windowed?: { event: TokenCountEvent; rateLimits: RateLimitsPayload };
@@ -280,20 +275,18 @@ export class CodexUsageService {
       if (info && !result[slot]) result[slot] = info;
     }
 
-    // Codex stops returning windows once the cycle is exhausted, so the windowed
-    // source can be stale by the time we read this. Detect exhaustion from the
-    // latest event's credits and override the short cycle status accordingly.
-    // If the cycle reset time has already passed, do not keep the exhausted
-    // override around; the next cycle should be reflected by a fresh event.
-    const credits = latestSource.rateLimits.credits;
-    const exhausted = !!credits && credits.has_credits === false && credits.unlimited !== true;
-    const fiveHourResetAtMs = result.fiveHour ? Date.parse(result.fiveHour.resetsAt) : Number.NaN;
-    const resetExpired = Number.isFinite(fiveHourResetAtMs) && now >= fiveHourResetAtMs;
+    // `credits.has_credits` only describes the separately purchased credit
+    // balance and is commonly false while the included plan allowance is still
+    // available. Codex exposes the actual blocking state explicitly instead.
+    // If the last known cycle has already reset, do not keep a stale exhausted
+    // verdict around while waiting for a fresh rollout event.
+    const reachedType = latestSource.rateLimits.rate_limit_reached_type;
+    const exhausted = typeof reachedType === 'string' && reachedType.length > 0;
+    const constrainingCycle = result.fiveHour ?? result.sevenDay;
+    const resetAtMs = constrainingCycle ? Date.parse(constrainingCycle.resetsAt) : Number.NaN;
+    const resetExpired = Number.isFinite(resetAtMs) && now >= resetAtMs;
     if (exhausted && !resetExpired) {
       result.rateLimitExceeded = true;
-      if (result.fiveHour) {
-        result.fiveHour = { ...result.fiveHour, utilization: 100, status: 'exceeded' };
-      }
     }
 
     if (!result.fiveHour && !result.sevenDay && !result.rateLimitExceeded) return null;

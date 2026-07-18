@@ -41,6 +41,10 @@ interface TerminalPageProps {
 	showOverlay?: boolean;
 	theme?: SessionTheme;
 	onPanesChange?: (panes: PaneLeafInfo[]) => void;
+	/** Fires when the pane actually shown full-screen changes, so the parent can
+	 *  keep its tab-bar selection in sync with server truth (e.g. after a reload
+	 *  where the server restores a zoom on a non-first pane). */
+	onActivePaneChange?: (paneId: string | null) => void;
 	externalActivePaneId?: string | null;
 	/** When set, replaces the xterm area while keeping the InputBar visible below.
 	 *  Always rendered (when truthy) so React state/subscriptions persist; visibility
@@ -62,6 +66,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 			showOverlay,
 			theme,
 			onPanesChange,
+			onActivePaneChange,
 			externalActivePaneId,
 			mainOverlay,
 			mainOverlayVisible,
@@ -94,15 +99,19 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 
 		const onPanesChangeRef = useRef(onPanesChange);
 		onPanesChangeRef.current = onPanesChange;
+		const onActivePaneChangeRef = useRef(onActivePaneChange);
+		onActivePaneChangeRef.current = onActivePaneChange;
 
-		// Track previous external pane ID for detecting actual switches
-		const prevExternalPaneIdRef = useRef<string | null | undefined>(undefined);
-
-		// Zoom state: when zoomed, layout shows only 1 pane but we preserve the full list
-		const isZoomedRef = useRef(false);
+		// Full pane list mirror (used by onConnect to re-request every pane's
+		// viewport). Always the complete list — zoom no longer collapses it.
 		const cachedPanesRef = useRef<PaneLeafInfo[]>([]);
-		// Tracks whether initial zoom has been done (for multi-pane sessions)
-		const initialZoomDoneRef = useRef(false);
+		// The pane the server currently has zoomed (tmux `%N`), taken from the
+		// layout message. Lets us re-assert zoom idempotently on reconnect
+		// instead of toggling it back off.
+		const serverZoomedPaneIdRef = useRef<string | null>(null);
+		// Previous effective active pane — distinguishes a real user switch (drop
+		// stale viewport) from the first assignment.
+		const prevActivePaneIdRef = useRef<string | null>(null);
 
 		// Multi-server: sessionId が remote peer のものなら、その peer の WS に接続する
 		const { peers } = usePeers();
@@ -146,46 +155,27 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 					}
 				}
 			},
-			onLayoutChange: (layout: TmuxLayoutNode) => {
+			onLayoutChange: (layout: TmuxLayoutNode, zoomedPaneId) => {
 				// Pane sizes may have changed; cached viewport `lines` no longer
 				// match the new column width, so drop the viewport cache.
 				paneViewportCacheRef.current.clear();
-				// Extract all leaf panes from the layout
+				// The layout is always the FULL split tree now (zoom is carried
+				// separately as zoomedPaneId), so the leaf list is the real,
+				// complete pane list — no client-side preservation needed.
 				const leaves = collectLeaves(layout);
-				console.log(
-					`[TP] layout-change: ${leaves.length} panes, zoomed=${isZoomedRef.current}, cached=${cachedPanesRef.current.length}`,
-				);
+				serverZoomedPaneIdRef.current = zoomedPaneId;
+				cachedPanesRef.current = leaves;
+				setAllPanes(leaves);
+				onPanesChangeRef.current?.(leaves);
 
-				if (
-					isZoomedRef.current &&
-					leaves.length === 1 &&
-					cachedPanesRef.current.length > 1
-				) {
-					// Zoomed: layout shows only the zoomed pane.
-					// Keep the cached pane list but update the zoomed pane's dimensions.
-					const zoomed = leaves[0];
-					const updated = cachedPanesRef.current.map((p) =>
-						p.paneId === zoomed.paneId
-							? { ...p, width: zoomed.width, height: zoomed.height }
-							: p,
-					);
-					cachedPanesRef.current = updated;
-					setAllPanes(updated);
-					onPanesChangeRef.current?.(updated);
-				} else {
-					// Normal: update the full pane list
-					cachedPanesRef.current = leaves;
-					setAllPanes(leaves);
-					onPanesChangeRef.current?.(leaves);
-				}
-
-				// If no active pane set, or active pane was removed, select the first one
+				// Pick a shown pane when none is valid: prefer the server's zoomed
+				// pane (the one that's actually full-size), else the first.
 				setActivePaneId((prev) => {
-					const currentPanes = cachedPanesRef.current;
-					if (!prev || !currentPanes.some((l) => l.paneId === prev)) {
-						return currentPanes[0]?.paneId ?? null;
+					if (prev && leaves.some((l) => l.paneId === prev)) return prev;
+					if (zoomedPaneId && leaves.some((l) => l.paneId === zoomedPaneId)) {
+						return zoomedPaneId;
 					}
-					return prev;
+					return leaves[0]?.paneId ?? null;
 				});
 			},
 			onNewSession: onNewSession,
@@ -225,61 +215,49 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 			[controlTerminal],
 		);
 
-		// When external active pane changes, zoom the pane and re-request content
+		// Keep the shown pane zoomed to fill the mobile screen. Idempotent against
+		// the server's zoom state (serverZoomedPaneIdRef), so a reconnect that
+		// finds the pane already zoomed re-asserts nothing — no accidental
+		// toggle-off, no lost tab bar. On a genuine switch we drop the target
+		// pane's stale viewport so it repaints fresh at the live edge.
 		useEffect(() => {
-			if (
-				!externalActivePaneId ||
-				!allPanes.some((p) => p.paneId === externalActivePaneId)
-			) {
-				prevExternalPaneIdRef.current = externalActivePaneId ?? null;
+			const active = effectiveActivePaneId;
+			if (!active || !allPanes.some((p) => p.paneId === active)) {
+				prevActivePaneIdRef.current = active ?? null;
 				return;
 			}
-
 			const isActualSwitch =
-				prevExternalPaneIdRef.current !== undefined &&
-				prevExternalPaneIdRef.current !== null &&
-				prevExternalPaneIdRef.current !== externalActivePaneId;
-			prevExternalPaneIdRef.current = externalActivePaneId;
+				prevActivePaneIdRef.current !== null &&
+				prevActivePaneIdRef.current !== active;
+			prevActivePaneIdRef.current = active;
 
-			const isMultiPane = cachedPanesRef.current.length > 1;
-
-			if (isMultiPane) {
-				if (!isZoomedRef.current || isActualSwitch) {
-					console.log(
-						`[TP] zoom-pane ${externalActivePaneId} (switch=${isActualSwitch}, wasZoomed=${isZoomedRef.current})`,
-					);
-					isZoomedRef.current = true;
-					initialZoomDoneRef.current = true;
-					controlTerminal.zoomPane(externalActivePaneId);
+			if (allPanes.length > 1) {
+				if (serverZoomedPaneIdRef.current !== active) {
+					controlTerminal.zoomPane(active, true);
+					// Optimistic; the next layout message confirms it.
+					serverZoomedPaneIdRef.current = active;
 				}
 			} else {
-				controlTerminal.selectPane(externalActivePaneId);
+				controlTerminal.selectPane(active);
 			}
 
 			if (isActualSwitch) {
-				lastViewportRef.current.delete(externalActivePaneId);
-				paneOffsetRef.current.delete(externalActivePaneId);
+				lastViewportRef.current.delete(active);
+				paneOffsetRef.current.delete(active);
 			}
-		}, [externalActivePaneId, allPanes, controlTerminal]);
+		}, [effectiveActivePaneId, allPanes, controlTerminal]);
+
+		// Report the shown pane up so the parent's tab bar highlights it (matters
+		// when the server restored a zoom on a non-first pane after reload).
+		useEffect(() => {
+			onActivePaneChangeRef.current?.(effectiveActivePaneId);
+		}, [effectiveActivePaneId]);
 
 		useEffect(() => {
-			if (externalActivePaneId || initialZoomDoneRef.current) return;
-			if (activePaneId && allPanes.length > 1) {
-				console.log(
-					`[TP] auto-zoom ${activePaneId} (${allPanes.length} panes)`,
-				);
-				initialZoomDoneRef.current = true;
-				isZoomedRef.current = true;
-				controlTerminal.zoomPane(activePaneId);
-			}
-		}, [activePaneId, allPanes, externalActivePaneId, controlTerminal]);
-
-		useEffect(() => {
-			prevExternalPaneIdRef.current = undefined;
+			prevActivePaneIdRef.current = null;
+			serverZoomedPaneIdRef.current = null;
 			lastViewportRef.current.clear();
 			paneOffsetRef.current.clear();
-			initialZoomDoneRef.current = false;
-			isZoomedRef.current = false;
 			cachedPanesRef.current = [];
 			controlTerminal.connect();
 			return () => {

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.18] - 2026-07-19
+
+### Fixed
+- **Codexの使用量リミット到達を誤表示する問題を修正** (#435): 追加購入クレジットが無いことを示す `credits.has_credits: false` をプラン内使用量の上限到達と誤解釈し、使用率が9%でも「リミット到達中」と表示していた。Codexが返す明示的な `rate_limit_reached_type` のみを到達判定に使い、実測使用率を推測で100%へ上書きしないようにした
+
 ## [0.2.17] - 2026-07-19
 
 ### Fixed

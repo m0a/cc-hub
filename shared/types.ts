@@ -160,6 +160,7 @@ export interface SessionMetrics {
   totalOutputTokens?: number;          // cumulative output tokens
   totalTokens?: number;                // effective usage: input + cache_creation + output (cache_read excluded)
   memoryRssBytes?: number;             // total RSS across session's panes
+  model?: string;                      // latest model id used by the agent (e.g. "claude-opus-4-8", "gpt-5.6-sol")
 }
 
 // Session names become herdr workspace labels; legacy parsers also split on

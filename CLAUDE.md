@@ -67,6 +67,9 @@ glasses/     # EVEN G2 smart glasses app (EvenHub SDK, built to out.ehpk)
 - **CodexConversationService** (`services/codex-conversation.ts`) - Reads Codex conversation transcripts and exposes them to the UI
 - **CodexUsageService** (`services/codex-usage.ts`) - Tracks Codex token usage and rate-limit state
 - **CodexHistoryService** (`services/codex-history.ts`) - Reads Codex rollout transcripts (`~/.codex/sessions`) and merges them into project history alongside Claude Code sessions
+- **AgentProviders** (`services/agent-providers.ts`) - Common `AgentThreadService` / `AgentHistoryProvider` interfaces for thread-based agents (Codex, Grok, ...). Routes iterate provider maps in `routes/sessions.ts` instead of hardcoding an agent; adding an agent = one `AGENT_PROVIDERS` registry entry in `shared/types.ts` + implementations of these interfaces
+- **GrokService / GrokSessionStore** (`services/grok.ts`) - Grok Build (xAI) integration: scans `~/.grok/sessions/<URL-encoded cwd>/<uuid>/` (`summary.json` metadata, `prompt_history.jsonl` first prompts, `updates.jsonl` `turn_completed` token usage), resolves the latest thread per working directory
+- **GrokHistoryService** (`services/grok-history.ts`) - Grok session history + conversation reader: parses `chat_history.jsonl` (user records with `prompt_index`, assistant `tool_calls`, `tool_result`) into Claude-shaped conversation turns
 - **ConversationWatcher** (`services/conversation-watcher.ts`) - Watches Claude Code / Codex `.jsonl` files and emits conversation updates to subscribed WebSocket clients
 - **HookStatusService** (`services/hook-status.ts`) - Reports whether the hooks CC Hub still needs are installed (`Stop` for notification text, `PostToolUse`/`AskUserQuestion` for the question's tool name). Indicator transitions come from herdr, not hooks
 - **HerdrAgentStatusWatcher** (`services/herdr-agent-status.ts`) - Subscribes to herdr's per-pane `pane.agent_status_changed` (plus pane lifecycle events, which re-subscribe the pane set) and triggers an immediate sessions push. Decides *when* to rebuild the list, never what's in it — a dropped event costs latency, not correctness
@@ -231,8 +234,8 @@ glasses/     # EVEN G2 smart glasses app (EvenHub SDK, built to out.ehpk)
 - **useSelectionMode.ts** - Touch-selection state machine for `SelectionOverlay` (start/end cell, drag handles, copy-to-clipboard)
 - **useInputEcho.ts** - Echoes characters typed into the InputBar back into the conversation/chat view while the terminal is hidden
 - **useConversationStream.ts** - Subscribes to `/ws/mux` conversation streams (`subscribe-conversation`) and exposes incremental conversation updates
-- **useAgentConversation.ts** - Unified conversation hook that selects between Claude Code and Codex sources for the active session
-- **useCodexConversation.ts** - Codex-specific conversation loader (transcript + token usage)
+- **useAgentConversation.ts** - Unified conversation hook: Claude streams over the WebSocket, thread agents (Codex/Grok) poll over HTTP — chosen from the shared `AGENT_PROVIDERS` registry
+- **useThreadConversation.ts** - Polling conversation loader for thread-based agents (`?agent=codex|grok`)
 - **usePeers.ts** - Peer list CRUD and state management (`/api/peers`)
 - **usePeerConnection.ts** - Resolves connection info (HTTP/WS URLs, auth) for the active peer
 - **usePeerSessionsWatcher.ts** - Persistent `/ws/mux` WebSocket per remote peer so `sessions-updated` pushes arrive without polling
@@ -338,9 +341,11 @@ cchub --version
 - herdr must be installed (`curl -fsSL https://herdr.dev/install.sh | sh` or `brew install herdr`); cchub auto-starts `herdr server` if it isn't running, but a supervised setup (systemd user unit with `Restart=always` + `~/.config/herdr/config.toml` with `resume_agents_on_restore = true`) is strongly recommended so agent sessions survive server restarts
 - For Claude session identity/restore, install the herdr agent integration once: `herdr integration install claude`
 
-## Claude Code / Codex Hook通知連携
+## Claude Code / Codex / Grok Hook通知連携
 
-Claude Code と Codex のhookイベント（応答完了、ユーザー入力待ち等）をCC Hub経由でブラウザのOS通知として受け取れる。
+Claude Code・Codex・Grok Build のhookイベント（応答完了、ユーザー入力待ち等）をCC Hub経由でブラウザのOS通知として受け取れる。
+
+Grok Build は `~/.claude/settings.json` の hooks を互換レイヤでデフォルト読み込みするため、Claude 用の `cchub notify` 設定がそのまま発火する（追加設定不要）。ただし stdin JSON は camelCase 独自形式（`hookEventName: "stop"`, `sessionId`, `transcriptPath`）なので、`/api/notify` 側で Claude 形式に正規化している（`routes/notify.ts` の `normalizeHookBody`）。
 
 ### 仕組み
 

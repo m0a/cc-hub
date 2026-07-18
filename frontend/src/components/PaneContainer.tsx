@@ -7,11 +7,12 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type {
-	AgentProvider,
-	PaneInfo,
-	SessionState,
-	SessionTheme,
+import {
+	type AgentProvider,
+	type PaneInfo,
+	type SessionState,
+	type SessionTheme,
+	isAgentProvider,
 } from "../../../shared/types";
 import { authFetch } from "../services/api";
 import { openClaudeAppSession } from "../utils/claude-app";
@@ -306,9 +307,9 @@ function TerminalPane({
 	// first render after remount (e.g. after a split) sees panes=undefined and
 	// would wrongly clear chat mode.
 	const activeTmuxPane = session?.panes?.find((p) => p.isActive);
-	const claudeRunning = activeTmuxPane?.currentCommand === "claude";
-	const codexRunning = activeTmuxPane?.currentCommand === "codex";
-	const conversationAvailable = claudeRunning || codexRunning;
+	const conversationAvailable = isAgentProvider(
+		activeTmuxPane?.currentCommand ?? "",
+	);
 	const panesLoaded = !!session?.panes;
 	useEffect(() => {
 		if (!panesLoaded) return;

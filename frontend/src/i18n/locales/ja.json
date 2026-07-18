@@ -52,7 +52,8 @@
 		"agent": "エージェント",
 		"agentProvider": {
 			"claude": "Claude",
-			"codex": "Codex"
+			"codex": "Codex",
+			"grok": "Grok"
 		},
 		"workingDirectory": "作業ディレクトリ",
 		"newFolder": "新規フォルダ",
@@ -212,6 +213,7 @@
 		"you": "You",
 		"claude": "Claude",
 		"codex": "Codex",
+		"grok": "Grok",
 		"system": "System",
 		"errorTitle": "会話を表示できません",
 		"errorMissingAgent": "セッションのエージェント情報が取得できませんでした。セッション一覧を再読み込みしてください。",

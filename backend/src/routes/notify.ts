@@ -39,11 +39,90 @@ export async function isAllowedTranscriptPath(path: string): Promise<boolean> {
   } catch {
     return false;
   }
-  for (const dir of ['.claude', '.codex']) {
+  for (const dir of ['.claude', '.codex', '.grok']) {
     const root = await realpath(`${homedir()}/${dir}`).catch(() => null);
     if (root && resolved.startsWith(`${root}/`)) return true;
   }
   return false;
+}
+
+/**
+ * Grok Build sends hook JSON with camelCase keys and snake_case event names
+ * (`{"hookEventName":"stop","sessionId":...,"transcriptPath":...}`) — even for
+ * hooks it loaded from Claude's settings.json via its compat layer. Map that
+ * shape onto the Claude field names the rest of this route understands.
+ * Bodies already in Claude shape pass through untouched.
+ */
+const GROK_EVENT_NAMES: Record<string, string> = {
+  stop: 'Stop',
+  notification: 'Notification',
+  subagent_stop: 'SubagentStop',
+  post_tool_use: 'PostToolUse',
+  pre_tool_use: 'PreToolUse',
+  user_prompt_submit: 'UserPromptSubmit',
+  session_start: 'SessionStart',
+  session_end: 'SessionEnd',
+};
+
+export function normalizeHookBody(body: Record<string, unknown>): Record<string, unknown> {
+  if (body.hook_event_name || typeof body.hookEventName !== 'string') return body;
+  const { hookEventName, sessionId, transcriptPath, toolName, ...rest } = body;
+  const normalized: Record<string, unknown> = {
+    ...rest,
+    hook_event_name: GROK_EVENT_NAMES[hookEventName as string] ?? hookEventName,
+  };
+  if (typeof sessionId === 'string') normalized.session_id = sessionId;
+  if (typeof transcriptPath === 'string') normalized.transcript_path = transcriptPath;
+  if (typeof toolName === 'string') normalized.tool_name = toolName;
+  return normalized;
+}
+
+/**
+ * Grok の transcript (updates.jsonl, JSON-RPC session/update ストリーム) から
+ * 通知メッセージを生成する。最後の user_message_chunk 以降の
+ * agent_message_chunk を連結して最後の応答本文とみなす。
+ */
+function generateGrokSmartMessage(entries: Array<Record<string, unknown>>): string | undefined {
+  const tools: string[] = [];
+  let responseText = '';
+  for (const entry of entries) {
+    const update = (entry.params as { update?: Record<string, unknown> } | undefined)?.update;
+    if (!update) continue;
+    switch (update.sessionUpdate) {
+      case 'user_message_chunk':
+        responseText = '';
+        break;
+      case 'agent_message_chunk': {
+        const text = (update.content as { text?: string } | undefined)?.text;
+        if (typeof text === 'string') responseText += text;
+        break;
+      }
+      case 'tool_call': {
+        const name = typeof update.title === 'string' ? update.title : undefined;
+        if (name && !tools.includes(name)) tools.push(name);
+        break;
+      }
+    }
+  }
+
+  let action: string;
+  const hasTool = (pattern: RegExp) => tools.some((t) => pattern.test(t));
+  if (hasTool(/edit|write|create_file|apply_patch/i)) action = 'ファイル編集完了';
+  else if (hasTool(/terminal|bash|command/i)) action = 'コマンド実行完了';
+  else if (hasTool(/read|search|grep|glob/i)) action = '調査完了';
+  else action = '完了';
+
+  let inCodeBlock = false;
+  for (const line of responseText.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) { inCodeBlock = !inCodeBlock; continue; }
+    if (inCodeBlock) continue;
+    if (trimmed && trimmed.length > 5) {
+      const summary = trimmed.length > 80 ? `${trimmed.slice(0, 77)}...` : trimmed;
+      return `${action}: ${summary}`;
+    }
+  }
+  return action;
 }
 
 /** transcriptファイルからコンテキストに応じた通知メッセージを生成する */
@@ -54,6 +133,11 @@ async function generateSmartMessage(transcriptPath: string, _event: string): Pro
     for (const line of recentLines) {
       if (!line) continue;
       try { entries.push(JSON.parse(line)); } catch {}
+    }
+
+    // Grok transcript は Claude の .jsonl と行形式が違うので専用パスへ
+    if (entries.some((e) => e?.method === 'session/update')) {
+      return generateGrokSmartMessage(entries);
     }
 
     // 使用されたツールを収集
@@ -170,8 +254,8 @@ export function getIndicatorOverride(ccSessionId: string): { state: IndicatorSta
  */
 notify.post('/', async (c) => {
   try {
-    const body = await c.req.json();
-    const event = body.hook_event_name || body.event || 'unknown';
+    const body = normalizeHookBody(await c.req.json());
+    const event = String(body.hook_event_name || body.event || 'unknown');
     const cwd = body.cwd as string | undefined;
     const sessionId = body.session_id as string | undefined;
 

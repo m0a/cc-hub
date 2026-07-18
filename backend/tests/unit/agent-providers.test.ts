@@ -6,6 +6,7 @@ import {
   agentResumeCommand,
   agentSupportsConversationMetadata,
   detectAgentProviderFromArgs,
+  threadAgentOf,
 } from '../../../shared/types';
 import { homedir } from 'node:os';
 import { agentStartCommand, expandHome, findDuplicateAgentWorkingDirSession, shellQuote } from '../../src/routes/sessions';
@@ -29,6 +30,12 @@ describe('Agent provider registry', () => {
     expect(parsed.agent).toBe('codex');
   });
 
+  test('accepts Grok as a create-session agent', () => {
+    const parsed = CreateSessionSchema.parse({ name: 'example', agent: 'grok' });
+
+    expect(parsed.agent).toBe('grok');
+  });
+
   test('rejects unsupported create-session agents', () => {
     const parsed = CreateSessionSchema.safeParse({ name: 'example', agent: 'gemini' });
 
@@ -41,11 +48,22 @@ describe('Agent provider registry', () => {
     expect(detectAgentProviderFromArgs('/home/user/.local/share/claude/versions/2.1.123/claude')).toBe('claude');
     expect(detectAgentProviderFromArgs('codex')).toBe('codex');
     expect(detectAgentProviderFromArgs('/home/user/.bun/install/global/node_modules/@openai/codex/bin/codex.js')).toBe('codex');
+    expect(detectAgentProviderFromArgs('grok')).toBe('grok');
+    expect(detectAgentProviderFromArgs('/home/user/.grok/bin/grok -p prompt')).toBe('grok');
   });
 
   test('does not detect provider names inside unrelated paths', () => {
     expect(detectAgentProviderFromArgs('/tmp/.claude/shell-snapshots/claude-foo-cwd')).toBeUndefined();
     expect(detectAgentProviderFromArgs('/tmp/codex-project/run.sh')).toBeUndefined();
+    expect(detectAgentProviderFromArgs('vim /home/user/.grok/config.toml')).toBeUndefined();
+  });
+
+  test('threadAgentOf identifies thread-based agents only', () => {
+    expect(threadAgentOf('codex')).toBe('codex');
+    expect(threadAgentOf('grok')).toBe('grok');
+    expect(threadAgentOf('claude')).toBeUndefined();
+    expect(threadAgentOf('bash')).toBeUndefined();
+    expect(threadAgentOf(undefined)).toBeUndefined();
   });
 
   test('exposes provider capabilities', () => {
@@ -92,5 +110,7 @@ describe('Agent provider registry', () => {
     expect(agentResumeCommand('claude', 'abc-123')).toBe("claude -r 'abc-123'");
     expect(agentResumeCommand('codex')).toBe('codex resume');
     expect(agentResumeCommand('codex', 'thread-xyz')).toBe("codex resume 'thread-xyz'");
+    expect(agentResumeCommand('grok')).toBe('grok --resume');
+    expect(agentResumeCommand('grok', 'session-abc')).toBe("grok --resume 'session-abc'");
   });
 });

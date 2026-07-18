@@ -1,32 +1,36 @@
 import { useEffect, useState } from "react";
-import type { ConversationMessage } from "../../../shared/types";
+import type { AgentProvider, ConversationMessage } from "../../../shared/types";
 import { authFetch } from "../services/api";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
-interface UseCodexConversationOptions {
-	/** Codex thread id (rollout-keyed UUID). */
+interface UseThreadConversationOptions {
+	/** Thread-based provider (codex, grok, ...) the thread id belongs to. */
+	agent: AgentProvider | undefined;
+	/** The agent's own session/thread id. */
 	threadId: string | undefined | null;
 	enabled?: boolean;
 	/** Refresh interval in ms. Default 5000. */
 	pollIntervalMs?: number;
 }
 
-interface UseCodexConversationResult {
+interface UseThreadConversationResult {
 	messages: ConversationMessage[];
 	isReady: boolean;
 }
 
 /**
- * Polling-based conversation reader for Codex sessions. Codex doesn't expose
- * a hook/event stream, so we tail the rollout via the HTTP endpoint at a
- * fixed interval. Only the active thread for a tmux session is fetched.
+ * Polling-based conversation reader for thread-based agents (Codex, Grok).
+ * These agents don't expose a hook/event stream, so we tail the transcript
+ * via the HTTP endpoint at a fixed interval. Only the active thread for a
+ * session is fetched.
  */
-export function useCodexConversation({
+export function useThreadConversation({
+	agent,
 	threadId,
 	enabled = true,
 	pollIntervalMs = 5000,
-}: UseCodexConversationOptions): UseCodexConversationResult {
+}: UseThreadConversationOptions): UseThreadConversationResult {
 	const [messages, setMessages] = useState<ConversationMessage[]>([]);
 	const [isReady, setIsReady] = useState(false);
 
@@ -38,13 +42,13 @@ export function useCodexConversation({
 		setMessages([]);
 		setIsReady(false);
 
-		if (!enabled || !threadId) {
+		if (!enabled || !threadId || !agent) {
 			return;
 		}
 
 		const fetchOnce = async () => {
 			try {
-				const url = `${API_BASE}/api/sessions/history/${threadId}/conversation?agent=codex`;
+				const url = `${API_BASE}/api/sessions/history/${threadId}/conversation?agent=${agent}`;
 				const response = await authFetch(url, { cache: "no-store" });
 				if (!response.ok) throw new Error(`status ${response.status}`);
 				const data = await response.json();
@@ -52,7 +56,7 @@ export function useCodexConversation({
 				setMessages(data.messages ?? []);
 			} catch (err) {
 				if (!cancelled)
-					console.error("Failed to fetch codex conversation:", err);
+					console.error(`Failed to fetch ${agent} conversation:`, err);
 			} finally {
 				if (!cancelled) setIsReady(true);
 			}
@@ -65,7 +69,7 @@ export function useCodexConversation({
 			cancelled = true;
 			window.clearInterval(id);
 		};
-	}, [threadId, enabled, pollIntervalMs]);
+	}, [agent, threadId, enabled, pollIntervalMs]);
 
 	return { messages, isReady };
 }

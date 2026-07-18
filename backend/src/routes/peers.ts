@@ -14,6 +14,7 @@ import {
   type PeerHistoryProject,
   type PeerHistoryProjectsResponse,
   type HistorySession,
+  isAgentProvider,
 } from '../../../shared/types';
 import {
   listPeers,
@@ -26,7 +27,7 @@ import {
 import { loginToPeer, verifyPeer, peerFetch, PeerAuthError } from '../services/peer-auth';
 import { isSafePeerUrl } from '../services/peer-url';
 import { discoverPeers } from '../services/peer-discovery';
-import { buildSessionsList, sessionHistoryService, codexHistoryService } from './sessions';
+import { buildSessionsList, sessionHistoryService, agentHistoryProviders } from './sessions';
 import { buildDashboard } from './dashboard';
 import { saveUploadedImage } from './upload';
 import type { DashboardResponse } from '../../../shared/types';
@@ -171,13 +172,13 @@ interface HistoryProjectsResp {
 }
 
 async function buildLocalHistoryProjects(): Promise<HistoryProjectsResp['projects']> {
-  const [claudeProjects, codexProjects] = await Promise.all([
+  const [claudeProjects, ...agentProjects] = await Promise.all([
     sessionHistoryService.getProjects(),
-    codexHistoryService.getProjects(),
+    ...Object.values(agentHistoryProviders).map(p => p.getProjects()),
   ]);
   const byDir = new Map<string, HistoryProjectsResp['projects'][number]>();
   for (const p of claudeProjects) byDir.set(p.dirName, p);
-  for (const p of codexProjects) {
+  for (const p of agentProjects.flat()) {
     const existing = byDir.get(p.dirName);
     if (existing) {
       existing.sessionCount += p.sessionCount;
@@ -260,13 +261,13 @@ peers.get('/history/projects', async (c) => {
 });
 
 async function buildLocalProjectSessions(dirName: string): Promise<HistorySession[]> {
-  const [claudeSessions, codexSessions] = await Promise.all([
+  const [claudeSessions, ...agentSessions] = await Promise.all([
     sessionHistoryService.getProjectSessions(dirName),
-    codexHistoryService.getProjectSessions(dirName),
+    ...Object.values(agentHistoryProviders).map(p => p.getProjectSessions(dirName)),
   ]);
   const merged: HistorySession[] = [
     ...claudeSessions.map(s => ({ ...s, agent: s.agent ?? 'claude' as const })),
-    ...codexSessions,
+    ...agentSessions.flat(),
   ].sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
   return merged;
 }
@@ -311,8 +312,9 @@ peers.get('/history/:peerId/:sessionId/conversation', async (c) => {
   const last = lastQuery ? parseInt(lastQuery, 10) : undefined;
 
   if (peer.url === SELF_PEER_URL) {
-    const messages = agent === 'codex'
-      ? await codexHistoryService.getConversation(sessionId)
+    const provider = agent && isAgentProvider(agent) ? agentHistoryProviders[agent] : undefined;
+    const messages = provider
+      ? await provider.getConversation(sessionId)
       : await sessionHistoryService.getConversation(sessionId, projectDirName);
     return c.json({ messages: last ? messages.slice(-last) : messages });
   }

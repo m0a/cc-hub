@@ -1,6 +1,11 @@
-import type { AgentProvider, ConversationMessage } from "../../../shared/types";
-import { useCodexConversation } from "./useCodexConversation";
+import {
+	type AgentProvider,
+	type ConversationMessage,
+	agentSupportsConversationMetadata,
+	threadAgentOf,
+} from "../../../shared/types";
 import { useConversationStream } from "./useConversationStream";
+import { useThreadConversation } from "./useThreadConversation";
 
 export interface UseAgentConversationOptions {
 	/** Provider for the active session. Drives which underlying source is read. */
@@ -33,10 +38,10 @@ export interface UseAgentConversationResult {
 /**
  * Single entry point ChatView uses to read a session's conversation.
  *
- * Each provider has its own delivery mechanism (WebSocket push for Claude,
- * HTTP polling for Codex), but the consumer only needs `messages` /
- * `isReady` / `conversationId`. Adding a new provider means adding a new
- * branch here, not editing ChatView.
+ * Delivery is chosen from the shared registry: Claude-style agents
+ * (`supportsConversationMetadata`) stream over the WebSocket; thread agents
+ * (Codex, Grok, ...) poll their transcript over HTTP. Adding a provider to
+ * `AGENT_PROVIDERS` wires it up here with no further edits.
  */
 export function useAgentConversation({
 	agent,
@@ -44,38 +49,40 @@ export function useAgentConversation({
 	agentSessionId,
 	enabled = true,
 }: UseAgentConversationOptions): UseAgentConversationResult {
+	const isStream = agentSupportsConversationMetadata(agent);
+	const threadAgent = threadAgentOf(agent);
 	const claude = useConversationStream({
 		sessionId,
-		enabled: enabled && agent === "claude",
+		enabled: enabled && isStream,
 	});
-	const codex = useCodexConversation({
+	const thread = useThreadConversation({
+		agent: threadAgent,
 		threadId: agentSessionId,
-		enabled: enabled && agent === "codex",
+		enabled: enabled && !!threadAgent,
 	});
 
-	switch (agent) {
-		case "claude":
-			return {
-				messages: claude.messages,
-				isReady: claude.isReady,
-				conversationId: claude.ccSessionId,
-				error: null,
-			};
-		case "codex":
-			return {
-				messages: codex.messages,
-				isReady: codex.isReady,
-				conversationId: agentSessionId ?? null,
-				error: null,
-			};
-		default:
-			// `isReady=true` so consumers fall through to their error state instead
-			// of showing a loading skeleton that would never resolve.
-			return {
-				messages: [],
-				isReady: true,
-				conversationId: null,
-				error: agent === undefined ? "missing-agent" : "unsupported-agent",
-			};
+	if (isStream) {
+		return {
+			messages: claude.messages,
+			isReady: claude.isReady,
+			conversationId: claude.ccSessionId,
+			error: null,
+		};
 	}
+	if (threadAgent) {
+		return {
+			messages: thread.messages,
+			isReady: thread.isReady,
+			conversationId: agentSessionId ?? null,
+			error: null,
+		};
+	}
+	// `isReady=true` so consumers fall through to their error state instead
+	// of showing a loading skeleton that would never resolve.
+	return {
+		messages: [],
+		isReady: true,
+		conversationId: null,
+		error: agent === undefined ? "missing-agent" : "unsupported-agent",
+	};
 }

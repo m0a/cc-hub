@@ -12,13 +12,14 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type {
-	AgentProvider,
-	ExtendedSessionResponse,
-	IndicatorState,
-	PaneInfo,
-	SessionState,
-	SessionTheme,
+import {
+	type AgentProvider,
+	type ExtendedSessionResponse,
+	type IndicatorState,
+	type PaneInfo,
+	type SessionState,
+	type SessionTheme,
+	threadAgentOf,
 } from "../../shared/types";
 import { ChatView } from "./components/chat/ChatView";
 import { DesktopLayout } from "./components/DesktopLayout";
@@ -645,16 +646,15 @@ export function App() {
 	const handleSelectSession = useCallback(
 		async (session: ExtendedSessionResponse) => {
 			// Lost session: resume with the original agent's resume command when we have
-			// a conversation id (Claude → ccSessionId, Codex → agentSessionId), otherwise
-			// recreate a fresh session preserving the original agent.
+			// a conversation id (Claude → ccSessionId, thread agents → agentSessionId),
+			// otherwise recreate a fresh session preserving the original agent.
 			if (session.state === "lost") {
 				try {
 					let newSessionId: string;
 					let newSessionName: string;
-					const conversationId =
-						session.agent === "codex"
-							? session.agentSessionId
-							: session.ccSessionId;
+					const conversationId = threadAgentOf(session.agent)
+						? session.agentSessionId
+						: session.ccSessionId;
 					if (conversationId && session.currentPath) {
 						const response = await authFetch(
 							`${API_BASE}/api/sessions/history/resume`,

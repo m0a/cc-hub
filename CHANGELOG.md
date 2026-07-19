@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.28] - 2026-07-19
+
+### Added
+- **リモコンモード（PC専用）** (#470): ヘッダーの Unplug トグルで xterm のライブ描画（WS subscribe → PaneController）を止め、ローカル herdr クライアントがターミナルの所有権を保持したまま、CC Hub をワークスペース一覧＋フォーカス／split／close／prompt／Files／Dashboard／Chat のリモコンとして使えるモード。ON 中の pane 操作と Chat 送信は REST 経由（mux WS は未 subscribe セッションの操作を拒否するため）。xterm 領域はプレースホルダ（Chat 切替導線付き）に置き換わる。`cchub-remote-control` localStorage に永続化（デフォルト OFF）、storage イベントで他タブ即反映。tablet / mobile は対象外、バックエンド変更なし
+
 ## [0.2.27] - 2026-07-19
 
 ### Changed

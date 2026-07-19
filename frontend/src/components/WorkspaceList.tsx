@@ -1949,23 +1949,47 @@ export function WorkspaceList({
 			{/* ─── Header: frosted glass ─── */}
 			<div className="shrink-0 px-4 pt-3 pb-2 bg-[#0a0a0a]/80 backdrop-blur-xl border-b border-white/[0.06] sticky top-0 z-10">
 				<div className="max-w-lg">
-					{/* Top row: title + actions */}
-					<div className="flex items-center justify-between mb-3">
-						<div className="flex items-center gap-2">
+					{/* Top row: tabs + actions. No separate "Sessions" title — the
+					    active segmented tab (ワークスペース / 履歴) already labels the
+					    view, and dropping the title row widens the list area. */}
+					<div className="flex items-center justify-between gap-2 mb-2">
+						<div className="flex items-center gap-2 min-w-0">
 							{onBack && (
 								<button
 									type="button"
 									onClick={onBack}
-									className="p-1.5 -ml-1.5 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors"
+									className="p-1.5 -ml-1.5 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-colors shrink-0"
 								>
 									<ChevronLeft className="w-[18px] h-[18px]" />
 								</button>
 							)}
-							<h1 className="text-[18px] font-semibold tracking-[-0.02em] text-white">
-								Sessions
-							</h1>
+							<div className="inline-flex bg-white/[0.04] rounded-lg p-0.5">
+								<button
+									type="button"
+									onClick={() => setActiveTab("sessions")}
+									className={`px-5 py-1.5 text-[13px] font-medium rounded-md transition-all duration-200 ${
+										activeTab === "sessions"
+											? "bg-white/[0.09] text-white shadow-sm"
+											: "text-zinc-500 hover:text-zinc-400"
+									}`}
+								>
+									{t("session.title")}
+								</button>
+								<button
+									type="button"
+									onClick={() => setActiveTab("history")}
+									className={`px-5 py-1.5 text-[13px] font-medium rounded-md transition-all duration-200 ${
+										activeTab === "history"
+											? "bg-white/[0.09] text-white shadow-sm"
+											: "text-zinc-500 hover:text-zinc-400"
+									}`}
+									data-onboarding="history-tab"
+								>
+									{t("history.title")}
+								</button>
+							</div>
 						</div>
-						<div className="flex items-center gap-1">
+						<div className="flex items-center gap-1 shrink-0">
 							<button
 								type="button"
 								onClick={() => setShowSearch(!showSearch)}
@@ -2019,32 +2043,6 @@ export function WorkspaceList({
 						</div>
 					)}
 
-					{/* Segmented tabs */}
-					<div className="inline-flex bg-white/[0.04] rounded-lg p-0.5">
-						<button
-							type="button"
-							onClick={() => setActiveTab("sessions")}
-							className={`px-5 py-1.5 text-[13px] font-medium rounded-md transition-all duration-200 ${
-								activeTab === "sessions"
-									? "bg-white/[0.09] text-white shadow-sm"
-									: "text-zinc-500 hover:text-zinc-400"
-							}`}
-						>
-							{t("session.title")}
-						</button>
-						<button
-							type="button"
-							onClick={() => setActiveTab("history")}
-							className={`px-5 py-1.5 text-[13px] font-medium rounded-md transition-all duration-200 ${
-								activeTab === "history"
-									? "bg-white/[0.09] text-white shadow-sm"
-									: "text-zinc-500 hover:text-zinc-400"
-							}`}
-							data-onboarding="history-tab"
-						>
-							{t("history.title")}
-						</button>
-					</div>
 				</div>
 			</div>
 

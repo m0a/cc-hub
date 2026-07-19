@@ -178,7 +178,7 @@ export const sessions = new Hono();
 
 /** Build the full sessions list (shared by HTTP handler and WS push) */
 export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
-  const herdrSessions = await herdrService.listSessions();
+  const herdrSessions = await herdrService.listWorkspaces();
   const sessionMetadata = await getAllSessionMetadata();
 
   // Enrich thread-based agents by the exact native session ids from herdr.
@@ -431,13 +431,13 @@ sessions.post('/', async (c) => {
   const agent = parsed.success ? parsed.data.agent : DEFAULT_AGENT_PROVIDER;
 
   // Generate session name
-  const herdrSessions = await herdrService.listSessions();
+  const herdrSessions = await herdrService.listWorkspaces();
   const name = parsed.success && parsed.data.name
     ? parsed.data.name
     : `session-${herdrSessions.length + 1}`;
 
   // Check if session already exists
-  const exists = await herdrService.sessionExists(name);
+  const exists = await herdrService.workspaceExists(name);
   if (exists) {
     return c.json({ error: 'Session already exists' }, 400);
   }
@@ -451,7 +451,7 @@ sessions.post('/', async (c) => {
   }
 
   try {
-    const instanceId = await herdrService.createSession(name);
+    const instanceId = await herdrService.createWorkspace(name);
 
     // Start the selected agent if workingDir is specified
     if (parsed.success && parsed.data.workingDir) {
@@ -465,7 +465,7 @@ sessions.post('/', async (c) => {
         (async () => {
           for (let i = 0; i < 30; i++) { // up to 30 seconds
             await new Promise(r => setTimeout(r, 1000));
-            const sessions = await herdrService.listSessions();
+            const sessions = await herdrService.listWorkspaces();
             const session = sessions.find(s => s.name === sessionName);
             if (session?.currentCommand === agent) {
               // Wait a bit more for the TUI to be fully ready, then submit
@@ -695,7 +695,7 @@ sessions.post('/history/resume', async (c) => {
   try {
     // Generate a unique session name based on project
     const projectName = projectPath.split('/').pop() || 'session';
-    const herdrSessions = await herdrService.listSessions();
+    const herdrSessions = await herdrService.listWorkspaces();
 
     // Guard: reject if the same agent is already running in the same directory
     const conflicting = findDuplicateAgentWorkingDirSession(herdrSessions, agent, projectPath);
@@ -709,7 +709,7 @@ sessions.post('/history/resume', async (c) => {
     }
 
     // Create new session
-    await herdrService.createSession(sessionName);
+    await herdrService.createWorkspace(sessionName);
 
     // Change to project directory and run the agent's resume command
     const command = `cd ${shellQuote(expandHome(projectPath))} && ${agentResumeCommand(agent, sessionId)}`;
@@ -717,7 +717,7 @@ sessions.post('/history/resume', async (c) => {
       await sendTextToSession(sessionName, command);
     } catch {
       // Clean up the session if command failed
-      await herdrService.killSession(sessionName);
+      await herdrService.killWorkspace(sessionName);
       return c.json({ error: 'Failed to start agent session' }, 500);
     }
 
@@ -735,7 +735,7 @@ sessions.post('/history/resume', async (c) => {
 // GET /sessions/:id - Get a specific session
 sessions.get('/:id', async (c) => {
   const id = c.req.param('id');
-  const herdrSessions = await herdrService.listSessions();
+  const herdrSessions = await herdrService.listWorkspaces();
   const session = herdrSessions.find(s => s.id === id);
 
   if (!session) {
@@ -759,7 +759,7 @@ sessions.delete('/:id', async (c) => {
   notifySessionChange();
   const id = c.req.param('id');
 
-  const exists = await herdrService.sessionExists(id);
+  const exists = await herdrService.workspaceExists(id);
   if (!exists) {
     // Already lost — purge from last-known so it disappears from the list.
     await removeLastKnownSession(id).catch(() => {});
@@ -767,7 +767,7 @@ sessions.delete('/:id', async (c) => {
   }
 
   try {
-    await herdrService.killSession(id);
+    await herdrService.killWorkspace(id);
     // Keep the entry in last-known so the session shows up as "Lost" and can
     // be resumed via the Resume button without going to the history tab.
     // To purge entirely, delete the Lost session again.
@@ -783,7 +783,7 @@ sessions.post('/:id/resume', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const parsed = ResumeSessionSchema.safeParse(body);
 
-  const herdrSessions = await herdrService.listSessions();
+  const herdrSessions = await herdrService.listWorkspaces();
   const session = herdrSessions.find(s => s.id === id);
   if (!session) {
     return c.json({ error: 'Session not found' }, 404);
@@ -817,7 +817,7 @@ sessions.put('/:id/theme', async (c) => {
     return c.json({ error: 'Invalid theme' }, 400);
   }
 
-  const exists = await herdrService.sessionExists(id);
+  const exists = await herdrService.workspaceExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
   }
@@ -844,7 +844,7 @@ sessions.put('/:id/title', async (c) => {
     return c.json({ error: 'Invalid title' }, 400);
   }
 
-  const exists = await herdrService.sessionExists(id);
+  const exists = await herdrService.workspaceExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
   }
@@ -868,7 +868,7 @@ sessions.post('/:id/move', async (c) => {
     return c.json({ error: 'Invalid index' }, 400);
   }
   try {
-    const moved = await herdrService.moveSession(id, index);
+    const moved = await herdrService.moveWorkspace(id, index);
     if (!moved) return c.json({ error: 'Session not found' }, 404);
     notifySessionChange();
     return c.json({ success: true });
@@ -923,7 +923,7 @@ sessions.post('/:id/panes/focus', async (c) => {
     return c.json({ error: 'Invalid pane ID' }, 400);
   }
 
-  const exists = await herdrService.sessionExists(id);
+  const exists = await herdrService.workspaceExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
   }
@@ -948,7 +948,7 @@ sessions.post('/:id/panes/close', async (c) => {
     return c.json({ error: 'Invalid pane ID' }, 400);
   }
 
-  const exists = await herdrService.sessionExists(id);
+  const exists = await herdrService.workspaceExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
   }
@@ -976,7 +976,7 @@ sessions.post('/:id/panes/split', async (c) => {
     return c.json({ error: 'Invalid request' }, 400);
   }
 
-  const exists = await herdrService.sessionExists(id);
+  const exists = await herdrService.workspaceExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
   }
@@ -1001,7 +1001,7 @@ sessions.post('/:id/panes/respawn', async (c) => {
     return c.json({ error: 'Invalid request' }, 400);
   }
 
-  const exists = await herdrService.sessionExists(id);
+  const exists = await herdrService.workspaceExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
   }
@@ -1020,7 +1020,7 @@ sessions.post('/:id/panes/input', async (c) => {
     return c.json({ error: 'Invalid request', issues: parsed.error.issues }, 400);
   }
 
-  const exists = await herdrService.sessionExists(id);
+  const exists = await herdrService.workspaceExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
   }
@@ -1070,7 +1070,7 @@ sessions.get('/:id/panes/:paneId/viewport', async (c) => {
     return c.json({ error: 'paneId must start with %' }, 400);
   }
 
-  const exists = await herdrService.sessionExists(id);
+  const exists = await herdrService.workspaceExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
   }
@@ -1102,7 +1102,7 @@ sessions.post('/:id/prompt', async (c) => {
     return c.json({ error: 'text is required' }, 400);
   }
 
-  const exists = await herdrService.sessionExists(id);
+  const exists = await herdrService.workspaceExists(id);
   if (!exists) {
     return c.json({ error: 'Session not found' }, 404);
   }

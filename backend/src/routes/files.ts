@@ -9,7 +9,7 @@ import type { FileListResponse, FileReadResponse, FileChangesResponse, FileInfo,
 
 const fileService = new FileService();
 const changeTracker = new FileChangeTracker();
-const tmuxService = new HerdrService();
+const herdrService = new HerdrService();
 
 /**
  * The client supplies `sessionWorkingDir` as the base for file access. It MUST
@@ -27,7 +27,7 @@ async function isAllowedSessionDir(sessionWorkingDir: string): Promise<boolean> 
   } catch {
     return false;
   }
-  const sessions = await tmuxService.listSessions();
+  const sessions = await herdrService.listWorkspaces();
   for (const s of sessions) {
     for (const cand of [s.currentPath, ...(s.panes ?? []).map((p) => p.path)]) {
       if (!cand) continue;

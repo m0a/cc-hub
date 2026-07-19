@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.26] - 2026-07-19
+
+### Changed
+- **複数ペイン/タブの workspace で recap もペイン単位表示に** (#466): #463 で model/ctx/mem をペイン単位にしたのに続き、recap（away summary）も同様にした。従来はカードヘッダに代表1ペイン分の recap だけを出しており、複数エージェントペインがあるとどのペインの要約か曖昧だった。複数ペイン/複数タブの時だけ各 Claude ペイン行に自身の recap を表示（`getSessionById` はキャッシュ付きで安価）。単一ペイン単一タブの通常ケースはヘッダ recap のまま維持（`PaneInfo.recap`/`recapAt` を追加）
+
 ## [0.2.25] - 2026-07-19
 
 ### Fixed

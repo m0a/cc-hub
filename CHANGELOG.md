@@ -7,6 +7,10 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - **`cchub setup` のエージェント連携判定を環境対応**: 未初期化・未導入の Claude Code / Codex に herdr integration と Codex hook 移行を実行せず、適切な警告を表示するよう修正
 - **`cchub setup` のメッセージを i18n 対応**: `LC_ALL` / `LC_MESSAGES` / `LANG` のロケールに応じて日本語または英語を表示
+- **単一タブの workspace からタブを新規作成できない問題を修正** (#462): タブUI（一覧＋「+ 新規タブ」）が2タブ以上ある時だけ表示され、backend も `tab_count > 1` の時しか `tabs[]` を返さなかったため、通常の単一タブ workspace では最初の2つ目を作る導線が無かった。単一タブでも `tabs[]`/`activeTabId` を（`tab.list` RPC を増やさず）常に返し、workspace 長押しメニューに「新規タブ」を追加、展開時のインラインにも「+ 新規タブ」を表示
+
+### Changed
+- **複数ペイン/タブの workspace で model/ctx/mem をペイン単位表示に** (#463): カードヘッダの model/ctx%/mem は「代表1ペイン分」で、複数ペイン/タブがあるとどのペインの値か曖昧だった。複数ペイン/複数タブの時だけ各エージェントペイン行へ移動（Claude は自 `.jsonl` から ctx/model、任意のエージェントペインは pid から mem）。単一ペイン単一タブの通常ケースはヘッダ表示のまま維持（`PaneInfo.metrics` を追加）
 
 ## [0.2.24] - 2026-07-19
 

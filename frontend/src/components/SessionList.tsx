@@ -713,6 +713,9 @@ function SessionItem({
 	onResume,
 	onDelete,
 	onClosePane,
+	onSelectTab,
+	onCreateTab,
+	onCloseTab,
 }: {
 	session: ExtendedSessionResponse;
 	onSelect: (session: ExtendedSessionResponse) => void;
@@ -733,6 +736,9 @@ function SessionItem({
 		direction?: "h" | "v",
 	) => void;
 	onClosePane?: (sessionId: string, paneId: string, name: string) => void;
+	onSelectTab?: (session: ExtendedSessionResponse, tabId: string) => void;
+	onCreateTab?: (session: ExtendedSessionResponse) => void;
+	onCloseTab?: (session: ExtendedSessionResponse, tabId: string, label: string) => void;
 }) {
 	const { t, i18n } = useTranslation();
 	const longPressTimerRef = useRef<number | null>(null);
@@ -806,8 +812,14 @@ function SessionItem({
 		// Multi-pane sessions skip the session-level jump menu — "go to terminal"
 		// is ambiguous there, so the actions live on the pane rows instead (row
 		// tap navigates; the Claude-app link nests under the bridge pane).
+		// Expandable when there is more than one pane OR more than one tab — the
+		// expanded area lists both so the user can switch tabs / panes from here.
+		const canExpand =
+			(session.panes && session.panes.length > 1) ||
+			(session.tabs && session.tabs.length > 1);
+
 		if (session.bridgeSessionId) {
-			if (session.panes && session.panes.length > 1) {
+			if (canExpand) {
 				setPanesExpanded((prev) => !prev);
 			} else {
 				setShowJumpMenu((prev) => !prev);
@@ -815,8 +827,8 @@ function SessionItem({
 			return;
 		}
 
-		// Multi-pane session: toggle pane list to show per-pane status
-		if (session.panes && session.panes.length > 1) {
+		// Multi-pane / multi-tab session: toggle the list to show tabs + panes
+		if (canExpand) {
 			setPanesExpanded((prev) => !prev);
 			return;
 		}
@@ -1054,6 +1066,13 @@ function SessionItem({
 								</span>
 							);
 						})()}
+
+						{/* Secondary badge: tab count (only if the workspace has > 1 tab) */}
+						{extSession.tabs && extSession.tabs.length > 1 && (
+							<span className="text-[11px] px-2 py-0.5 rounded-full shrink-0 text-violet-300 bg-violet-500/15">
+								{extSession.tabs.length} {t("session.tabs").toLowerCase()}
+							</span>
+						)}
 				</div>
 
 				{/* Auto recap (away_summary) — timestamp shown inline at the tail */}
@@ -1187,6 +1206,95 @@ function SessionItem({
 						<ExternalLink className="w-3.5 h-3.5" />
 						{t("session.openInClaudeApp")}
 					</button>
+				</div>
+			)}
+
+			{/* Tab list (expandable): switch / create / close the workspace's tabs.
+			    Long-press a tab to close it (never the last one). */}
+			{panesExpanded && extSession.tabs && extSession.tabs.length > 1 && (
+				<div
+					className="mx-4 mb-2 pt-2 border-t border-white/[0.06] space-y-1"
+					onClick={(e) => e.stopPropagation()}
+					onMouseDown={(e) => e.stopPropagation()}
+					onTouchStart={(e) => e.stopPropagation()}
+				>
+					<div className="flex items-center justify-between px-1 mb-0.5">
+						<span className="text-[10px] uppercase tracking-wider text-zinc-500">
+							{t("session.tabs")}
+						</span>
+						{onCreateTab && (
+							<button
+								type="button"
+								onClick={() => onCreateTab(session)}
+								className="text-[11px] text-zinc-400 hover:text-zinc-200 px-1.5 py-0.5 rounded hover:bg-white/[0.06] transition-colors"
+							>
+								+ {t("session.newTab")}
+							</button>
+						)}
+					</div>
+					{extSession.tabs.map((tab) => {
+						const isActive = tab.active || extSession.activeTabId === tab.id;
+						const canClose = (extSession.tabs?.length ?? 0) > 1;
+						let tabTimer: number | null = null;
+						let tabLongPressed = false;
+						return (
+							<button
+								key={tab.id}
+								type="button"
+								onClick={() => {
+									if (tabLongPressed) {
+										tabLongPressed = false;
+										return;
+									}
+									if (!isActive) onSelectTab?.(session, tab.id);
+								}}
+								onTouchStart={() => {
+									tabLongPressed = false;
+									tabTimer = window.setTimeout(() => {
+										tabTimer = null;
+										tabLongPressed = true;
+										if (canClose) onCloseTab?.(session, tab.id, tab.label);
+									}, 600);
+								}}
+								onTouchEnd={() => {
+									if (tabTimer) {
+										clearTimeout(tabTimer);
+										tabTimer = null;
+									}
+								}}
+								onTouchMove={() => {
+									if (tabTimer) {
+										clearTimeout(tabTimer);
+										tabTimer = null;
+									}
+								}}
+								onContextMenu={(e) => e.preventDefault()}
+								className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
+									isActive
+										? "bg-cyan-500/10 hover:bg-cyan-500/15"
+										: "hover:bg-white/[0.04]"
+								}`}
+							>
+								<span
+									className={`w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? "bg-cyan-400" : "bg-zinc-600"}`}
+								/>
+								<span
+									className={`text-[13px] font-medium truncate ${isActive ? "text-cyan-200" : "text-zinc-300"}`}
+								>
+									{t("session.tab")} {tab.label}
+								</span>
+								<span className="text-zinc-600 text-[11px] shrink-0">
+									({tab.paneCount})
+								</span>
+								<span className="flex-1" />
+								{isActive && (
+									<span className="text-[10px] text-cyan-400 bg-cyan-500/15 px-1.5 py-0.5 rounded-full shrink-0">
+										active
+									</span>
+								)}
+							</button>
+						);
+					})}
 				</div>
 			)}
 
@@ -1358,6 +1466,11 @@ export function SessionList({
 		sessionId: string;
 		paneId: string;
 		name: string;
+	} | null>(null);
+	const [tabToClose, setTabToClose] = useState<{
+		sessionId: string;
+		tabId: string;
+		label: string;
 	} | null>(null);
 	const [showCreateModal, setShowCreateModal] = useState(false);
 	const [activeTab, setActiveTab] = useState<"sessions" | "history">(
@@ -1556,6 +1669,34 @@ export function SessionList({
 				}
 			} catch (err) {
 				console.error(`Pane ${action} failed:`, err);
+			}
+		},
+		[sessions, peers],
+	);
+
+	// Tab operations mirror handlePaneAction: route over sessionFetch so they
+	// reach the owning Hub/peer, and rely on the resulting sessions push (via the
+	// backend's notifySessionChange) to reflect the new tab set.
+	const handleTabAction = useCallback(
+		async (
+			sessionId: string,
+			action: "select" | "create" | "close",
+			tabId?: string,
+		) => {
+			try {
+				const session = sessions.find((s) => s.id === sessionId);
+				const path = `/api/sessions/${sessionId}/tabs/${action}`;
+				const body = action === "create" ? {} : { tabId };
+				const response = await sessionFetch(session, peers, path, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(body),
+				});
+				if (!response.ok) {
+					console.error(`Tab ${action} failed: ${response.status}`);
+				}
+			} catch (err) {
+				console.error(`Tab ${action} failed:`, err);
 			}
 		},
 		[sessions, peers],
@@ -1949,6 +2090,17 @@ export function SessionList({
 																	name,
 																})
 															}
+															onSelectTab={(s, tabId) =>
+																handleTabAction(s.id, "select", tabId)
+															}
+															onCreateTab={(s) => handleTabAction(s.id, "create")}
+															onCloseTab={(s, tabId, label) =>
+																setTabToClose({
+																	sessionId: s.id,
+																	tabId,
+																	label,
+																})
+															}
 														/>
 													))}
 												</div>
@@ -2051,6 +2203,51 @@ export function SessionList({
 								className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded font-medium transition-colors text-white"
 							>
 								閉じる
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Close-tab confirmation (destructive: closes every pane in the tab) */}
+			{tabToClose && (
+				<div
+					className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay)] animate-backdrop-in"
+					onClick={() => setTabToClose(null)}
+				>
+					<div
+						className="bg-th-surface rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl animate-modal-in"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<h3 className="text-lg font-bold text-th-text mb-2">
+							{t("session.closeTabTitle")}
+						</h3>
+						<p className="text-th-text-secondary mb-4">
+							{t("session.closeTabConfirm", {
+								label: tabToClose.label,
+							})}
+						</p>
+						<div className="flex gap-3 justify-end">
+							<button
+								type="button"
+								onClick={() => setTabToClose(null)}
+								className="px-4 py-2 bg-th-surface-active hover:bg-th-surface-hover rounded font-medium transition-colors text-th-text"
+							>
+								{t("common.cancel")}
+							</button>
+							<button
+								type="button"
+								onClick={async () => {
+									await handleTabAction(
+										tabToClose.sessionId,
+										"close",
+										tabToClose.tabId,
+									);
+									setTabToClose(null);
+								}}
+								className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded font-medium transition-colors text-white"
+							>
+								{t("session.closeTabAction")}
 							</button>
 						</div>
 					</div>

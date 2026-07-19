@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { homedir } from 'node:os';
-import { AGENT_PROVIDERS, AGENT_PROVIDER_IDS, CreateSessionSchema, DEFAULT_AGENT_PROVIDER, PaneIdSchema, SessionIdSchema, agentResumeCommand, agentSupportsConversationMetadata, isAgentProvider, threadAgentOf, type AgentProvider, type IndicatorState, type PaneInfo, type ExtendedSessionResponse, type SessionState } from '../../../shared/types';
+import { AGENT_PROVIDERS, AGENT_PROVIDER_IDS, CreateSessionSchema, DEFAULT_AGENT_PROVIDER, PaneIdSchema, SessionIdSchema, TabIdSchema, agentResumeCommand, agentSupportsConversationMetadata, isAgentProvider, threadAgentOf, type AgentProvider, type IndicatorState, type PaneInfo, type ExtendedSessionResponse, type SessionState } from '../../../shared/types';
 import { HerdrService } from '../services/herdr';
 import {
   captureViewportHerdr,
@@ -913,6 +913,14 @@ const PaneRespawnSchema = z.object({
   paneId: PaneIdSchema,
 });
 
+const TabSelectSchema = z.object({
+  tabId: TabIdSchema,
+});
+
+const TabCloseSchema = z.object({
+  tabId: TabIdSchema,
+});
+
 const PaneInputSchema = z.object({
   paneId: PaneIdSchema,
   data: z.string(),
@@ -1020,6 +1028,67 @@ sessions.post('/:id/panes/respawn', async (c) => {
 
   // herdr has no dead-pane/respawn concept; exited panes are closed.
   return c.json({ error: 'respawn-pane is not supported' }, 501);
+});
+
+// POST /sessions/:id/tabs/select - Switch the workspace's active tab
+sessions.post('/:id/tabs/select', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = TabSelectSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid tab ID' }, 400);
+  }
+  const exists = await herdrService.workspaceExists(id);
+  if (!exists) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+  try {
+    await withControlSession(id, (cs) => cs.selectTab(parsed.data.tabId));
+    herdrService.invalidateCache();
+    notifySessionChange();
+    return c.json({ success: true });
+  } catch (_error) {
+    return c.json({ error: 'Failed to select tab' }, 500);
+  }
+});
+
+// POST /sessions/:id/tabs/create - Create and switch to a new tab
+sessions.post('/:id/tabs/create', async (c) => {
+  const id = c.req.param('id');
+  const exists = await herdrService.workspaceExists(id);
+  if (!exists) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+  try {
+    await withControlSession(id, (cs) => cs.createTab());
+    herdrService.invalidateCache();
+    notifySessionChange();
+    return c.json({ success: true });
+  } catch (_error) {
+    return c.json({ error: 'Failed to create tab' }, 500);
+  }
+});
+
+// POST /sessions/:id/tabs/close - Close a tab (and its panes)
+sessions.post('/:id/tabs/close', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = TabCloseSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid tab ID' }, 400);
+  }
+  const exists = await herdrService.workspaceExists(id);
+  if (!exists) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+  try {
+    await withControlSession(id, (cs) => cs.closeTab(parsed.data.tabId));
+    herdrService.invalidateCache();
+    notifySessionChange();
+    return c.json({ success: true });
+  } catch (_error) {
+    return c.json({ error: 'Failed to close tab' }, 500);
+  }
 });
 
 // POST /sessions/:id/panes/input - Send raw input bytes to a specific pane

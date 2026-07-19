@@ -22,8 +22,11 @@
 import type { PaneCursor, PaneDemand, PaneModes, PaneViewport, TmuxLayoutNode } from '../../../shared/types';
 import { type ClientPaneDemands, reconcilePaneSizes, resolveTargetSizes } from './pane-sizing';
 import {
+  closeTab as herdrCloseTab,
+  createTab as herdrCreateTab,
   eventWorkspaceId,
   exportLayout,
+  focusTab as herdrFocusTab,
   getPane,
   getWorkspace,
   type HerdrPane,
@@ -878,6 +881,35 @@ export class HerdrControlSession {
     } catch {
       // focus is best-effort
     }
+  }
+
+  // ==========================================================================
+  // Tab operations (herdr workspace > tab > pane)
+  // ==========================================================================
+
+  /**
+   * Switch the workspace's active tab. reconcilePanes then re-points the split
+   * tree at the new tab (also driven independently by the tab.focused event).
+   */
+  async selectTab(tabId: string): Promise<void> {
+    await herdrFocusTab(tabId);
+    await this.reconcilePanes();
+  }
+
+  /** Create a new focused tab in this workspace and switch to it. */
+  async createTab(): Promise<void> {
+    if (!this.workspaceId) throw new Error('Control session not active');
+    await herdrCreateTab(this.workspaceId, true);
+    await this.reconcilePanes();
+  }
+
+  /**
+   * Close a tab (and its panes). If it was the active tab, reconcile switches
+   * to a surviving tab; the workspace is torn down only when its last tab goes.
+   */
+  async closeTab(tabId: string): Promise<void> {
+    await herdrCloseTab(tabId);
+    await this.reconcilePanes();
   }
 
   /**

@@ -1,9 +1,11 @@
 /**
- * HerdrService — session-level operations on the herdr backend.
+ * HerdrService — workspace-level operations on the herdr backend.
  *
- * Maps CC Hub sessions onto herdr workspaces (session id = workspace label,
- * falling back to workspace_id). herdr's agent.list response is authoritative
- * for the agent provider and native session identity of each pane.
+ * A CC Hub workspace is a herdr workspace. Its public id is the workspace
+ * label (falling back to workspace_id); the wire still calls this the
+ * "session id" until the API rename lands. herdr's agent.list response is
+ * authoritative for the agent provider and native session identity of each
+ * pane (that "session" is the agent conversation, a different concept).
  */
 
 import { isAgentProvider, type AgentProvider } from '../../../shared/types';
@@ -32,7 +34,7 @@ interface HerdrPaneInfo {
   pid?: number;
 }
 
-interface HerdrSessionInfo {
+interface WorkspaceInfo {
   id: string;
   name: string;
   instanceId?: string;
@@ -98,8 +100,8 @@ function workspaceSessionId(ws: HerdrWorkspace): string {
 }
 
 export class HerdrService {
-  private listSessionsCache: { data: HerdrSessionInfo[]; timestamp: number } | null = null;
-  private static readonly LIST_SESSIONS_CACHE_TTL = 2000;
+  private listWorkspacesCache: { data: WorkspaceInfo[]; timestamp: number } | null = null;
+  private static readonly LIST_WORKSPACES_CACHE_TTL = 2000;
   // pane process info cache (pane_id → foreground process snapshot)
   private processCmdCache = new Map<
     string,
@@ -172,12 +174,12 @@ export class HerdrService {
     return new Map();
   }
 
-  async listSessions(): Promise<HerdrSessionInfo[]> {
+  async listWorkspaces(): Promise<WorkspaceInfo[]> {
     if (
-      this.listSessionsCache &&
-      Date.now() - this.listSessionsCache.timestamp < HerdrService.LIST_SESSIONS_CACHE_TTL
+      this.listWorkspacesCache &&
+      Date.now() - this.listWorkspacesCache.timestamp < HerdrService.LIST_WORKSPACES_CACHE_TTL
     ) {
-      return this.listSessionsCache.data;
+      return this.listWorkspacesCache.data;
     }
 
     try {
@@ -187,7 +189,7 @@ export class HerdrService {
         this.listAgentPanes(),
       ]);
 
-      const result: HerdrSessionInfo[] = await Promise.all(
+      const result: WorkspaceInfo[] = await Promise.all(
         workspaces.map(async (ws) => {
           const wsPanes = allPanes.filter((p) => p.workspace_id === ws.workspace_id);
           const panes: HerdrPaneInfo[] = await Promise.all(
@@ -263,7 +265,7 @@ export class HerdrService {
         }),
       );
 
-      this.listSessionsCache = { data: result, timestamp: Date.now() };
+      this.listWorkspacesCache = { data: result, timestamp: Date.now() };
       return result;
     } catch {
       return [];
@@ -301,11 +303,11 @@ export class HerdrService {
   }
 
   invalidateCache(): void {
-    this.listSessionsCache = null;
+    this.listWorkspacesCache = null;
     this.processCmdCache.clear();
   }
 
-  async createSession(name: string): Promise<string> {
+  async createWorkspace(name: string): Promise<string> {
     this.invalidateCache();
     const existing = await this.resolveWorkspace(name);
     if (existing) {
@@ -330,7 +332,7 @@ export class HerdrService {
    * against herdr 0.7.3/0.7.4: index 13 → insert 0 lands at 0; index 0 →
    * insert 5 lands at 4.
    */
-  async moveSession(sessionId: string, targetIndex: number): Promise<boolean> {
+  async moveWorkspace(sessionId: string, targetIndex: number): Promise<boolean> {
     const workspaces = await listWorkspaces();
     const current = workspaces.findIndex(
       (w) => workspaceSessionId(w) === sessionId || w.workspace_id === sessionId,
@@ -351,7 +353,7 @@ export class HerdrService {
     return true;
   }
 
-  async killSession(sessionId: string): Promise<void> {
+  async killWorkspace(sessionId: string): Promise<void> {
     this.invalidateCache();
     const ws = await this.resolveWorkspace(sessionId);
     if (!ws) {
@@ -364,7 +366,7 @@ export class HerdrService {
     herdrControlSessions.get(sessionId)?.terminate('workspace closed');
   }
 
-  async sessionExists(sessionId: string): Promise<boolean> {
+  async workspaceExists(sessionId: string): Promise<boolean> {
     return (await this.resolveWorkspace(sessionId)) !== null;
   }
 }

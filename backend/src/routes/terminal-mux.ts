@@ -266,7 +266,7 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     return;
   }
 
-  const exists = await herdrService.sessionExists(sessionId);
+  const exists = await herdrService.workspaceExists(sessionId);
   if (!exists) {
     ws.send(JSON.stringify({ type: 'error', message: 'Session not found', sessionId }));
     return;
@@ -504,7 +504,7 @@ async function handleSubscribeConversation(ws: ServerWebSocket<MuxData>, session
 
   let workingDir: string | undefined;
   try {
-    const sessions = await herdrService.listSessions();
+    const sessions = await herdrService.listWorkspaces();
     const session = sessions.find(s => s.id === sessionId);
     workingDir = session?.currentPath;
   } catch (err) {

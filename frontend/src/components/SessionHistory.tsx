@@ -355,7 +355,7 @@ export function SessionHistory({
 			if (result) {
 				await new Promise((resolve) => setTimeout(resolve, 1000));
 
-				const response = await authFetch(`${API_BASE}/api/sessions`);
+				const response = await authFetch(`${API_BASE}/api/workspaces`);
 				let foundSession: SessionResponse | undefined;
 				if (response.ok) {
 					const data = await response.json();

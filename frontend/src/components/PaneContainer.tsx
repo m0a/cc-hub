@@ -656,7 +656,7 @@ function TerminalPane({
 									e.stopPropagation();
 									if (sessionId) {
 										authFetch(
-											`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}`,
+											`${API_BASE}/api/workspaces/${encodeURIComponent(sessionId)}`,
 											{
 												method: "DELETE",
 											},

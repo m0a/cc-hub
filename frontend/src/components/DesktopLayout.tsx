@@ -22,8 +22,8 @@ import { nukeClientCache } from "../utils/nuke-cache";
 import { usePeers } from "../hooks/usePeers";
 import {
 	updateCachedSessionsByHookEvent,
-	useSessions,
-} from "../hooks/useSessions";
+	useWorkspaces,
+} from "../hooks/useWorkspaces";
 import { fireHookNotification } from "../utils/hookNotification";
 import { uploadImage } from "../utils/upload-image";
 import { makePseudoViewport } from "../utils/viewport-pseudo";
@@ -381,7 +381,7 @@ export function DesktopLayout({
 	const paneContainerRef = useRef<HTMLDivElement>(null);
 
 	// Get latest session info (including theme) from API
-	const { sessions: apiSessions } = useSessions();
+	const { sessions: apiSessions } = useWorkspaces();
 
 	// Merge prop sessions with API sessions to get latest theme info
 	// propSessionsにないセッションもapiSessionsから追加する（分割ペイン用）。
@@ -774,7 +774,7 @@ export function DesktopLayout({
 				message,
 				peerConn.peerId,
 			);
-			// 全useSessions インスタンスのindicatorStateを即座に更新
+			// 全useWorkspaces インスタンスのindicatorStateを即座に更新
 			updateCachedSessionsByHookEvent(event, sessionId);
 		},
 		onDisconnect: () => {},

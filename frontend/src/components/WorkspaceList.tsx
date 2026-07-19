@@ -41,8 +41,8 @@ import { openClaudeAppSession } from "../utils/claude-app";
 import { usePeers } from "../hooks/usePeers";
 import {
 	applyLocalSessionReorder,
-	useSessions,
-} from "../hooks/useSessions";
+	useWorkspaces,
+} from "../hooks/useWorkspaces";
 import { sessionFetch } from "../services/peer-fetch";
 import { formatModelName, formatRelativeTime } from "../utils/format";
 import { toHomeShortPath } from "../utils/path";
@@ -1438,7 +1438,7 @@ function SessionItem({
 	);
 }
 
-export function SessionList({
+export function WorkspaceList({
 	onSelectSession,
 	onSelectPane,
 	onBack,
@@ -1455,7 +1455,7 @@ export function SessionList({
 		createSession,
 		deleteSession,
 		updateSessionTheme,
-	} = useSessions();
+	} = useWorkspaces();
 	const { peers } = usePeers();
 	const { fetchConversation } = useSessionHistory();
 
@@ -1575,7 +1575,7 @@ export function SessionList({
 					const response = await sessionFetch(
 						session,
 						peers,
-						`/api/sessions/${sessionId}/resume`,
+						`/api/workspaces/${sessionId}/resume`,
 						{
 							method: "POST",
 							headers: { "Content-Type": "application/json" },
@@ -1656,8 +1656,8 @@ export function SessionList({
 				const session = sessions.find((s) => s.id === sessionId);
 				const path =
 					action === "split"
-						? `/api/sessions/${sessionId}/panes/split`
-						: `/api/sessions/${sessionId}/panes/${action}`;
+						? `/api/workspaces/${sessionId}/panes/split`
+						: `/api/workspaces/${sessionId}/panes/${action}`;
 				const body = action === "split" ? { paneId, direction } : { paneId };
 				const response = await sessionFetch(session, peers, path, {
 					method: "POST",
@@ -1685,7 +1685,7 @@ export function SessionList({
 		) => {
 			try {
 				const session = sessions.find((s) => s.id === sessionId);
-				const path = `/api/sessions/${sessionId}/tabs/${action}`;
+				const path = `/api/workspaces/${sessionId}/tabs/${action}`;
 				const body = action === "create" ? {} : { tabId };
 				const response = await sessionFetch(session, peers, path, {
 					method: "POST",
@@ -1743,7 +1743,7 @@ export function SessionList({
 				const res = await sessionFetch(
 					moved,
 					peers,
-					`/api/sessions/${encodeURIComponent(moved.id)}/move`,
+					`/api/workspaces/${encodeURIComponent(moved.id)}/move`,
 					{
 						method: "POST",
 						headers: { "Content-Type": "application/json" },
@@ -1811,7 +1811,7 @@ export function SessionList({
 				await sessionFetch(
 					sessionForMenu as ExtendedSessionResponse,
 					peers,
-					`/api/sessions/${sessionForMenu.id}/title`,
+					`/api/workspaces/${sessionForMenu.id}/title`,
 					{
 						method: "PUT",
 						headers: { "Content-Type": "application/json" },
@@ -2008,7 +2008,7 @@ export function SessionList({
 												if (!target) return;
 												try {
 													const res = await authFetch(
-														`${API_BASE}/api/sessions/${encodeURIComponent(target.id)}/prompt`,
+														`${API_BASE}/api/workspaces/${encodeURIComponent(target.id)}/prompt`,
 														{
 															method: "POST",
 															headers: { "Content-Type": "application/json" },
@@ -2190,7 +2190,7 @@ export function SessionList({
 										await sessionFetch(
 											session,
 											peers,
-											`/api/sessions/${encodeURIComponent(paneToClose.sessionId)}/panes/close`,
+											`/api/workspaces/${encodeURIComponent(paneToClose.sessionId)}/panes/close`,
 											{
 												method: "POST",
 												headers: { "Content-Type": "application/json" },

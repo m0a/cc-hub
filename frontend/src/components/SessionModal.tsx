@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from "react";
 import type { SessionResponse } from "../../../shared/types";
-import { SessionList } from "./SessionList";
+import { WorkspaceList } from "./WorkspaceList";
 
 interface SessionModalProps {
 	isOpen: boolean;
@@ -49,7 +49,7 @@ export function SessionModal({
 			style={desktopZoom}
 		>
 			<div className="flex-1 min-h-0 overflow-hidden w-full h-full">
-				<SessionList
+				<WorkspaceList
 					onSelectSession={handleSelectSession}
 					inline={true}
 					onClose={onClose}

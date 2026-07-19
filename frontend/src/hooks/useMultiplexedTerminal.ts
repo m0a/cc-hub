@@ -767,7 +767,7 @@ export function useMultiplexedTerminal(
 			// against the Hub origin: it 401'd under password auth (no Bearer
 			// header) and POSTed to the wrong server for peer sessions. Route
 			// through authFetch for local and the peer base+token for remote. #256
-			const path = `/api/sessions/${encodeURIComponent(sessionId)}/panes/respawn`;
+			const path = `/api/workspaces/${encodeURIComponent(sessionId)}/panes/respawn`;
 			const body = JSON.stringify({ paneId });
 			const headers: HeadersInit = { "Content-Type": "application/json" };
 			const isRemotePeer = peerApiBase && peerApiBase.length > 0;

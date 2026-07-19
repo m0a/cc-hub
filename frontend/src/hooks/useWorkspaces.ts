@@ -60,7 +60,7 @@ function hookEventToIndicatorState(event: string): IndicatorState | null {
 	}
 }
 
-interface UseSessionsReturn {
+interface UseWorkspacesReturn {
 	sessions: ExtendedSessionResponse[];
 	isLoading: boolean;
 	error: string | null;
@@ -81,7 +81,7 @@ interface UseSessionsReturn {
 
 /**
  * Session order comes from each peer's herdr workspace order — every peer's
- * `/api/sessions` already returns its sessions in it — so the merged list only
+ * `/api/workspaces` already returns its sessions in it — so the merged list only
  * has to concatenate peers in their display order. `sessionsByPeer` is keyed
  * by insertion (whichever watcher delivered first), which isn't stable across
  * reconnects, hence the explicit ordering. Peers missing from `peerOrder`
@@ -105,7 +105,7 @@ function flattenPeerSessions(
 	return out;
 }
 
-export function useSessions(): UseSessionsReturn {
+export function useWorkspaces(): UseWorkspacesReturn {
 	const { peers } = usePeers();
 	const [sessions, setSessions] =
 		useState<ExtendedSessionResponse[]>(cachedSessions);
@@ -157,7 +157,7 @@ export function useSessions(): UseSessionsReturn {
 			const response = await sessionFetch(
 				peerId ? { peerId } : undefined,
 				peers,
-				"/api/sessions",
+				"/api/workspaces",
 				{
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
@@ -187,7 +187,7 @@ export function useSessions(): UseSessionsReturn {
 		setError(null);
 		try {
 			const session = sessions.find((s) => s.id === id);
-			const response = await sessionFetch(session, peers, `/api/sessions/${id}`, {
+			const response = await sessionFetch(session, peers, `/api/workspaces/${id}`, {
 				method: "DELETE",
 			});
 
@@ -211,7 +211,7 @@ export function useSessions(): UseSessionsReturn {
 				const response = await sessionFetch(
 					session,
 					peers,
-					`/api/sessions/${id}/theme`,
+					`/api/workspaces/${id}/theme`,
 					{
 						method: "PUT",
 						headers: { "Content-Type": "application/json" },

@@ -205,6 +205,10 @@ export interface PaneInfo {
    *  workspace-level summary would be ambiguous; simple single-pane workspaces
    *  keep the summary on the card header instead. */
   metrics?: SessionMetrics;
+  /** Per-pane Claude recap (away summary), same multi-workspace-only rule as
+   *  `metrics` — the header recap is hidden and each Claude pane shows its own. */
+  recap?: string;
+  recapAt?: string;
 }
 
 export interface SessionMetrics {

@@ -1095,8 +1095,10 @@ function SessionItem({
 						)}
 				</div>
 
-				{/* Auto recap (away_summary) — timestamp shown inline at the tail */}
-				{extSession.ccRecap && (
+				{/* Auto recap (away_summary) — timestamp shown inline at the tail.
+				    For a multi-pane/multi-tab workspace it moves to the per-pane
+				    rows (like model/ctx/mem), so hide the header copy there. */}
+				{!isMultiWorkspace && extSession.ccRecap && (
 					<p className="mt-1 text-[12px] text-amber-200 leading-relaxed line-clamp-3">
 						{extSession.ccRecap}
 						{extSession.ccRecapAt && (
@@ -1481,6 +1483,16 @@ function SessionItem({
 												</span>
 											)}
 									</div>
+								)}
+								{pane.recap && (
+									<p className="ml-6 mt-0.5 text-[12px] text-amber-200 leading-relaxed line-clamp-2">
+										{pane.recap}
+										{pane.recapAt && (
+											<span className="ml-2 text-[10px] text-zinc-500">
+												{formatRelativeTime(pane.recapAt, t, i18n.language)}
+											</span>
+										)}
+									</p>
 								)}
 								{pane.paneId === bridgePaneId && (
 									<button

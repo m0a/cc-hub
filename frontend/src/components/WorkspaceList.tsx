@@ -867,6 +867,10 @@ function SessionItem({
 		agent && isAgentProvider(agent)
 			? t(AGENT_PROVIDERS[agent].labelKey)
 			: undefined;
+	// Multi-pane / multi-tab workspace: a single card-header summary of
+	// model/ctx/mem would be ambiguous, so those move to the per-pane rows.
+	const isMultiWorkspace =
+		(extSession.panes?.length ?? 0) > 1 || (extSession.tabs?.length ?? 0) > 1;
 	// Derive card-level indicatorState from panes (priority: waiting_input > processing > idle)
 	const cardIndicator: IndicatorState | undefined = (() => {
 		if (extSession.panes && extSession.panes.length > 0) {
@@ -1111,8 +1115,10 @@ function SessionItem({
 						</p>
 					)}
 
-				{/* Metadata row: agent / context / memory / tokens */}
-				{(agentLabel || extSession.metrics || peerBadge) && (
+				{/* Metadata row: agent / context / memory / tokens.
+				    For a multi-pane/multi-tab workspace, model/ctx/mem move to the
+				    per-pane rows (below), so only the peer badge stays here. */}
+				{(peerBadge || (!isMultiWorkspace && (agentLabel || extSession.metrics))) && (
 					<div className="mt-1.5 flex items-center gap-3 flex-wrap text-[11px] text-zinc-500">
 						{peerBadge && (
 							<span
@@ -1129,7 +1135,7 @@ function SessionItem({
 								{peerBadge.nickname}
 							</span>
 						)}
-						{agentLabel && (
+						{!isMultiWorkspace && agentLabel && (
 							<span className="inline-flex items-center px-2 py-0.5 rounded-full font-medium bg-zinc-500/15 text-zinc-400">
 								{agentLabel}
 								{extSession.metrics?.model && (
@@ -1142,7 +1148,7 @@ function SessionItem({
 								)}
 							</span>
 						)}
-						{typeof extSession.metrics?.contextPercent === "number" && (
+						{!isMultiWorkspace && typeof extSession.metrics?.contextPercent === "number" && (
 							<div
 								className="inline-flex items-center gap-1.5"
 								title={`${formatTokenCount(extSession.metrics.contextTokens ?? 0)} / ${formatTokenCount(extSession.metrics.contextMaxTokens ?? 0)}`}
@@ -1167,7 +1173,8 @@ function SessionItem({
 								</span>
 							</div>
 						)}
-						{typeof extSession.metrics?.memoryRssBytes === "number" &&
+						{!isMultiWorkspace &&
+							typeof extSession.metrics?.memoryRssBytes === "number" &&
 							extSession.metrics.memoryRssBytes > 0 && (
 								<span
 									className="font-mono tabular-nums"
@@ -1314,8 +1321,8 @@ function SessionItem({
 				</div>
 			)}
 
-			{/* Pane list (expandable, shows per-pane status indicators) */}
-			{panesExpanded && extSession.panes && extSession.panes.length > 1 && (
+			{/* Pane list (expandable, shows per-pane status indicators + metrics) */}
+			{panesExpanded && extSession.panes && isMultiWorkspace && (
 				<div
 					className="mx-4 mb-3 pt-2 border-t border-white/[0.06] space-y-1"
 					onClick={(e) => e.stopPropagation()}
@@ -1431,6 +1438,50 @@ function SessionItem({
 								)}
 									<ChevronRight className="w-3.5 h-3.5 text-zinc-700 shrink-0" />
 								</button>
+								{pane.metrics && (
+									<div className="ml-6 mt-0.5 flex items-center gap-3 flex-wrap text-[11px] text-zinc-500">
+										{pane.metrics.model && (
+											<span className="text-zinc-500" title={pane.metrics.model}>
+												{formatModelName(pane.metrics.model)}
+											</span>
+										)}
+										{typeof pane.metrics.contextPercent === "number" && (
+											<div
+												className="inline-flex items-center gap-1.5"
+												title={`${formatTokenCount(pane.metrics.contextTokens ?? 0)} / ${formatTokenCount(pane.metrics.contextMaxTokens ?? 0)}`}
+											>
+												<span className="text-zinc-600">ctx</span>
+												<div className="w-14 h-1 bg-white/10 rounded-full overflow-hidden">
+													<div
+														className={`h-full ${
+															pane.metrics.contextPercent >= 80
+																? "bg-red-500"
+																: pane.metrics.contextPercent >= 60
+																	? "bg-amber-500"
+																	: "bg-emerald-500"
+														}`}
+														style={{
+															width: `${Math.max(2, pane.metrics.contextPercent)}%`,
+														}}
+													/>
+												</div>
+												<span className="font-mono tabular-nums">
+													{pane.metrics.contextPercent.toFixed(1)}%
+												</span>
+											</div>
+										)}
+										{typeof pane.metrics.memoryRssBytes === "number" &&
+											pane.metrics.memoryRssBytes > 0 && (
+												<span
+													className="font-mono tabular-nums"
+													title={`${pane.metrics.memoryRssBytes} bytes`}
+												>
+													<span className="text-zinc-600">mem</span>{" "}
+													{formatBytes(pane.metrics.memoryRssBytes)}
+												</span>
+											)}
+									</div>
+								)}
 								{pane.paneId === bridgePaneId && (
 									<button
 										type="button"

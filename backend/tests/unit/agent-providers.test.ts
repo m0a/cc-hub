@@ -36,6 +36,12 @@ describe('Agent provider registry', () => {
     expect(parsed.agent).toBe('grok');
   });
 
+  test('accepts Kimi as a create-session agent', () => {
+    const parsed = CreateSessionSchema.parse({ name: 'example', agent: 'kimi' });
+
+    expect(parsed.agent).toBe('kimi');
+  });
+
   test('rejects unsupported create-session agents', () => {
     const parsed = CreateSessionSchema.safeParse({ name: 'example', agent: 'gemini' });
 
@@ -50,6 +56,8 @@ describe('Agent provider registry', () => {
     expect(detectAgentProviderFromArgs('/home/user/.bun/install/global/node_modules/@openai/codex/bin/codex.js')).toBe('codex');
     expect(detectAgentProviderFromArgs('grok')).toBe('grok');
     expect(detectAgentProviderFromArgs('/home/user/.grok/bin/grok -p prompt')).toBe('grok');
+    expect(detectAgentProviderFromArgs('kimi')).toBe('kimi');
+    expect(detectAgentProviderFromArgs('/home/user/.kimi-code/bin/kimi --session session_abc')).toBe('kimi');
   });
 
   test('does not detect provider names inside unrelated paths', () => {
@@ -61,6 +69,7 @@ describe('Agent provider registry', () => {
   test('threadAgentOf identifies thread-based agents only', () => {
     expect(threadAgentOf('codex')).toBe('codex');
     expect(threadAgentOf('grok')).toBe('grok');
+    expect(threadAgentOf('kimi')).toBe('kimi');
     expect(threadAgentOf('claude')).toBeUndefined();
     expect(threadAgentOf('bash')).toBeUndefined();
     expect(threadAgentOf(undefined)).toBeUndefined();
@@ -112,5 +121,7 @@ describe('Agent provider registry', () => {
     expect(agentResumeCommand('codex', 'thread-xyz')).toBe("codex resume 'thread-xyz'");
     expect(agentResumeCommand('grok')).toBe('grok --resume');
     expect(agentResumeCommand('grok', 'session-abc')).toBe("grok --resume 'session-abc'");
+    expect(agentResumeCommand('kimi')).toBe('kimi --session');
+    expect(agentResumeCommand('kimi', 'session-abc')).toBe("kimi --session 'session-abc'");
   });
 });

@@ -24,7 +24,7 @@ interface DashboardProps {
 	compact?: boolean; // true when in narrow side panel
 }
 
-type AgentTab = "claude" | "codex" | "grok";
+type AgentTab = "claude" | "codex" | "grok" | "kimi";
 
 export function Dashboard({ className = "", compact = false }: DashboardProps) {
 	const { t, i18n } = useTranslation();
@@ -45,6 +45,7 @@ export function Dashboard({ className = "", compact = false }: DashboardProps) {
 	const [agentTab, setAgentTab] = useState<AgentTab>("claude");
 	const codexLimits = data?.codexUsageLimits;
 	const grokUsage = data?.grokUsage;
+	const kimiUsage = data?.kimiUsage;
 	// Claude is "available" when we have any actionable Claude data. The endpoint
 	// returns empty arrays / no-credentials errors on a Codex-only machine.
 	const claudeAvailable =
@@ -58,6 +59,7 @@ export function Dashboard({ className = "", compact = false }: DashboardProps) {
 		...(claudeAvailable ? (["claude"] as const) : []),
 		...(codexLimits ? (["codex"] as const) : []),
 		...(grokUsage ? (["grok"] as const) : []),
+		...(kimiUsage ? (["kimi"] as const) : []),
 	];
 	const showAgentTabs = availableTabs.length > 1;
 	const effectiveTab: AgentTab = availableTabs.includes(agentTab)
@@ -207,6 +209,64 @@ export function Dashboard({ className = "", compact = false }: DashboardProps) {
 						</div>
 						<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2 text-th-text-muted text-xs">
 							{t("dashboard.grokNoRateLimitInfo")}
+						</div>
+					</div>
+				) : effectiveTab === "kimi" ? (
+					<div
+						className={
+							compact
+								? "space-y-3"
+								: "md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0"
+						}
+					>
+						<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2">
+							<div className="flex items-center justify-between mb-3">
+								<h3 className="text-xs font-medium text-th-text-secondary">
+									{t("dashboard.kimiUsage")}
+								</h3>
+							</div>
+							<div className="grid grid-cols-2 gap-3">
+								{(
+									[
+										["kimiLast24h", kimiUsage?.last24h],
+										["kimiLast7d", kimiUsage?.last7d],
+									] as const
+								).map(([labelKey, window]) => (
+									<div
+										key={labelKey}
+										className="bg-white/[0.03] rounded-md p-3 border border-white/[0.06]"
+									>
+										<div className="text-[11px] text-th-text-muted mb-1">
+											{t(`dashboard.${labelKey}`)}
+										</div>
+										<div className="text-lg font-semibold text-th-text">
+											{formatTokens(window?.totalTokens ?? 0)}
+										</div>
+										<div className="text-[11px] text-th-text-muted mt-0.5">
+											{t("dashboard.kimiTurns", { count: window?.turns ?? 0 })}
+										</div>
+									</div>
+								))}
+							</div>
+							{(kimiUsage?.models.length ?? 0) > 0 && (
+								<div className="mt-3 space-y-1">
+									<div className="text-[11px] text-th-text-muted">
+										{t("dashboard.kimiModelBreakdown")}
+									</div>
+									{kimiUsage?.models.map((m) => (
+										<div
+											key={m.model}
+											className="flex justify-between text-xs text-th-text-secondary"
+										>
+											<span>{m.model}</span>
+											<span>{formatTokens(m.totalTokens)}</span>
+										</div>
+									))}
+								</div>
+							)}
+						</div>
+						<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2 text-th-text-muted text-xs">
+							{t("dashboard.kimiNoRateLimitInfo")}
 						</div>
 					</div>
 				) : effectiveTab === "codex" ? (

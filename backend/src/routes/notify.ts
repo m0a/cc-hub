@@ -30,8 +30,8 @@ async function readTrailingLines(path: string, lineCount: number): Promise<strin
 // /api/notify is unauthenticated (local hooks call into it), so the
 // transcript_path in the request body cannot be trusted: generateSmartMessage
 // reads the file and broadcasts text fragments of it to every connected
-// client. Only real transcript locations (the Claude Code / Codex state
-// dirs) may be read. Symlinks are resolved before the prefix check. #347
+// client. Only real transcript locations (the agent CLIs' state dirs) may be
+// read. Symlinks are resolved before the prefix check. #347
 export async function isAllowedTranscriptPath(path: string): Promise<boolean> {
   let resolved: string;
   try {
@@ -39,7 +39,7 @@ export async function isAllowedTranscriptPath(path: string): Promise<boolean> {
   } catch {
     return false;
   }
-  for (const dir of ['.claude', '.codex', '.grok']) {
+  for (const dir of ['.claude', '.codex', '.grok', '.kimi-code']) {
     const root = await realpath(`${homedir()}/${dir}`).catch(() => null);
     if (root && resolved.startsWith(`${root}/`)) return true;
   }

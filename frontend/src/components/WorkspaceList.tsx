@@ -475,7 +475,7 @@ function CreateSessionModal({
 					<div className="text-xs text-th-text-secondary mb-1">
 						{t("session.agent")}
 					</div>
-					<div className="grid grid-cols-3 gap-2">
+					<div className="grid grid-cols-4 gap-2">
 						{AGENT_PROVIDER_IDS.map((option) => (
 							<button
 								key={option}

@@ -7,6 +7,8 @@ import { isAllowedTranscriptPath } from '../notify';
 const claudeDir = join(homedir(), '.claude');
 const realFile = join(claudeDir, '.cchub-test-transcript.jsonl');
 const linkFile = join(claudeDir, '.cchub-test-escape-link.jsonl');
+const kimiDir = join(homedir(), '.kimi-code');
+const kimiFile = join(kimiDir, '.cchub-test-transcript.jsonl');
 
 describe('isAllowedTranscriptPath', () => {
   beforeAll(async () => {
@@ -14,15 +16,22 @@ describe('isAllowedTranscriptPath', () => {
     await writeFile(realFile, '{}\n');
     await rm(linkFile, { force: true });
     await symlink('/etc/hosts', linkFile);
+    await mkdir(kimiDir, { recursive: true });
+    await writeFile(kimiFile, '{}\n');
   });
 
   afterAll(async () => {
     await rm(realFile, { force: true });
     await rm(linkFile, { force: true });
+    await rm(kimiFile, { force: true });
   });
 
   test('allows a transcript under ~/.claude', async () => {
     expect(await isAllowedTranscriptPath(realFile)).toBe(true);
+  });
+
+  test('allows a transcript under ~/.kimi-code', async () => {
+    expect(await isAllowedTranscriptPath(kimiFile)).toBe(true);
   });
 
   test('rejects files outside the allowed dirs', async () => {

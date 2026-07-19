@@ -71,6 +71,9 @@ glasses/     # EVEN G2 smart glasses app (EvenHub SDK, built to out.ehpk)
 - **GrokService / GrokSessionStore** (`services/grok.ts`) - Grok Build (xAI) integration: scans `~/.grok/sessions/<URL-encoded cwd>/<uuid>/` (`summary.json` metadata, `prompt_history.jsonl` first prompts, `updates.jsonl` `turn_completed` token usage), resolves the latest thread per working directory
 - **GrokHistoryService** (`services/grok-history.ts`) - Grok session history + conversation reader: parses `chat_history.jsonl` (user records with `prompt_index`, assistant `tool_calls`, `tool_result`) into Claude-shaped conversation turns
 - **GrokUsageService** (`services/grok-usage.ts`) - Aggregates Grok token consumption (24h/7d windows, per-model, plan badge) from `turn_completed` records for the dashboard's Grok tab. xAI exposes no rate-limit windows locally, so totals are all it can show
+- **KimiService / KimiSessionStore** (`services/kimi.ts`) - Kimi Code integration: scans `~/.kimi-code/sessions/wd_<name>_<hash>/session_<uuid>/` (`state.json` metadata, main `agents/main/wire.jsonl` first prompt + `usage.record` token usage), resolves exact threads by native session id
+- **KimiHistoryService** (`services/kimi-history.ts`) - Kimi session history + conversation reader: parses `wire.jsonl` (`turn.prompt`, `content.part` text, `tool.call`, `tool.result` loop events) into Claude-shaped conversation turns
+- **KimiUsageService** (`services/kimi-usage.ts`) - Aggregates Kimi token consumption (24h/7d windows, per-model) from `usage.record` records across all agent wires (`agents/main` + sub-agents) for the dashboard's Kimi tab. Kimi exposes no rate-limit windows or plan data locally, so totals are all it can show
 - **ConversationWatcher** (`services/conversation-watcher.ts`) - Watches Claude Code / Codex `.jsonl` files and emits conversation updates to subscribed WebSocket clients
 - **HookStatusService** (`services/hook-status.ts`) - Reports whether the hooks CC Hub still needs are installed (`Stop` for notification text, `PostToolUse`/`AskUserQuestion` for the question's tool name). Indicator transitions come from herdr, not hooks
 - **HerdrAgentStatusWatcher** (`services/herdr-agent-status.ts`) - Subscribes to herdr's per-pane `pane.agent_status_changed` (plus pane lifecycle events, which re-subscribe the pane set) and triggers an immediate sessions push. Decides *when* to rebuild the list, never what's in it — a dropped event costs latency, not correctness
@@ -343,13 +346,15 @@ cchub --version
 - Run `sudo tailscale set --operator=$USER` once to allow cert generation
 - macOS: Install Tailscale via `brew install tailscale` (App Store version lacks CLI)
 - herdr must be installed (`curl -fsSL https://herdr.dev/install.sh | sh` or `brew install herdr`); cchub auto-starts `herdr server` if it isn't running, but a supervised setup (systemd user unit with `Restart=always` + `~/.config/herdr/config.toml` with `resume_agents_on_restore = true`) is strongly recommended so agent sessions survive server restarts
-- For native session identity/restore, install the herdr integrations once: `herdr integration install claude` and `herdr integration install codex` (`cchub setup` installs both)
+- For native session identity/restore, install the herdr integrations once: `herdr integration install claude` / `codex` / `kimi` (`cchub setup` installs all initialized ones)
 
-## Claude Code / Codex / Grok Hook通知連携
+## Claude Code / Codex / Grok / Kimi Hook通知連携
 
-Claude Code・Codex・Grok Build のhookイベント（応答完了、ユーザー入力待ち等）をCC Hub経由でブラウザのOS通知として受け取れる。
+Claude Code・Codex・Grok Build・Kimi Code のhookイベント（応答完了、ユーザー入力待ち等）をCC Hub経由でブラウザのOS通知として受け取れる。
 
 Grok Build は `~/.claude/settings.json` の hooks を互換レイヤでデフォルト読み込みするため、Claude 用の `cchub notify` 設定がそのまま発火する（追加設定不要）。ただし stdin JSON は camelCase 独自形式（`hookEventName: "stop"`, `sessionId`, `transcriptPath`）なので、`/api/notify` 側で Claude 形式に正規化している（`routes/notify.ts` の `normalizeHookBody`）。
+
+Kimi Code は `~/.kimi-code/config.toml` の `[[hooks]]` に設定する（例: `event = "Stop"`, `command = "cchub notify"`）。stdin JSON は Claude 互換の snake_case（`hook_event_name`, `session_id`, ...）なので正規化は不要。
 
 ### 仕組み
 

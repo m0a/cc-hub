@@ -20,7 +20,7 @@
  */
 
 import type { PaneCursor, PaneDemand, PaneModes, PaneViewport, TmuxLayoutNode } from '../../../shared/types';
-import { type ClientPaneDemands, reconcilePaneSizes } from './pane-sizing';
+import { type ClientPaneDemands, reconcilePaneSizes, resolveTargetSizes } from './pane-sizing';
 import {
   eventWorkspaceId,
   exportLayout,
@@ -45,6 +45,11 @@ const RESIZE_DEBOUNCE_MS = 50;
 // size (proven in Phase 1), so this is behavior-neutral until two clients
 // disagree — then the smaller wins (tmux-style) rather than last-writer thrash.
 const PER_CLIENT_SIZING = process.env.CCHUB_PER_CLIENT_SIZING === '1';
+// A client's proposeDimensions and the server's ratio split can disagree by a
+// cell or two from rounding; only a demand this many cells smaller than the
+// tree slot counts as a real cross-client conflict worth shrinking a pane for.
+// Matches the ±3 tolerance the desktop resize path already uses.
+const SIZING_TOLERANCE = 3;
 // herdr pane.read hard cap (server-side, not configurable in 0.7.x)
 const HERDR_READ_CAP = 1000;
 
@@ -534,37 +539,31 @@ export class HerdrControlSession {
     if (this.clientSizeKnown) {
       const { cols, rows } = this.clientSize;
       // Base sizes: today's tree/zoom geometry (unchanged when the flag is off).
-      const targets = new Map<string, { cols: number; rows: number }>();
+      const base = new Map<string, { cols: number; rows: number }>();
       for (const [paneId, rect] of this.tree.computeRects(cols, rows)) {
-        targets.set(paneId, { cols: rect.width, rows: rect.height });
+        base.set(paneId, { cols: rect.width, rows: rect.height });
       }
-      if (PER_CLIENT_SIZING) {
-        // Override each shown pane with its reconciled per-client demand. Only
-        // panes already in the base are touched, so undemanded/hidden panes keep
-        // exactly today's behavior; single-client demands equal the base.
-        const reconciled = this.reconciledPaneSizes();
-        for (const paneId of targets.keys()) {
-          const demand = reconciled.get(paneId);
-          if (demand) targets.set(paneId, demand);
-        }
-      }
+      // Per-client sizing only intervenes for a genuine multi-client conflict
+      // (see resolveTargetSizes); a single client keeps the tree/zoom path.
+      const targets = PER_CLIENT_SIZING
+        ? resolveTargetSizes(base, this.reconciledPaneSizes(), this.paneDemands.size, SIZING_TOLERANCE)
+        : base;
       for (const [paneId, size] of targets) {
         const prev = this.paneSizes.get(paneId);
         if (prev && prev.cols === size.cols && prev.rows === size.rows) continue;
         this.paneSizes.set(paneId, size);
         this.controllerFor(paneId)?.resize(size.cols, size.rows);
       }
-      if (PER_CLIENT_SIZING) this.logSizingParity();
+      if (PER_CLIENT_SIZING && this.paneDemands.size >= 2) this.logSizingParity();
     }
     this.emitLayout();
   }
 
   /**
-   * Diagnostics for per-client sizing (Phase 1): compare the reconciled
-   * per-pane demands against the size the current tree/zoom path just applied.
-   * For a single client they must match — that's the equivalence gate we need
-   * before ever switching PTY sizing over to the demands. Logs only; changes
-   * nothing.
+   * Diagnostics for per-client sizing: report panes whose reconciled demand is
+   * a real conflict with the tree/zoom slot (beyond rounding tolerance) — i.e.
+   * a pane that per-client sizing actually shrinks. A single client trips
+   * nothing (equivalent). Logs only; changes nothing.
    */
   private logSizingParity(): void {
     const reconciled = this.reconciledPaneSizes();
@@ -576,14 +575,17 @@ export class HerdrControlSession {
       const rect = rects.get(paneId);
       if (!rect) {
         diffs.push(`${paneId}: demand ${size.cols}x${size.rows}, no current rect`);
-      } else if (rect.width !== size.cols || rect.height !== size.rows) {
-        diffs.push(`${paneId}: current ${rect.width}x${rect.height} vs demand ${size.cols}x${size.rows}`);
+      } else if (
+        rect.width - size.cols >= SIZING_TOLERANCE ||
+        rect.height - size.rows >= SIZING_TOLERANCE
+      ) {
+        diffs.push(`${paneId}: slot ${rect.width}x${rect.height} shrunk to ${size.cols}x${size.rows}`);
       }
     }
     console.log(
       `[per-client-sizing] ${this.sessionId}: ${this.paneDemands.size} client(s), ` +
-        `${reconciled.size} pane demand(s), ${diffs.length} differ` +
-        (diffs.length ? `: ${diffs.join('; ')}` : ' (equivalent)'),
+        `${reconciled.size} pane demand(s), ${diffs.length} conflict(s)` +
+        (diffs.length ? `: ${diffs.join('; ')}` : ' (no shrink — equivalent)'),
     );
   }
 

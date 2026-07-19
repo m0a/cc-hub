@@ -77,6 +77,10 @@ export function clientOwnsSessionSize(
   return claim || activeClientId === null || activeClientId === clientId || clientCount <= 1;
 }
 
+// Pane ids come from WS/REST clients and end up inside herdr JSON-RPC
+// params (via toHerdr), so reject anything outside the tmux-style `%N`
+// shape at the boundary. The WS layer validates the same shape
+// (PaneIdSchema) before dispatch; this is the in-process backstop.
 export function assertPaneId(paneId: string): void {
   if (typeof paneId !== 'string' || !PANE_ID_RE.test(paneId)) {
     throw new Error(`Invalid pane id: ${JSON.stringify(paneId)}`);
@@ -258,7 +262,6 @@ export class HerdrControlSession {
   private layoutListeners = new Set<LayoutListener>();
   private exitListeners = new Set<ExitListener>();
   private paneDeadListeners = new Set<PaneDeadListener>();
-  private newSessionListeners = new Set<(sessionId: string, sessionName: string) => void>();
 
   private clientCount = 0;
   private graceTimer: Timer | null = null;
@@ -756,7 +759,7 @@ export class HerdrControlSession {
   }
 
   // ==========================================================================
-  // Public API - Commands (mirrors TmuxControlSession)
+  // Public API - Commands
   // ==========================================================================
 
   async sendInput(paneId: string, data: Buffer): Promise<void> {
@@ -1048,7 +1051,7 @@ export class HerdrControlSession {
   }
 
   // ==========================================================================
-  // Public API - Listeners (mirrors TmuxControlSession)
+  // Public API - Listeners
   // ==========================================================================
 
   onOutput(listener: (paneId: string, data: Buffer) => void): () => void {
@@ -1076,13 +1079,6 @@ export class HerdrControlSession {
     this.paneDeadListeners.add(listener);
     return () => {
       this.paneDeadListeners.delete(listener);
-    };
-  }
-
-  onNewSession(listener: (sessionId: string, sessionName: string) => void): () => void {
-    this.newSessionListeners.add(listener);
-    return () => {
-      this.newSessionListeners.delete(listener);
     };
   }
 
@@ -1185,7 +1181,6 @@ export class HerdrControlSession {
     this.layoutListeners.clear();
     this.exitListeners.clear();
     this.paneDeadListeners.clear();
-    this.newSessionListeners.clear();
     this.clientDeviceTypes.clear();
     this.paneDemands.clear();
     this.clientSizes.clear();

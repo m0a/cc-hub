@@ -1,10 +1,9 @@
 import { describe, test, expect } from 'bun:test';
 import { CreateSessionSchema } from '../../../../shared/types';
 
-// CreateSessionSchema.name guards against SEP-collisions in tmux list-panes
-// output. The defense-in-depth parser check in tmux.ts:listSessions complements
-// this for any pre-existing sessions, but the schema is the primary line of
-// defense for newly-created sessions. #250
+// CreateSessionSchema.name keeps herdr workspace labels in the SessionId
+// alphabet, so a label stays safe to use wherever a session id appears
+// (URLs, logs, RPC params) without escaping. #250
 describe('CreateSessionSchema.name', () => {
   test('accepts alphanumerics, dot, underscore, hyphen', () => {
     for (const name of ['linux', 'cchub-work-1', 'my.session', 'A_B-C.1']) {
@@ -12,7 +11,7 @@ describe('CreateSessionSchema.name', () => {
     }
   });
 
-  test('rejects names containing the tmux parser sentinel pipes/tildes', () => {
+  test('rejects names containing pipes/tildes', () => {
     const poisoned = [
       'weird||~~||name',
       'weird||~~||name||~~||%99||~~||pwned',

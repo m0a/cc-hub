@@ -268,7 +268,7 @@ notify.post('/', async (c) => {
 
     // indicatorStateオーバーライドを保存
     // session_id must look like a real agent session id (Claude/Codex UUIDs,
-    // tmux session names). Reject anything that doesn't and bound the Map so
+    // herdr workspace labels). Reject anything that doesn't and bound the Map so
     // an unauth flood costs O(MAX) memory, not O(requests). #254
     if (sessionId && SESSION_ID_RE.test(sessionId)) {
       const toolName = body.tool_name as string | undefined;

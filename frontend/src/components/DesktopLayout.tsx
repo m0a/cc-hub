@@ -117,11 +117,12 @@ function firstLeafId(node: PaneNode): string | null {
 	return null;
 }
 
-// Compute total tmux window size by summing pane sizes from the layout tree.
-// tmux needs: horizontal splits → sum cols + borders, vertical → sum rows + borders.
+// Compute the session's total window size by summing pane sizes from the
+// layout tree, following the wire layout's tmux-convention geometry:
+// horizontal splits → sum cols + 1-cell borders, vertical → sum rows + borders.
 // When useProposed=true, uses proposeDimensions() (what fits the container) instead of
-// actual xterm size. This is needed in control mode where xterm size is set by tmux,
-// not by FitAddon.
+// actual xterm size. This is needed in control mode where xterm size is set by the
+// server's layout, not by FitAddon.
 function computeTotalSizeFromTree(
 	root: PaneNode,
 	terminalRefs: React.RefObject<Map<string, TerminalRef | null>>,
@@ -196,7 +197,7 @@ function getAllPaneIds(node: PaneNode): string[] {
 // Boundary-style divider drag. Moving the divider between children[i] and
 // children[i+1] of `splitId` must move ONLY that boundary on screen: the two
 // panes touching it absorb the delta, every other pane keeps its absolute
-// size (tmux semantics). Inside each adjacent child, same-direction splits
+// size. Inside each adjacent child, same-direction splits
 // along the touching edge renormalize their ratios to hold the interior
 // boundaries still; cross-direction splits pass the change through to all
 // children (each of their rows/columns touches the dragged boundary).
@@ -354,7 +355,7 @@ function tmuxLayoutToPaneNode(
 }
 
 // Extract per-pane {cols, rows} from a TmuxLayoutNode tree.
-// tmux layout width/height = pane cols/rows.
+// TmuxLayoutNode width/height = pane cols/rows.
 function extractPaneSizes(
 	node: TmuxLayoutNode,
 ): Map<string, { cols: number; rows: number }> {
@@ -504,7 +505,7 @@ export function DesktopLayout({
 		};
 	}, [keyboardControlRef, isTablet]);
 
-	// Refresh all terminal panes (force tmux redraw without page reload)
+	// Reload the page to remount every terminal pane from a fresh viewport
 	const handleGlobalReload = useCallback(() => {
 		window.location.reload();
 	}, []);
@@ -657,7 +658,7 @@ export function DesktopLayout({
 		return sessionsRef.current.find((s) => s.id === sid)?.peerId;
 	}, []);
 
-	// Timer for applying exact tmux pane sizes after layout-change
+	// Timer for applying the server layout's exact pane sizes after a layout message
 	const layoutSizeTimerRef = useRef<number | null>(null);
 
 	// Flag: true while a layout change is being processed (React re-render pending).
@@ -709,7 +710,7 @@ export function DesktopLayout({
 			// Pane sizes may have changed; drop the viewport cache (line widths
 			// in cached frames no longer match).
 			paneViewportCacheRef.current.clear();
-			// "Last-write-wins": if the tmux window size (from layout root) differs
+			// "Last-write-wins": if the session's total size (from the layout root) differs
 			// significantly from what we last sent, another client changed it.
 			// Clear lastSentSizeRef so the next user interaction re-sends our size.
 			const last = lastSentSizeRef.current;
@@ -722,12 +723,12 @@ export function DesktopLayout({
 			}
 			// Suppress sendControlResize while React re-renders with new CSS ratios.
 			// Without this, ResizeObserver fires with OLD container sizes → stale
-			// proposed dimensions → wrong total sent to tmux → size oscillation.
+			// proposed dimensions → wrong total sent to the server → size oscillation.
 			layoutPendingRef.current = true;
 
-			// Force each xterm.js to match tmux's exact pane sizes.
+			// Force each xterm.js to match the server layout's exact pane sizes.
 			// In control mode, FitAddon.fit() is NOT called (proposeDimensions() is used
-			// instead), so xterm size is ONLY set here from tmux's layout-change.
+			// instead), so xterm size is ONLY set here from the server's layout messages.
 			//
 			// We must wait for React to re-render with updated CSS ratios AND for the
 			// browser to paint (layout reflow). Use requestAnimationFrame to ensure
@@ -753,7 +754,7 @@ export function DesktopLayout({
 						}
 					}
 					// Re-enable sendControlResize but do NOT send one here.
-					// The layout-change is tmux's response to our resize — sending
+					// The layout message is the server's response to our resize — sending
 					// another resize creates a feedback loop (223→221→223→…).
 					layoutPendingRef.current = false;
 				});
@@ -885,7 +886,7 @@ export function DesktopLayout({
 	}, [controlSessionId, controlSessionInstanceId, remoteControl]);
 
 	// Control mode resize: compute TOTAL window size from layout tree.
-	// tmux refresh-client -C needs cols×rows for the entire window,
+	// The resize message carries cols×rows for the entire session window,
 	// which is the sum of individual pane sizes + borders.
 	const controlResizeTimerRef = useRef<number | null>(null);
 	const lastSentSizeRef = useRef<{ cols: number; rows: number } | null>(null);
@@ -916,14 +917,15 @@ export function DesktopLayout({
 					desktopStateRef.current.root
 				: desktopStateRef.current.root;
 			// Use proposed dimensions (what fits each container) instead of actual
-			// xterm size, since in control mode xterm size is set by tmux layout-change,
-			// not by FitAddon.fit().
+			// xterm size, since in control mode xterm size is set by the server's
+			// layout messages, not by FitAddon.fit().
 			const totalSize = computeTotalSizeFromTree(root, terminalRefs, true);
 			if (totalSize && totalSize.cols > 0 && totalSize.rows > 0) {
 				const last = lastSentSizeRef.current;
 				// Tolerate ±3 difference to prevent resize oscillation.
-				// proposeDimensions() and tmux can disagree by 2-3 col/row due to
-				// integer rounding of pane border allocation and CSS layout differences.
+				// proposeDimensions() and the server layout can disagree by 2-3 col/row
+				// due to integer rounding of pane border allocation (the wire layout's
+				// tmux-convention cell rects) and CSS layout differences.
 				if (
 					last &&
 					Math.abs(last.cols - totalSize.cols) <= 3 &&
@@ -983,8 +985,8 @@ export function DesktopLayout({
 			pendingControlTreeRef.current = controlPaneTree;
 			return;
 		}
-		// Note: tmux zoom does NOT change %layout-change notifications.
-		// Zoom state is tracked purely in frontend via zoomedPaneId.
+		// Note: the server sends the full tree even while zoomed; desktop tracks
+		// zoom locally via zoomedPaneId (trusting the server's copy is #479).
 		applyControlTree(controlPaneTree);
 	}, [controlPaneTree, applyControlTree]);
 
@@ -1029,7 +1031,7 @@ export function DesktopLayout({
 				},
 				onResize: () => {
 					// Individual pane resize triggers total container size calculation.
-					// tmux refresh-client -C needs the TOTAL window size, not per-pane.
+					// The resize message must carry the TOTAL window size, not per-pane.
 					sendControlResize();
 				},
 				forceResize: (cols: number, rows: number) => {
@@ -1043,8 +1045,8 @@ export function DesktopLayout({
 					// tolerance) reconcile the per-pane rounding instead.
 					if (getAllPaneIds(desktopStateRef.current.root).length > 1) return;
 					// Send the requested geometry without consulting the dedup cache;
-					// this is the escape hatch when tmux's pane size disagrees with
-					// what we last sent (e.g. window-size policy held it stuck).
+					// this is the escape hatch when the server's pane size disagrees
+					// with what we last sent (e.g. a stale size held it stuck).
 					lastSentSizeRef.current = { cols, rows };
 					controlTerminalRef.current.resize(cols, rows);
 				},
@@ -1180,7 +1182,7 @@ export function DesktopLayout({
 			return;
 		}
 		controlTerminalRef.current.splitPane(activeId, dir);
-		// Wait for tmux layout update via %layout-change
+		// The server responds with a layout message
 	}, []);
 
 	const handleClosePane = useCallback((paneId?: string) => {
@@ -1190,7 +1192,7 @@ export function DesktopLayout({
 			return;
 		}
 		controlTerminalRef.current.closePane(targetId);
-		// Wait for tmux layout update via %layout-change
+		// The server responds with a layout message
 	}, []);
 
 	// Handle paste (text or image)
@@ -1532,7 +1534,7 @@ export function DesktopLayout({
 		(paneId: string, sessionId?: string) => {
 			if (!sessionId) return;
 
-			// All panes belong to one tmux session.
+			// All panes belong to one workspace (session).
 			// Update ALL panes' sessionId so getControlSessionId() returns the new session,
 			// triggering control WebSocket reconnection to the new session.
 			setDesktopState((prev) => ({
@@ -1611,8 +1613,9 @@ export function DesktopLayout({
 	);
 
 	// Compute the display root: when zoomed, show only the zoomed pane full-screen.
-	// tmux zoom does NOT change %layout-change notifications, so we handle zoom
-	// purely in the frontend by overriding the rendered tree.
+	// The server keeps sending the full tree while zoomed (zoom rides alongside as
+	// zoomedPaneId), but desktop still tracks zoom in local state and overrides the
+	// rendered tree here — trusting the server's zoomedPaneId is #479.
 	const displayRoot = useMemo(() => {
 		if (zoomedPaneId) {
 			const zoomedPane = findPaneById(desktopState.root, zoomedPaneId);

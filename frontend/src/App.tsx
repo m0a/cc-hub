@@ -151,18 +151,18 @@ function ConfirmDeleteDialog({
 	onConfirm: () => void;
 	onCancel: () => void;
 }) {
+	const { t } = useTranslation();
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay)] animate-backdrop-in">
 			<div className="bg-th-surface rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl animate-modal-in">
 				<h3 className="text-lg font-bold text-th-text mb-2">
-					セッションを削除
+					{t("session.deleteSession")}
 				</h3>
 				<p className="text-th-text-secondary mb-4">
-					<span className="font-medium text-th-text">{sessionName}</span>{" "}
-					を削除しますか？
+					{t("session.deleteConfirm", { name: sessionName })}
 				</p>
 				<p className="text-sm text-th-text-secondary mb-6">
-					tmuxセッションを終了します。一覧には Lost として残り、「再開」ボタンで会話を続けられます。
+					{t("session.deleteWarning")}
 				</p>
 				<div className="flex gap-3 justify-end">
 					<button
@@ -170,14 +170,14 @@ function ConfirmDeleteDialog({
 						onClick={onCancel}
 						className="px-4 py-2 bg-th-surface-active hover:bg-th-surface-hover rounded font-medium transition-colors text-th-text"
 					>
-						キャンセル
+						{t("common.cancel")}
 					</button>
 					<button
 						type="button"
 						onClick={onConfirm}
 						className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded font-medium transition-colors text-th-text"
 					>
-						削除する
+						{t("common.delete")}
 					</button>
 				</div>
 			</div>
@@ -1182,8 +1182,8 @@ export function App() {
 				>
 					{(() => {
 						// Use the session-level Claude indicator (set by hook events / jsonl).
-						// `state === 'working'` is unreliable here — it just means the tmux
-						// session is attached, so it would always be true once connected.
+						// `state === 'working'` is unreliable here — it just means the herdr
+						// workspace is focused, so it would always be true once connected.
 						const indicator = activeSession.indicatorState;
 						const isProcessing = indicator === "processing";
 						const isWaitingInput = indicator === "waiting_input";
@@ -1328,13 +1328,9 @@ export function App() {
 										const apiPane = apiPanes?.find(
 											(p) => p.paneId === pane.paneId,
 										);
-										// Priority: agentName > paneTitle (stripped) > command > paneId
-										const paneTitle = apiPane?.title
-											?.replace(/^[✳★●◆✻✽⏳⠀-⣿]\s*/, "")
-											.trim();
+										// Priority: agentName > command > paneId
 										const label =
 											apiPane?.agentName ||
-											paneTitle ||
 											apiPane?.currentCommand ||
 											pane.paneId;
 										const colorCls =

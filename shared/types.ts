@@ -202,11 +202,9 @@ export interface PaneInfo {
   agent?: AgentProvider;
   /** Native agent session id reported by the pane's herdr integration. */
   agentSessionId?: string;
-  title?: string;          // pane_title set by Claude Code (task description)
   agentName?: string;      // Team agent name from --agent-name process arg
   agentColor?: string;     // Team agent color from --agent-color process arg
   isActive: boolean;
-  isDead?: boolean;
   indicatorState?: IndicatorState;
   pid?: number;            // shell/subprocess PID of the pane's foreground group
   /** Per-pane agent metrics (model / context% / memory). Populated only for
@@ -233,11 +231,9 @@ export interface SessionMetrics {
   model?: string;                      // latest model id used by the agent (e.g. "claude-opus-4-8", "gpt-5.6-sol")
 }
 
-// Session names become herdr workspace labels; legacy parsers also split on
-// a multi-char sentinel ('||~~||'). Allowing arbitrary characters in `name`
-// lets a request like `weird||~~||name` shift every parsed field and silently
-// misattribute panes to phantom sessions. Tighten to the same alphabet used
-// by SessionIdSchema so the parser invariant holds. #250
+// Session names become herdr workspace labels. Keep them in the same
+// alphabet as SessionIdSchema so a label stays safe to use wherever a
+// session id appears (URLs, logs, RPC params) without escaping. #250
 export const CreateSessionSchema = z.object({
   name: z
     .string()
@@ -674,7 +670,6 @@ export interface ExtendedSessionResponse extends SessionResponse {
   bridgeSessionId?: string;
   agentSessionId?: string;
   currentCommand?: string;
-  paneTitle?: string;
   ccSummary?: string;
   ccFirstPrompt?: string;
   ccRecap?: string;
@@ -909,7 +904,6 @@ export type ControlServerMessage =
   | { type: 'pong'; timestamp: number }
   | { type: 'session-exited'; reason: string }
   | { type: 'error'; message: string; paneId?: string }
-  | { type: 'new-session'; sessionId: string; sessionName: string }
   | { type: 'pane-dead'; paneId: string }
   | { type: 'hook-event'; event: string; cwd?: string; sessionId?: string; message?: string; data?: Record<string, unknown> };
 

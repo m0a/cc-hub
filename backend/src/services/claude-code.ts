@@ -566,7 +566,7 @@ export class ClaudeCodeService {
   private async getSessionForPathUncached(workingDir: string): Promise<ClaudeCodeSession | null> {
     try {
       // Try exact path first, then parent directories. The parent-dir fallback
-      // is needed so that a tmux pane whose project dir has no jsonl (e.g. a
+      // is needed so that a pane whose project dir has no jsonl (e.g. a
       // freshly-started `claude` whose tty-start-time match also fails) still
       // gets a ccSessionId for hook events to bind to. The route handler
       // gates user-visible fields (recap / firstPrompt / summary) by an
@@ -723,7 +723,7 @@ export class ClaudeCodeService {
 
   /**
    * Get multiple recent Claude Code sessions for a path
-   * Used when multiple tmux sessions share the same working directory
+   * Used when multiple sessions (herdr workspaces) share the same working directory
    */
   async getRecentSessionsForPath(workingDir: string, count: number): Promise<ClaudeCodeSession[]> {
     const cacheKey = `recent:${workingDir}:${count}`;

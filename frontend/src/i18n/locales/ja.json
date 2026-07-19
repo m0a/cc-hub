@@ -52,7 +52,7 @@
 		"clearColor": "色をクリア",
 		"deleteSession": "セッションを削除",
 		"deleteConfirm": "{{name}} を削除しますか？",
-		"deleteWarning": "tmuxセッションを終了します。一覧には Lost として残り、「再開」ボタンで会話を続けられます。",
+		"deleteWarning": "ワークスペースを終了します。一覧には Lost として残り、「再開」ボタンで会話を続けられます。",
 		"sessionName": "セッション名",
 		"sessionNamePlaceholder": "空欄で自動生成",
 		"agent": "エージェント",
@@ -285,8 +285,7 @@
 		"cannotCloseLast": "最後のペインは閉じられません",
 		"paneTab": "ペイン {{id}}",
 		"processExited": "プロセスが終了しました",
-		"restart": "再起動",
-		"dead": "終了"
+		"restart": "再起動"
 	},
 	"url": {
 		"noUrls": "URLが見つかりません",

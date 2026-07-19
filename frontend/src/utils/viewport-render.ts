@@ -1,8 +1,9 @@
 /**
  * Translate a PaneViewport into VT bytes for xterm.js.
  *
- * The server-side scrollback model treats tmux as the canonical source for
- * both visible region and history. xterm.js is configured with `scrollback: 0`
+ * The server-side scrollback model treats herdr (`pane.read`) as the
+ * canonical source for both visible region and history. xterm.js is configured
+ * with `scrollback: 0`
  * and is used purely as an ANSI rendering surface — we clear + write the
  * `rows`×`cols` window from the viewport on each apply.
  */
@@ -13,7 +14,7 @@ export function viewportToVTSequence(viewport: PaneViewport): string {
 	let s = "";
 	// Hide cursor while we paint to avoid a flicker train.
 	s += "\x1b[?25l";
-	// Synchronize altScreen mode. tmux's `capture-pane` returns the visible
+	// Synchronize altScreen mode. The server's pane read returns the visible
 	// surface of whichever buffer is active, so the client just needs to be
 	// on the matching buffer before the line writes land.
 	s += viewport.modes.altScreen ? "\x1b[?1049h" : "\x1b[?1049l";

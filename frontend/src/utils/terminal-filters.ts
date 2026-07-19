@@ -13,8 +13,8 @@ const ESC = String.fromCharCode(0x1b);
  *
  * xterm.js may generate SGR-style (\x1b[<...M/m) and legacy (\x1b[M...)
  * mouse reports when it's in mouse tracking mode or when touch/scroll events
- * occur. These must be stripped before sending to tmux via `send-keys -H`,
- * since tmux would deliver them as literal bytes to the shell.
+ * occur. These must be stripped before sending to the server: input is passed
+ * through to the pane's raw PTY, so they would reach the shell as literal bytes.
  */
 const SGR_MOUSE_RE = new RegExp(`${ESC}\\[<[\\d;]*[Mm]`, "g");
 const LEGACY_MOUSE_RE = new RegExp(`${ESC}\\[M[\\s\\S]{3}`, "g");

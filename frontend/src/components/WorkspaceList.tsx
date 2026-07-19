@@ -859,8 +859,7 @@ function SessionItem({
 	// nest it under that row instead of the session-level jump menu.
 	const bridgePaneId =
 		extSession.bridgeSessionId && extSession.panes
-			? extSession.panes.find((p) => !p.isDead && p.currentCommand === agent)
-					?.paneId
+			? extSession.panes.find((p) => p.currentCommand === agent)?.paneId
 			: undefined;
 	const supportsConversationMetadata = agentSupportsConversationMetadata(agent);
 	const agentLabel =
@@ -899,12 +898,8 @@ function SessionItem({
 						: t("session.waitingPermission");
 	const shortPath = toHomeShortPath(extSession.currentPath);
 
-	// Use customTitle if set, then pane title if cc is running and title exists, otherwise use session name
-	const displayTitle = session.customTitle
-		? session.customTitle
-		: supportsConversationMetadata && extSession.paneTitle
-			? extSession.paneTitle.replace(/^[✳★●◆✻✽⏳⠀-⣿]\s*/, "") // Remove status icons / Braille spinner frames
-			: session.name;
+	// Use customTitle if set, otherwise use session name
+	const displayTitle = session.customTitle ? session.customTitle : session.name;
 
 	// Show resume button only when no agent is currently running and we have a
 	// conversation id we can resume from (Claude → ccSessionId, Codex → agentSessionId).
@@ -1068,24 +1063,11 @@ function SessionItem({
 					) : null}
 
 					{/* Secondary badge: pane count (only if > 1) */}
-					{extSession.panes &&
-						extSession.panes.length > 1 &&
-						(() => {
-							const deadCount = extSession.panes.filter((p) => p.isDead).length;
-							return (
-								<span
-									className={`text-[11px] px-2 py-0.5 rounded-full shrink-0 ${
-										deadCount > 0
-											? "text-red-400 bg-red-500/15"
-											: "text-cyan-400 bg-cyan-500/15"
-									}`}
-								>
-									{deadCount > 0
-										? `${extSession.panes.length} (${deadCount} ${t("pane.dead")})`
-										: `${extSession.panes.length} panes`}
-								</span>
-							);
-						})()}
+					{extSession.panes && extSession.panes.length > 1 && (
+						<span className="text-[11px] px-2 py-0.5 rounded-full shrink-0 text-cyan-400 bg-cyan-500/15">
+							{extSession.panes.length} panes
+						</span>
+					)}
 
 						{/* Secondary badge: tab count (only if the workspace has > 1 tab) */}
 						{extSession.tabs && extSession.tabs.length > 1 && (
@@ -1334,10 +1316,7 @@ function SessionItem({
 					{extSession.panes.map((pane) => {
 						const cmd = pane.currentCommand || "shell";
 						const isAgentPane = isAgentProvider(cmd) || !!pane.agentName;
-						const paneTitle = pane.title
-							?.replace(/^[✳★●◆✻✽⏳⠀-⣿]\s*/, "")
-							.trim();
-						const displayName = pane.agentName || paneTitle || cmd;
+						const displayName = pane.agentName || cmd;
 						const agentColorMap: Record<string, string> = {
 							red: "text-red-300",
 							orange: "text-orange-300",
@@ -1357,18 +1336,13 @@ function SessionItem({
 									? "text-green-300"
 									: "text-zinc-300";
 						const paneIndicator = pane.indicatorState;
-						const paneDotClass = pane.isDead
-							? "bg-red-400"
-							: paneIndicator === "processing"
+						const paneDotClass =
+							paneIndicator === "processing"
 								? "bg-blue-400"
 								: paneIndicator === "waiting_input"
 									? "bg-yellow-400 animate-pulse"
 									: "bg-zinc-600";
-						const paneBgClass = pane.isDead
-							? "bg-red-900/20 hover:bg-red-900/30"
-							: isAgentPane
-								? "hover:bg-white/[0.04]"
-								: "hover:bg-white/[0.04]";
+						const paneBgClass = "hover:bg-white/[0.04]";
 
 						let paneTimer: number | null = null;
 						let paneLongPressed = false;
@@ -1418,22 +1392,13 @@ function SessionItem({
 								>
 									{displayName}
 								</span>
-								{pane.agentName && paneTitle && (
-									<span className="text-zinc-600 text-[11px] truncate flex-1">
-										{paneTitle}
-									</span>
-								)}
-								{!pane.agentName && !paneTitle && <span className="flex-1" />}
-								{pane.isDead ? (
-									<span className="text-[10px] text-red-400 bg-red-500/15 px-1.5 py-0.5 rounded-full shrink-0">
-										{t("pane.dead")}
-									</span>
-								) : paneIndicator === "processing" ? (
+								{!pane.agentName && <span className="flex-1" />}
+								{paneIndicator === "processing" && (
 									<span className="text-[10px] text-blue-400 bg-blue-500/15 px-1.5 py-0.5 rounded-full shrink-0">
 										{t("session.processing")}
 									</span>
-								) : null}
-								{pane.isActive && !pane.isDead && (
+								)}
+								{pane.isActive && (
 									<span className="text-[10px] text-cyan-400 bg-cyan-500/15 px-1.5 py-0.5 rounded-full shrink-0">
 										active
 									</span>

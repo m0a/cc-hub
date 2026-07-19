@@ -28,10 +28,7 @@ interface HerdrPaneInfo {
   agent?: AgentProvider;
   agentSessionId?: string;
   agentStatus?: HerdrAgentStatus;
-  title: string;
-  tty: string;
   isActive: boolean;
-  isDead: boolean;
   pid?: number;
 }
 
@@ -44,8 +41,6 @@ interface WorkspaceInfo {
   currentCommand?: string;
   agent?: AgentProvider;
   currentPath?: string;
-  paneTitle?: string;
-  paneTty?: string;
   preview?: string;
   panes?: HerdrPaneInfo[];
   /** Native agent session id (e.g. Claude conversation UUID) reported by the
@@ -216,10 +211,7 @@ export class HerdrService {
                 agent: agentPane?.agent,
                 agentSessionId: agentPane?.sessionId,
                 agentStatus: agentPane?.status ?? p.agent_status,
-                title: '',
-                tty: '',
                 isActive: p.focused,
-                isDead: false,
                 pid,
               };
             }),
@@ -293,8 +285,6 @@ export class HerdrService {
             currentCommand: agent ?? panes[0]?.command,
             agent,
             currentPath,
-            paneTitle: undefined,
-            paneTty: undefined,
             preview,
             panes,
             agentSessionId,

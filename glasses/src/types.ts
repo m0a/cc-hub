@@ -15,7 +15,6 @@ export interface Session {
   durationMinutes?: number
   messageCount?: number
   gitBranch?: string
-  paneTitle?: string
   panes?: { paneId: string; isActive?: boolean; currentCommand?: string }[]
 }
 

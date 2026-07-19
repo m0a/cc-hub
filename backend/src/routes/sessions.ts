@@ -296,7 +296,6 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       currentCommand: s.currentCommand,
       agent: s.agent,
       currentPath: s.currentPath,
-      paneTitle: s.paneTitle,
       waitingToolName: includeClaudeInfo ? effectiveWaitingToolName : includeThreadInfo ? hookToolName : undefined,
       ccSummary: includeClaudeInfo ? (isExactPathMatch ? ccSession?.summary : undefined) : agentThread?.title,
       ccFirstPrompt: includeClaudeInfo ? (isExactPathMatch ? ccSession?.firstPrompt : undefined) : agentThread?.firstPrompt,
@@ -317,12 +316,10 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       customTitle: sessionMetadata[s.id]?.title,
       metrics: sessionMetrics,
       panes: s.panes ? await Promise.all(s.panes.map(async (p) => {
-        const isSessionAgentOnPane = !p.isDead && !!p.agent;
+        const isSessionAgentOnPane = !!p.agent;
         const isClaudeOnPane = isSessionAgentOnPane && includeClaudeInfo;
         let paneIndicator: IndicatorState | undefined;
-        if (p.isDead) {
-          paneIndicator = 'completed';
-        } else if (isClaudeOnPane) {
+        if (isClaudeOnPane) {
           // Use session-level indicator for Claude panes (hook/jsonl based)
           paneIndicator = indicatorState === 'completed' ? 'waiting_input' : indicatorState;
         } else if (includeThreadInfo && isSessionAgentOnPane) {
@@ -351,12 +348,8 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
           currentPath: p.path,
           agent: p.agent,
           agentSessionId: p.agentSessionId,
-          title: p.title || undefined,
           isActive: p.isActive,
-          isDead: p.isDead || undefined,
-          indicatorState: isSessionAgentOnPane
-            ? (hookState === 'processing' && p.title?.startsWith('✳') ? paneIndicator : (hookState ?? paneIndicator))
-            : paneIndicator,
+          indicatorState: isSessionAgentOnPane ? (hookState ?? paneIndicator) : paneIndicator,
           pid: p.pid,
           metrics: paneMetrics,
           recap: paneClaude?.lastRecap?.content,
@@ -387,7 +380,6 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       state: 'lost' as SessionState,
       currentCommand: undefined,
       currentPath: lost.currentPath,
-      paneTitle: undefined,
       waitingToolName: undefined,
       ccSummary: undefined,
       ccFirstPrompt: undefined,

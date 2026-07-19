@@ -1,8 +1,9 @@
 /**
  * Pseudo-scroll helpers.
  *
- * The server-side scrollback model has the canonical history sitting on tmux —
- * every offset change normally requires a round-trip. While that round-trip is
+ * The server-side scrollback model has the canonical history sitting on the
+ * server (herdr pane history) — every offset change normally requires a
+ * round-trip. While that round-trip is
  * in flight we still want the screen to *move* in response to wheel / touch so
  * the user has continuous feedback. `makePseudoViewport` produces a synthetic
  * viewport by shifting the most recent real viewport by `deltaOffset` rows and

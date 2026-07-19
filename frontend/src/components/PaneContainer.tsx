@@ -237,7 +237,7 @@ function TerminalPane({
 		null,
 	);
 
-	// Refresh terminal display (force tmux redraw without remounting)
+	// Refresh terminal display (force a viewport refresh without remounting)
 	const handleReload = useCallback((e: React.MouseEvent) => {
 		e.stopPropagation();
 		if (terminalRef.current?.refreshTerminal) {

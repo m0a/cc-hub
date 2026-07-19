@@ -164,14 +164,13 @@ function numberOrUndefined(value: unknown): number | undefined {
 }
 
 /**
- * Tail-read the main wire.jsonl and return the usage block of the last
- * `usage.record` record. Bounded read (like the Grok reader) so multi-MB
- * streams don't get re-parsed on every sessions push.
+ * Bounded tail read (≤1MB) of the main wire.jsonl — like the Grok reader, so
+ * multi-MB streams don't get re-parsed on every sessions push. Undefined when
+ * the wire is missing or unreadable.
  */
-export function readLatestKimiTokenUsage(sessionDir: string): AgentTokenUsage | undefined {
+function tailReadKimiWire(sessionDir: string): string | undefined {
   const wirePath = kimiWirePath(sessionDir);
   if (!existsSync(wirePath)) return undefined;
-  let text: string;
   try {
     const stat = statSync(wirePath);
     const maxTailBytes = 1024 * 1024;
@@ -180,25 +179,26 @@ export function readLatestKimiTokenUsage(sessionDir: string): AgentTokenUsage | 
       try {
         const buffer = Buffer.alloc(stat.size);
         readSync(fd, buffer, 0, stat.size, 0);
-        text = buffer.toString('utf8');
-      } finally {
-        closeSync(fd);
-      }
-    } else {
-      const fd = openSync(wirePath, 'r');
-      try {
-        const buffer = Buffer.alloc(maxTailBytes);
-        readSync(fd, buffer, 0, maxTailBytes, stat.size - maxTailBytes);
-        text = buffer.toString('utf8');
+        return buffer.toString('utf8');
       } finally {
         closeSync(fd);
       }
     }
+    const fd = openSync(wirePath, 'r');
+    try {
+      const buffer = Buffer.alloc(maxTailBytes);
+      readSync(fd, buffer, 0, maxTailBytes, stat.size - maxTailBytes);
+      return buffer.toString('utf8');
+    } finally {
+      closeSync(fd);
+    }
   } catch {
     return undefined;
   }
+}
 
-  const lines = text.split('\n');
+/** Usage block of the last `usage.record` in the given wire lines. */
+export function parseKimiTokenUsage(lines: string[]): AgentTokenUsage | undefined {
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
     if (!line?.includes('"usage.record"')) continue;
@@ -237,6 +237,59 @@ export function readLatestKimiTokenUsage(sessionDir: string): AgentTokenUsage | 
   return undefined;
 }
 
+/** Recaps are capped so a long final response doesn't flood the session card. */
+const KIMI_RECAP_MAX_CHARS = 500;
+
+/**
+ * Last visible assistant message in the given wire lines: the LAST
+ * `content.part` loop event with `part.type === 'text'` (`think` parts are
+ * internal reasoning and ignored). Serves as the recap substitute — Kimi has
+ * no Claude-style away_summary.
+ */
+export function parseKimiRecap(lines: string[]): { recap?: string; recapAt?: string } {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (!line?.includes('"content.part"')) continue;
+    try {
+      const record = JSON.parse(line) as {
+        type?: string;
+        event?: { type?: string; part?: { type?: unknown; text?: unknown } };
+        time?: unknown;
+      };
+      if (record.type !== 'context.append_loop_event' || record.event?.type !== 'content.part') continue;
+      const part = record.event.part;
+      if (part?.type !== 'text' || typeof part.text !== 'string' || !part.text) continue;
+      return {
+        recap: part.text.length > KIMI_RECAP_MAX_CHARS
+          ? `${part.text.slice(0, KIMI_RECAP_MAX_CHARS)}…`
+          : part.text,
+        recapAt: typeof record.time === 'number' ? new Date(record.time).toISOString() : undefined,
+      };
+    } catch {
+      // partial first line of the tail slice, or a malformed record
+    }
+  }
+  return {};
+}
+
+/** Latest token usage + last assistant message from ONE tail read of the main wire. */
+function readKimiWireTail(sessionDir: string): { tokenUsage?: AgentTokenUsage; recap?: string; recapAt?: string } {
+  const text = tailReadKimiWire(sessionDir);
+  if (text === undefined) return {};
+  const lines = text.split('\n');
+  return { tokenUsage: parseKimiTokenUsage(lines), ...parseKimiRecap(lines) };
+}
+
+/**
+ * Tail-read the main wire.jsonl and return the usage block of the last
+ * `usage.record` record.
+ */
+export function readLatestKimiTokenUsage(sessionDir: string): AgentTokenUsage | undefined {
+  const text = tailReadKimiWire(sessionDir);
+  if (text === undefined) return undefined;
+  return parseKimiTokenUsage(text.split('\n'));
+}
+
 /** Exact Kimi Code sessions by native session id, for the active-sessions list. */
 export class KimiService implements AgentThreadService {
   private store: KimiSessionStore;
@@ -253,11 +306,14 @@ export class KimiService implements AgentThreadService {
     const result = new Map<string, AgentThread>();
     for (const s of sessions) {
       if (!uniqueIds.has(s.sessionId)) continue;
+      const tail = readKimiWireTail(s.dir);
       result.set(s.sessionId, {
         sessionId: s.sessionId,
         title: s.title,
         firstPrompt: s.firstPrompt,
-        tokenUsage: readLatestKimiTokenUsage(s.dir),
+        tokenUsage: tail.tokenUsage,
+        recap: tail.recap,
+        recapAt: tail.recapAt,
         cwd: s.cwd,
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,

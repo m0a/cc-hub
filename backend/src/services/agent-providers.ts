@@ -32,6 +32,10 @@ export interface AgentThread {
   cwd: string;
   createdAt?: string;
   updatedAt?: string;
+  /** Thread agents may expose the latest assistant message as a recap
+   *  substitute (they have no Claude-style away_summary). */
+  recap?: string;
+  recapAt?: string;
 }
 
 /** Resolves exact threads by the native session ids reported by herdr. */

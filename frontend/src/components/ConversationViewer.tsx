@@ -1,7 +1,13 @@
 /** biome-ignore-all lint/correctness/useExhaustiveDependencies: depends on refs and setters that React guarantees stable; adding them would cause unintended re-runs */
 /** biome-ignore-all lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: legacy click-on-div UI; keyboard navigation provided via main shortcuts */
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import {
+	Check,
+	ChevronLeft,
+	ChevronRight,
+	Circle,
+	CircleDot,
+} from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
@@ -134,10 +140,98 @@ function getToolSummary(name: string, input: Record<string, unknown>): string {
 	return "";
 }
 
+// Todo/plan tool inputs (Claude TodoWrite, Kimi TodoList, Codex update_plan)
+// render as a graphical checklist instead of raw JSON.
+interface TodoDisplayItem {
+	text: string;
+	status: "done" | "in_progress" | "pending";
+}
+
+function parseTodoInput(
+	name: string,
+	input: Record<string, unknown>,
+): TodoDisplayItem[] | null {
+	// `todos` is accepted by shape alone; a `plan` array only for Codex's
+	// update_plan (Claude's ExitPlanMode has a string `plan`, filtered by
+	// Array.isArray, but other tools may legitimately carry a plan array).
+	const list = Array.isArray(input.todos)
+		? input.todos
+		: name === "update_plan" && Array.isArray(input.plan)
+			? input.plan
+			: null;
+	if (!list || list.length === 0) return null;
+	const items: TodoDisplayItem[] = [];
+	for (const raw of list) {
+		if (typeof raw !== "object" || raw === null) return null;
+		const o = raw as Record<string, unknown>;
+		const text = [o.content, o.title, o.step].find(
+			(v): v is string => typeof v === "string" && v.length > 0,
+		);
+		if (!text) return null;
+		const s = typeof o.status === "string" ? o.status : "";
+		items.push({
+			text,
+			status:
+				s === "completed" || s === "done"
+					? "done"
+					: s === "in_progress"
+						? "in_progress"
+						: "pending",
+		});
+	}
+	return items;
+}
+
+function TodoChecklist({ items }: { items: TodoDisplayItem[] }) {
+	return (
+		<ul className="py-0.5 space-y-0.5">
+			{items.map((item, idx) => (
+				// biome-ignore lint/suspicious/noArrayIndexKey: render-only, order-stable
+				<li key={idx} className="flex items-start gap-1.5">
+					{item.status === "done" ? (
+						<Check className="w-3.5 h-3.5 shrink-0 mt-px text-green-400" />
+					) : item.status === "in_progress" ? (
+						<CircleDot className="w-3.5 h-3.5 shrink-0 mt-px text-blue-400" />
+					) : (
+						<Circle className="w-3.5 h-3.5 shrink-0 mt-px text-zinc-600" />
+					)}
+					<span
+						className={
+							item.status === "done"
+								? "text-zinc-500 line-through decoration-zinc-600"
+								: item.status === "in_progress"
+									? "text-zinc-100"
+									: "text-zinc-400"
+						}
+					>
+						{item.text}
+					</span>
+				</li>
+			))}
+		</ul>
+	);
+}
+
 function ToolUseDisplay({ tools }: { tools: ToolUseInfo[] }) {
 	return (
 		<>
 			{tools.map((tool, idx) => {
+				const todos = parseTodoInput(tool.name, tool.input);
+				if (todos) {
+					const done = todos.filter((i) => i.status === "done").length;
+					return (
+						<CollapsibleSection
+							// biome-ignore lint/suspicious/noArrayIndexKey: tools array is conversation-order-stable
+							key={idx}
+							title={`${tool.name} (${done}/${todos.length})`}
+							icon="☑️"
+							variant="tool"
+							defaultOpen
+						>
+							<TodoChecklist items={todos} />
+						</CollapsibleSection>
+					);
+				}
 				const inputStr = JSON.stringify(tool.input, null, 2);
 				const summary = getToolSummary(tool.name, tool.input);
 				const title = summary ? `${tool.name}: ${summary}` : tool.name;

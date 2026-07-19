@@ -300,8 +300,8 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       waitingToolName: includeClaudeInfo ? effectiveWaitingToolName : includeThreadInfo ? hookToolName : undefined,
       ccSummary: includeClaudeInfo ? (isExactPathMatch ? ccSession?.summary : undefined) : agentThread?.title,
       ccFirstPrompt: includeClaudeInfo ? (isExactPathMatch ? ccSession?.firstPrompt : undefined) : agentThread?.firstPrompt,
-      ccRecap: includeClaudeInfo && isExactPathMatch ? ccSession?.lastRecap?.content : undefined,
-      ccRecapAt: includeClaudeInfo && isExactPathMatch ? ccSession?.lastRecap?.timestamp : undefined,
+      ccRecap: includeClaudeInfo && isExactPathMatch ? ccSession?.lastRecap?.content : agentThread?.recap,
+      ccRecapAt: includeClaudeInfo && isExactPathMatch ? ccSession?.lastRecap?.timestamp : agentThread?.recapAt,
       indicatorState: sessionIndicatorState,
       ccSessionId: includeClaudeInfo ? s.agentSessionId : undefined,
       bridgeSessionId:

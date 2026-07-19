@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { KimiService, KimiSessionStore, readLatestKimiTokenUsage } from '../../src/services/kimi';
+import { KimiService, KimiSessionStore, parseKimiRecap, readLatestKimiTokenUsage } from '../../src/services/kimi';
 import { KimiHistoryService, parseKimiWire } from '../../src/services/kimi-history';
 import { claudeProjectDirName } from '../../src/utils/claude-project-path';
 
@@ -128,9 +128,62 @@ describe('KimiService', () => {
     expect(thread?.tokenUsage?.totalOutputTokens).toBe(1085);
   });
 
+  test('exposes the last assistant text part as the recap substitute', async () => {
+    const service = new KimiService(new KimiSessionStore(SESSIONS_DIR));
+    const thread = (await service.getThreadsByIds([SESSION_ID])).get(SESSION_ID);
+    // The fixture's last text part is followed by step.end + usage.record —
+    // the recap must still be found behind them.
+    expect(thread?.recap).toBe('It printed `hello`.');
+    expect(thread?.recapAt).toBe(new Date(1784463057200).toISOString());
+  });
+
   test('returns empty map when the sessions dir does not exist', async () => {
     const service = new KimiService(new KimiSessionStore(join(TEST_DIR, 'missing')));
     expect((await service.getThreadsByIds([SESSION_ID])).size).toBe(0);
+  });
+});
+
+describe('parseKimiRecap', () => {
+  function partLine(kind: 'text' | 'think', text: string, time: number): string {
+    return JSON.stringify({
+      type: 'context.append_loop_event',
+      event: { type: 'content.part', part: kind === 'text' ? { type: 'text', text } : { type: 'think', think: text } },
+      time,
+    });
+  }
+
+  test('returns the last text part, ignoring later think parts', () => {
+    const lines = [
+      partLine('text', 'The answer.', 1784463057000),
+      partLine('think', 'later reasoning', 1784463058000),
+    ];
+    expect(parseKimiRecap(lines)).toEqual({
+      recap: 'The answer.',
+      recapAt: new Date(1784463057000).toISOString(),
+    });
+  });
+
+  test('returns no recap for a think-only wire', () => {
+    const lines = [partLine('think', 'only reasoning', 1784463057000)];
+    expect(parseKimiRecap(lines)).toEqual({});
+  });
+
+  test('truncates a long recap to 500 chars with an ellipsis', () => {
+    const lines = [partLine('text', 'x'.repeat(600), 1784463057000)];
+    const { recap } = parseKimiRecap(lines);
+    expect(recap).toHaveLength(501);
+    expect(recap?.endsWith('…')).toBe(true);
+  });
+
+  test('finds the recap when a usage.record follows the text part', () => {
+    const lines = [
+      partLine('text', 'Done.', 1784463057000),
+      JSON.stringify({ type: 'usage.record', model: 'k3', usage: { inputOther: 1, output: 2, inputCacheRead: 0, inputCacheCreation: 0 }, usageScope: 'turn', time: 1784463057999 }),
+    ];
+    expect(parseKimiRecap(lines)).toEqual({
+      recap: 'Done.',
+      recapAt: new Date(1784463057000).toISOString(),
+    });
   });
 });
 

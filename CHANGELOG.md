@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.32] - 2026-07-20
+
+### Added
+- **会話ビューで Todo リスト系ツールコールをチェックリスト表示** (#483): TodoWrite (Claude) / TodoList (Kimi) / update_plan (Codex) の入力を生 JSON ではなくグラフィカルなチェックリストとして描画。完了 = 緑チェック + 取り消し線、進行中 = 青ドット + 強調、待機 = グレー丸で、セクションタイトルに進捗 `(done/total)` を表示しデフォルト展開。todo 形状にパースできない入力や他ツールは従来の JSON 表示のまま
+
 ## [0.2.31] - 2026-07-20
 
 ### Changed

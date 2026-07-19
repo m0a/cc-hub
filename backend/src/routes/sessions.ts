@@ -24,6 +24,14 @@ import { pushSessionsNow } from './terminal-mux';
 import { detectPaneState, stripAnsi, type DetectedPaneState } from '../services/pane-state';
 
 const herdrService = new HerdrService();
+
+/** Drop the workspace-list cache so the next buildSessionsList() re-reads herdr.
+ *  Called after a mutation (e.g. a tab op) that must reflect in the pushed list
+ *  immediately rather than after the 2s cache TTL. */
+export function invalidateWorkspacesCache(): void {
+  herdrService.invalidateCache();
+}
+
 const claudeCodeService = new ClaudeCodeService();
 const codexConversationService = new CodexConversationService();
 // peers.ts からも参照するため export
@@ -329,6 +337,8 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
         };
         return pane;
       }) : undefined,
+      tabs: s.tabs,
+      activeTabId: s.activeTabId,
     };
   }));
 
@@ -369,6 +379,8 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       agent: lost.agent,
       metrics: undefined,
       panes: undefined,
+      tabs: undefined,
+      activeTabId: undefined,
     });
   }
 

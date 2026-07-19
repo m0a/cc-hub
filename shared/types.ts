@@ -147,6 +147,17 @@ export interface SessionListResponse {
   sessions: SessionResponse[];
 }
 
+/** One tab of a workspace (herdr workspace > tab > pane). Surfaced so the UI
+ *  can list a multi-tab workspace's tabs and switch between them. */
+export interface TabInfo {
+  /** herdr tab id (e.g. "w1:t2"); echoed back to select/close the tab. */
+  id: string;
+  /** Display label — herdr's tab number by default, or a custom rename. */
+  label: string;
+  paneCount: number;
+  active: boolean;
+}
+
 export interface ErrorResponse {
   error: string;
   code?: string;
@@ -164,6 +175,10 @@ export const LoginSchema = z.object({
 
 // Pane ID validation (e.g., "%0", "%1")
 export const PaneIdSchema = z.string().regex(/^%\d+$/, 'Invalid pane ID');
+
+// herdr tab id validation (e.g. "w1:t2", "w1W:t3"). Server-provided and echoed
+// back by the client to select/close a tab; bounded to the herdr id shape.
+export const TabIdSchema = z.string().regex(/^[A-Za-z0-9]+:t\d+$/, 'Invalid tab ID');
 
 // Agent session id validation. Claude/Codex session ids are UUID-like; this
 // also bounds them to shell-safe characters because the id is typed into an
@@ -622,6 +637,10 @@ export interface ExtendedSessionResponse extends SessionResponse {
   ccRecapAt?: string;
   waitingToolName?: string;
   panes?: PaneInfo[];
+  /** Tabs of this workspace. Only present when it has more than one tab — a
+   *  single-tab workspace renders no tab list. `panes` reflects the active tab. */
+  tabs?: TabInfo[];
+  activeTabId?: string;
   messageCount?: number;
   gitBranch?: string;
   durationMinutes?: number;
@@ -823,7 +842,13 @@ export type ControlClientMessage =
   // Ask the server for a viewport `offset` rows above the live edge.
   // offset=0 means live mode; the server will also push fresh viewports
   // unsolicited when new output arrives.
-  | { type: 'request-viewport'; paneId: string; offset: number };
+  | { type: 'request-viewport'; paneId: string; offset: number }
+  // Tab operations (herdr workspace > tab > pane). CC Hub renders one tab at a
+  // time; these switch/create/close the workspace's tabs. `tabId` is a herdr
+  // tab id echoed back from `SessionResponse.tabs`.
+  | { type: 'select-tab'; tabId: string }
+  | { type: 'create-tab' }
+  | { type: 'close-tab'; tabId: string };
 
 // Server → Client messages
 export type ControlServerMessage =
@@ -895,6 +920,9 @@ const controlClientMessageOptions = [
   z.object({ type: z.literal('zoom-pane'), paneId: PaneIdSchema, zoomed: z.boolean().optional() }),
   z.object({ type: z.literal('respawn-pane'), paneId: PaneIdSchema }),
   z.object({ type: z.literal('request-viewport'), paneId: PaneIdSchema, offset: WsOffset }),
+  z.object({ type: z.literal('select-tab'), tabId: TabIdSchema }),
+  z.object({ type: z.literal('create-tab') }),
+  z.object({ type: z.literal('close-tab'), tabId: TabIdSchema }),
   z.object({
     type: z.literal('pane-demands'),
     demands: z

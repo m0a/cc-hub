@@ -8,10 +8,11 @@
  * pane (that "session" is the agent conversation, a different concept).
  */
 
-import { isAgentProvider, type AgentProvider } from '../../../shared/types';
+import { isAgentProvider, type AgentProvider, type TabInfo } from '../../../shared/types';
 import {
   herdrRpc,
   listPanes,
+  listTabs,
   listWorkspaces,
   readPaneText,
   toTmuxPaneId,
@@ -57,6 +58,9 @@ interface WorkspaceInfo {
    *  one, `unknown` when no agent is on the pane. Drives the indicator, so
    *  hooks no longer have to report every state transition. */
   agentStatus?: HerdrAgentStatus;
+  /** Tabs of this workspace, present only when it has more than one tab. */
+  tabs?: TabInfo[];
+  activeTabId?: string;
 }
 
 export interface HerdrAgentRecord {
@@ -254,6 +258,26 @@ export class HerdrService {
           )
             ? 'blocked'
             : agentPane?.agentStatus;
+
+          // Tab list only matters for multi-tab workspaces (the single-tab
+          // case renders no tab UI), so the extra tab.list RPC is skipped for
+          // the common one-tab workspace.
+          let tabs: TabInfo[] | undefined;
+          if ((ws.tab_count ?? 1) > 1) {
+            const herdrTabs = await listTabs(ws.workspace_id);
+            if (herdrTabs.length > 1) {
+              tabs = herdrTabs
+                .slice()
+                .sort((a, b) => a.number - b.number)
+                .map((t) => ({
+                  id: t.tab_id,
+                  label: t.label || String(t.number),
+                  paneCount: t.pane_count ?? 0,
+                  active: t.tab_id === ws.active_tab_id,
+                }));
+            }
+          }
+
           return {
             id: workspaceSessionId(ws),
             name: workspaceSessionId(ws),
@@ -269,6 +293,8 @@ export class HerdrService {
             panes,
             agentSessionId,
             agentStatus,
+            tabs,
+            activeTabId: ws.active_tab_id,
           };
         }),
       );

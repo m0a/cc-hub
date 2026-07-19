@@ -102,6 +102,16 @@ export interface HerdrWorkspace {
   tab_count?: number;
 }
 
+export interface HerdrTab {
+  tab_id: string;
+  workspace_id: string;
+  number: number;
+  label: string;
+  focused: boolean;
+  pane_count?: number;
+  agent_status?: HerdrAgentStatus;
+}
+
 const RPC_TIMEOUT_MS = 10_000;
 let reqCounter = 0;
 
@@ -294,6 +304,35 @@ export async function listPanes(workspaceId?: string): Promise<HerdrPane[]> {
   const params: Record<string, unknown> = workspaceId ? { workspace_id: workspaceId } : {};
   const res = await herdrRpc<{ panes: HerdrPane[] }>('pane.list', params);
   return res.panes ?? [];
+}
+
+/** Tabs of a workspace (herdr workspace > tab > pane), with labels + counts. */
+export async function listTabs(workspaceId: string): Promise<HerdrTab[]> {
+  try {
+    const res = await herdrRpc<{ tabs?: HerdrTab[] }>('tab.list', { workspace_id: workspaceId });
+    return res.tabs ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** Focus (switch to) a tab. */
+export async function focusTab(tabId: string): Promise<void> {
+  await herdrRpc('tab.focus', { tab_id: tabId });
+}
+
+/** Create a new tab in a workspace, optionally focusing it. Returns its id. */
+export async function createTab(workspaceId: string, focus = true): Promise<string | null> {
+  const res = await herdrRpc<{ tab?: { tab_id?: string } }>('tab.create', {
+    workspace_id: workspaceId,
+    focus,
+  });
+  return res.tab?.tab_id ?? null;
+}
+
+/** Close a tab (and every pane in it). */
+export async function closeTab(tabId: string): Promise<void> {
+  await herdrRpc('tab.close', { tab_id: tabId });
 }
 
 export async function getPane(herdrPaneId: string): Promise<HerdrPane | null> {

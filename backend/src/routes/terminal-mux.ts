@@ -13,7 +13,7 @@ import type {
   ConversationMessage,
 } from '../../../shared/types';
 import { MuxClientMessageSchema } from '../../../shared/types';
-import { buildSessionsList } from './sessions';
+import { buildSessionsList, invalidateWorkspacesCache } from './sessions';
 
 // Output → push debounce. Wait this long after the last %output for a pane
 // before recapturing. Shorter = lower latency; longer = fewer captures.
@@ -702,6 +702,26 @@ async function handleControlMessage(
         // Dormant until per-client sizing is enabled — recorded, not yet
         // consulted for PTY sizing.
         controlSession.setPaneDemands(ws.data.visitorId, msg.demands);
+        break;
+      }
+      case 'select-tab':
+      case 'create-tab':
+      case 'close-tab': {
+        try {
+          if (msg.type === 'select-tab') await controlSession.selectTab(msg.tabId);
+          else if (msg.type === 'create-tab') await controlSession.createTab();
+          else await controlSession.closeTab(msg.tabId);
+          // Reflect the new tab set / active tab in the pushed session list now,
+          // not after the 2s cache TTL (the layout already switched via reconcile).
+          invalidateWorkspacesCache();
+          pushSessionsNow();
+        } catch (e) {
+          ws.send(JSON.stringify({
+            type: 'error',
+            message: e instanceof Error ? e.message : 'Tab operation failed',
+            sessionId,
+          }));
+        }
         break;
       }
     }

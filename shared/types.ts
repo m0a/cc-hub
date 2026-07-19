@@ -783,7 +783,11 @@ export interface PaneViewport {
 // Client → Server messages
 export type ControlClientMessage =
   | { type: 'input'; paneId: string; data: string } // base64
-  | { type: 'resize'; cols: number; rows: number }
+  // `active` claims the session size for THIS client (tap-to-resize): the
+  // active client owns the shared size, so two devices on one session don't
+  // fight over it. Sent on a genuine user tap/focus; automatic (layout-driven)
+  // resizes omit it and only take effect if the client is already active.
+  | { type: 'resize'; cols: number; rows: number; active?: boolean }
   | { type: 'split'; paneId: string; direction: 'h' | 'v' }
   | { type: 'close-pane'; paneId: string }
   | { type: 'resize-pane'; paneId: string; cols: number; rows: number }
@@ -859,7 +863,7 @@ const WsOffset = z.number().int().min(0).max(10_000_000);
 
 const controlClientMessageOptions = [
   z.object({ type: z.literal('input'), paneId: PaneIdSchema, data: z.string() }),
-  z.object({ type: z.literal('resize'), cols: WsPaneDim, rows: WsPaneDim }),
+  z.object({ type: z.literal('resize'), cols: WsPaneDim, rows: WsPaneDim, active: z.boolean().optional() }),
   z.object({ type: z.literal('split'), paneId: PaneIdSchema, direction: z.enum(['h', 'v']) }),
   z.object({ type: z.literal('close-pane'), paneId: PaneIdSchema }),
   z.object({ type: z.literal('resize-pane'), paneId: PaneIdSchema, cols: WsPaneDim, rows: WsPaneDim }),

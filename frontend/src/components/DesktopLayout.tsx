@@ -953,6 +953,9 @@ export function DesktopLayout({
 					};
 				},
 				isConnected: controlTerminal.isConnected,
+				claimActive: () => {
+					controlTerminalRef.current.claimActiveSize();
+				},
 				onResize: () => {
 					// Individual pane resize triggers total container size calculation.
 					// tmux refresh-client -C needs the TOTAL window size, not per-pane.

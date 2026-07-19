@@ -414,6 +414,7 @@ function cleanupSubscription(ws: ServerWebSocket<MuxData>, _sessionId: string, s
   sub.lastPushAt.clear();
   sub.controlSession.removeClientDeviceType(ws.data.visitorId);
   sub.controlSession.removeClientDemands(ws.data.visitorId);
+  sub.controlSession.removeClientSize(ws.data.visitorId);
   sub.controlSession.removeClient();
 }
 
@@ -577,6 +578,8 @@ async function handleControlMessage(
       case 'input': {
         const data = Buffer.from(msg.data, 'base64');
         console.log(`[mux] input pane=${msg.paneId} bytes=${data.length}`);
+        // Typing on a device makes it the size owner (active-client sizing).
+        controlSession.markClientActive(ws.data.visitorId);
         await controlSession.sendInput(msg.paneId, data);
         // Pre-arm a push: input usually generates output but a silent program
         // (waiting for full line, etc.) wouldn't, and we still want to refresh
@@ -588,17 +591,20 @@ async function handleControlMessage(
       }
       case 'resize': {
         try {
-          if (!sub.firstResizeReceived) {
+          if (msg.active) {
+            // Explicit tap/focus claim: this client takes ownership of the size.
+            controlSession.setClientSize(ws.data.visitorId, msg.cols, msg.rows, true);
+          } else if (!sub.firstResizeReceived) {
             // First resize: force the panes to adopt the new client size
             // synchronously. Subsequent resizes go through the dedup'd path.
-            await controlSession.setClientSizeImmediate(msg.cols, msg.rows);
+            await controlSession.setClientSizeImmediate(ws.data.visitorId, msg.cols, msg.rows);
             sub.firstResizeReceived = true;
             // Brief settle window so the panes reflow before we capture, then
             // push viewports at the new size (the ones we emitted at subscribe
             // time were at whatever size the panes had previously).
             await new Promise(resolve => setTimeout(resolve, 100));
           } else {
-            controlSession.setClientSize(msg.cols, msg.rows);
+            controlSession.setClientSize(ws.data.visitorId, msg.cols, msg.rows);
           }
           for (const paneId of sub.knownPanes) {
             if ((sub.liveOffset.get(paneId) ?? 0) === 0) {

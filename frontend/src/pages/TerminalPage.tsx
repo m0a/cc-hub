@@ -295,6 +295,9 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 						};
 					},
 					isConnected: controlTerminal.isConnected,
+					claimActive: () => {
+						controlTerminal.claimActiveSize();
+					},
 					onResize: (cols: number, rows: number) => {
 						controlTerminal.resize(cols, rows);
 						// Mobile shows exactly one pane at a time, so its per-client

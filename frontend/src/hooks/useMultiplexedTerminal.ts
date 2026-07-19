@@ -39,7 +39,8 @@ interface UseMultiplexedTerminalReturn {
 	connect: () => void;
 	disconnect: () => void;
 	sendInput: (paneId: string, data: string) => void;
-	resize: (cols: number, rows: number) => void;
+	resize: (cols: number, rows: number, active?: boolean) => void;
+	claimActiveSize: () => void;
 	splitPane: (paneId: string, direction: "h" | "v") => void;
 	closePane: (paneId: string) => void;
 	resizePane: (paneId: string, cols: number, rows: number) => void;
@@ -632,8 +633,22 @@ export function useMultiplexedTerminal(
 		if (subscribedSession) dispatchInputEcho(subscribedSession, paneId, data);
 	}, []);
 
-	const resize = useCallback((cols: number, rows: number) => {
-		sendSessionMessage({ type: "resize", cols, rows });
+	// Last size we sent, so a tap can re-claim ownership at the current size.
+	const lastResizeRef = useRef<{ cols: number; rows: number } | null>(null);
+	const resize = useCallback(
+		(cols: number, rows: number, active?: boolean) => {
+			lastResizeRef.current = { cols, rows };
+			sendSessionMessage({ type: "resize", cols, rows, active });
+		},
+		[],
+	);
+
+	// Claim the session size for this client (tap-to-resize): re-send the last
+	// size with `active`, so the device being tapped owns the shared size.
+	const claimActiveSize = useCallback(() => {
+		const last = lastResizeRef.current;
+		if (!last) return;
+		sendSessionMessage({ type: "resize", cols: last.cols, rows: last.rows, active: true });
 	}, []);
 
 	const splitPane = useCallback((paneId: string, direction: "h" | "v") => {
@@ -751,6 +766,7 @@ export function useMultiplexedTerminal(
 		disconnect,
 		sendInput,
 		resize,
+		claimActiveSize,
 		splitPane,
 		closePane,
 		resizePane,

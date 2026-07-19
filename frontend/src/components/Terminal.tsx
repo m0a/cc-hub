@@ -68,6 +68,10 @@ export interface ControlModeConfig {
 	 *  the old `term.scrollToBottom()` in the days of frontend scrollback.
 	 *  No-op if already at the live edge. */
 	scrollToLive?: () => void;
+	/** Claim the session size for this client (tap-to-resize): when the user taps
+	 *  to interact with this device, it takes ownership of the shared size so two
+	 *  devices on one session don't fight over it. */
+	claimActive?: () => void;
 	/** Force-refresh the current viewport (e.g. after a re-connect). */
 	refreshViewport?: () => void;
 	/** Snapshot of the current scroll state for indicator UI. */
@@ -1351,6 +1355,8 @@ export const TerminalComponent = memo(
 
 		const handleShowKeyboard = useCallback(() => {
 			setInputMode("input");
+			// Tapping to interact claims the session size for this device.
+			controlModeRef.current?.claimActive?.();
 			// Snap back to the live edge when the user taps to interact, matching
 			// the pre-server-side-scrollback behavior. `term.scrollToBottom()` is
 			// a no-op now (xterm scrollback is 0); the actual reset goes through

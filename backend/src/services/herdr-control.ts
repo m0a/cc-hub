@@ -39,13 +39,12 @@ import { herdrLayoutToNode, PaneLayoutTree } from './herdr-layout';
 
 const GRACE_PERIOD_MS = 30_000;
 const RESIZE_DEBOUNCE_MS = 50;
-// Per-client sizing (ON by default; set CCHUB_PER_CLIENT_SIZING=0 to disable).
-// Only intervenes with two or more clients (see resolveTargetSizes): when they
-// view a session at different sizes, a shared pane is shrunk to the smallest
-// demand (tmux-style letterbox) instead of thrashing on the last-writer size.
-// A single client keeps the existing tree/zoom path unchanged. The env var is
-// an escape hatch in case the multi-client path misbehaves in the field.
-const PER_CLIENT_SIZING = process.env.CCHUB_PER_CLIENT_SIZING !== '0';
+// Experimental per-pane smallest-wins override (opt-in via
+// CCHUB_PER_CLIENT_SIZING=1). Superseded for the common case by active-client
+// sizing (the device being used owns the session size), which fixes the
+// dual-view flicker without letterboxing the active device. Kept off by
+// default; may be removed once active-client sizing is proven in the field.
+const PER_CLIENT_SIZING = process.env.CCHUB_PER_CLIENT_SIZING === '1';
 // A client's proposeDimensions and the server's ratio split can disagree by a
 // cell or two from rounding; only a demand this many cells smaller than the
 // tree slot counts as a real cross-client conflict worth shrinking a pane for.
@@ -55,6 +54,24 @@ const SIZING_TOLERANCE = 3;
 const HERDR_READ_CAP = 1000;
 
 const PANE_ID_RE = /^%\d+$/;
+
+/**
+ * Active-client sizing rule: which client drives the shared session size.
+ *
+ * The shared size is owned by whichever client is being interacted with, so two
+ * devices on one session don't fight over it (that flickered). A client owns the
+ * size when it explicitly claims (a tap/focus), when nobody is active yet, when
+ * it is already the active client, or when it is the only one that has reported
+ * a size. Otherwise its resize is recorded but does not move the shared size.
+ */
+export function clientOwnsSessionSize(
+  activeClientId: string | null,
+  clientId: string,
+  claim: boolean,
+  clientCount: number,
+): boolean {
+  return claim || activeClientId === null || activeClientId === clientId || clientCount <= 1;
+}
 
 export function assertPaneId(paneId: string): void {
   if (typeof paneId !== 'string' || !PANE_ID_RE.test(paneId)) {
@@ -205,6 +222,13 @@ export class HerdrControlSession {
   private clientSizeKnown = false;
   private resizeTimer: Timer | null = null;
   private lastClientSize: { cols: number; rows: number } | null = null;
+  // Active-client sizing: the shared session size is owned by whichever client
+  // is currently being interacted with (input or an explicit tap claim). Other
+  // clients' resizes are recorded here but do NOT move the shared size, so two
+  // devices on one session don't fight over it (which flickered). `clientSizes`
+  // remembers each client's last reported size so ownership can hand off.
+  private clientSizes = new Map<string, { cols: number; rows: number }>();
+  private activeClientId: string | null = null;
   // Last known per-pane size: written by applyLayout when we resize, and
   // kept fresh from frame metadata (the renderer's actual geometry).
   private paneSizes = new Map<string, { cols: number; rows: number }>();
@@ -763,11 +787,32 @@ export class HerdrControlSession {
     await this.applyLayout();
   }
 
-  setClientSize(cols: number, rows: number): void {
+  /** Does this client currently own (drive) the shared session size? */
+  private clientOwnsSize(clientId: string, claim: boolean): boolean {
+    return clientOwnsSessionSize(this.activeClientId, clientId, claim, this.clientSizes.size);
+  }
+
+  /**
+   * Record a client's reported size. Only the active client (or one explicitly
+   * claiming via `claim`, or the sole client) actually moves the shared size —
+   * a passive second device's resizes are remembered but ignored, so the two
+   * don't thrash the layout.
+   */
+  setClientSize(clientId: string, cols: number, rows: number, claim = false): void {
+    this.clientSizes.set(clientId, { cols, rows });
+    if (!this.clientOwnsSize(clientId, claim)) return;
     if (this.resizeTimer) clearTimeout(this.resizeTimer);
     this.resizeTimer = setTimeout(() => {
       const last = this.lastClientSize;
-      if (last && last.cols === cols && Math.abs(last.rows - rows) <= 1) return;
+      if (
+        this.activeClientId === clientId &&
+        last &&
+        last.cols === cols &&
+        Math.abs(last.rows - rows) <= 1
+      ) {
+        return;
+      }
+      this.activeClientId = clientId;
       this.lastClientSize = { cols, rows };
       this.clientSize = { cols, rows };
       this.clientSizeKnown = true;
@@ -775,15 +820,61 @@ export class HerdrControlSession {
     }, RESIZE_DEBOUNCE_MS);
   }
 
-  async setClientSizeImmediate(cols: number, rows: number): Promise<void> {
+  async setClientSizeImmediate(clientId: string, cols: number, rows: number): Promise<void> {
+    this.clientSizes.set(clientId, { cols, rows });
+    // A newly-connected second client must not steal the size from the device
+    // the user is on; only apply immediately when this client owns the size.
+    if (!this.clientOwnsSize(clientId, false)) return;
     if (this.resizeTimer) {
       clearTimeout(this.resizeTimer);
       this.resizeTimer = null;
     }
+    this.activeClientId = clientId;
     this.lastClientSize = { cols, rows };
     this.clientSize = { cols, rows };
     this.clientSizeKnown = true;
     await this.applyLayout();
+  }
+
+  /**
+   * Make `clientId` the size owner and resize the session to its last reported
+   * size. Called on input (typing) and on an explicit tap claim, so the device
+   * being used drives the size. No-op if it already owns the size at that size,
+   * or hasn't reported one yet.
+   */
+  markClientActive(clientId: string): void {
+    const size = this.clientSizes.get(clientId);
+    if (!size) return;
+    if (
+      this.activeClientId === clientId &&
+      this.clientSize.cols === size.cols &&
+      this.clientSize.rows === size.rows
+    ) {
+      return;
+    }
+    if (this.resizeTimer) {
+      clearTimeout(this.resizeTimer);
+      this.resizeTimer = null;
+    }
+    this.activeClientId = clientId;
+    this.lastClientSize = size;
+    this.clientSize = size;
+    this.clientSizeKnown = true;
+    void this.applyLayout();
+  }
+
+  /** Drop a disconnected client's size and hand ownership to a remaining one. */
+  removeClientSize(clientId: string): void {
+    this.clientSizes.delete(clientId);
+    if (this.activeClientId !== clientId) return;
+    const next = this.clientSizes.keys().next().value ?? null;
+    this.activeClientId = next;
+    const size = next ? this.clientSizes.get(next) : undefined;
+    if (size) {
+      this.lastClientSize = size;
+      this.clientSize = size;
+      void this.applyLayout();
+    }
   }
 
   async capturePane(paneId: string): Promise<string> {
@@ -950,6 +1041,7 @@ export class HerdrControlSession {
     this.newSessionListeners.clear();
     this.clientDeviceTypes.clear();
     this.paneDemands.clear();
+    this.clientSizes.clear();
     this.paneSizes.clear();
 
     herdrControlSessions.delete(this.sessionId);

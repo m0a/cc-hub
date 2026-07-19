@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [0.2.29] - 2026-07-19
 
 ### Added
-- **Kimi Code CLI を第4のエージェントプロバイダとしてサポート**: 新規ワークスペース作成時のエージェント選択に Kimi を追加。herdr が kimi プロセスをランタイム検知し、`cchub setup` が `herdr integration install kimi` も行うため、native session id 連携・ペインインジケータがそのまま動作する。`~/.kimi-code/sessions` の `state.json` / `wire.jsonl` を読み、アクティブセッションのスレッドメタデータ（タイトル・first prompt・トークン使用量）、履歴プロジェクト一覧・検索・会話ビュー、`kimi --session '<id>'` による履歴からの resume に対応。hook 通知は payload が Claude 互換の snake_case のため、`~/.kimi-code/config.toml` の `[[hooks]]` に `cchub notify` を登録するだけで有効
+- **Kimi Code CLI を第4のエージェントプロバイダとしてサポート** (#472): 新規ワークスペース作成時のエージェント選択に Kimi を追加。herdr が kimi プロセスをランタイム検知し、`cchub setup` が `herdr integration install kimi` も行うため、native session id 連携・ペインインジケータがそのまま動作する。`~/.kimi-code/sessions` の `state.json` / `wire.jsonl` を読み、アクティブセッションのスレッドメタデータ（タイトル・first prompt・トークン使用量）、履歴プロジェクト一覧・検索・会話ビュー、`kimi --session '<id>'` による履歴からの resume に対応。hook 通知は payload が Claude 互換の snake_case のため、`~/.kimi-code/config.toml` の `[[hooks]]` に `cchub notify` を登録するだけで有効
 - **ダッシュボードに Kimi タブを追加**: wire.jsonl の `usage.record` を全セッション（サブエージェント分を含む）から集計し、24h/7d のトークン使用量・ターン数・モデル別内訳を表示（ローカルにレート制限窓データはないため合計値のみ）
 
 ## [0.2.28] - 2026-07-19

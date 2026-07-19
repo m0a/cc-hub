@@ -353,5 +353,10 @@
 		"hookNotConfiguredDismiss": "閉じる",
 		"hookSetupAction": "設定する",
 		"hookSetupPrompt": "Claude Code か Codex の hook 設定をホームディレクトリ側で整えて `cchub notify` を追加してください。次の4つのイベントすべてに追加します: Stop / PreToolUse / UserPromptSubmit / PostToolUse（matcher: AskUserQuestion）。hookコマンドは: cchub notify\nClaude Code 例:\n{\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"cchub notify\"}]}],\"PreToolUse\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"cchub notify\"}]}],\"UserPromptSubmit\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"cchub notify\"}]}],\"PostToolUse\":[{\"matcher\":\"AskUserQuestion\",\"hooks\":[{\"type\":\"command\",\"command\":\"cchub notify\"}]}]}}\nCodex 例:\n[[hooks.Stop]]\n[[hooks.Stop.hooks]]\ntype = \"command\"\ncommand = \"cchub notify\"\n\n[[hooks.PreToolUse]]\n[[hooks.PreToolUse.hooks]]\ntype = \"command\"\ncommand = \"cchub notify\"\n\n[[hooks.UserPromptSubmit]]\n[[hooks.UserPromptSubmit.hooks]]\ntype = \"command\"\ncommand = \"cchub notify\"\n\n[[hooks.PostToolUse]]\nmatcher = \"AskUserQuestion\"\n[[hooks.PostToolUse.hooks]]\ntype = \"command\"\ncommand = \"cchub notify\"\n既存のsettings.json / config.toml にマージしてください。既存のhooksエントリや他の設定は上書きせず、cchub notify を新しいエントリとして追加するか、既存の hooks 配列の末尾に追加してください。"
+	},
+	"remoteControl": {
+		"active": "リモコンモード中",
+		"hint": "ターミナルはローカルの herdr クライアントに表示されています。ペイン操作やプロンプト送信はここから可能です。",
+		"openChat": "会話を Chat で見る"
 	}
 }

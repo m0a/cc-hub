@@ -1416,7 +1416,9 @@ export const TerminalComponent = memo(
 						className="absolute inset-0 z-10 pointer-events-none"
 						style={{ touchAction: "none" }}
 					/>
-					{(!isInitialized || !isConnected) && (
+					{/* Hidden while an overlay replaces the xterm area (remote-control
+					    mode keeps isConnected=false by design — no live subscription). */}
+					{!hideTerminalArea && (!isInitialized || !isConnected) && (
 						<div className="absolute top-2 left-2 z-30 pointer-events-none">
 							<div className="flex items-center gap-2 bg-yellow-900/80 text-yellow-200 text-xs px-2.5 py-1 rounded-lg shadow">
 								<div className="w-3 h-3 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />

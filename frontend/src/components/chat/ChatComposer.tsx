@@ -8,6 +8,9 @@ interface ChatComposerProps {
 	paneId: string | undefined;
 	disabled?: boolean;
 	placeholder?: string;
+	/** Remote-control mode: send over REST instead of the mux WS (which rejects
+	 *  input for sessions this client is not subscribed to). */
+	sendOverRest?: (paneId: string, data: string) => Promise<boolean>;
 }
 
 export function ChatComposer({
@@ -15,6 +18,7 @@ export function ChatComposer({
 	paneId,
 	disabled,
 	placeholder,
+	sendOverRest,
 }: ChatComposerProps) {
 	const [value, setValue] = useState("");
 	const taRef = useRef<HTMLTextAreaElement>(null);
@@ -29,16 +33,25 @@ export function ChatComposer({
 	const send = useCallback(() => {
 		const text = value;
 		if (!text.trim() || !paneId) return;
+		const wrapped = text.includes("\n")
+			? `\x1b[200~${text}\x1b[201~`
+			: text;
+		if (sendOverRest) {
+			// One REST call carries text + trailing \r; clear only on success so a
+			// failed request never silently drops the user's message.
+			void sendOverRest(paneId, `${wrapped}\r`).then((ok) => {
+				if (ok) setValue("");
+			});
+			return;
+		}
 		// During reconnect / disconnect sendTerminalInput returns false without
 		// throwing. Clearing the textarea regardless would silently drop the
 		// user's message. Only clear when both the text and the trailing \r
 		// landed on the WS. #263
-		const textOk = text.includes("\n")
-			? sendTerminalInput(sessionId, paneId, `\x1b[200~${text}\x1b[201~`)
-			: sendTerminalInput(sessionId, paneId, text);
+		const textOk = sendTerminalInput(sessionId, paneId, wrapped);
 		const enterOk = textOk && sendTerminalInput(sessionId, paneId, "\r");
 		if (textOk && enterOk) setValue("");
-	}, [sessionId, paneId, value]);
+	}, [sessionId, paneId, value, sendOverRest]);
 
 	const onKeyDown = useCallback(
 		(e: React.KeyboardEvent<HTMLTextAreaElement>) => {

@@ -4,6 +4,7 @@ import {
 	ExternalLink,
 	MessageSquare,
 	Terminal as TerminalIcon,
+	Unplug,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -66,6 +67,12 @@ export interface ControlModeContext {
 	setKeyboardVisible?: (visible: boolean) => void;
 	onShowSessions?: () => void;
 	onOpenFileViewer?: (dir: string, peerId?: string) => void;
+	/** Remote-control mode (PC only): the xterm area shows a placeholder and
+	 * the local herdr client owns the terminal. */
+	remoteControl?: boolean;
+	/** REST input sender for remote-control mode (the mux WS rejects input for
+	 * unsubscribed sessions). Used by the Chat composer. */
+	sendInputRest?: (paneId: string, data: string) => Promise<boolean>;
 }
 
 interface PaneContainerProps {
@@ -694,6 +701,7 @@ function TerminalPane({
 						theme={session?.theme}
 						agent={activeTmuxPane?.agent}
 						agentSessionId={activeTmuxPane?.agentSessionId}
+						sendInputOverRest={controlModeContext.sendInputRest}
 					/>
 				)}
 				{sessionId ? (
@@ -708,6 +716,29 @@ function TerminalPane({
 							onDisconnect={handleDisconnect}
 							theme={session?.theme}
 							controlMode={controlModeContext.getControlConfig(paneId)}
+							hideTerminalArea={!!controlModeContext.remoteControl}
+							terminalAreaOverlay={
+								controlModeContext.remoteControl ? (
+									<div className="h-full flex flex-col items-center justify-center gap-2 p-4 text-center select-none">
+										<Unplug className="w-8 h-8 text-zinc-600" aria-hidden />
+										<p className="text-th-text-secondary text-sm font-medium">
+											{t("remoteControl.active")}
+										</p>
+										<p className="text-th-text-muted text-xs max-w-[280px]">
+											{t("remoteControl.hint")}
+										</p>
+										{conversationAvailable && (
+											<button
+												type="button"
+												onClick={() => setShowConversation(true)}
+												className="mt-2 px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-th-text-secondary hover:text-th-text rounded-md text-xs transition-colors"
+											>
+												{t("remoteControl.openChat")}
+											</button>
+										)}
+									</div>
+								) : undefined
+							}
 						/>
 					</div>
 				) : (

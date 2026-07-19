@@ -103,9 +103,10 @@ function MultiGroup({
 }
 
 /**
- * Faceted filter sidebar (desktop left rail / drawer body). Project / Agent /
- * Branch / Peer are multi-select; Period is single-select. Counts are totals
- * across the loaded set.
+ * Faceted filter sidebar (desktop left rail / drawer body). Period is
+ * single-select and sits on top: the Project / Agent / Branch / Peer
+ * multi-select groups below it are scoped (options and counts) to the
+ * selected date range.
  */
 export function HistoryFacetSidebar({
 	data,
@@ -123,6 +124,32 @@ export function HistoryFacetSidebar({
 
 	return (
 		<div className="text-[12.5px]">
+			{/* Period first: it scopes the option lists / counts of every group
+			    below, so it reads as the outermost filter. */}
+			<div className="mb-4">
+				<div className="text-[10.5px] uppercase tracking-wider text-zinc-500 mb-1">
+					{t("history.facetPeriod")}
+				</div>
+				{periods.map((p) => (
+					<label
+						key={p.value ?? "all"}
+						className="flex items-center gap-2 py-1 cursor-pointer group"
+					>
+						<input
+							type="radio"
+							name="history-period"
+							checked={state.period === p.value}
+							onChange={() => onChange({ ...state, period: p.value })}
+							className="w-3.5 h-3.5 accent-blue-500 shrink-0"
+						/>
+						<span
+							className={`text-[12.5px] ${state.period === p.value ? "text-zinc-100" : "text-zinc-400 group-hover:text-zinc-300"}`}
+						>
+							{p.label}
+						</span>
+					</label>
+				))}
+			</div>
 			<MultiGroup
 				title={t("history.facetProject")}
 				values={data.projects}
@@ -149,30 +176,6 @@ export function HistoryFacetSidebar({
 					onToggle={(v) => onChange(toggleFacet(state, "peers", v))}
 				/>
 			)}
-			<div className="mb-2">
-				<div className="text-[10.5px] uppercase tracking-wider text-zinc-500 mb-1">
-					{t("history.facetPeriod")}
-				</div>
-				{periods.map((p) => (
-					<label
-						key={p.value ?? "all"}
-						className="flex items-center gap-2 py-1 cursor-pointer group"
-					>
-						<input
-							type="radio"
-							name="history-period"
-							checked={state.period === p.value}
-							onChange={() => onChange({ ...state, period: p.value })}
-							className="w-3.5 h-3.5 accent-blue-500 shrink-0"
-						/>
-						<span
-							className={`text-[12.5px] ${state.period === p.value ? "text-zinc-100" : "text-zinc-400 group-hover:text-zinc-300"}`}
-						>
-							{p.label}
-						</span>
-					</label>
-				))}
-			</div>
 		</div>
 	);
 }

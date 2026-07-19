@@ -272,6 +272,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
     return {
       id: s.id,
       name: s.name,
+      instanceId: s.instanceId,
       createdAt: s.createdAt,
       lastAccessedAt: s.createdAt,
       state: (s.attached ? 'working' : 'idle') as SessionState,
@@ -343,6 +344,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
     results.push({
       id: lost.id,
       name: lost.name,
+      instanceId: undefined,
       createdAt: '',
       lastAccessedAt: '',
       state: 'lost' as SessionState,
@@ -449,7 +451,7 @@ sessions.post('/', async (c) => {
   }
 
   try {
-    await herdrService.createSession(name);
+    const instanceId = await herdrService.createSession(name);
 
     // Start the selected agent if workingDir is specified
     if (parsed.success && parsed.data.workingDir) {
@@ -482,6 +484,7 @@ sessions.post('/', async (c) => {
     return c.json({
       id: name,
       name: name,
+      instanceId,
       createdAt: new Date().toISOString(),
       lastAccessedAt: new Date().toISOString(),
       state: 'idle',

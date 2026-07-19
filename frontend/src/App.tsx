@@ -103,6 +103,7 @@ function LoadingScreen({
 interface OpenSession {
 	id: string;
 	name: string;
+	instanceId?: string;
 	state: SessionState;
 	currentPath?: string;
 	ccSessionId?: string;
@@ -123,6 +124,7 @@ function apiToOpenSession(s: ExtendedSessionResponse): OpenSession {
 	return {
 		id: s.id,
 		name: s.name,
+		instanceId: s.instanceId,
 		state: s.state,
 		currentPath: s.currentPath,
 		ccSessionId: s.ccSessionId,
@@ -450,6 +452,7 @@ export function App() {
 				if (!apiSession) return session;
 				const next = {
 					...session,
+					instanceId: apiSession.instanceId,
 					theme: apiSession.theme,
 					currentCommand: apiSession.currentCommand,
 					ccSessionId: apiSession.ccSessionId,
@@ -461,6 +464,7 @@ export function App() {
 				};
 				// Skip update if nothing actually changed (avoid extra renders)
 				if (
+					next.instanceId === session.instanceId &&
 					next.theme === session.theme &&
 					next.currentCommand === session.currentCommand &&
 					next.ccSessionId === session.ccSessionId &&
@@ -1261,8 +1265,9 @@ export function App() {
 						return (
 							<TerminalPage
 								ref={mobileTerminalRef}
-								key={activeSessionId}
+								key={`${activeSession.id}:${activeSession.instanceId ?? "legacy"}`}
 								sessionId={activeSession.id}
+								sessionInstanceId={activeSession.instanceId}
 								onStateChange={(state) =>
 									updateSessionState(activeSession.id, state)
 								}

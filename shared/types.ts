@@ -131,6 +131,9 @@ export function agentResumeCommand(agent: AgentProvider, sessionId?: string): st
 export interface SessionResponse {
   id: string;
   name: string;
+  /** Immutable identity of this live session instance. A session name can be
+   *  deleted and reused; clients use this value to discard the old terminal. */
+  instanceId?: string;
   createdAt: string;
   lastAccessedAt: string;
   state: SessionState;
@@ -835,6 +838,7 @@ export type ControlServerMessage =
   | { type: 'viewport'; viewport: PaneViewport }
   | { type: 'ready' }
   | { type: 'pong'; timestamp: number }
+  | { type: 'session-exited'; reason: string }
   | { type: 'error'; message: string; paneId?: string }
   | { type: 'new-session'; sessionId: string; sessionName: string }
   | { type: 'pane-dead'; paneId: string }

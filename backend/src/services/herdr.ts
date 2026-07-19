@@ -35,6 +35,7 @@ interface HerdrPaneInfo {
 interface HerdrSessionInfo {
   id: string;
   name: string;
+  instanceId?: string;
   createdAt: string;
   attached: boolean;
   currentCommand?: string;
@@ -246,6 +247,7 @@ export class HerdrService {
           return {
             id: workspaceSessionId(ws),
             name: workspaceSessionId(ws),
+            instanceId: ws.workspace_id,
             createdAt: new Date(0).toISOString(),
             attached: ws.focused,
             currentCommand: agent ?? panes[0]?.command,
@@ -313,7 +315,8 @@ export class HerdrService {
       label: name,
       cwd: process.env.HOME || '/tmp',
     });
-    return name;
+    const created = await this.resolveWorkspace(name);
+    return created?.workspace_id ?? name;
   }
 
   /**
@@ -358,7 +361,7 @@ export class HerdrService {
     // Reap the control session immediately. Left in the registry, it would
     // be handed out for a future same-name workspace while still bound to
     // the closed one (blank viewports, dead-pane controller spawn loops).
-    herdrControlSessions.get(sessionId)?.destroy();
+    herdrControlSessions.get(sessionId)?.terminate('workspace closed');
   }
 
   async sessionExists(sessionId: string): Promise<boolean> {

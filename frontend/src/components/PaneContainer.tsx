@@ -37,6 +37,7 @@ export type PaneNode =
 interface ExtendedSession {
 	id: string;
 	name: string;
+	instanceId?: string;
 	state: SessionState;
 	currentPath?: string;
 	ccSessionId?: string;
@@ -698,7 +699,7 @@ function TerminalPane({
 				{sessionId ? (
 					<div className={showConversation ? "hidden" : "h-full"}>
 						<TerminalComponent
-							key={`${sessionId}-${reloadKey}-${globalReloadKey}`}
+							key={`${sessionId}-${session?.instanceId ?? "legacy"}-${reloadKey}-${globalReloadKey}`}
 							ref={terminalRef}
 							sessionId={sessionId}
 							peerId={session?.peerId}

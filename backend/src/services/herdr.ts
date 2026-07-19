@@ -191,7 +191,15 @@ export class HerdrService {
 
       const result: WorkspaceInfo[] = await Promise.all(
         workspaces.map(async (ws) => {
-          const wsPanes = allPanes.filter((p) => p.workspace_id === ws.workspace_id);
+          // Only the active tab's panes represent the session: herdr stacks
+          // multiple tabs' panes under one workspace, but the terminal view
+          // (HerdrControlSession) renders a single tab, so the list must agree
+          // or the pane count / preview would count panes the user can't see.
+          const wsPanes = allPanes.filter(
+            (p) =>
+              p.workspace_id === ws.workspace_id &&
+              (!ws.active_tab_id || p.tab_id === ws.active_tab_id),
+          );
           const panes: HerdrPaneInfo[] = await Promise.all(
             wsPanes.map(async (p) => {
               const tmuxId = toTmuxPaneId(p.pane_id) ?? p.pane_id;

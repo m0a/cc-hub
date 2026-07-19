@@ -25,6 +25,7 @@ import {
   eventWorkspaceId,
   exportLayout,
   getPane,
+  getWorkspace,
   type HerdrPane,
   herdrRpc,
   herdrSubscribe,
@@ -212,6 +213,11 @@ export function scanFrameForState(state: PaneRuntimeState, bytes: Buffer): void 
 export class HerdrControlSession {
   private sessionId: string;
   private workspaceId: string | null = null;
+  // A herdr workspace holds one or more tabs; CC Hub renders a single tab at a
+  // time (its split tree is one tab's geometry). This tracks which tab is live,
+  // following herdr's `active_tab_id`. null = pre-init or herdr too old to
+  // report tabs, in which case every pane is treated as one flat tab.
+  private activeTabId: string | null = null;
   private tree = new PaneLayoutTree();
 
   // Client size as reported by the browser (drives pane PTY sizes).
@@ -286,8 +292,10 @@ export class HerdrControlSession {
       throw new Error(`herdr workspace not found for session: ${this.sessionId}`);
     }
     this.workspaceId = ws.workspace_id;
+    this.activeTabId = ws.active_tab_id ?? null;
 
-    const panes = await listPanes(ws.workspace_id);
+    const allPanes = await listPanes(ws.workspace_id);
+    const panes = this.filterActiveTab(allPanes);
     const tmuxIds = panes
       .map((p) => toTmuxPaneId(p.pane_id))
       .filter((id): id is string => id !== null);
@@ -316,9 +324,18 @@ export class HerdrControlSession {
     // other workspaces (previews, throwaway workspaces, other sessions) does
     // not fan out into a pane.list reconcile per session. An event with no
     // recognizable workspace still reconciles — a wasted reconcile is
-    // harmless, a missed one would cost correctness.
+    // harmless, a missed one would cost correctness. tab.* events drive the
+    // active-tab switch (reconcile re-reads active_tab_id authoritatively).
     this.unsubscribeEvents = herdrSubscribe(
-      [{ type: 'pane.created' }, { type: 'pane.closed' }, { type: 'pane.exited' }],
+      [
+        { type: 'pane.created' },
+        { type: 'pane.closed' },
+        { type: 'pane.exited' },
+        { type: 'tab.focused' },
+        { type: 'tab.created' },
+        { type: 'tab.closed' },
+        { type: 'tab.moved' },
+      ],
       (ev) => {
         const wsId = eventWorkspaceId(ev);
         if (wsId === null || wsId === this.workspaceId) {
@@ -331,8 +348,14 @@ export class HerdrControlSession {
     );
 
     console.log(
-      `[herdr-control] Session ready: ${this.sessionId} (workspace=${ws.workspace_id}, panes=${tmuxIds.length})`,
+      `[herdr-control] Session ready: ${this.sessionId} (workspace=${ws.workspace_id}, tab=${this.activeTabId ?? 'n/a'}, panes=${tmuxIds.length})`,
     );
+  }
+
+  /** Panes belonging to the live tab (all panes when tabs aren't reported). */
+  private filterActiveTab(panes: HerdrPane[]): HerdrPane[] {
+    if (!this.activeTabId) return panes;
+    return panes.filter((p) => p.tab_id === this.activeTabId);
   }
 
   /**
@@ -484,9 +507,9 @@ export class HerdrControlSession {
 
   private async reconcilePanes(): Promise<void> {
     if (this.destroyed || !this.workspaceId) return;
-    let panes: Awaited<ReturnType<typeof listPanes>>;
+    let allPanes: Awaited<ReturnType<typeof listPanes>>;
     try {
-      panes = await listPanes(this.workspaceId);
+      allPanes = await listPanes(this.workspaceId);
     } catch {
       // Distinguish "workspace is gone" (terminal) from a transient RPC
       // failure. Swallowing the former leaves this session in the registry
@@ -504,6 +527,19 @@ export class HerdrControlSession {
       }
       return;
     }
+
+    // Follow herdr's active tab. workspace.get reports active_tab_id
+    // authoritatively (it updates the instant a tab is focused), so a tab.*
+    // event that brought us here re-points the session at the new tab's
+    // geometry rather than merging tabs into one flat tree.
+    const ws = await getWorkspace(this.workspaceId);
+    const activeTab = ws?.active_tab_id ?? this.activeTabId;
+    if (activeTab && activeTab !== this.activeTabId && allPanes.some((p) => p.tab_id === activeTab)) {
+      await this.switchActiveTab(activeTab, allPanes);
+      return;
+    }
+
+    const panes = this.filterActiveTab(allPanes);
     const live = new Set<string>();
     let changed = false;
 
@@ -546,12 +582,73 @@ export class HerdrControlSession {
     }
 
     if (this.tree.paneIds().length === 0) {
-      this.handleExit('all panes closed');
+      // The active tab is empty. Only an empty *workspace* means the session is
+      // gone; if other tabs still hold panes, the active tab was just closed —
+      // switch to a surviving tab instead of tearing the session down.
+      if (allPanes.length === 0) {
+        this.handleExit('all panes closed');
+        return;
+      }
+      await this.switchActiveTab(allPanes[0].tab_id, allPanes);
       return;
     }
     if (changed) {
       await this.applyLayout();
     }
+  }
+
+  /**
+   * Re-point the control session at a different tab of the same workspace:
+   * rebuild the split tree from that tab's panes and swap the per-pane control
+   * streams over. Used when herdr's active tab changes (tab focus / the active
+   * tab being closed). Mirrors start()'s per-tab setup.
+   */
+  private async switchActiveTab(tabId: string, allPanes: HerdrPane[]): Promise<void> {
+    if (this.destroyed) return;
+    const previousPaneIds = this.tree.paneIds();
+    this.activeTabId = tabId;
+    const panes = this.filterActiveTab(allPanes);
+    const tmuxIds = panes
+      .map((p) => toTmuxPaneId(p.pane_id))
+      .filter((id): id is string => id !== null);
+
+    // Tear down the outgoing tab's controllers / runtime state; those panes are
+    // not dead, just off-screen, so no pane-dead events — the new layout tells
+    // the client which panes exist now.
+    for (const tmuxId of previousPaneIds) {
+      this.stopController(this.toHerdr(tmuxId));
+      this.paneSizes.delete(tmuxId);
+      this.runtimeStates.delete(tmuxId);
+    }
+
+    await this.hydrateLayout(panes, tmuxIds);
+
+    const focused = panes.find((p) => p.focused);
+    this.activePaneId = (focused ? toTmuxPaneId(focused.pane_id) : null) ?? tmuxIds[0] ?? null;
+
+    for (const pane of panes) {
+      const tmuxId = toTmuxPaneId(pane.pane_id);
+      if (tmuxId) {
+        this.paneSizes.set(tmuxId, {
+          cols: this.clientSize.cols,
+          rows: paneViewportRows(pane, this.clientSize.rows),
+        });
+      }
+    }
+
+    if (this.controllersEnabled) {
+      for (const tmuxId of this.tree.paneIds()) {
+        this.startController(
+          this.toHerdr(tmuxId),
+          this.clientSizeKnown ? (this.paneSizes.get(tmuxId) ?? null) : null,
+        );
+      }
+    }
+
+    console.log(
+      `[herdr-control] Active tab → ${tabId} (session=${this.sessionId}, panes=${tmuxIds.length})`,
+    );
+    await this.applyLayout();
   }
 
   // ==========================================================================

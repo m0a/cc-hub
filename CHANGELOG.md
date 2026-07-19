@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [0.2.30] - 2026-07-19
 
 ### Added
-- **Kimi ワークスペースのカードに「最後の回答」を recap 枠で表示**: Kimi には Claude の away_summary 相当がないため、セッションの wire.jsonl から最後の assistant テキスト（think パートは除外、500 文字で切り詰め）を抽出し `ccRecap` として返す。カードの recap 表示はエージェント非依存のためフロント変更不要で、表示中は title/firstPrompt 行が隠れるのも Claude と同じ挙動。native session id が取れる kimi セッションが対象
+- **Kimi ワークスペースのカードに「最後の回答」を recap 枠で表示** (#473): Kimi には Claude の away_summary 相当がないため、セッションの wire.jsonl から最後の assistant テキスト（think パートは除外、500 文字で切り詰め）を抽出し `ccRecap` として返す。カードの recap 表示はエージェント非依存のためフロント変更不要で、表示中は title/firstPrompt 行が隠れるのも Claude と同じ挙動。native session id が取れる kimi セッションが対象
 
 ## [0.2.29] - 2026-07-19
 

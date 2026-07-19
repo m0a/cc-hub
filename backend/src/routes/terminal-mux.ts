@@ -413,6 +413,7 @@ function cleanupSubscription(ws: ServerWebSocket<MuxData>, _sessionId: string, s
   sub.pushTimers.clear();
   sub.lastPushAt.clear();
   sub.controlSession.removeClientDeviceType(ws.data.visitorId);
+  sub.controlSession.removeClientDemands(ws.data.visitorId);
   sub.controlSession.removeClient();
 }
 
@@ -679,6 +680,13 @@ async function handleControlMessage(
       }
       case 'client-info': {
         controlSession.setClientDeviceType(ws.data.visitorId, msg.deviceType);
+        break;
+      }
+      case 'pane-demands': {
+        // Record this client's per-pane render sizes (per-client sizing).
+        // Dormant until per-client sizing is enabled — recorded, not yet
+        // consulted for PTY sizing.
+        controlSession.setPaneDemands(ws.data.visitorId, msg.demands);
         break;
       }
     }

@@ -19,7 +19,8 @@
  *    poc/herdr/FINDINGS.md).
  */
 
-import type { PaneCursor, PaneModes, PaneViewport, TmuxLayoutNode } from '../../../shared/types';
+import type { PaneCursor, PaneDemand, PaneModes, PaneViewport, TmuxLayoutNode } from '../../../shared/types';
+import { type ClientPaneDemands, reconcilePaneSizes } from './pane-sizing';
 import {
   eventWorkspaceId,
   exportLayout,
@@ -38,6 +39,10 @@ import { herdrLayoutToNode, PaneLayoutTree } from './herdr-layout';
 
 const GRACE_PERIOD_MS = 30_000;
 const RESIZE_DEBOUNCE_MS = 50;
+// Per-client sizing (opt-in, off by default). Phase 1 is diagnostics-only: log
+// whether the clients' reconciled per-pane demands match today's tree/zoom
+// sizing, so single-client equivalence can be proven before any sizing switch.
+const PER_CLIENT_SIZING_DIAG = process.env.CCHUB_PER_CLIENT_SIZING === '1';
 // herdr pane.read hard cap (server-side, not configurable in 0.7.x)
 const HERDR_READ_CAP = 1000;
 
@@ -218,6 +223,11 @@ export class HerdrControlSession {
   private graceTimer: Timer | null = null;
   private destroyed = false;
   private clientDeviceTypes = new Map<string, 'mobile' | 'tablet' | 'desktop'>();
+  // Per-client reported pane render sizes (see PaneDemand). Keyed by clientId
+  // (visitorId), each value keyed by tmux-style pane id. Reconciled into one
+  // PTY size per pane. Recorded now; consulted for sizing only once per-client
+  // sizing is enabled (kept dormant so this is a no-op change on its own).
+  private paneDemands = new Map<string, ClientPaneDemands>();
 
   // Focused pane (tmux-style id). Initialized from herdr's focused flag,
   // updated by selectPane/splitPane and reconciled against herdr state.
@@ -528,8 +538,37 @@ export class HerdrControlSession {
         this.paneSizes.set(paneId, { cols: rect.width, rows: rect.height });
         this.controllerFor(paneId)?.resize(rect.width, rect.height);
       }
+      if (PER_CLIENT_SIZING_DIAG) this.logSizingParity();
     }
     this.emitLayout();
+  }
+
+  /**
+   * Diagnostics for per-client sizing (Phase 1): compare the reconciled
+   * per-pane demands against the size the current tree/zoom path just applied.
+   * For a single client they must match — that's the equivalence gate we need
+   * before ever switching PTY sizing over to the demands. Logs only; changes
+   * nothing.
+   */
+  private logSizingParity(): void {
+    const reconciled = this.reconciledPaneSizes();
+    if (reconciled.size === 0) return;
+    const { cols, rows } = this.clientSize;
+    const rects = this.tree.computeRects(cols, rows);
+    const diffs: string[] = [];
+    for (const [paneId, size] of reconciled) {
+      const rect = rects.get(paneId);
+      if (!rect) {
+        diffs.push(`${paneId}: demand ${size.cols}x${size.rows}, no current rect`);
+      } else if (rect.width !== size.cols || rect.height !== size.rows) {
+        diffs.push(`${paneId}: current ${rect.width}x${rect.height} vs demand ${size.cols}x${size.rows}`);
+      }
+    }
+    console.log(
+      `[per-client-sizing] ${this.sessionId}: ${this.paneDemands.size} client(s), ` +
+        `${reconciled.size} pane demand(s), ${diffs.length} differ` +
+        (diffs.length ? `: ${diffs.join('; ')}` : ' (equivalent)'),
+    );
   }
 
   private emitLayout(): void {
@@ -804,6 +843,25 @@ export class HerdrControlSession {
     this.clientDeviceTypes.set(clientId, deviceType);
   }
 
+  /** Record a client's current per-pane render sizes (per-client sizing). */
+  setPaneDemands(clientId: string, demands: ClientPaneDemands): void {
+    this.paneDemands.set(clientId, demands);
+  }
+
+  /** Drop a client's demands (on disconnect) so its sizes stop constraining panes. */
+  removeClientDemands(clientId: string): void {
+    this.paneDemands.delete(clientId);
+  }
+
+  /**
+   * One reconciled PTY size per pane across all clients' current demands
+   * (smallest-wins). Empty when no client has reported — callers fall back to
+   * the existing tree/zoom sizing. Not yet consulted by applyLayout.
+   */
+  reconciledPaneSizes(): Map<string, PaneDemand> {
+    return reconcilePaneSizes(this.paneDemands.values());
+  }
+
   removeClientDeviceType(clientId: string): void {
     this.clientDeviceTypes.delete(clientId);
   }
@@ -872,6 +930,7 @@ export class HerdrControlSession {
     this.paneDeadListeners.clear();
     this.newSessionListeners.clear();
     this.clientDeviceTypes.clear();
+    this.paneDemands.clear();
     this.paneSizes.clear();
 
     herdrControlSessions.delete(this.sessionId);

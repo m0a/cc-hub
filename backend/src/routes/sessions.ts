@@ -326,9 +326,9 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
         } else {
           paneIndicator = 'idle';
         }
-        // Per-pane metrics only for agent panes of a multi workspace (see
-        // isMultiWorkspace); Claude panes get ctx/model from their own .jsonl,
-        // any agent pane gets memory from its pid.
+        // Per-pane metrics + recap only for agent panes of a multi workspace
+        // (see isMultiWorkspace); Claude panes get ctx/model/recap from their
+        // own .jsonl, any agent pane gets memory from its pid.
         const paneMetrics =
           isMultiWorkspace && isSessionAgentOnPane
             ? await computeSessionMetrics({
@@ -337,6 +337,10 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
                 pids: p.pid ? [p.pid] : [],
               })
             : undefined;
+        const paneClaude =
+          isMultiWorkspace && p.agent === 'claude' && p.agentSessionId && p.path
+            ? await claudeCodeService.getSessionById(p.agentSessionId, p.path)
+            : null;
         const pane: PaneInfo = {
           paneId: p.paneId,
           currentCommand: p.command,
@@ -351,6 +355,8 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
             : paneIndicator,
           pid: p.pid,
           metrics: paneMetrics,
+          recap: paneClaude?.lastRecap?.content,
+          recapAt: paneClaude?.lastRecap?.timestamp,
         };
         return pane;
       })) : undefined,

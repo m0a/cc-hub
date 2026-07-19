@@ -1250,7 +1250,7 @@ export const TerminalComponent = memo(
 			const checkAndExitCopyMode = async () => {
 				try {
 					const res = await authFetch(
-						`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/copy-mode`,
+						`${API_BASE}/api/workspaces/${encodeURIComponent(sessionId)}/copy-mode`,
 					);
 					if (res.ok) {
 						const data = await res.json();

@@ -1,7 +1,7 @@
 /**
  * Multi-server: session の peerId に応じて peer 側 API を直接叩くヘルパー。
  *
- * Hub の REST API (/api/sessions/:id/theme 等) は local session 用なので、
+ * Hub の REST API (/api/workspaces/:id/theme 等) は local session 用なので、
  * peer のセッションには peer 自身の URL + 取得済みトークンで fetch する。
  */
 import { LOCAL_PEER_ID, type PeerClientView } from "../../../shared/types";

@@ -21,7 +21,7 @@ import {
 import { useMultiplexedTerminal } from "../hooks/useMultiplexedTerminal";
 import { usePeerConnection } from "../hooks/usePeerConnection";
 import { usePeers } from "../hooks/usePeers";
-import { useSessions } from "../hooks/useSessions";
+import { useWorkspaces } from "../hooks/useWorkspaces";
 import { fireHookNotification } from "../utils/hookNotification";
 import { makePseudoViewport } from "../utils/viewport-pseudo";
 
@@ -118,7 +118,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 
 		// Multi-server: sessionId が remote peer のものなら、その peer の WS に接続する
 		const { peers } = usePeers();
-		const { sessions: apiSessions } = useSessions();
+		const { sessions: apiSessions } = useWorkspaces();
 		const peerConn = usePeerConnection(sessionId, apiSessions, peers);
 		// peerId of the session we're rendering; used to route image uploads.
 		const sessionPeerId = apiSessions.find((s) => s.id === sessionId)?.peerId;

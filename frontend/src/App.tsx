@@ -28,12 +28,12 @@ import { FileViewer } from "./components/files/FileViewer";
 import { LoginForm } from "./components/LoginForm";
 import { PeerManager } from "./components/PeerManager";
 import { Onboarding, useOnboarding } from "./components/Onboarding";
-import { SessionList } from "./components/SessionList";
+import { WorkspaceList } from "./components/WorkspaceList";
 import type { TerminalRef } from "./components/Terminal";
 import { getTerminalThemes } from "./components/terminal-themes";
 import { openClaudeAppSession } from "./utils/claude-app";
 import { useAuth } from "./hooks/useAuth";
-import { useSessions } from "./hooks/useSessions";
+import { useWorkspaces } from "./hooks/useWorkspaces";
 import { TerminalPage } from "./pages/TerminalPage";
 import { authFetch, isTransientNetworkError } from "./services/api";
 import {
@@ -421,7 +421,7 @@ export function App() {
 	);
 
 	// Session API state (for theme updates in mobile view)
-	const { sessions: apiSessions, createSession } = useSessions();
+	const { sessions: apiSessions, createSession } = useWorkspaces();
 
 	const [deviceType, setDeviceType] = useState<DeviceType>(checkDeviceType);
 
@@ -538,7 +538,7 @@ export function App() {
 	// useCallback で安定化し、t は ref 経由で参照する。
 	const createInitialSession = useCallback(async (): Promise<OpenSession | null> => {
 		try {
-			const response = await authFetch(`${API_BASE}/api/sessions`, {
+			const response = await authFetch(`${API_BASE}/api/workspaces`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
@@ -570,7 +570,7 @@ export function App() {
 			setLoadError(null);
 			try {
 				// Fetch all sessions (including external)
-				const sessionsRes = await authFetch(`${API_BASE}/api/sessions`);
+				const sessionsRes = await authFetch(`${API_BASE}/api/workspaces`);
 				const allSessions: ExtendedSessionResponse[] = sessionsRes.ok
 					? (await sessionsRes.json()).sessions
 					: [];
@@ -779,7 +779,7 @@ export function App() {
 
 		try {
 			const response = await authFetch(
-				`${API_BASE}/api/sessions/${sessionToDelete.id}`,
+				`${API_BASE}/api/workspaces/${sessionToDelete.id}`,
 				{
 					method: "DELETE",
 				},
@@ -992,7 +992,7 @@ export function App() {
 	// Show session list (mobile overlay - no early return to keep FileViewer mounted)
 	const sessionListOverlay = showSessionList ? (
 		<div className="fixed inset-0 z-[60]">
-			<SessionList
+			<WorkspaceList
 				onSelectSession={handleSelectSession}
 				onSelectPane={handleSelectPane}
 				onBack={openSessions.length > 0 ? handleBackFromList : undefined}

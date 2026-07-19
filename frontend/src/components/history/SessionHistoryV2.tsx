@@ -13,6 +13,7 @@ import {
 	type ActiveChip,
 	activeChips,
 	applyFacets,
+	applyPeriodFilter,
 	computeFacetData,
 	emptyFacetState,
 	type FacetState,
@@ -195,8 +196,13 @@ export function SessionHistoryV2({
 	const isSearchMode = searchQuery.trim().length > 0;
 	const sourceItems = isSearchMode ? searchResults : items;
 
-	// Facet value lists + counts are derived from the full loaded set.
-	const facetData = useMemo(() => computeFacetData(items, t), [items, t]);
+	// Facet value lists + counts are scoped to the selected period, so the
+	// other axes only offer (and count) values inside the date range. Selected
+	// values are pinned at count 0 so they can still be unchecked.
+	const facetData = useMemo(
+		() => computeFacetData(applyPeriodFilter(items, facet.period, Date.now()), t, facet),
+		[items, facet, t],
+	);
 	const chips: ActiveChip[] = useMemo(
 		() => activeChips(facet, facetData, t),
 		[facet, facetData, t],

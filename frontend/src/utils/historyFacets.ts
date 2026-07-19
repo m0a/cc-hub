@@ -42,6 +42,30 @@ const PERIOD_MS: Record<NonNullable<HistoryPeriod>, number> = {
 	"30d": 30 * 24 * 60 * 60 * 1000,
 };
 
+function inPeriod(
+	it: HistorySession,
+	period: NonNullable<HistoryPeriod>,
+	now: number,
+): boolean {
+	const ts = new Date(it.modified).getTime();
+	// Unparseable dates are excluded from time-bounded views rather than
+	// slipping through.
+	return !Number.isNaN(ts) && now - ts <= PERIOD_MS[period];
+}
+
+/**
+ * Filter by the period axis alone. Facet option lists are scoped with this so
+ * the other axes only offer values that exist inside the selected date range.
+ */
+export function applyPeriodFilter(
+	items: HistorySession[],
+	period: HistoryPeriod,
+	now: number,
+): HistorySession[] {
+	if (!period) return items;
+	return items.filter((it) => inPeriod(it, period, now));
+}
+
 function agentOf(s: HistorySession): string {
 	return s.agent ?? "claude";
 }
@@ -67,12 +91,7 @@ export function applyFacets(
 		if (s.agents.size && !s.agents.has(agentOf(it))) return false;
 		if (s.branches.size && !s.branches.has(branchOf(it))) return false;
 		if (s.peers.size && !s.peers.has(peerOf(it))) return false;
-		if (s.period) {
-			const ts = new Date(it.modified).getTime();
-			// Exclude unparseable dates from time-bounded views rather than letting
-			// them slip through.
-			if (Number.isNaN(ts) || now - ts > PERIOD_MS[s.period]) return false;
-		}
+		if (s.period && !inPeriod(it, s.period, now)) return false;
 		return true;
 	});
 }
@@ -124,13 +143,28 @@ function projectLabel(projectName: string): string {
 	return projectName.replace(/^~\//, "");
 }
 
+/** Ensure every selected value stays listed (count 0) even when the scoped
+ * item set no longer contains it, so it can still be unchecked in place. */
+function pinSelected(
+	counts: Map<string, number>,
+	selected?: Set<string>,
+): Map<string, number> {
+	if (selected) {
+		for (const v of selected) if (!counts.has(v)) counts.set(v, 0);
+	}
+	return counts;
+}
+
 /**
- * Build the facet value lists (with total counts) for the sidebar. Counts are
- * totals across the loaded set (not disjunctive) — simple and stable.
+ * Build the facet value lists (with counts) for the sidebar. `items` is
+ * expected to be pre-scoped to the selected period, so counts reflect the date
+ * range; within that the counts are totals (not disjunctive) — simple and
+ * stable. Pass `selected` so checked values survive dropping out of range.
  */
 export function computeFacetData(
 	items: HistorySession[],
 	t: TFunction,
+	selected?: FacetState,
 ): FacetData {
 	const peerNick = new Map<string, string>();
 	const peerColor = new Map<string, string>();
@@ -140,7 +174,7 @@ export function computeFacetData(
 		if (it.peerColor) peerColor.set(p, it.peerColor);
 	}
 
-	const peerCounts = tally(items, peerOf);
+	const peerCounts = pinSelected(tally(items, peerOf), selected?.peers);
 	const peers =
 		peerCounts.size > 1
 			? sortedValues(
@@ -151,10 +185,17 @@ export function computeFacetData(
 			: [];
 
 	return {
-		projects: sortedValues(tally(items, (s) => s.projectName), projectLabel),
-		agents: sortedValues(tally(items, agentOf), agentDisplayName),
-		branches: sortedValues(tally(items, branchOf), (v) =>
-			v === UNKNOWN_BRANCH ? t("history.facetBranchUnknown") : v,
+		projects: sortedValues(
+			pinSelected(tally(items, (s) => s.projectName), selected?.projects),
+			projectLabel,
+		),
+		agents: sortedValues(
+			pinSelected(tally(items, agentOf), selected?.agents),
+			agentDisplayName,
+		),
+		branches: sortedValues(
+			pinSelected(tally(items, branchOf), selected?.branches),
+			(v) => (v === UNKNOWN_BRANCH ? t("history.facetBranchUnknown") : v),
 		),
 		peers,
 	};

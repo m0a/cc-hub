@@ -3,6 +3,7 @@ import type { HistorySession } from "../../../shared/types";
 import {
 	activeChips,
 	applyFacets,
+	applyPeriodFilter,
 	computeFacetData,
 	emptyFacetState,
 	isFacetActive,
@@ -105,6 +106,48 @@ describe("computeFacetData", () => {
 		const data = computeFacetData(items, t);
 		expect(data.peers.length).toBe(2);
 		expect(data.peers.find((v) => v.value === "mac")?.label).toBe("m0a-mac");
+	});
+
+	test("selected values are pinned at count 0 when absent from the scoped set", () => {
+		const items = [snap("a", { projectName: "~/p1", agent: "claude" })];
+		const s = {
+			...emptyFacetState(),
+			projects: new Set(["~/gone"]),
+			agents: new Set(["codex"]),
+			branches: new Set([UNKNOWN_BRANCH]),
+		};
+		const data = computeFacetData(items, t, s);
+		expect(data.projects.find((v) => v.value === "~/gone")).toMatchObject({
+			count: 0,
+			label: "gone",
+		});
+		expect(data.agents.find((v) => v.value === "codex")?.count).toBe(0);
+		// "a" has no branch, so the unknown sentinel is genuinely present (1).
+		expect(data.branches.find((v) => v.value === UNKNOWN_BRANCH)?.count).toBe(1);
+		// pinned zero-count entries sort below real ones
+		expect(data.projects[0].value).toBe("~/p1");
+	});
+});
+
+describe("applyPeriodFilter", () => {
+	const items = [
+		snap("recent", { modifiedMs: NOW - HOUR }),
+		snap("old", { modifiedMs: NOW - 10 * DAY }),
+	];
+
+	test("null period returns items unchanged", () => {
+		expect(applyPeriodFilter(items, null, NOW)).toBe(items);
+	});
+
+	test("scopes to the range, ignoring other axes", () => {
+		expect(applyPeriodFilter(items, "7d", NOW).map((x) => x.sessionId)).toEqual([
+			"recent",
+		]);
+	});
+
+	test("excludes unparseable dates", () => {
+		const bad = { ...snap("z"), modified: "" };
+		expect(applyPeriodFilter([bad], "24h", NOW)).toHaveLength(0);
 	});
 });
 

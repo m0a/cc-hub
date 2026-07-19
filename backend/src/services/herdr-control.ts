@@ -39,10 +39,12 @@ import { herdrLayoutToNode, PaneLayoutTree } from './herdr-layout';
 
 const GRACE_PERIOD_MS = 30_000;
 const RESIZE_DEBOUNCE_MS = 50;
-// Per-client sizing (opt-in, off by default). Phase 1 is diagnostics-only: log
-// whether the clients' reconciled per-pane demands match today's tree/zoom
-// sizing, so single-client equivalence can be proven before any sizing switch.
-const PER_CLIENT_SIZING_DIAG = process.env.CCHUB_PER_CLIENT_SIZING === '1';
+// Per-client sizing (opt-in, off by default). When on, a pane any client
+// actually displays is sized to the reconciled (smallest-wins) demand instead
+// of the shared tree/zoom guess. Single-client demands equal the tree/zoom
+// size (proven in Phase 1), so this is behavior-neutral until two clients
+// disagree — then the smaller wins (tmux-style) rather than last-writer thrash.
+const PER_CLIENT_SIZING = process.env.CCHUB_PER_CLIENT_SIZING === '1';
 // herdr pane.read hard cap (server-side, not configurable in 0.7.x)
 const HERDR_READ_CAP = 1000;
 
@@ -531,14 +533,28 @@ export class HerdrControlSession {
     if (this.destroyed) return;
     if (this.clientSizeKnown) {
       const { cols, rows } = this.clientSize;
-      const rects = this.tree.computeRects(cols, rows);
-      for (const [paneId, rect] of rects) {
-        const prev = this.paneSizes.get(paneId);
-        if (prev && prev.cols === rect.width && prev.rows === rect.height) continue;
-        this.paneSizes.set(paneId, { cols: rect.width, rows: rect.height });
-        this.controllerFor(paneId)?.resize(rect.width, rect.height);
+      // Base sizes: today's tree/zoom geometry (unchanged when the flag is off).
+      const targets = new Map<string, { cols: number; rows: number }>();
+      for (const [paneId, rect] of this.tree.computeRects(cols, rows)) {
+        targets.set(paneId, { cols: rect.width, rows: rect.height });
       }
-      if (PER_CLIENT_SIZING_DIAG) this.logSizingParity();
+      if (PER_CLIENT_SIZING) {
+        // Override each shown pane with its reconciled per-client demand. Only
+        // panes already in the base are touched, so undemanded/hidden panes keep
+        // exactly today's behavior; single-client demands equal the base.
+        const reconciled = this.reconciledPaneSizes();
+        for (const paneId of targets.keys()) {
+          const demand = reconciled.get(paneId);
+          if (demand) targets.set(paneId, demand);
+        }
+      }
+      for (const [paneId, size] of targets) {
+        const prev = this.paneSizes.get(paneId);
+        if (prev && prev.cols === size.cols && prev.rows === size.rows) continue;
+        this.paneSizes.set(paneId, size);
+        this.controllerFor(paneId)?.resize(size.cols, size.rows);
+      }
+      if (PER_CLIENT_SIZING) this.logSizingParity();
     }
     this.emitLayout();
   }

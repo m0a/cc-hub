@@ -152,6 +152,31 @@ function computeTotalSizeFromTree(
 	return null;
 }
 
+// Per-pane render sizes to report as per-client demands. Sourced from each
+// pane's proposed dimensions (what fits its container) — NOT the layout the
+// server sent back — so demands can't lag or feed back into the server's
+// sizing. Pass the zoom-aware root (the zoomed subtree when zoomed) so a zoomed
+// pane reports its full-container size and hidden panes report nothing.
+function collectPaneDemands(
+	root: PaneNode,
+	terminalRefs: React.RefObject<Map<string, TerminalRef | null>>,
+): Record<string, { cols: number; rows: number }> {
+	const out: Record<string, { cols: number; rows: number }> = {};
+	const walk = (n: PaneNode): void => {
+		if (n.type === "terminal") {
+			const ref = terminalRefs.current?.get(n.id);
+			const size = ref?.getProposedSize?.() ?? ref?.getSize?.();
+			if (size && size.cols > 0 && size.rows > 0) {
+				out[n.id] = { cols: size.cols, rows: size.rows };
+			}
+			return;
+		}
+		if (n.type === "split") n.children.forEach(walk);
+	};
+	walk(root);
+	return out;
+}
+
 // Get all pane IDs in order (leaf nodes only)
 function getAllPaneIds(node: PaneNode): string[] {
 	if (node.type === "split") {
@@ -841,6 +866,12 @@ export function DesktopLayout({
 				};
 				console.log(`[Resize] Sending: ${totalSize.cols}x${totalSize.rows}`);
 				controlTerminalRef.current.resize(totalSize.cols, totalSize.rows);
+				// Per-client sizing: report the size we render each visible pane at,
+				// from the same proposed dimensions the total was summed from (zoom-
+				// aware root). Sent with resize so demands never lag the layout.
+				controlTerminalRef.current.sendPaneDemands(
+					collectPaneDemands(root, terminalRefs),
+				);
 			} else {
 				console.log(
 					`[Resize] Failed to compute size, root type=${root.type}, totalSize=`,

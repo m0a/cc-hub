@@ -52,8 +52,13 @@ const app = new Hono();
 
 // Middleware - custom logger that skips noisy polling endpoints
 app.use('*', logger((message, ...rest) => {
-  // Skip GET /api/sessions polling logs (fired every 5s per client)
-  if (message.includes('GET') && message.includes('/api/sessions') && !message.includes('/api/sessions/')) {
+  // Skip GET /api/sessions|/api/workspaces polling logs (fired every 5s per client)
+  if (
+    message.includes('GET') &&
+    (message.includes('/api/sessions') || message.includes('/api/workspaces')) &&
+    !message.includes('/api/sessions/') &&
+    !message.includes('/api/workspaces/')
+  ) {
     return;
   }
   // Skip POST /api/notify hook traffic — fires on every Claude/Codex hook
@@ -149,6 +154,10 @@ app.get('/api/images/:filename', async (c) => {
 app.use('/api/logs/*', conditionalAuthMiddleware);
 app.use('/api/sessions/*', conditionalAuthMiddleware);
 app.use('/api/sessions', conditionalAuthMiddleware);
+// `/api/workspaces` is the canonical name (a CC Hub session IS a herdr
+// workspace); `/api/sessions` stays as an alias for CLI / peers / glasses.
+app.use('/api/workspaces/*', conditionalAuthMiddleware);
+app.use('/api/workspaces', conditionalAuthMiddleware);
 app.use('/api/upload/*', conditionalAuthMiddleware);
 app.use('/api/files/*', conditionalAuthMiddleware);
 app.use('/api/dashboard', conditionalAuthMiddleware);
@@ -158,6 +167,8 @@ app.use('/api/herdr/*', conditionalAuthMiddleware);
 
 app.route('/api/logs', logs);
 app.route('/api/sessions', sessions);
+// Alias mount: same router, canonical `workspace` name (see auth note above).
+app.route('/api/workspaces', sessions);
 app.route('/api/upload', upload);
 app.route('/api/files', files);
 app.route('/api/dashboard', dashboard);

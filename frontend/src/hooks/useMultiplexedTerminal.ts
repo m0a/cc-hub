@@ -11,6 +11,10 @@ interface UseMultiplexedTerminalOptions {
 	 * be reused after deletion, so this forces a fresh mux subscription. */
 	sessionInstanceId?: string;
 	token?: string | null;
+	/** When false, suppress the live terminal subscription (remote-control mode,
+	 * PC-only): CC Hub never opens a control stream, so the local herdr client
+	 * keeps ownership of the terminal. Other operations are unaffected. */
+	live?: boolean;
 	// Multi-server: アクティブな peer の WS base URL ("wss://host:port") を指定。
 	// 省略時は Hub (window.location.host) を使う。
 	peerWsBase?: string | null;
@@ -164,6 +168,8 @@ type MuxCallbacks = {
 	sessionId: string;
 	sessionInstanceId?: string;
 	deadPanes: Set<string>;
+	/** When false, subscribeToSession is a no-op (remote-control mode). */
+	live?: boolean;
 };
 
 let activeCallbacks: MuxCallbacks | null = null;
@@ -185,6 +191,10 @@ function subscribeToSession(
 	sessionInstanceId?: string,
 	force = false,
 ) {
+	// Remote-control mode: never open a live subscription. This gates all three
+	// call sites (ready handler / subscribe effect / connect) at once, so no
+	// PaneController is spawned and the local herdr client keeps the terminal.
+	if (activeCallbacks?.live === false) return;
 	const instanceChanged =
 		subscribedSession === sessionId &&
 		subscribedSessionInstance !== (sessionInstanceId ?? null);
@@ -567,6 +577,52 @@ export function sendTerminalInput(
 	return true;
 }
 
+/**
+ * REST variant of sendTerminalInput for remote-control mode: the mux WS rejects
+ * input for sessions this client is not subscribed to, so route through
+ * POST /panes/input instead (same peer-aware base+token pattern as the
+ * respawnPane fallback). Resolves true only when the server accepted the input.
+ */
+export async function sendTerminalInputRest(
+	peerApiBase: string | null | undefined,
+	token: string | null | undefined,
+	sessionId: string,
+	paneId: string,
+	data: string,
+): Promise<boolean> {
+	const path = `/api/workspaces/${encodeURIComponent(sessionId)}/panes/input`;
+	const bytes = new TextEncoder().encode(data);
+	const body = JSON.stringify({
+		paneId,
+		data: uint8ArrayToBase64(bytes),
+		encoding: "base64",
+	});
+	const headers: HeadersInit = { "Content-Type": "application/json" };
+	try {
+		let res: Response;
+		if (peerApiBase && peerApiBase.length > 0) {
+			const peerHeaders = new Headers(headers);
+			if (token) peerHeaders.set("Authorization", `Bearer ${token}`);
+			res = await fetchWithTimeout(`${peerApiBase}${path}`, {
+				method: "POST",
+				headers: peerHeaders,
+				body,
+			});
+		} else {
+			res = await authFetch(`${import.meta.env.VITE_API_URL || ""}${path}`, {
+				method: "POST",
+				headers,
+				body,
+			});
+		}
+		if (!res.ok) return false;
+		dispatchInputEcho(sessionId, paneId, data);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 function dispatchInputEcho(
 	sessionId: string,
 	paneId: string,
@@ -626,6 +682,7 @@ export function useMultiplexedTerminal(
 			sessionId,
 			sessionInstanceId,
 			deadPanes,
+			live: options.live ?? true,
 		};
 	});
 

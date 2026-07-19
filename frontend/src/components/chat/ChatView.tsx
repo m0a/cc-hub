@@ -30,6 +30,9 @@ interface ChatViewProps {
 	agent?: AgentProvider;
 	/** Codex thread id, used as the conversation key when agent=codex. */
 	agentSessionId?: string | null;
+	/** Remote-control mode: send composer input over REST instead of the mux WS
+	 *  (which rejects input for sessions this client is not subscribed to). */
+	sendInputOverRest?: (paneId: string, data: string) => Promise<boolean>;
 }
 
 export function ChatView({
@@ -46,6 +49,7 @@ export function ChatView({
 	theme,
 	agent,
 	agentSessionId,
+	sendInputOverRest,
 }: ChatViewProps) {
 	const { t } = useTranslation();
 	const { messages, isReady, conversationId, error } = useAgentConversation({
@@ -94,7 +98,11 @@ export function ChatView({
 	}
 
 	const composer = showComposer ? (
-		<ChatComposer sessionId={sessionId} paneId={paneId} />
+		<ChatComposer
+			sessionId={sessionId}
+			paneId={paneId}
+			sendOverRest={sendInputOverRest}
+		/>
 	) : null;
 
 	// Prompt-style line at the bottom of the conversation showing what the user

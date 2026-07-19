@@ -8,6 +8,7 @@ import {
 	RefreshCw,
 	SplitSquareHorizontal,
 	SplitSquareVertical,
+	Unplug,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -16,8 +17,13 @@ import type {
 	SessionTheme,
 	TmuxLayoutNode,
 } from "../../../shared/types";
-import { useMultiplexedTerminal } from "../hooks/useMultiplexedTerminal";
+import {
+	sendTerminalInputRest,
+	useMultiplexedTerminal,
+} from "../hooks/useMultiplexedTerminal";
 import { usePeerConnection } from "../hooks/usePeerConnection";
+import { useRemoteControlMode } from "../hooks/useRemoteControlMode";
+import { sessionFetch } from "../services/peer-fetch";
 import { nukeClientCache } from "../utils/nuke-cache";
 import { usePeers } from "../hooks/usePeers";
 import {
@@ -451,6 +457,14 @@ export function DesktopLayout({
 	const [showSessionModal, setShowSessionModal] = useState(false);
 	const [showDashboard, setShowDashboard] = useState(false);
 
+	// Remote-control mode (PC only): stop the live terminal render so the local
+	// herdr client keeps ownership of the panes. Tablet keeps normal terminals.
+	const { remoteControl: remoteControlFlag, toggleRemoteControl } =
+		useRemoteControlMode();
+	const remoteControl = !isTablet && remoteControlFlag;
+	const remoteControlRef = useRef(remoteControl);
+	remoteControlRef.current = remoteControl;
+
 	// Floating keyboard state (for tablet mode)
 	const [showKeyboard, setShowKeyboard] = useState(() => {
 		if (!isTablet) return false;
@@ -594,6 +608,12 @@ export function DesktopLayout({
 	const { peers } = usePeers();
 	const peerConn = usePeerConnection(controlSessionId || "", apiSessions, peers);
 
+	// Refs for remote-control REST operations (avoid re-creating callbacks)
+	const controlSessionIdRef = useRef(controlSessionId);
+	controlSessionIdRef.current = controlSessionId;
+	const peersRef = useRef(peers);
+	peersRef.current = peers;
+
 	// Zoom state: when a pane is zoomed, show only that pane full-screen
 	const [zoomedPaneId, setZoomedPaneId] = useState<string | null>(null);
 	const zoomedPaneIdRef = useRef<string | null>(null);
@@ -650,6 +670,7 @@ export function DesktopLayout({
 		peerWsBase: peerConn.wsBase,
 		peerApiBase: peerConn.apiBase,
 		token: peerConn.token,
+		live: !remoteControl,
 		onPaneViewport: (paneId, viewport) => {
 			lastViewportRef.current.set(paneId, viewport);
 			let perPane = paneViewportCacheRef.current.get(paneId);
@@ -798,6 +819,30 @@ export function DesktopLayout({
 	const controlTerminalRef = useRef(controlTerminal);
 	controlTerminalRef.current = controlTerminal;
 
+	// Remote-control mode: pane operations go over REST (pure RPC — no control
+	// stream, no PaneController). The WS path requires an active subscription,
+	// which remote-control mode deliberately never opens.
+	const restPaneOp = useCallback(
+		(op: "focus" | "split" | "close", body: Record<string, unknown>) => {
+			const sid = controlSessionIdRef.current;
+			if (!sid) return;
+			const session = sessionsRef.current.find((s) => s.id === sid);
+			sessionFetch(
+				session,
+				peersRef.current,
+				`/api/workspaces/${encodeURIComponent(sid)}/panes/${op}`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(body),
+				},
+			).catch((err) => {
+				console.error(`[remote-control] panes/${op} failed:`, err);
+			});
+		},
+		[],
+	);
+
 	// Reset control mode state when session changes (but NOT on initial mount).
 	// On initial mount, child Terminal components register callbacks before this
 	// parent effect runs (React runs child effects first). Clearing on initial mount
@@ -821,16 +866,23 @@ export function DesktopLayout({
 		lastSentSizeRef.current = null;
 	}, [controlSessionId, controlSessionInstanceId]);
 
-	// Connect/disconnect control mode
+	// Connect/disconnect control mode.
+	// Remote-control mode: drop the live subscription (disconnect sends only an
+	// unsubscribe — sessionId is preserved) but still run connect() so the shared
+	// WS stays up for hook events / conversation streams; subscribeToSession is
+	// gated by `live: false`, so no PaneController is ever spawned.
 	useEffect(() => {
 		if (controlSessionId) {
+			if (remoteControl) {
+				controlTerminal.disconnect();
+			}
 			controlTerminal.connect();
 		}
 		return () => {
 			controlTerminal.disconnect();
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [controlSessionId, controlSessionInstanceId]);
+	}, [controlSessionId, controlSessionInstanceId, remoteControl]);
 
 	// Control mode resize: compute TOTAL window size from layout tree.
 	// tmux refresh-client -C needs cols×rows for the entire window,
@@ -1046,12 +1098,24 @@ export function DesktopLayout({
 			};
 		},
 		splitPane: (paneId: string, direction: "h" | "v") => {
+			if (remoteControl) {
+				restPaneOp("split", { paneId, direction });
+				return;
+			}
 			controlTerminalRef.current.splitPane(paneId, direction);
 		},
 		closePane: (paneId: string) => {
+			if (remoteControl) {
+				restPaneOp("close", { paneId });
+				return;
+			}
 			controlTerminalRef.current.closePane(paneId);
 		},
-		zoomPane: (paneId: string) => {
+		// Zoom is meaningless while the xterm area shows the remote-control
+		// placeholder — leaving the handler unset also hides the zoom button.
+		zoomPane: remoteControl
+			? undefined
+			: (paneId: string) => {
 			console.log(`[zoom] ${paneId} (current=${zoomedPaneId})`);
 			const isUnzooming = zoomedPaneId === paneId;
 			if (isUnzooming) {
@@ -1093,19 +1157,38 @@ export function DesktopLayout({
 		},
 		onShowSessions: () => setShowSessionModal(true),
 		onOpenFileViewer: openFileViewer,
+		remoteControl,
+		// Chat composer fallback: the mux WS rejects input for unsubscribed
+		// sessions, so remote-control mode sends over REST (peer-aware).
+		sendInputRest: remoteControl
+			? (paneId: string, data: string) =>
+					sendTerminalInputRest(
+						peerConn.apiBase,
+						peerConn.token,
+						controlSessionIdRef.current ?? "",
+						paneId,
+						data,
+					)
+			: undefined,
 	};
 
 	const handleSplit = useCallback((direction: "horizontal" | "vertical") => {
 		const activeId = activePaneRef.current;
-		controlTerminalRef.current.splitPane(
-			activeId,
-			direction === "horizontal" ? "h" : "v",
-		);
+		const dir = direction === "horizontal" ? "h" : "v";
+		if (remoteControlRef.current) {
+			restPaneOp("split", { paneId: activeId, direction: dir });
+			return;
+		}
+		controlTerminalRef.current.splitPane(activeId, dir);
 		// Wait for tmux layout update via %layout-change
 	}, []);
 
 	const handleClosePane = useCallback((paneId?: string) => {
 		const targetId = paneId || activePaneRef.current;
+		if (remoteControlRef.current) {
+			restPaneOp("close", { paneId: targetId });
+			return;
+		}
 		controlTerminalRef.current.closePane(targetId);
 		// Wait for tmux layout update via %layout-change
 	}, []);
@@ -1286,6 +1369,8 @@ export function DesktopLayout({
 			}
 
 			// Ctrl/Cmd + Shift + Arrow: Resize active pane
+			// (no-op in remote-control mode — pane sizes are owned by the local
+			// herdr client and the WS path would reject the unsubscribed session)
 			if (
 				e.shiftKey &&
 				!e.altKey &&
@@ -1295,6 +1380,7 @@ export function DesktopLayout({
 					e.key === "ArrowDown")
 			) {
 				e.preventDefault();
+				if (remoteControlRef.current) return;
 				const paneId = activePaneRef.current;
 				const dirMap: Record<string, "L" | "R" | "U" | "D"> = {
 					ArrowLeft: "L",
@@ -1310,6 +1396,7 @@ export function DesktopLayout({
 			// Ctrl/Cmd + Shift + =: Equalize pane sizes
 			if (e.shiftKey && !e.altKey && (e.key === "+" || e.key === "=")) {
 				e.preventDefault();
+				if (remoteControlRef.current) return;
 				const root = desktopStateRef.current.root;
 				const dir =
 					root.type === "split"
@@ -1434,7 +1521,11 @@ export function DesktopLayout({
 			ref?.clearSelection();
 		}
 		setDesktopState((prev) => ({ ...prev, activePane: paneId }));
-		controlTerminalRef.current.selectPane(paneId);
+		if (remoteControlRef.current) {
+			restPaneOp("focus", { paneId });
+		} else {
+			controlTerminalRef.current.selectPane(paneId);
+		}
 	}, []);
 
 	const handleSelectSessionForPane = useCallback(
@@ -1585,6 +1676,22 @@ export function DesktopLayout({
 								title="Dashboard (Ctrl+Shift+B)"
 							>
 								<BarChart3 className="w-[18px] h-[18px]" />
+							</button>
+							<button
+								type="button"
+								onClick={toggleRemoteControl}
+								className={`p-1.5 rounded-md transition-colors ${
+									remoteControl
+										? "text-amber-400 bg-amber-500/20"
+										: "text-zinc-600 hover:text-zinc-400"
+								}`}
+								title={
+									remoteControl
+										? "Remote control mode ON — terminal rendered by local herdr"
+										: "Remote control mode OFF"
+								}
+							>
+								<Unplug className="w-[18px] h-[18px]" />
 							</button>
 						</div>
 					</div>

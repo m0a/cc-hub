@@ -1,6 +1,6 @@
 {
   "name": "cc-hub",
-  "version": "0.2.31",
+  "version": "0.2.32",
   "license": "MIT",
   "private": true,
   "workspaces": [

@@ -59,7 +59,8 @@
 		"agentProvider": {
 			"claude": "Claude",
 			"codex": "Codex",
-			"grok": "Grok"
+			"grok": "Grok",
+			"kimi": "Kimi"
 		},
 		"workingDirectory": "Working Directory",
 		"newFolder": "New Folder",
@@ -179,7 +180,13 @@
 		"grokLast7d": "Last 7 days",
 		"grokTurns": "{{count}} turns",
 		"grokModelBreakdown": "By model (7 days)",
-		"grokNoRateLimitInfo": "xAI does not expose rate-limit windows locally, so token totals are aggregated from Grok session logs instead of showing cycle utilization."
+		"grokNoRateLimitInfo": "xAI does not expose rate-limit windows locally, so token totals are aggregated from Grok session logs instead of showing cycle utilization.",
+		"kimiUsage": "Kimi Usage",
+		"kimiLast24h": "Last 24 hours",
+		"kimiLast7d": "Last 7 days",
+		"kimiTurns": "{{count}} turns",
+		"kimiModelBreakdown": "By model (7 days)",
+		"kimiNoRateLimitInfo": "Kimi Code does not expose rate-limit windows locally, so token totals are aggregated from Kimi session logs (sub-agent usage included) instead of showing cycle utilization."
 	},
 	"files": {
 		"title": "File Browser",
@@ -228,6 +235,7 @@
 		"claude": "Claude",
 		"codex": "Codex",
 		"grok": "Grok",
+		"kimi": "Kimi",
 		"system": "System",
 		"errorTitle": "Conversation unavailable",
 		"errorMissingAgent": "Session has no agent information. Try refreshing the session list.",

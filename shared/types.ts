@@ -76,6 +76,15 @@ export const AGENT_PROVIDERS = {
     processPatterns: [/(?:^|\/)grok(?:\s|$)/],
     supportsConversationMetadata: false,
   },
+  kimi: {
+    id: 'kimi',
+    command: 'kimi',
+    resumeCommand: 'kimi --session',
+    labelKey: 'session.agentProvider.kimi',
+    displayName: 'Kimi',
+    processPatterns: [/(?:^|\/)kimi(?:\s|$)/],
+    supportsConversationMetadata: false,
+  },
 } as const;
 
 export type AgentProvider = keyof typeof AGENT_PROVIDERS;
@@ -546,6 +555,31 @@ export interface GrokUsageSummary {
   lastTurnAt?: string;
 }
 
+/**
+ * Aggregated Kimi Code token usage. Kimi exposes no rate-limit windows or plan
+ * data in its local session data, so the dashboard shows consumption totals
+ * aggregated from `usage.record` records instead of cycle utilization bars.
+ */
+export interface KimiUsageWindow {
+  /** usage.record entries in the window. */
+  turns: number;
+  totalTokens: number;
+  inputTokens: number;
+  cacheReadTokens: number;
+  outputTokens: number;
+}
+
+export interface KimiUsageSummary {
+  last24h: KimiUsageWindow;
+  last7d: KimiUsageWindow;
+  /** Per-model totals over the 7-day window, largest first. */
+  models: Array<{ model: string; totalTokens: number }>;
+  /** Sessions with usage in the 7-day window. */
+  sessions7d: number;
+  /** ISO timestamp of the most recent usage record seen. */
+  lastTurnAt?: string;
+}
+
 // Usage history snapshot for line chart
 export interface UsageSnapshot {
   timestamp: string; // ISO 8601
@@ -616,6 +650,7 @@ export interface DashboardResponse {
   usageLimitsStatus?: UsageLimitsStatus; // Error/state info for UI
   codexUsageLimits?: CodexUsageLimits | null; // From Codex rollouts
   grokUsage?: GrokUsageSummary | null; // From Grok updates.jsonl turn_completed records
+  kimiUsage?: KimiUsageSummary | null; // From Kimi wire.jsonl usage.record records
   usageHistory: UsageSnapshot[]; // Usage history for line chart
   dailyActivity: DailyActivity[];
   modelUsage: ModelUsage[];

@@ -59,7 +59,8 @@
 		"agentProvider": {
 			"claude": "Claude",
 			"codex": "Codex",
-			"grok": "Grok"
+			"grok": "Grok",
+			"kimi": "Kimi"
 		},
 		"workingDirectory": "作業ディレクトリ",
 		"newFolder": "新規フォルダ",
@@ -179,7 +180,13 @@
 		"grokLast7d": "過去7日間",
 		"grokTurns": "{{count}} ターン",
 		"grokModelBreakdown": "モデル別（7日間）",
-		"grokNoRateLimitInfo": "xAI はレート制限情報をローカルに公開していないため、サイクル使用率の代わりに Grok セッションログから集計したトークン消費量を表示しています。"
+		"grokNoRateLimitInfo": "xAI はレート制限情報をローカルに公開していないため、サイクル使用率の代わりに Grok セッションログから集計したトークン消費量を表示しています。",
+		"kimiUsage": "Kimi 使用量",
+		"kimiLast24h": "過去24時間",
+		"kimiLast7d": "過去7日間",
+		"kimiTurns": "{{count}} ターン",
+		"kimiModelBreakdown": "モデル別（7日間）",
+		"kimiNoRateLimitInfo": "Kimi Code はレート制限情報をローカルに公開していないため、サイクル使用率の代わりに Kimi セッションログ（サブエージェント分を含む）から集計したトークン消費量を表示しています。"
 	},
 	"files": {
 		"title": "ファイルブラウザ",
@@ -228,6 +235,7 @@
 		"claude": "Claude",
 		"codex": "Codex",
 		"grok": "Grok",
+		"kimi": "Kimi",
 		"system": "System",
 		"errorTitle": "会話を表示できません",
 		"errorMissingAgent": "セッションのエージェント情報が取得できませんでした。セッション一覧を再読み込みしてください。",

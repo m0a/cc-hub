@@ -38,6 +38,12 @@ const AGENT_BADGES: Record<AgentProvider, AgentBadgeStyle> = {
 		barClassName: "bg-emerald-400/70",
 		labelClassName: "text-emerald-300",
 	},
+	kimi: {
+		label: AGENT_PROVIDERS.kimi.displayName,
+		badgeClassName: "text-amber-300 bg-amber-400/10 border-amber-400/20",
+		barClassName: "bg-amber-400/70",
+		labelClassName: "text-amber-300",
+	},
 };
 
 /** Badge style for a provider; unknown/undefined falls back to Claude. */

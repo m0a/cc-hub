@@ -194,6 +194,7 @@ type AgentIntegration = {
 const AGENT_INTEGRATIONS: AgentIntegration[] = [
   { name: 'Claude Code', command: 'claude', configDir: join(homedir(), '.claude') },
   { name: 'Codex', command: 'codex', configDir: join(homedir(), '.codex') },
+  { name: 'Kimi Code', command: 'kimi', configDir: join(homedir(), '.kimi-code') },
 ];
 
 function isCommandAvailable(command: string): boolean {

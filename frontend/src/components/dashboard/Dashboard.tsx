@@ -1,4 +1,4 @@
-import { Globe, Moon, Sun } from "lucide-react";
+import { Bot, Globe, Moon, Server, Sun } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { agentDisplayName } from "../../../../shared/types";
@@ -105,122 +105,183 @@ export function Dashboard({ className = "", compact = false }: DashboardProps) {
 		<div
 			className={`overflow-y-auto overscroll-contain px-4 py-4 ${className}`}
 		>
-			{showAgentTabs && (
-				<div className="flex gap-1 mb-3 text-xs">
-					{availableTabs.map((id) => {
-						const isActive = effectiveTab === id;
-						const label = agentDisplayName(id);
-						return (
-							<button
-								key={id}
-								type="button"
-								onClick={() => setAgentTab(id)}
-								className={`px-3 py-1.5 rounded-md transition-colors ${
-									isActive
-										? "bg-white/[0.08] text-th-text"
-										: "bg-white/[0.03] text-th-text-muted hover:text-th-text hover:bg-white/[0.05]"
-								}`}
-							>
-								{label}
-							</button>
-						);
-					})}
-				</div>
-			)}
-
-			{effectiveTab === "grok" ? (
-				<div
-					className={
-						compact
-							? "space-y-3"
-							: "md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0"
-					}
-				>
-					<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2">
-						<div className="flex items-center justify-between mb-3">
-							<h3 className="text-xs font-medium text-th-text-secondary">
-								{t("dashboard.grokUsage")}
-							</h3>
-							{grokUsage?.planType && (
-								<span className="px-1.5 py-px rounded border text-[10px] font-medium text-emerald-300 bg-emerald-400/10 border-emerald-400/20">
-									{grokUsage.planType}
-								</span>
-							)}
-						</div>
-						<div className="grid grid-cols-2 gap-3">
-							{(
-								[
-									["grokLast24h", grokUsage?.last24h],
-									["grokLast7d", grokUsage?.last7d],
-								] as const
-							).map(([labelKey, window]) => (
-								<div
-									key={labelKey}
-									className="bg-white/[0.03] rounded-md p-3 border border-white/[0.06]"
-								>
-									<div className="text-[11px] text-th-text-muted mb-1">
-										{t(`dashboard.${labelKey}`)}
-									</div>
-									<div className="text-lg font-semibold text-th-text">
-										{formatTokens(window?.totalTokens ?? 0)}
-									</div>
-									<div className="text-[11px] text-th-text-muted mt-0.5">
-										{t("dashboard.grokTurns", { count: window?.turns ?? 0 })}
-									</div>
-								</div>
-							))}
-						</div>
-						{(grokUsage?.models.length ?? 0) > 0 && (
-							<div className="mt-3 space-y-1">
-								<div className="text-[11px] text-th-text-muted">
-									{t("dashboard.grokModelBreakdown")}
-								</div>
-								{grokUsage?.models.map((m) => (
-									<div
-										key={m.model}
-										className="flex justify-between text-xs text-th-text-secondary"
+			<section aria-labelledby="dashboard-agent-usage">
+				<div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+					<div className="flex items-center gap-2">
+						<Bot className="w-3.5 h-3.5 text-th-text-muted" />
+						<h2
+							id="dashboard-agent-usage"
+							className="text-xs font-medium text-th-text-secondary"
+						>
+							{t("dashboard.agentUsage")}
+						</h2>
+					</div>
+					{showAgentTabs && (
+						<div
+							className="flex gap-1 text-xs"
+							role="tablist"
+							aria-label={t("dashboard.agentUsage")}
+						>
+							{availableTabs.map((id) => {
+								const isActive = effectiveTab === id;
+								const label = agentDisplayName(id);
+								return (
+									<button
+										key={id}
+										type="button"
+										role="tab"
+										aria-selected={isActive}
+										onClick={() => setAgentTab(id)}
+										className={`px-3 py-1.5 rounded-md transition-colors ${
+											isActive
+												? "bg-white/[0.08] text-th-text"
+												: "bg-white/[0.03] text-th-text-muted hover:text-th-text hover:bg-white/[0.05]"
+										}`}
 									>
-										<span>{m.model}</span>
-										<span>{formatTokens(m.totalTokens)}</span>
+										{label}
+									</button>
+								);
+							})}
+						</div>
+					)}
+				</div>
+
+				{effectiveTab === "grok" ? (
+					<div
+						className={
+							compact
+								? "space-y-3"
+								: "md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0"
+						}
+					>
+						<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2">
+							<div className="flex items-center justify-between mb-3">
+								<h3 className="text-xs font-medium text-th-text-secondary">
+									{t("dashboard.grokUsage")}
+								</h3>
+								{grokUsage?.planType && (
+									<span className="px-1.5 py-px rounded border text-[10px] font-medium text-emerald-300 bg-emerald-400/10 border-emerald-400/20">
+										{grokUsage.planType}
+									</span>
+								)}
+							</div>
+							<div className="grid grid-cols-2 gap-3">
+								{(
+									[
+										["grokLast24h", grokUsage?.last24h],
+										["grokLast7d", grokUsage?.last7d],
+									] as const
+								).map(([labelKey, window]) => (
+									<div
+										key={labelKey}
+										className="bg-white/[0.03] rounded-md p-3 border border-white/[0.06]"
+									>
+										<div className="text-[11px] text-th-text-muted mb-1">
+											{t(`dashboard.${labelKey}`)}
+										</div>
+										<div className="text-lg font-semibold text-th-text">
+											{formatTokens(window?.totalTokens ?? 0)}
+										</div>
+										<div className="text-[11px] text-th-text-muted mt-0.5">
+											{t("dashboard.grokTurns", { count: window?.turns ?? 0 })}
+										</div>
 									</div>
 								))}
 							</div>
-						)}
+							{(grokUsage?.models.length ?? 0) > 0 && (
+								<div className="mt-3 space-y-1">
+									<div className="text-[11px] text-th-text-muted">
+										{t("dashboard.grokModelBreakdown")}
+									</div>
+									{grokUsage?.models.map((m) => (
+										<div
+											key={m.model}
+											className="flex justify-between text-xs text-th-text-secondary"
+										>
+											<span>{m.model}</span>
+											<span>{formatTokens(m.totalTokens)}</span>
+										</div>
+									))}
+								</div>
+							)}
+						</div>
+						<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2 text-th-text-muted text-xs">
+							{t("dashboard.grokNoRateLimitInfo")}
+						</div>
 					</div>
-					<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2 text-th-text-muted text-xs">
-						{t("dashboard.grokNoRateLimitInfo")}
+				) : effectiveTab === "codex" ? (
+					<div
+						className={
+							compact
+								? "space-y-3"
+								: "md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0"
+						}
+					>
+						<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2">
+							<UsageLimits
+								data={codexLimits || null}
+								history={[]}
+								title={t("dashboard.codexUsageLimits")}
+								showMissingCycles
+								badge={codexLimits?.planType}
+								banner={
+									codexLimits?.rateLimitExceeded
+										? {
+												message: t("dashboard.codexRateLimitExceeded"),
+												tone: "danger",
+											}
+										: undefined
+								}
+							/>
+						</div>
+						<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2 text-th-text-muted text-xs">
+							{t("dashboard.codexOtherMetricsComingSoon")}
+						</div>
 					</div>
+				) : (
+					<div
+						className={
+							compact
+								? "space-y-3"
+								: "md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0"
+						}
+					>
+						<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
+							<UsageLimits
+								data={data?.usageLimits || null}
+								status={data?.usageLimitsStatus}
+								history={data?.usageHistory || []}
+							/>
+						</div>
+						<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
+							<DailyUsageChart data={data?.dailyActivity || []} />
+						</div>
+						<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
+							<ModelUsageChart data={data?.modelUsage || []} />
+						</div>
+						{data?.hourlyActivity &&
+							Object.keys(data.hourlyActivity).length > 0 && (
+								<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2">
+									<HourlyHeatmap data={data.hourlyActivity} />
+								</div>
+							)}
+					</div>
+				)}
+			</section>
+
+			<section
+				aria-labelledby="dashboard-server-status"
+				className="mt-6 pt-4 border-t border-white/[0.06]"
+			>
+				<div className="flex items-center gap-2 mb-3">
+					<Server className="w-3.5 h-3.5 text-th-text-muted" />
+					<h2
+						id="dashboard-server-status"
+						className="text-xs font-medium text-th-text-secondary"
+					>
+						{t("dashboard.serverStatus")}
+					</h2>
 				</div>
-			) : effectiveTab === "codex" ? (
-				<div
-					className={
-						compact
-							? "space-y-3"
-							: "md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0"
-					}
-				>
-					<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2">
-						<UsageLimits
-							data={codexLimits || null}
-							history={[]}
-							title={t("dashboard.codexUsageLimits")}
-							showMissingCycles
-							badge={codexLimits?.planType}
-							banner={
-								codexLimits?.rateLimitExceeded
-									? {
-											message: t("dashboard.codexRateLimitExceeded"),
-											tone: "danger",
-										}
-									: undefined
-							}
-						/>
-					</div>
-					<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2 text-th-text-muted text-xs">
-						{t("dashboard.codexOtherMetricsComingSoon")}
-					</div>
-				</div>
-			) : (
 				<div
 					className={
 						compact
@@ -234,27 +295,8 @@ export function Dashboard({ className = "", compact = false }: DashboardProps) {
 					{sortedPeers.map((peer) => (
 						<PeerServerCard key={peer.id} peer={peer} />
 					))}
-					<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
-						<UsageLimits
-							data={data?.usageLimits || null}
-							status={data?.usageLimitsStatus}
-							history={data?.usageHistory || []}
-						/>
-					</div>
-					<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
-						<DailyUsageChart data={data?.dailyActivity || []} />
-					</div>
-					<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06]">
-						<ModelUsageChart data={data?.modelUsage || []} />
-					</div>
-					{data?.hourlyActivity &&
-						Object.keys(data.hourlyActivity).length > 0 && (
-							<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2">
-								<HourlyHeatmap data={data.hourlyActivity} />
-							</div>
-						)}
 				</div>
-			)}
+			</section>
 
 			{/* Settings section */}
 			<div className="mt-6 pt-4 border-t border-white/[0.06]">

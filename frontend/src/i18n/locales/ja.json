@@ -109,6 +109,8 @@
 	},
 	"dashboard": {
 		"title": "ダッシュボード",
+		"agentUsage": "エージェント使用状況",
+		"serverStatus": "サーバ状況",
 		"usageLimits": "使用量リミット",
 		"codexUsageLimits": "Codex 使用量リミット",
 		"codexOtherMetricsComingSoon": "Codex の日別アクティビティ・モデル別使用量・コスト推定は準備中です",

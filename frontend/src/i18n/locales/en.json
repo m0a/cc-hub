@@ -109,6 +109,8 @@
 	},
 	"dashboard": {
 		"title": "Dashboard",
+		"agentUsage": "Agent usage",
+		"serverStatus": "Server status",
 		"usageLimits": "Usage Limits",
 		"codexUsageLimits": "Codex Usage Limits",
 		"codexOtherMetricsComingSoon": "Codex daily activity, model usage, and cost estimates are coming soon",

@@ -637,10 +637,22 @@ export class HerdrControlSession {
   }
 
   private handleExit(reason: string): void {
-    for (const listener of this.exitListeners) {
-      listener(reason);
+    if (this.destroyed) return;
+    // Snapshot the listeners: mux cleanup removes its listener while handling
+    // this callback, and every subscribed client still needs the close event.
+    for (const listener of [...this.exitListeners]) {
+      try {
+        listener(reason);
+      } catch (error) {
+        console.warn(`[herdr-control] exit listener failed for ${this.sessionId}:`, error);
+      }
     }
     this.destroy();
+  }
+
+  /** End this control session and notify every live subscriber first. */
+  terminate(reason: string): void {
+    this.handleExit(reason);
   }
 
   // ==========================================================================
@@ -989,6 +1001,7 @@ export class HerdrControlSession {
   }
 
   addClient(): void {
+    if (this.destroyed) return;
     this.clientCount++;
     if (this.graceTimer) {
       clearTimeout(this.graceTimer);
@@ -997,9 +1010,14 @@ export class HerdrControlSession {
   }
 
   removeClient(): void {
+    if (this.destroyed) return;
     this.clientCount--;
     if (this.clientCount <= 0) {
       this.clientCount = 0;
+      // Several subscriptions can be cleaned up in one exit broadcast. Keep
+      // exactly one reap timer; otherwise an overwritten timer survives
+      // destroy() and fires later against the deleted session instance.
+      if (this.graceTimer) clearTimeout(this.graceTimer);
       this.graceTimer = setTimeout(() => {
         if (this.clientCount <= 0) {
           console.log(`[herdr-control] Grace period expired for session: ${this.sessionId}`);
@@ -1044,7 +1062,11 @@ export class HerdrControlSession {
     this.clientSizes.clear();
     this.paneSizes.clear();
 
-    herdrControlSessions.delete(this.sessionId);
+    // A same-name workspace may already have installed a newer control
+    // session. An old delayed cleanup must never evict that replacement.
+    if (herdrControlSessions.get(this.sessionId) === this) {
+      herdrControlSessions.delete(this.sessionId);
+    }
     console.log(`[herdr-control] Session destroyed: ${this.sessionId}`);
   }
 }

@@ -7,6 +7,9 @@ import { getDeviceId } from "../utils/device-id";
 
 interface UseMultiplexedTerminalOptions {
 	sessionId: string;
+	/** Immutable live-session identity (herdr workspace id). Session names can
+	 * be reused after deletion, so this forces a fresh mux subscription. */
+	sessionInstanceId?: string;
 	token?: string | null;
 	// Multi-server: アクティブな peer の WS base URL ("wss://host:port") を指定。
 	// 省略時は Hub (window.location.host) を使う。
@@ -31,6 +34,7 @@ interface UseMultiplexedTerminalOptions {
 	) => void;
 	onConnect?: () => void;
 	onDisconnect?: () => void;
+	onSessionExit?: (reason: string) => void;
 	onError?: (error: string, paneId?: string) => void;
 }
 
@@ -94,6 +98,7 @@ let sharedConnectWatchdog: number | null = null;
 let sharedWsConnectStart = 0;
 let sharedLastPongAt = 0;
 let subscribedSession: string | null = null;
+let subscribedSessionInstance: string | null = null;
 let wsReady = false;
 // Multi-server: 現在の WS 接続が向いている base URL。
 // 接続先が切り替わったら force close して新しい URL に再接続する。
@@ -152,10 +157,12 @@ type MuxCallbacks = {
 	) => void;
 	onConnect?: () => void;
 	onDisconnect?: () => void;
+	onSessionExit?: (reason: string) => void;
 	onError?: (error: string, paneId?: string) => void;
 	setIsConnected?: (v: boolean) => void;
 	setDeadPanes?: (fn: (prev: Set<string>) => Set<string>) => void;
 	sessionId: string;
+	sessionInstanceId?: string;
 	deadPanes: Set<string>;
 };
 
@@ -173,14 +180,22 @@ function sendSessionMessage(msg: Record<string, unknown>) {
 	}
 }
 
-function subscribeToSession(sessionId: string, force = false) {
-	if (subscribedSession === sessionId && !force) return;
+function subscribeToSession(
+	sessionId: string,
+	sessionInstanceId?: string,
+	force = false,
+) {
+	const instanceChanged =
+		subscribedSession === sessionId &&
+		subscribedSessionInstance !== (sessionInstanceId ?? null);
+	if (subscribedSession === sessionId && !instanceChanged && !force) return;
 
-	if (subscribedSession && subscribedSession !== sessionId) {
+	if (subscribedSession && (subscribedSession !== sessionId || instanceChanged)) {
 		sendRaw({ type: "unsubscribe", sessionId: subscribedSession });
 	}
 
 	subscribedSession = sessionId;
+	subscribedSessionInstance = sessionInstanceId ?? null;
 	activeCallbacks?.setIsConnected?.(false);
 	activeCallbacks?.setDeadPanes?.(() => new Set());
 	sendRaw({ type: "subscribe", sessionId });
@@ -203,6 +218,7 @@ function ensureConnection(token?: string | null, wsBase?: string | null) {
 		} catch {}
 		sharedWs = null;
 		subscribedSession = null;
+		subscribedSessionInstance = null;
 		wsReady = false;
 	}
 
@@ -313,7 +329,7 @@ function ensureConnection(token?: string | null, wsBase?: string | null) {
 			case "ready": {
 				wsReady = true;
 				if (currentSession) {
-					subscribeToSession(currentSession, true);
+					subscribeToSession(currentSession, cb?.sessionInstanceId, true);
 				}
 				for (const sid of subscribedConversations) {
 					pendingConversationSubs.add(sid);
@@ -330,6 +346,16 @@ function ensureConnection(token?: string | null, wsBase?: string | null) {
 			}
 			case "unsubscribed":
 				break;
+			case "session-exited": {
+				if (msgSessionId !== currentSession) return;
+				if (subscribedSession === msgSessionId) {
+					subscribedSession = null;
+					subscribedSessionInstance = null;
+				}
+				cb?.setIsConnected?.(false);
+				cb?.onSessionExit?.(msg.reason as string);
+				break;
+			}
 			case "sessions-updated":
 				// Sessions are sourced from `usePeerSessionsWatcher` (one dedicated WS
 				// per peer including the Hub itself), so the terminal sharedWs ignores
@@ -560,7 +586,7 @@ function dispatchInputEcho(
 export function useMultiplexedTerminal(
 	options: UseMultiplexedTerminalOptions,
 ): UseMultiplexedTerminalReturn {
-	const { sessionId, token, peerWsBase, peerApiBase } = options;
+	const { sessionId, sessionInstanceId, token, peerWsBase, peerApiBase } = options;
 	const [isConnected, setIsConnected] = useState(false);
 	const [deadPanes, setDeadPanes] = useState<Set<string>>(new Set());
 
@@ -571,6 +597,7 @@ export function useMultiplexedTerminal(
 	const onHookEventRef = useRef(options.onHookEvent);
 	const onConnectRef = useRef(options.onConnect);
 	const onDisconnectRef = useRef(options.onDisconnect);
+	const onSessionExitRef = useRef(options.onSessionExit);
 	const onErrorRef = useRef(options.onError);
 
 	onPaneViewportRef.current = options.onPaneViewport;
@@ -580,6 +607,7 @@ export function useMultiplexedTerminal(
 	onHookEventRef.current = options.onHookEvent;
 	onConnectRef.current = options.onConnect;
 	onDisconnectRef.current = options.onDisconnect;
+	onSessionExitRef.current = options.onSessionExit;
 	onErrorRef.current = options.onError;
 
 	useEffect(() => {
@@ -591,10 +619,12 @@ export function useMultiplexedTerminal(
 			onHookEvent: (e, c, s, d, m) => onHookEventRef.current?.(e, c, s, d, m),
 			onConnect: () => onConnectRef.current?.(),
 			onDisconnect: () => onDisconnectRef.current?.(),
+			onSessionExit: (reason) => onSessionExitRef.current?.(reason),
 			onError: (e, p) => onErrorRef.current?.(e, p),
 			setIsConnected,
 			setDeadPanes,
 			sessionId,
+			sessionInstanceId,
 			deadPanes,
 		};
 	});
@@ -606,22 +636,23 @@ export function useMultiplexedTerminal(
 			ensureConnection(token, peerWsBase);
 		}
 		if (sharedWs?.readyState === WebSocket.OPEN && wsReady) {
-			subscribeToSession(sessionId);
+			subscribeToSession(sessionId, sessionInstanceId);
 		}
-	}, [sessionId, token, peerWsBase]);
+	}, [sessionId, sessionInstanceId, token, peerWsBase]);
 
 	const connect = useCallback(() => {
 		registerVisibilityListener();
 		ensureConnection(token, peerWsBase);
 		if (sharedWs?.readyState === WebSocket.OPEN && wsReady) {
-			subscribeToSession(sessionId);
+			subscribeToSession(sessionId, sessionInstanceId);
 		}
-	}, [sessionId, token, peerWsBase]);
+	}, [sessionId, sessionInstanceId, token, peerWsBase]);
 
 	const disconnect = useCallback(() => {
 		if (subscribedSession) {
 			sendRaw({ type: "unsubscribe", sessionId: subscribedSession });
 			subscribedSession = null;
+			subscribedSessionInstance = null;
 		}
 		setIsConnected(false);
 	}, []);

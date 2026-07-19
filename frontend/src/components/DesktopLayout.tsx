@@ -43,6 +43,7 @@ const DESKTOP_STATE_KEY = "cchub-desktop-state";
 interface OpenSession {
 	id: string;
 	name: string;
+	instanceId?: string;
 	state: SessionState;
 	currentPath?: string;
 	ccSessionId?: string;
@@ -393,6 +394,7 @@ export function DesktopLayout({
 					return propSession
 						? {
 								...propSession,
+								instanceId: apiSession.instanceId,
 								theme: apiSession.theme,
 								currentCommand: apiSession.currentCommand,
 								ccSessionId: apiSession.ccSessionId,
@@ -405,6 +407,7 @@ export function DesktopLayout({
 						: {
 								id: apiSession.id,
 								name: apiSession.name,
+								instanceId: apiSession.instanceId,
 								state: apiSession.state,
 								currentPath: apiSession.currentPath,
 								ccSessionId: apiSession.ccSessionId,
@@ -579,6 +582,10 @@ export function DesktopLayout({
 	};
 
 	const controlSessionId = getControlSessionId();
+	const controlSessionInstanceId = sessions.find(
+		(session) => session.id === controlSessionId,
+	)?.instanceId;
+	const [terminalGeneration, setTerminalGeneration] = useState(0);
 	const [controlLayout, setControlLayout] = useState<TmuxLayoutNode | null>(
 		null,
 	);
@@ -639,6 +646,7 @@ export function DesktopLayout({
 
 	const controlTerminal = useMultiplexedTerminal({
 		sessionId: controlSessionId || "",
+		sessionInstanceId: controlSessionInstanceId,
 		peerWsBase: peerConn.wsBase,
 		peerApiBase: peerConn.apiBase,
 		token: peerConn.token,
@@ -770,6 +778,17 @@ export function DesktopLayout({
 			updateCachedSessionsByHookEvent(event, sessionId);
 		},
 		onDisconnect: () => {},
+		onSessionExit: () => {
+			setControlLayout(null);
+			setZoomedPaneId(null);
+			lastViewportRef.current.clear();
+			paneOffsetRef.current.clear();
+			paneViewportCacheRef.current.clear();
+			lastSentSizeRef.current = null;
+			// Dispose every xterm surface immediately so a deleted terminal cannot
+			// remain visible while the sessions list catches up.
+			setTerminalGeneration((generation) => generation + 1);
+		},
 		onError: (err) => {
 			console.error("[control-mode] Error:", err);
 		},
@@ -800,7 +819,7 @@ export function DesktopLayout({
 		// viewports with no consumer, rendering a blank terminal until a
 		// full page reload. #history-resume-blank
 		lastSentSizeRef.current = null;
-	}, [controlSessionId]);
+	}, [controlSessionId, controlSessionInstanceId]);
 
 	// Connect/disconnect control mode
 	useEffect(() => {
@@ -811,7 +830,7 @@ export function DesktopLayout({
 			controlTerminal.disconnect();
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [controlSessionId]);
+	}, [controlSessionId, controlSessionInstanceId]);
 
 	// Control mode resize: compute TOTAL window size from layout tree.
 	// tmux refresh-client -C needs cols×rows for the entire window,
@@ -1698,6 +1717,7 @@ export function DesktopLayout({
 						onSplit={handleSplit}
 						sessions={sessions}
 						terminalRefs={terminalRefs}
+						globalReloadKey={terminalGeneration}
 						isTablet={isTablet}
 						controlModeContext={controlModeContext}
 					/>

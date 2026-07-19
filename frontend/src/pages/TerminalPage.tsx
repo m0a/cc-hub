@@ -33,6 +33,7 @@ interface PaneLeafInfo {
 
 interface TerminalPageProps {
 	sessionId: string;
+	sessionInstanceId?: string;
 	token?: string | null;
 	onStateChange?: (state: SessionState) => void;
 	onNewSession?: (sessionId: string, sessionName: string) => void;
@@ -58,6 +59,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 	function TerminalPage(
 		{
 			sessionId,
+			sessionInstanceId,
 			token,
 			onStateChange,
 			onNewSession,
@@ -74,6 +76,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 		ref,
 	) {
 		const [error, setError] = useState<string | null>(null);
+		const [sessionExited, setSessionExited] = useState(false);
 		const [activePaneId, setActivePaneId] = useState<string | null>(null);
 		const [allPanes, setAllPanes] = useState<PaneLeafInfo[]>([]);
 
@@ -122,6 +125,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 
 		const controlTerminal = useMultiplexedTerminal({
 			sessionId,
+			sessionInstanceId,
 			token: peerConn.token ?? token,
 			peerWsBase: peerConn.wsBase,
 			peerApiBase: peerConn.apiBase,
@@ -180,6 +184,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 			},
 			onNewSession: onNewSession,
 			onConnect: () => {
+				setSessionExited(false);
 				setError(null);
 				onStateChange?.("idle");
 				controlTerminal.sendClientInfo("mobile");
@@ -199,6 +204,19 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 				);
 			},
 			onDisconnect: () => {
+				onStateChange?.("disconnected");
+			},
+			onSessionExit: () => {
+				setSessionExited(true);
+				setError(null);
+				setActivePaneId(null);
+				setAllPanes([]);
+				cachedPanesRef.current = [];
+				lastViewportRef.current.clear();
+				paneOffsetRef.current.clear();
+				paneViewportCacheRef.current.clear();
+				onPanesChangeRef.current?.([]);
+				onActivePaneChangeRef.current?.(null);
 				onStateChange?.("disconnected");
 			},
 			onError: (err) => {
@@ -384,19 +402,21 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 				{/* Terminal - full screen. mainOverlay (e.g. ChatView) replaces the
           xterm area while the InputBar inside TerminalComponent remains visible. */}
 				<main className="flex-1 relative overflow-hidden min-h-0 select-none">
-					<TerminalComponent
-						ref={ref}
-						sessionId={sessionId}
-						peerId={sessionPeerId}
-						onError={(err) => setError(err)}
-						overlayContent={overlayContent}
-						onOverlayTap={onOverlayTap}
-						showOverlay={showOverlay}
-						theme={theme}
-						controlMode={controlMode}
-						hideTerminalArea={!!mainOverlay && (mainOverlayVisible ?? true)}
-						terminalAreaOverlay={mainOverlay}
-					/>
+					{!sessionExited && (
+						<TerminalComponent
+							ref={ref}
+							sessionId={sessionId}
+							peerId={sessionPeerId}
+							onError={(err) => setError(err)}
+							overlayContent={overlayContent}
+							onOverlayTap={onOverlayTap}
+							showOverlay={showOverlay}
+							theme={theme}
+							controlMode={controlMode}
+							hideTerminalArea={!!mainOverlay && (mainOverlayVisible ?? true)}
+							terminalAreaOverlay={mainOverlay}
+						/>
+					)}
 				</main>
 			</div>
 		);

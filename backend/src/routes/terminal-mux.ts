@@ -245,7 +245,14 @@ export function muxClose(ws: ServerWebSocket<MuxData>, code: number, reason: str
 async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) {
   console.log(`[mux] subscribe: ${sessionId} (current subs: ${ws.data.subscriptions.size})`);
   // Already subscribed — reset state so the next resize re-emits initial viewports.
-  const existing = ws.data.subscriptions.get(sessionId);
+  let existing = ws.data.subscriptions.get(sessionId);
+  // A workspace can be deleted and recreated with the same public session id.
+  // Never re-use the subscription that still points at the destroyed instance.
+  if (existing?.controlSession.isDestroyed) {
+    cleanupSubscription(ws, sessionId, existing);
+    ws.data.subscriptions.delete(sessionId);
+    existing = undefined;
+  }
   if (existing) {
     existing.firstResizeReceived = false;
     existing.liveOffset.clear();
@@ -310,7 +317,7 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
     cleanupFns.push(
       controlSession.onExit((reason) => {
         try {
-          ws.send(JSON.stringify({ type: 'error', message: `Session exited: ${reason}`, sessionId }));
+          ws.send(JSON.stringify({ type: 'session-exited', reason, sessionId }));
         } catch { /* disconnected */ }
         handleUnsubscribe(ws, sessionId);
       })
@@ -404,7 +411,9 @@ function handleUnsubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) {
     cleanupSubscription(ws, sessionId, sub);
     ws.data.subscriptions.delete(sessionId);
   }
-  ws.send(JSON.stringify({ type: 'unsubscribed', sessionId }));
+  try {
+    ws.send(JSON.stringify({ type: 'unsubscribed', sessionId }));
+  } catch { /* disconnected */ }
 }
 
 function cleanupSubscription(ws: ServerWebSocket<MuxData>, _sessionId: string, sub: MuxSubscription) {

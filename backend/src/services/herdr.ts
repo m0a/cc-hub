@@ -259,13 +259,14 @@ export class HerdrService {
             ? 'blocked'
             : agentPane?.agentStatus;
 
-          // Tab list only matters for multi-tab workspaces (the single-tab
-          // case renders no tab UI), so the extra tab.list RPC is skipped for
-          // the common one-tab workspace.
+          // Tabs: a multi-tab workspace needs tab.list for real labels/counts;
+          // the common single-tab case is derived from active_tab_id with no
+          // extra RPC. Always populated (even for one tab) so the UI can offer
+          // "new tab" and show the active tab without a chicken-and-egg gate.
           let tabs: TabInfo[] | undefined;
           if ((ws.tab_count ?? 1) > 1) {
             const herdrTabs = await listTabs(ws.workspace_id);
-            if (herdrTabs.length > 1) {
+            if (herdrTabs.length > 0) {
               tabs = herdrTabs
                 .slice()
                 .sort((a, b) => a.number - b.number)
@@ -276,6 +277,11 @@ export class HerdrService {
                   active: t.tab_id === ws.active_tab_id,
                 }));
             }
+          } else if (ws.active_tab_id) {
+            const num = ws.active_tab_id.match(/:t(\d+)$/)?.[1] ?? '1';
+            tabs = [
+              { id: ws.active_tab_id, label: num, paneCount: wsPanes.length, active: true },
+            ];
           }
 
           return {

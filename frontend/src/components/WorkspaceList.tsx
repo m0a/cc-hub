@@ -162,12 +162,14 @@ function SessionMenuDialog({
 	session,
 	onChangeTheme,
 	onChangeTitle,
+	onCreateTab,
 	onDelete,
 	onCancel,
 }: {
 	session: SessionResponse;
 	onChangeTheme: (theme: SessionTheme | null) => void;
 	onChangeTitle?: (title: string | null) => void;
+	onCreateTab?: () => void;
 	onDelete: () => void;
 	onCancel: () => void;
 }) {
@@ -279,6 +281,20 @@ function SessionMenuDialog({
 								{t("common.save")}
 							</button>
 						</div>
+					</div>
+				)}
+
+				{/* New tab — always available so a single-tab workspace can grow one */}
+				{onCreateTab && (
+					<div className="mb-4">
+						<button
+							type="button"
+							onClick={onCreateTab}
+							className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md bg-th-surface-active hover:bg-white/[0.08] text-th-text text-sm font-medium transition-colors"
+						>
+							<Plus className="w-4 h-4" />
+							{t("session.newTab")}
+						</button>
 					</div>
 				)}
 
@@ -1211,7 +1227,7 @@ function SessionItem({
 
 			{/* Tab list (expandable): switch / create / close the workspace's tabs.
 			    Long-press a tab to close it (never the last one). */}
-			{panesExpanded && extSession.tabs && extSession.tabs.length > 1 && (
+			{panesExpanded && extSession.tabs && extSession.tabs.length >= 1 && (
 				<div
 					className="mx-4 mb-2 pt-2 border-t border-white/[0.06] space-y-1"
 					onClick={(e) => e.stopPropagation()}
@@ -2260,6 +2276,10 @@ export function WorkspaceList({
 					session={sessionForMenu}
 					onChangeTheme={handleMenuChangeTheme}
 					onChangeTitle={handleMenuChangeTitle}
+					onCreateTab={() => {
+						handleTabAction(sessionForMenu.id, "create");
+						handleMenuClose();
+					}}
 					onDelete={handleMenuDelete}
 					onCancel={handleMenuClose}
 				/>

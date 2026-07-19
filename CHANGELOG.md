@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.25] - 2026-07-19
+
+### Fixed
+- **`cchub setup` のエージェント連携判定を環境対応**: 未初期化・未導入の Claude Code / Codex に herdr integration と Codex hook 移行を実行せず、適切な警告を表示するよう修正
+- **`cchub setup` のメッセージを i18n 対応**: `LC_ALL` / `LC_MESSAGES` / `LANG` のロケールに応じて日本語または英語を表示
+
 ## [0.2.24] - 2026-07-19
 
 ### Added

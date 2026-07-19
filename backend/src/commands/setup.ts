@@ -1,5 +1,6 @@
 // cchub setup command - service registration (systemd on Linux, launchd on macOS)
 
+import { existsSync } from 'node:fs';
 import { mkdir, writeFile, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir, platform } from 'node:os';
@@ -184,18 +185,69 @@ resume_agents_on_restore = true
 pane_history = true
 `;
 
+type AgentIntegration = {
+  name: string;
+  command: string;
+  configDir: string;
+};
+
+const AGENT_INTEGRATIONS: AgentIntegration[] = [
+  { name: 'Claude Code', command: 'claude', configDir: join(homedir(), '.claude') },
+  { name: 'Codex', command: 'codex', configDir: join(homedir(), '.codex') },
+];
+
+function isCommandAvailable(command: string): boolean {
+  return Bun.spawnSync(['which', command]).exitCode === 0;
+}
+
+function getInstalledAgentIntegrations(): AgentIntegration[] {
+  return AGENT_INTEGRATIONS.filter(
+    agent => isCommandAvailable(agent.command) && existsSync(agent.configDir),
+  );
+}
+
+/** Install herdr hooks only for agents that are actually initialized locally. */
+function provisionAgentIntegrations(herdrPath: string): AgentIntegration[] {
+  const commandAvailable = AGENT_INTEGRATIONS.filter(agent => isCommandAvailable(agent.command));
+  const installed = getInstalledAgentIntegrations();
+
+  if (installed.length === 0) {
+    if (commandAvailable.length > 0) {
+      const names = commandAvailable.map(agent => agent.name).join(' / ');
+      console.log(t('setup.agentsNotInitialized', { agents: names }));
+      console.log(t('setup.agentInitHint'));
+    } else {
+      console.log(t('setup.agentsNotFound'));
+      console.log(t('setup.agentInitHint'));
+    }
+    return installed;
+  }
+
+  for (const agent of installed) {
+    const integ = Bun.spawnSync([herdrPath, 'integration', 'install', agent.command]);
+    if (integ.exitCode === 0) {
+      console.log(t('setup.herdrIntegrationConfigured', { agent: agent.name }));
+    } else {
+      console.error(t('setup.herdrIntegrationFailed', { agent: agent.name }));
+      console.error(integ.stderr.toString());
+    }
+  }
+
+  return installed;
+}
+
 /**
  * Provision the herdr backend: supervised server (systemd / launchd),
- * config.toml with agent-resume enabled, and native identity integrations for
- * the supported agents that herdr can integrate with.
+ * config.toml with agent-resume enabled, and integrations for initialized
+ * agent CLIs (native session identity for restore).
  */
 async function provisionHerdr(): Promise<void> {
-  console.log('🐑 herdr バックエンドのセットアップ');
+  console.log(t('setup.herdrTitle'));
 
   const herdrPath = herdrBinaryPath();
   if (!herdrPath) {
-    console.error('⚠️  herdr が見つかりません。先にインストールしてください:');
-    console.error('   curl -fsSL https://herdr.dev/install.sh | sh  (または brew install herdr)');
+    console.error(t('setup.herdrNotFound'));
+    console.error(`   ${t('setup.herdrInstallHint')}`);
     console.log('');
     return;
   }
@@ -209,10 +261,10 @@ async function provisionHerdr(): Promise<void> {
     .catch(() => null);
   if (existingConfig === null) {
     await writeFile(configPath, HERDR_CONFIG_TOML);
-    console.log(`✅ herdr 設定を作成: ${configPath}`);
+    console.log(t('setup.herdrConfigCreated', { path: configPath }));
   } else if (!existingConfig.includes('resume_agents_on_restore')) {
-    console.log('⚠️  既存の herdr config.toml に resume_agents_on_restore がありません。');
-    console.log('   [session] resume_agents_on_restore = true の追記を推奨します');
+    console.log(t('setup.herdrConfigMissingResume'));
+    console.log(t('setup.herdrConfigResumeHint'));
   }
 
   // Supervised server.
@@ -222,59 +274,54 @@ async function provisionHerdr(): Promise<void> {
   if (platform() === 'darwin') {
     const plistPath = join(homedir(), 'Library', 'LaunchAgents', 'com.herdr.server.plist');
     await writeFile(plistPath, buildHerdrLaunchdPlist(herdrPath));
-    console.log(`✅ herdr サービスファイル: ${plistPath}`);
+    console.log(t('setup.herdrServiceFile', { path: plistPath }));
     if (wasRunning) {
-      console.log('⚠️  herdr サーバが既に稼働中のため、launchd への切替は手動で行ってください:');
+      console.log(t('setup.herdrAlreadyRunning'));
       console.log(`   herdr server stop && launchctl bootstrap gui/$(id -u) ${plistPath}`);
-      console.log('   (resume_agents_on_restore 有効ならエージェント会話は自動復元されます)');
+      console.log(t('setup.herdrManualSwitch'));
     } else {
       Bun.spawnSync(['launchctl', 'bootout', `gui/${process.getuid?.() ?? 501}`, plistPath]);
       Bun.spawnSync(['launchctl', 'bootstrap', `gui/${process.getuid?.() ?? 501}`, plistPath]);
-      console.log('✅ herdr サーバを launchd で起動しました');
+      console.log(t('setup.herdrStartedLaunchd'));
     }
   } else {
     const systemdDir = join(homedir(), '.config', 'systemd', 'user');
     await mkdir(systemdDir, { recursive: true });
     const unitPath = join(systemdDir, 'herdr.service');
     await writeFile(unitPath, HERDR_SYSTEMD_SERVICE.replace(/__HERDR_PATH__/g, herdrPath));
-    console.log(`✅ herdr サービスファイル: ${unitPath}`);
+    console.log(t('setup.herdrServiceFile', { path: unitPath }));
     Bun.spawnSync(['systemctl', '--user', 'daemon-reload']);
     if (wasRunning && !isHerdrSystemdActive()) {
       Bun.spawnSync(['systemctl', '--user', 'enable', 'herdr']);
-      console.log('⚠️  herdr サーバが systemd 管理外で稼働中です。切替は手動で:');
+      console.log(t('setup.herdrSystemdOutside'));
       console.log('   herdr server stop && systemctl --user start herdr');
-      console.log('   (resume_agents_on_restore 有効ならエージェント会話は自動復元されます)');
+      console.log(t('setup.herdrManualSwitch'));
     } else {
       const res = Bun.spawnSync(['systemctl', '--user', 'enable', '--now', 'herdr']);
       if (res.exitCode === 0) {
-        console.log('✅ herdr サーバを systemd で常駐化しました');
+        console.log(t('setup.herdrEnabledSystemd'));
       } else {
-        console.error('⚠️  herdr サービスの起動に失敗しました');
+        console.error(t('setup.herdrStartFailed'));
         console.error(res.stderr.toString());
       }
     }
   }
 
-  // Native session identity is authoritative in CC Hub. Install every herdr
-  // integration available for our supported agents; without one, that
-  // provider stays visible as a terminal but conversation history is disabled.
-  for (const agent of ['claude', 'codex'] as const) {
-    const integ = Bun.spawnSync([herdrPath, 'integration', 'install', agent]);
-    if (integ.exitCode === 0) {
-      console.log(`✅ herdr ${agent} integration を設定しました`);
-    } else {
-      console.error(`⚠️  herdr integration install ${agent} に失敗しました:`);
-      console.error(integ.stderr.toString());
+  // Agent integrations report native session ids to herdr so conversations
+  // survive server restarts. Only initialized agents are passed to herdr;
+  // invoking an integration for an uninitialized CLI produces misleading
+  // "config directory not found" errors.
+  const installedAgents = provisionAgentIntegrations(herdrPath);
+  if (installedAgents.some(agent => agent.command === 'codex')) {
+    try {
+      const migration = await migrateCodexHooksToJson(join(homedir(), '.codex'));
+      if (migration.changed) {
+        console.log(t('setup.codexHooksMigrated'));
+      }
+    } catch (error) {
+      console.error(t('setup.codexHooksMigrationFailed'));
+      console.error(error instanceof Error ? error.message : String(error));
     }
-  }
-  try {
-    const migration = await migrateCodexHooksToJson(join(homedir(), '.codex'));
-    if (migration.changed) {
-      console.log('✅ Codex hook を ~/.codex/hooks.json に統合しました');
-    }
-  } catch (error) {
-    console.error('⚠️  Codex hook の hooks.json 統合に失敗しました:');
-    console.error(error instanceof Error ? error.message : String(error));
   }
   console.log('');
 }
@@ -303,7 +350,7 @@ async function setupLaunchd(port: number, password?: string): Promise<void> {
   const logDir = join(home, '.cc-hub');
   const execPath = process.execPath;
 
-  console.log('🔧 CC Hub セットアップ (macOS)');
+  console.log(t('setup.macTitle'));
   console.log('');
 
   await mkdir(launchAgentsDir, { recursive: true });
@@ -313,21 +360,21 @@ async function setupLaunchd(port: number, password?: string): Promise<void> {
   // world-readable). cchub at runtime reads it back via `security`.
   if (password) {
     if (storePasswordInKeychain(password)) {
-      console.log('🔐 パスワードを Keychain に保存しました (service: cchub)');
+      console.log(t('setup.keychainSaved'));
     } else {
-      console.log('⚠️  Keychain への保存に失敗しました');
+      console.log(t('setup.keychainFailed'));
     }
   }
 
   // Main service plist (no password embedded — read from Keychain at runtime)
   const plistPath = join(launchAgentsDir, 'com.cchub.server.plist');
   await writeFile(plistPath, buildLaunchdPlist(execPath, port));
-  console.log(`✅ サービスファイル: ${plistPath}`);
+  console.log(t('setup.serviceFile', { path: plistPath }));
 
   // Update plist
   const updatePlistPath = join(launchAgentsDir, 'com.cchub.update.plist');
   await writeFile(updatePlistPath, buildLaunchdUpdatePlist(execPath));
-  console.log(`✅ 更新サービスファイル: ${updatePlistPath}`);
+  console.log(t('setup.updateServiceFile', { path: updatePlistPath }));
 
   console.log('');
 
@@ -337,14 +384,14 @@ async function setupLaunchd(port: number, password?: string): Promise<void> {
   // Load service
   const loadResult = Bun.spawnSync(['launchctl', 'bootstrap', `gui/${process.getuid?.() ?? 501}`, plistPath]);
   if (loadResult.exitCode === 0) {
-    console.log('✅ サービスを起動しました');
+    console.log(t('setup.serviceStarted'));
   } else {
     // Fallback to legacy load
     const legacyResult = Bun.spawnSync(['launchctl', 'load', plistPath]);
     if (legacyResult.exitCode === 0) {
-      console.log('✅ サービスを起動しました');
+      console.log(t('setup.serviceStarted'));
     } else {
-      console.error('⚠️  サービスの起動に失敗しました');
+      console.error(t('setup.serviceStartFailed'));
       console.error(legacyResult.stderr.toString());
     }
   }
@@ -352,10 +399,10 @@ async function setupLaunchd(port: number, password?: string): Promise<void> {
   // Load update service
   Bun.spawnSync(['launchctl', 'bootout', `gui/${process.getuid?.() ?? 501}`, updatePlistPath]);
   Bun.spawnSync(['launchctl', 'bootstrap', `gui/${process.getuid?.() ?? 501}`, updatePlistPath]);
-  console.log('✅ 自動更新を有効化しました（毎日4:00）');
+  console.log(t('setup.autoUpdateEnabled'));
 
   console.log('');
-  console.log('📋 管理コマンド:');
+  console.log(t('setup.managementCommands'));
   console.log('  launchctl list | grep cchub        # Status');
   console.log(`  launchctl kickstart -k gui/$(id -u)/com.cchub.server  # Restart`);
   console.log(`  launchctl bootout gui/$(id -u)/com.cchub.server       # Stop`);
@@ -369,7 +416,7 @@ async function setupSystemd(port: number, password?: string): Promise<void> {
   const systemdDir = join(home, '.config', 'systemd', 'user');
   const execPath = process.execPath;
 
-  console.log('🔧 CC Hub セットアップ');
+  console.log(t('setup.setupTitle'));
   console.log('');
 
   await mkdir(configDir, { recursive: true });
@@ -380,7 +427,7 @@ async function setupSystemd(port: number, password?: string): Promise<void> {
   const envPath = join(configDir, 'env');
   await writeFile(envPath, envContent);
   await chmod(envPath, 0o600);
-  console.log(`✅ 環境変数ファイル: ${envPath}`);
+  console.log(t('setup.envFile', { path: envPath }));
 
   // Main service
   const shell = process.env.SHELL || '/bin/bash';
@@ -390,17 +437,17 @@ async function setupSystemd(port: number, password?: string): Promise<void> {
     .replace(/__PORT__/g, String(port));
   const servicePath = join(systemdDir, 'cchub.service');
   await writeFile(servicePath, serviceContent);
-  console.log(`✅ サービスファイル: ${servicePath}`);
+  console.log(t('setup.serviceFile', { path: servicePath }));
 
   // Update service
   const updateServicePath = join(systemdDir, 'cchub-update.service');
   await writeFile(updateServicePath, SYSTEMD_UPDATE_SERVICE.replace(/__EXEC_PATH__/g, execPath));
-  console.log(`✅ 更新サービスファイル: ${updateServicePath}`);
+  console.log(t('setup.updateServiceFile', { path: updateServicePath }));
 
   // Update timer
   const updateTimerPath = join(systemdDir, 'cchub-update.timer');
   await writeFile(updateTimerPath, SYSTEMD_UPDATE_TIMER);
-  console.log(`✅ 更新タイマーファイル: ${updateTimerPath}`);
+  console.log(t('setup.updateTimerFile', { path: updateTimerPath }));
 
   console.log('');
 
@@ -411,13 +458,13 @@ async function setupSystemd(port: number, password?: string): Promise<void> {
   if (enableResult.exitCode === 0) {
     console.log(`✅ ${t('setup.serviceEnabled')}`);
   } else {
-    console.error('⚠️  Failed to enable service');
+    console.error(t('setup.serviceEnableFailed'));
     console.error(enableResult.stderr.toString());
   }
 
   const timerResult = Bun.spawnSync(['systemctl', '--user', 'enable', '--now', 'cchub-update.timer']);
   if (timerResult.exitCode === 0) {
-    console.log('✅ 自動更新タイマーを有効化しました');
+    console.log(t('setup.autoUpdateTimerEnabled'));
   }
 
   console.log('');

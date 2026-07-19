@@ -39,12 +39,13 @@ import { herdrLayoutToNode, PaneLayoutTree } from './herdr-layout';
 
 const GRACE_PERIOD_MS = 30_000;
 const RESIZE_DEBOUNCE_MS = 50;
-// Per-client sizing (opt-in, off by default). When on, a pane any client
-// actually displays is sized to the reconciled (smallest-wins) demand instead
-// of the shared tree/zoom guess. Single-client demands equal the tree/zoom
-// size (proven in Phase 1), so this is behavior-neutral until two clients
-// disagree — then the smaller wins (tmux-style) rather than last-writer thrash.
-const PER_CLIENT_SIZING = process.env.CCHUB_PER_CLIENT_SIZING === '1';
+// Per-client sizing (ON by default; set CCHUB_PER_CLIENT_SIZING=0 to disable).
+// Only intervenes with two or more clients (see resolveTargetSizes): when they
+// view a session at different sizes, a shared pane is shrunk to the smallest
+// demand (tmux-style letterbox) instead of thrashing on the last-writer size.
+// A single client keeps the existing tree/zoom path unchanged. The env var is
+// an escape hatch in case the multi-client path misbehaves in the field.
+const PER_CLIENT_SIZING = process.env.CCHUB_PER_CLIENT_SIZING !== '0';
 // A client's proposeDimensions and the server's ratio split can disagree by a
 // cell or two from rounding; only a demand this many cells smaller than the
 // tree slot counts as a real cross-client conflict worth shrinking a pane for.

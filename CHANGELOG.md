@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.20] - 2026-07-19
+
+### Fixed
+- **開いている Codex セッションの会話履歴を表示できない問題を修正** (#439): 実行プロセス名が `node-MainThread` になるケースや、同じ作業ディレクトリに複数の履歴があるケースで、cwd から最新スレッドを推測して誤った Session ID を選ぶ可能性があった。herdr の `agent.list` が報告するエージェント種別と native Session ID を唯一の識別元に変更し、Codex/Grok の cwd フォールバックを削除。非フォーカス中の単一paneでも対象paneを選択できるようにし、native ID が未報告の場合は履歴ボタンを安全に無効化する
+
+### Changed
+- **Codex hooks を `~/.codex/hooks.json` に一本化** (#439): herdr の `SessionStart` と CC Hub の `Stop` / `PostToolUse:AskUserQuestion` を同じ JSON に保持し、重複していた `config.toml` の hook 定義を移行時に削除する。`cchub setup` は Claude/Codex 両方の herdr integration を導入し、既存の未知の hook と `[hooks.state]` は保持する
+
 ## [0.2.19] - 2026-07-19
 
 ### Fixed

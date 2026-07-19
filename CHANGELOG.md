@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.24] - 2026-07-19
+
+### Added
+- **ワークスペースの「タブ」対応（herdr の workspace > tab > pane を3階層で扱う）** (#455, #456, #457): これまで CC Hub は tab の概念を持たず、`herdr tab` で複数タブを作った workspace は全タブの pane を1画面にフラット混在させ、各タブの縦横比・ズームを失って表示が崩れていた。制御セッションを **「アクティブなタブだけを描画」** に変更し、`workspace.get` の `active_tab_id` を権威にタブ切替へ追従（別タブの pane を混ぜない／アクティブタブが空でも他タブが残ればセッションを終了しない）。**セッション一覧の各ワークスペース配下にタブを入れ子表示**し、タップで切替・「+ 新規タブ」・長押しで閉じる（desktop / tablet / mobile 共通）。`SessionResponse.tabs[]` / `activeTabId` を露出し、WebSocket（`select-tab` / `create-tab` / `close-tab`）と REST（`POST /:id/tabs/{select,create,close}`）を追加
+
+### Changed
+- **内部・API・フロントの命名を「Session」→「Workspace」に整合** (#454, #458, #460): CC Hub の1セッションは herdr の1ワークスペースそのもの。backend の型・メソッドを workspace 語彙へ寄せ、`/api/workspaces` を正典パスとして追加（旧 `/api/sessions` は**エイリアスで維持**するため CLI `cchub send`/`peek`・peer・glasses は無変更で動作）。フロントを `/api/workspaces` へ移行し、一覧のヘッダ／作成ボタンなどのラベルを「ワークスペース」に変更。エージェント会話履歴（`/api/sessions/history`）は別概念のため据え置き
+  - 注意: 更新済みのフロントは peer 宛にも `/api/workspaces` を叩くため、まだ更新していない古い peer は一時的に 404 になり得る（fleet を更新すればエイリアスにより解消）
+
 ## [0.2.23] - 2026-07-19
 
 ### Fixed

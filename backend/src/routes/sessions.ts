@@ -277,6 +277,11 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
         }
       : metrics;
 
+    // A multi-pane / multi-tab workspace shows per-pane metrics instead of one
+    // ambiguous card-header summary; simple single-pane workspaces keep the
+    // header summary and skip the extra per-pane metric computation.
+    const isMultiWorkspace = (s.panes?.length ?? 0) > 1 || (s.tabs?.length ?? 0) > 1;
+
     return {
       id: s.id,
       name: s.name,
@@ -307,7 +312,7 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
       theme: sessionMetadata[s.id]?.theme,
       customTitle: sessionMetadata[s.id]?.title,
       metrics: sessionMetrics,
-      panes: s.panes ? s.panes.map((p) => {
+      panes: s.panes ? await Promise.all(s.panes.map(async (p) => {
         const isSessionAgentOnPane = !p.isDead && !!p.agent;
         const isClaudeOnPane = isSessionAgentOnPane && includeClaudeInfo;
         let paneIndicator: IndicatorState | undefined;
@@ -321,6 +326,17 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
         } else {
           paneIndicator = 'idle';
         }
+        // Per-pane metrics only for agent panes of a multi workspace (see
+        // isMultiWorkspace); Claude panes get ctx/model from their own .jsonl,
+        // any agent pane gets memory from its pid.
+        const paneMetrics =
+          isMultiWorkspace && isSessionAgentOnPane
+            ? await computeSessionMetrics({
+                ccSessionId: p.agent === 'claude' ? p.agentSessionId : undefined,
+                workingDir: p.path,
+                pids: p.pid ? [p.pid] : [],
+              })
+            : undefined;
         const pane: PaneInfo = {
           paneId: p.paneId,
           currentCommand: p.command,
@@ -334,9 +350,10 @@ export async function buildSessionsList(): Promise<ExtendedSessionResponse[]> {
             ? (hookState === 'processing' && p.title?.startsWith('✳') ? paneIndicator : (hookState ?? paneIndicator))
             : paneIndicator,
           pid: p.pid,
+          metrics: paneMetrics,
         };
         return pane;
-      }) : undefined,
+      })) : undefined,
       tabs: s.tabs,
       activeTabId: s.activeTabId,
     };

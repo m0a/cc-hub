@@ -200,6 +200,11 @@ export interface PaneInfo {
   isDead?: boolean;
   indicatorState?: IndicatorState;
   pid?: number;            // shell/subprocess PID of the pane's foreground group
+  /** Per-pane agent metrics (model / context% / memory). Populated only for
+   *  agent panes of a multi-pane/multi-tab workspace, where a single
+   *  workspace-level summary would be ambiguous; simple single-pane workspaces
+   *  keep the summary on the card header instead. */
+  metrics?: SessionMetrics;
 }
 
 export interface SessionMetrics {

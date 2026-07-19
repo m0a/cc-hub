@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.27] - 2026-07-19
+
+### Changed
+- **セッションモーダルの冗長な「Sessions」見出しを削除** (#468): ワークスペース/履歴タブが既に見出しの役割をしていたため、上部の「Sessions」タイトル行を削除し、セグメントタブ（ワークスペース／履歴）と検索/＋/× を1行に統合。上部が詰まり、一覧の表示エリアが上へ広がる。`WorkspaceList` は desktop / tablet / mobile 共有のため3つとも適用
+
 ## [0.2.26] - 2026-07-19
 
 ### Changed

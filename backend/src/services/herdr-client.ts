@@ -247,10 +247,13 @@ export function eventWorkspaceId(ev: Record<string, unknown>): string | null {
   if (!data || typeof data !== 'object') return null;
   const d = data as Record<string, unknown>;
   if (typeof d.workspace_id === 'string') return d.workspace_id;
-  const pane = d.pane;
-  if (pane && typeof pane === 'object') {
-    const p = pane as Record<string, unknown>;
-    if (typeof p.workspace_id === 'string') return p.workspace_id;
+  // pane.* nest it under `pane`, tab.* under `tab` (verified against 0.7.4).
+  for (const key of ['pane', 'tab'] as const) {
+    const nested = d[key];
+    if (nested && typeof nested === 'object') {
+      const n = nested as Record<string, unknown>;
+      if (typeof n.workspace_id === 'string') return n.workspace_id;
+    }
   }
   return null;
 }
@@ -269,6 +272,22 @@ export function toHerdrPaneId(workspaceId: string, tmuxPaneId: string): string {
 export async function listWorkspaces(): Promise<HerdrWorkspace[]> {
   const res = await herdrRpc<{ workspaces: HerdrWorkspace[] }>('workspace.list', {});
   return res.workspaces ?? [];
+}
+
+/**
+ * Fetch one workspace (for its authoritative `active_tab_id`). herdr updates
+ * `active_tab_id` immediately on `tab.focus`, so this is how the control
+ * session follows tab switches. Null on any failure.
+ */
+export async function getWorkspace(workspaceId: string): Promise<HerdrWorkspace | null> {
+  try {
+    const res = await herdrRpc<{ workspace?: HerdrWorkspace }>('workspace.get', {
+      workspace_id: workspaceId,
+    });
+    return res.workspace ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function listPanes(workspaceId?: string): Promise<HerdrPane[]> {

@@ -16,6 +16,7 @@ import {
 	type AgentProvider,
 	type ExtendedSessionResponse,
 	type IndicatorState,
+	LOCAL_PEER_ID,
 	type PaneInfo,
 	type SessionState,
 	type SessionTheme,
@@ -448,7 +449,12 @@ export function App() {
 		if (deviceType !== "mobile" || apiSessions.length === 0) return;
 		setOpenSessions((prev) =>
 			prev.map((session) => {
-				const apiSession = apiSessions.find((s) => s.id === session.id);
+				// id は peer 間で重複し得るので、同じ peer のセッションから更新する
+				const apiSession = apiSessions.find(
+					(s) =>
+						s.id === session.id &&
+						isSameNotificationPeer(s.peerId, session.peerId),
+				);
 				if (!apiSession) return session;
 				const next = {
 					...session,
@@ -711,12 +717,26 @@ export function App() {
 				return;
 			}
 
-			// Check if already open
-			const existing = openSessions.find((s) => s.id === session.id);
+			// Check if already open. Session ids (workspace labels) can collide
+			// across peers: an entry with the same id but a different peer is
+			// REPLACED so the id maps to the peer the user just picked — the pane
+			// tree keys panes by bare id, so both can't be shown at once anyway.
+			const existing = openSessions.find(
+				(s) =>
+					s.id === session.id && isSameNotificationPeer(s.peerId, session.peerId),
+			);
 			if (existing) {
 				setActiveSessionId(session.id);
 			} else {
-				setOpenSessions((prev) => [...prev, apiToOpenSession(session)]);
+				setOpenSessions((prev) => {
+					const idx = prev.findIndex((s) => s.id === session.id);
+					if (idx >= 0) {
+						const next = [...prev];
+						next[idx] = apiToOpenSession(session);
+						return next;
+					}
+					return [...prev, apiToOpenSession(session)];
+				});
 				setActiveSessionId(session.id);
 			}
 			// Update FileViewer active dir to follow session
@@ -733,9 +753,20 @@ export function App() {
 	const handleSelectPane = useCallback(
 		(session: ExtendedSessionResponse, paneId: string) => {
 			// Open session without resetting paneId (handleSelectSession sets it to null)
-			const existing = openSessions.find((s) => s.id === session.id);
+			const existing = openSessions.find(
+				(s) =>
+					s.id === session.id && isSameNotificationPeer(s.peerId, session.peerId),
+			);
 			if (!existing) {
-				setOpenSessions((prev) => [...prev, apiToOpenSession(session)]);
+				setOpenSessions((prev) => {
+					const idx = prev.findIndex((s) => s.id === session.id);
+					if (idx >= 0) {
+						const next = [...prev];
+						next[idx] = apiToOpenSession(session);
+						return next;
+					}
+					return [...prev, apiToOpenSession(session)];
+				});
 			}
 			setActiveSessionId(session.id);
 			setShowSessionList(false);
@@ -1265,9 +1296,10 @@ export function App() {
 						return (
 							<TerminalPage
 								ref={mobileTerminalRef}
-								key={`${activeSession.id}:${activeSession.instanceId ?? "legacy"}`}
+								key={`${activeSession.peerId ?? "local"}:${activeSession.id}:${activeSession.instanceId ?? "legacy"}`}
 								sessionId={activeSession.id}
 								sessionInstanceId={activeSession.instanceId}
+								peerId={activeSession.peerId ?? LOCAL_PEER_ID}
 								onStateChange={(state) =>
 									updateSessionState(activeSession.id, state)
 								}
@@ -1301,9 +1333,12 @@ export function App() {
 					{/* Pane tab bar - only shown when multiple panes exist */}
 					{mobilePanes.length > 1 &&
 						(() => {
-							// Get pane command info from API sessions data
+							// Get pane command info from API sessions data (same peer —
+							// ids can collide across peers)
 							const apiSession = apiSessions.find(
-								(s) => s.id === activeSessionId,
+								(s) =>
+									s.id === activeSessionId &&
+									isSameNotificationPeer(s.peerId, activeSession?.peerId),
 							);
 							const apiPanes = apiSession?.panes;
 							// Agent color to Tailwind text class

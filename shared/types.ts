@@ -265,6 +265,13 @@ export type ResizeTerminalInput = z.infer<typeof ResizeTerminalSchema>;
 export const SELF_PEER_URL = 'self' as const;
 export const LOCAL_PEER_ID = 'local' as const;
 
+/** Compare peer ids treating unset / 'local' as the same (the local Hub).
+ *  Session ids are herdr workspace labels and can collide across peers, so
+ *  any session lookup by id must also match on the owning peer. */
+export function samePeerId(a?: string | null, b?: string | null): boolean {
+  return (a ?? LOCAL_PEER_ID) === (b ?? LOCAL_PEER_ID);
+}
+
 export type PeerStatus = 'online' | 'offline' | 'unauthorized' | 'unknown';
 
 export interface Peer {

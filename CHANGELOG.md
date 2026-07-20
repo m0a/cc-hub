@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.34] - 2026-07-20
+
+### Changed
+- **フロントのセッション識別を `peerId:id` 複合キーに全面移行** (#487): セッション id は herdr の workspace 名で peer 間で衝突するため、0.2.33 では「選択時の peer intent を記録して id 検索のたびに再解決する」応急処置になっていた。識別子自体を複合キー化し、pane ツリー (`PaneNode.sessionKey`)・アクティブセッション・開いているセッション一覧・localStorage 永続化をすべて `peerId:id` で持つように変更。WS subscribe / REST パスに乗せる直前に bare id へ分解するためサーバー側プロトコルは無変更。これにより同名の local / peer セッションを**同時に開ける**ようになり、`resolveSessionPeer` と intent 永続化 (`cchub-desktop-session-peer`) を削除。既存の localStorage は初回ロード時に一度だけ自動移行する
+
 ## [0.2.33] - 2026-07-20
 
 ### Fixed

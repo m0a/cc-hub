@@ -36,7 +36,6 @@ interface TerminalPageProps {
 	sessionInstanceId?: string;
 	token?: string | null;
 	onStateChange?: (state: SessionState) => void;
-	onNewSession?: (sessionId: string, sessionName: string) => void;
 	overlayContent?: ReactNode;
 	onOverlayTap?: () => void;
 	showOverlay?: boolean;
@@ -62,7 +61,6 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 			sessionInstanceId,
 			token,
 			onStateChange,
-			onNewSession,
 			overlayContent,
 			onOverlayTap,
 			showOverlay,
@@ -182,7 +180,6 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 					return leaves[0]?.paneId ?? null;
 				});
 			},
-			onNewSession: onNewSession,
 			onConnect: () => {
 				setSessionExited(false);
 				setError(null);

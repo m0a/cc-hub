@@ -16,7 +16,6 @@ import {
 import "@xterm/xterm/css/xterm.css";
 import type { PaneViewport, SessionTheme } from "../../../shared/types";
 import { useSelectionMode } from "../hooks/useSelectionMode";
-import { authFetch } from "../services/api";
 import { bench } from "../utils/bench";
 import {
 	filterMouseTrackingInput,
@@ -35,8 +34,6 @@ import {
 	MIN_FONT_SIZE,
 	saveFontSize,
 } from "./terminal-themes";
-
-const API_BASE = import.meta.env.VITE_API_URL || "";
 
 // Control mode: terminal data comes from the multiplexed WebSocket. xterm
 // is the rendering surface only — tmux holds both the visible region and
@@ -1243,23 +1240,6 @@ export const TerminalComponent = memo(
 				viewport.removeEventListener("scroll", updateKeyboardOffset);
 			};
 		}, [sessionId]);
-
-		// Exit copy mode when custom keyboard appears
-		useEffect(() => {
-			if (inputMode === "hidden") return;
-			const checkAndExitCopyMode = async () => {
-				try {
-					const res = await authFetch(
-						`${API_BASE}/api/workspaces/${encodeURIComponent(sessionId)}/copy-mode`,
-					);
-					if (res.ok) {
-						const data = await res.json();
-						if (data.inCopyMode) sendRef.current("q");
-					}
-				} catch {}
-			};
-			checkAndExitCopyMode();
-		}, [inputMode, sessionId]);
 
 		// Desktop selection mode (activated by mouse long-press) — Enter to copy and
 		// exit, Esc to cancel. Touch devices keep using the SelectionOverlay buttons.

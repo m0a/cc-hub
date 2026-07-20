@@ -27,7 +27,6 @@ interface UseMultiplexedTerminalOptions {
 		layout: TmuxLayoutNode,
 		zoomedPaneId: string | null,
 	) => void;
-	onNewSession?: (sessionId: string, sessionName: string) => void;
 	onPaneDead?: (paneId: string) => void;
 	onHookEvent?: (
 		event: string,
@@ -150,7 +149,6 @@ type MuxCallbacks = {
 		layout: TmuxLayoutNode,
 		zoomedPaneId: string | null,
 	) => void;
-	onNewSession?: (sessionId: string, sessionName: string) => void;
 	onPaneDead?: (paneId: string) => void;
 	onHookEvent?: (
 		event: string,
@@ -394,10 +392,6 @@ function ensureConnection(token?: string | null, wsBase?: string | null) {
 			case "error": {
 				if (msgSessionId && msgSessionId !== currentSession) return;
 				cb?.onError?.(msg.message as string, msg.paneId as string | undefined);
-				break;
-			}
-			case "new-session": {
-				cb?.onNewSession?.(msg.sessionId as string, msg.sessionName as string);
 				break;
 			}
 			case "pane-dead": {
@@ -648,7 +642,6 @@ export function useMultiplexedTerminal(
 
 	const onPaneViewportRef = useRef(options.onPaneViewport);
 	const onLayoutChangeRef = useRef(options.onLayoutChange);
-	const onNewSessionRef = useRef(options.onNewSession);
 	const onPaneDeadRef = useRef(options.onPaneDead);
 	const onHookEventRef = useRef(options.onHookEvent);
 	const onConnectRef = useRef(options.onConnect);
@@ -658,7 +651,6 @@ export function useMultiplexedTerminal(
 
 	onPaneViewportRef.current = options.onPaneViewport;
 	onLayoutChangeRef.current = options.onLayoutChange;
-	onNewSessionRef.current = options.onNewSession;
 	onPaneDeadRef.current = options.onPaneDead;
 	onHookEventRef.current = options.onHookEvent;
 	onConnectRef.current = options.onConnect;
@@ -670,7 +662,6 @@ export function useMultiplexedTerminal(
 		activeCallbacks = {
 			onPaneViewport: (p, v) => onPaneViewportRef.current?.(p, v),
 			onLayoutChange: (l, z) => onLayoutChangeRef.current?.(l, z),
-			onNewSession: (s, n) => onNewSessionRef.current?.(s, n),
 			onPaneDead: (p) => onPaneDeadRef.current?.(p),
 			onHookEvent: (e, c, s, d, m) => onHookEventRef.current?.(e, c, s, d, m),
 			onConnect: () => onConnectRef.current?.(),

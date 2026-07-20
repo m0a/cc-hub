@@ -331,14 +331,6 @@ async function handleSubscribe(ws: ServerWebSocket<MuxData>, sessionId: string) 
       })
     );
 
-    cleanupFns.push(
-      controlSession.onNewSession((newSessionId, sessionName) => {
-        try {
-          ws.send(JSON.stringify({ type: 'new-session', sessionId: newSessionId, sessionName }));
-        } catch { /* disconnected */ }
-      })
-    );
-
     // The client can disconnect while the awaits above are in flight. muxClose
     // has already run at that point and didn't see this subscription, so the
     // listeners and addClient() would leak (the grace period would never

@@ -6,7 +6,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "";
 export interface UploadImageResult {
 	ok: boolean;
 	/** Path on the host that owns the destination Claude Code session.
-	 *  This is what we send into the tmux pane. */
+	 *  This is what gets typed into the session's terminal pane. */
 	path?: string;
 	filename?: string;
 	error?: string;

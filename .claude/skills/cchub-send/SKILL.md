@@ -266,4 +266,4 @@ dismiss できたかは `cchub peek <target>` で確認 (`detectedState` が `id
 - CLI: `backend/src/commands/send.ts` (`runSend`)
 - HTTP: `backend/src/routes/sessions.ts` の `POST /:id/panes/input`
 - スキーマ: `PaneInputSchema` (`paneId`, `data`, `encoding: 'utf-8' | 'base64'`)
-- 内部的には `TmuxControlSession.sendInput(paneId, Buffer)` を呼ぶ (xterm からのキー入力と同じ経路)
+- 内部的には `HerdrControlSession.sendInput(paneId, Buffer)` を呼ぶ (xterm からのキー入力と同じ経路)

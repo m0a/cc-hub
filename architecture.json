@@ -1381,7 +1381,6 @@
         "ready",
         "pong",
         "error",
-        "new-session",
         "pane-dead",
         "hook-event"
       ]
@@ -1400,11 +1399,11 @@
     },
     {
       "name": "ExtendedSessionResponse",
-      "fields": "extends SessionResponse + indicatorState, ccSessionId, agentSessionId, currentCommand, paneTitle, ccSummary, ccFirstPrompt, ccRecap, waitingToolName, panes, messageCount, gitBranch, durationMinutes, metrics, peerId"
+      "fields": "extends SessionResponse + indicatorState, ccSessionId, agentSessionId, currentCommand, ccSummary, ccFirstPrompt, ccRecap, waitingToolName, panes, messageCount, gitBranch, durationMinutes, metrics, peerId"
     },
     {
       "name": "PaneInfo",
-      "fields": "paneId, currentCommand, currentPath, title, agentName, agentColor, isActive, isDead, indicatorState, pid"
+      "fields": "paneId, currentCommand, currentPath, agentName, agentColor, isActive, indicatorState, pid"
     },
     {
       "name": "TmuxLayoutNode",
@@ -1428,7 +1427,7 @@
     },
     {
       "name": "ControlServerMessage",
-      "fields": "layout | viewport | ready | pong | error | new-session | pane-dead | hook-event"
+      "fields": "layout | viewport | ready | pong | error | pane-dead | hook-event"
     },
     {
       "name": "MuxClientMessage",

@@ -1,16 +1,32 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { KimiUsageSummary, KimiUsageWindow } from '../../../shared/types';
+import type {
+  KimiUsageModelTotal,
+  KimiUsageSummary,
+  KimiUsageWindow,
+} from '../../../shared/types';
 import { KimiSessionStore } from './kimi';
+import { KimiConfigService } from './kimi-config';
+import { costOf, type ModelPricing, OpenRouterPricingService } from './openrouter';
 
 interface UsageRecord {
   /** Unix ms. */
   timestamp: number;
   totalTokens: number;
   inputTokens: number;
+  /** Input tokens that were neither cache reads nor cache writes. */
+  inputOtherTokens: number;
   cacheReadTokens: number;
+  cacheWriteTokens: number;
   outputTokens: number;
   model?: string;
+}
+
+/** Running cost for a window. `priced` stays false until a record actually
+ *  gets a price, which is what distinguishes "$0.00" from "unknown". */
+interface CostAccumulator {
+  usd: number;
+  priced: boolean;
 }
 
 function numberOrZero(value: unknown): number {
@@ -29,6 +45,25 @@ function addToWindow(window: KimiUsageWindow, record: UsageRecord): void {
   window.outputTokens += record.outputTokens;
 }
 
+function addCost(acc: CostAccumulator, record: UsageRecord, pricing?: ModelPricing): void {
+  if (!pricing) return;
+  acc.usd += costOf(
+    {
+      inputOther: record.inputOtherTokens,
+      cacheRead: record.cacheReadTokens,
+      cacheWrite: record.cacheWriteTokens,
+      output: record.outputTokens,
+    },
+    pricing,
+  );
+  acc.priced = true;
+}
+
+/** Round to cents-with-headroom: sub-cent turns are common, so keep 4 dp. */
+function roundUsd(usd: number): number {
+  return Math.round(usd * 10_000) / 10_000;
+}
+
 /**
  * Aggregates Kimi Code token consumption from `usage.record` records in each
  * session's `agents/<agentId>/wire.jsonl` — sub-agent wires included, their tokens
@@ -42,8 +77,34 @@ export class KimiUsageService {
   private static readonly WINDOW_7D_MS = 7 * 24 * 60 * 60 * 1000;
   private static readonly WINDOW_24H_MS = 24 * 60 * 60 * 1000;
 
-  constructor(store = new KimiSessionStore()) {
+  constructor(
+    store = new KimiSessionStore(),
+    private readonly config = new KimiConfigService(),
+    private readonly pricing = new OpenRouterPricingService(),
+  ) {
     this.store = store;
+  }
+
+  /**
+   * Prices per model alias. Only OpenRouter-backed aliases resolve: anything
+   * else (direct Moonshot, a local model, an alias missing from the config)
+   * yields no price, so its tokens are reported without a cost instead of
+   * being silently valued at zero.
+   */
+  private async resolvePricing(
+    aliases: Iterable<string>,
+  ): Promise<Map<string, { pricing: ModelPricing; modelId: string }>> {
+    const { bindings } = await this.config.getConfig();
+    const resolved = new Map<string, { pricing: ModelPricing; modelId: string }>();
+    await Promise.all(
+      [...new Set(aliases)].map(async (alias) => {
+        const binding = bindings.get(alias);
+        if (!binding?.isOpenRouter) return;
+        const pricing = await this.pricing.getPricing(binding.model);
+        if (pricing) resolved.set(alias, { pricing, modelId: binding.model });
+      }),
+    );
+    return resolved;
   }
 
   async getUsageSummary(): Promise<KimiUsageSummary | null> {
@@ -73,20 +134,44 @@ export class KimiUsageService {
     if (records.length === 0) return null;
 
     records.sort((a, b) => a.timestamp - b.timestamp);
+    const priceByAlias = await this.resolvePricing(
+      records.map((r) => r.model).filter((m): m is string => !!m),
+    );
+
     const last24h = emptyWindow();
     const last7d = emptyWindow();
-    const modelTotals = new Map<string, number>();
+    const cost24h: CostAccumulator = { usd: 0, priced: false };
+    const cost7d: CostAccumulator = { usd: 0, priced: false };
+    const modelTotals = new Map<string, { totalTokens: number; cost: CostAccumulator }>();
     const cutoff24h = now - KimiUsageService.WINDOW_24H_MS;
     for (const record of records) {
+      const pricing = record.model ? priceByAlias.get(record.model)?.pricing : undefined;
       addToWindow(last7d, record);
-      if (record.timestamp >= cutoff24h) addToWindow(last24h, record);
+      addCost(cost7d, record, pricing);
+      if (record.timestamp >= cutoff24h) {
+        addToWindow(last24h, record);
+        addCost(cost24h, record, pricing);
+      }
       if (record.model) {
-        modelTotals.set(record.model, (modelTotals.get(record.model) ?? 0) + record.totalTokens);
+        let total = modelTotals.get(record.model);
+        if (!total) {
+          total = { totalTokens: 0, cost: { usd: 0, priced: false } };
+          modelTotals.set(record.model, total);
+        }
+        total.totalTokens += record.totalTokens;
+        addCost(total.cost, record, pricing);
       }
     }
+    if (cost24h.priced) last24h.costUsd = roundUsd(cost24h.usd);
+    if (cost7d.priced) last7d.costUsd = roundUsd(cost7d.usd);
 
-    const models = Array.from(modelTotals.entries())
-      .map(([model, totalTokens]) => ({ model, totalTokens }))
+    const models: KimiUsageModelTotal[] = Array.from(modelTotals.entries())
+      .map(([model, { totalTokens, cost }]) => ({
+        model,
+        totalTokens,
+        costUsd: cost.priced ? roundUsd(cost.usd) : undefined,
+        pricedAs: priceByAlias.get(model)?.modelId,
+      }))
       .sort((a, b) => b.totalTokens - a.totalTokens);
 
     return {
@@ -147,13 +232,17 @@ export class KimiUsageService {
         if (timestamp < cutoffMs) continue;
         const usage = record.usage;
         const cacheReadTokens = numberOrZero(usage.inputCacheRead);
-        const inputTokens = numberOrZero(usage.inputOther) + cacheReadTokens + numberOrZero(usage.inputCacheCreation);
+        const cacheWriteTokens = numberOrZero(usage.inputCacheCreation);
+        const inputOtherTokens = numberOrZero(usage.inputOther);
+        const inputTokens = inputOtherTokens + cacheReadTokens + cacheWriteTokens;
         const outputTokens = numberOrZero(usage.output);
         records.push({
           timestamp,
           totalTokens: inputTokens + outputTokens,
           inputTokens,
+          inputOtherTokens,
           cacheReadTokens,
+          cacheWriteTokens,
           outputTokens,
           model: typeof record.model === 'string' ? record.model : undefined,
         });

@@ -570,17 +570,58 @@ export interface KimiUsageWindow {
   inputTokens: number;
   cacheReadTokens: number;
   outputTokens: number;
+  /**
+   * Estimated spend for the window in USD, from local token counts × the
+   * provider's list price. Absent when no model in the window could be priced
+   * (unknown alias, non-OpenRouter provider, price list unreachable) — an
+   * absent cost means "unknown", never "free".
+   */
+  costUsd?: number;
+}
+
+export interface KimiUsageModelTotal {
+  /** Model alias as recorded by Kimi (e.g. `k3`). */
+  model: string;
+  totalTokens: number;
+  /** Estimated spend for this model over the 7-day window, USD. */
+  costUsd?: number;
+  /** Provider-side model id the alias was priced as (e.g. `moonshotai/kimi-k3`). */
+  pricedAs?: string;
 }
 
 export interface KimiUsageSummary {
   last24h: KimiUsageWindow;
   last7d: KimiUsageWindow;
   /** Per-model totals over the 7-day window, largest first. */
-  models: Array<{ model: string; totalTokens: number }>;
+  models: KimiUsageModelTotal[];
   /** Sessions with usage in the 7-day window. */
   sessions7d: number;
   /** ISO timestamp of the most recent usage record seen. */
   lastTurnAt?: string;
+}
+
+/**
+ * Actual OpenRouter spend, read from OpenRouter's own accounting for the API
+ * key configured in `~/.kimi-code/config.toml`. Unlike `KimiUsageWindow.costUsd`
+ * (a local estimate over rolling windows), these are billed figures over
+ * OpenRouter's calendar windows and cover every request made with that key.
+ */
+export interface OpenRouterAccountUsage {
+  /** Key spend in OpenRouter's current day / week / month, USD. */
+  usageDailyUsd?: number;
+  usageWeeklyUsd?: number;
+  usageMonthlyUsd?: number;
+  /** All-time spend on this key, USD. */
+  usageTotalUsd?: number;
+  /** Account-wide credits bought / consumed, USD. */
+  creditsPurchasedUsd?: number;
+  creditsUsedUsd?: number;
+  /** Purchased minus used. Can go negative on a post-paid account. */
+  creditsRemainingUsd?: number;
+  /** Key spending cap, USD. `null` = no cap set; absent = unknown. */
+  limitUsd?: number | null;
+  limitRemainingUsd?: number | null;
+  fetchedAt: string;
 }
 
 // Usage history snapshot for line chart
@@ -654,6 +695,9 @@ export interface DashboardResponse {
   codexUsageLimits?: CodexUsageLimits | null; // From Codex rollouts
   grokUsage?: GrokUsageSummary | null; // From Grok updates.jsonl turn_completed records
   kimiUsage?: KimiUsageSummary | null; // From Kimi wire.jsonl usage.record records
+  // Billed OpenRouter spend for the key in ~/.kimi-code/config.toml. Null when
+  // no OpenRouter provider is configured or the account can't be reached.
+  openRouterUsage?: OpenRouterAccountUsage | null;
   usageHistory: UsageSnapshot[]; // Usage history for line chart
   dailyActivity: DailyActivity[];
   modelUsage: ModelUsage[];

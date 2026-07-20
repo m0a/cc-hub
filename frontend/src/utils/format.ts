@@ -40,6 +40,18 @@ export function formatTokens(tokens: number): string {
 	return tokens.toString();
 }
 
+/**
+ * USD amount for pay-as-you-go spend. Sub-cent amounts keep enough precision to
+ * stay non-zero ("$0.0042"), everything else shows cents ("$12.35"), because a
+ * rounded "$0.00" reads as free when it isn't.
+ */
+export function formatUsd(usd: number): string {
+	const sign = usd < 0 ? "-" : "";
+	const abs = Math.abs(usd);
+	if (abs > 0 && abs < 0.01) return `${sign}$${abs.toFixed(4)}`;
+	return `${sign}$${abs.toFixed(2)}`;
+}
+
 export function formatModelName(modelId: string): string {
 	if (!modelId.startsWith("claude-")) return modelId;
 	const tokens = modelId

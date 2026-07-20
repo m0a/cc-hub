@@ -186,7 +186,16 @@
 		"kimiLast7d": "過去7日間",
 		"kimiTurns": "{{count}} ターン",
 		"kimiModelBreakdown": "モデル別（7日間）",
-		"kimiNoRateLimitInfo": "Kimi Code はレート制限情報をローカルに公開していないため、サイクル使用率の代わりに Kimi セッションログ（サブエージェント分を含む）から集計したトークン消費量を表示しています。"
+		"kimiNoRateLimitInfo": "Kimi Code はレート制限情報をローカルに公開していないため、サイクル使用率の代わりに Kimi セッションログ（サブエージェント分を含む）から集計したトークン消費量を表示しています。",
+		"kimiCostEstimated": "推定",
+		"openRouterSpend": "OpenRouter 課金額",
+		"openRouterActual": "実績",
+		"openRouterToday": "今日",
+		"openRouterThisWeek": "今週",
+		"openRouterThisMonth": "今月",
+		"openRouterBalance": "クレジット残高",
+		"openRouterKeyLimitRemaining": "キー上限の残り",
+		"openRouterWindowNote": "Kimi の設定にある API キーについて OpenRouter が集計した実際の課金額です（OpenRouter 側の日・週・月の区切り）。上の期間別金額はローリング期間のローカル推定なので、両者は完全には一致しません。"
 	},
 	"files": {
 		"title": "ファイルブラウザ",

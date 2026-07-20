@@ -186,7 +186,16 @@
 		"kimiLast7d": "Last 7 days",
 		"kimiTurns": "{{count}} turns",
 		"kimiModelBreakdown": "By model (7 days)",
-		"kimiNoRateLimitInfo": "Kimi Code does not expose rate-limit windows locally, so token totals are aggregated from Kimi session logs (sub-agent usage included) instead of showing cycle utilization."
+		"kimiNoRateLimitInfo": "Kimi Code does not expose rate-limit windows locally, so token totals are aggregated from Kimi session logs (sub-agent usage included) instead of showing cycle utilization.",
+		"kimiCostEstimated": "est.",
+		"openRouterSpend": "OpenRouter Spend",
+		"openRouterActual": "billed",
+		"openRouterToday": "Today",
+		"openRouterThisWeek": "This week",
+		"openRouterThisMonth": "This month",
+		"openRouterBalance": "Credit balance",
+		"openRouterKeyLimitRemaining": "Key limit remaining",
+		"openRouterWindowNote": "Billed figures from OpenRouter for the API key in your Kimi config, over OpenRouter's own calendar windows. The per-window amounts above are local estimates over rolling windows, so the two will not match exactly."
 	},
 	"files": {
 		"title": "File Browser",

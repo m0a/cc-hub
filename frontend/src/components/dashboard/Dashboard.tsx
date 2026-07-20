@@ -6,7 +6,7 @@ import { useDashboard } from "../../hooks/useDashboard";
 import { usePeers } from "../../hooks/usePeers";
 import { useTheme } from "../../hooks/useTheme";
 import { useUiScale } from "../../hooks/useUiScale";
-import { formatTokens } from "../../utils/format";
+import { formatTokens, formatUsd } from "../../utils/format";
 import { nukeClientCache } from "../../utils/nuke-cache";
 import { DailyUsageChart } from "./DailyUsageChart";
 import { HourlyHeatmap } from "./HourlyHeatmap";
@@ -46,6 +46,7 @@ export function Dashboard({ className = "", compact = false }: DashboardProps) {
 	const codexLimits = data?.codexUsageLimits;
 	const grokUsage = data?.grokUsage;
 	const kimiUsage = data?.kimiUsage;
+	const openRouterUsage = data?.openRouterUsage;
 	// Claude is "available" when we have any actionable Claude data. The endpoint
 	// returns empty arrays / no-credentials errors on a Codex-only machine.
 	const claudeAvailable =
@@ -59,7 +60,9 @@ export function Dashboard({ className = "", compact = false }: DashboardProps) {
 		...(claudeAvailable ? (["claude"] as const) : []),
 		...(codexLimits ? (["codex"] as const) : []),
 		...(grokUsage ? (["grok"] as const) : []),
-		...(kimiUsage ? (["kimi"] as const) : []),
+		// OpenRouter spend alone is enough: the key comes from the Kimi config, so
+		// billed usage is worth showing even before any session lands in the window.
+		...(kimiUsage || openRouterUsage ? (["kimi"] as const) : []),
 	];
 	const showAgentTabs = availableTabs.length > 1;
 	const effectiveTab: AgentTab = availableTabs.includes(agentTab)
@@ -245,6 +248,16 @@ export function Dashboard({ className = "", compact = false }: DashboardProps) {
 										<div className="text-[11px] text-th-text-muted mt-0.5">
 											{t("dashboard.kimiTurns", { count: window?.turns ?? 0 })}
 										</div>
+										{window?.costUsd !== undefined && (
+											<div className="mt-1.5 pt-1.5 border-t border-white/[0.06]">
+												<span className="text-sm font-semibold text-emerald-300">
+													{formatUsd(window.costUsd)}
+												</span>
+												<span className="ml-1 text-[10px] text-th-text-muted">
+													{t("dashboard.kimiCostEstimated")}
+												</span>
+											</div>
+										)}
 									</div>
 								))}
 							</div>
@@ -256,15 +269,89 @@ export function Dashboard({ className = "", compact = false }: DashboardProps) {
 									{kimiUsage?.models.map((m) => (
 										<div
 											key={m.model}
-											className="flex justify-between text-xs text-th-text-secondary"
+											className="flex justify-between gap-2 text-xs text-th-text-secondary"
 										>
-											<span>{m.model}</span>
-											<span>{formatTokens(m.totalTokens)}</span>
+											<span className="truncate" title={m.pricedAs}>
+												{m.pricedAs ?? m.model}
+											</span>
+											<span className="shrink-0 tabular-nums">
+												{formatTokens(m.totalTokens)}
+												{m.costUsd !== undefined && (
+													<span className="ml-2 text-emerald-300">
+														{formatUsd(m.costUsd)}
+													</span>
+												)}
+											</span>
 										</div>
 									))}
 								</div>
 							)}
 						</div>
+						{openRouterUsage && (
+							<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2">
+								<div className="flex items-center justify-between mb-3">
+									<h3 className="text-xs font-medium text-th-text-secondary">
+										{t("dashboard.openRouterSpend")}
+									</h3>
+									<span className="text-[10px] text-th-text-muted">
+										{t("dashboard.openRouterActual")}
+									</span>
+								</div>
+								<div className="grid grid-cols-3 gap-3">
+									{(
+										[
+											["openRouterToday", openRouterUsage.usageDailyUsd],
+											["openRouterThisWeek", openRouterUsage.usageWeeklyUsd],
+											["openRouterThisMonth", openRouterUsage.usageMonthlyUsd],
+										] as const
+									).map(([labelKey, usd]) => (
+										<div
+											key={labelKey}
+											className="bg-white/[0.03] rounded-md p-3 border border-white/[0.06]"
+										>
+											<div className="text-[11px] text-th-text-muted mb-1">
+												{t(`dashboard.${labelKey}`)}
+											</div>
+											<div className="text-lg font-semibold text-th-text tabular-nums">
+												{usd === undefined ? "—" : formatUsd(usd)}
+											</div>
+										</div>
+									))}
+								</div>
+								{openRouterUsage.creditsRemainingUsd !== undefined && (
+									<div className="mt-3 flex justify-between text-xs text-th-text-secondary">
+										<span>{t("dashboard.openRouterBalance")}</span>
+										<span className="tabular-nums">
+											<span
+												className={
+													openRouterUsage.creditsRemainingUsd <= 0
+														? "text-red-400 font-semibold"
+														: "text-th-text"
+												}
+											>
+												{formatUsd(openRouterUsage.creditsRemainingUsd)}
+											</span>
+											{openRouterUsage.creditsPurchasedUsd !== undefined && (
+												<span className="ml-1 text-th-text-muted">
+													/ {formatUsd(openRouterUsage.creditsPurchasedUsd)}
+												</span>
+											)}
+										</span>
+									</div>
+								)}
+								{openRouterUsage.limitRemainingUsd != null && (
+									<div className="mt-1 flex justify-between text-xs text-th-text-secondary">
+										<span>{t("dashboard.openRouterKeyLimitRemaining")}</span>
+										<span className="tabular-nums">
+											{formatUsd(openRouterUsage.limitRemainingUsd)}
+										</span>
+									</div>
+								)}
+								<div className="mt-2 text-[10px] text-th-text-muted">
+									{t("dashboard.openRouterWindowNote")}
+								</div>
+							</div>
+						)}
 						<div className="bg-white/[0.03] rounded-lg p-4 border border-white/[0.06] md:col-span-2 text-th-text-muted text-xs">
 							{t("dashboard.kimiNoRateLimitInfo")}
 						</div>

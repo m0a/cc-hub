@@ -4,6 +4,8 @@ import { AnthropicUsageService } from '../services/anthropic-usage';
 import { CodexUsageService } from '../services/codex-usage';
 import { GrokUsageService } from '../services/grok-usage';
 import { KimiUsageService } from '../services/kimi-usage';
+import { KimiConfigService } from '../services/kimi-config';
+import { OpenRouterAccountService } from '../services/openrouter';
 import { UsageHistoryService } from '../services/usage-history';
 import { SystemMetricsService } from '../services/system-metrics';
 import { HerdrUpdateService } from '../services/herdr-update';
@@ -15,7 +17,12 @@ const statsService = new StatsService();
 const anthropicUsageService = new AnthropicUsageService();
 const codexUsageService = new CodexUsageService();
 const grokUsageService = new GrokUsageService();
-const kimiUsageService = new KimiUsageService();
+const kimiConfigService = new KimiConfigService();
+const kimiUsageService = new KimiUsageService(undefined, kimiConfigService);
+// Kimi is the only OpenRouter consumer here, so its config supplies the key.
+const openRouterAccountService = new OpenRouterAccountService(() =>
+  kimiConfigService.getOpenRouterApiKey(),
+);
 const usageHistoryService = new UsageHistoryService();
 const systemMetricsService = new SystemMetricsService();
 // Shared with the /api/herdr apply route so an apply invalidates this cache.
@@ -42,11 +49,12 @@ async function getDiskUsage(): Promise<{ total: number; used: number; available:
 export async function buildDashboard(): Promise<DashboardResponse> {
   // The herdr skew check rides on this poll instead of its own timer (#393);
   // it is cached, so the extra spawn is far rarer than the request rate.
-  const [usageLimits, codexUsageLimits, grokUsage, kimiUsage, dailyActivity, modelUsage, hourlyActivity, usageHistory, systemMetrics, diskUsage, herdrUpdate] = await Promise.all([
+  const [usageLimits, codexUsageLimits, grokUsage, kimiUsage, openRouterUsage, dailyActivity, modelUsage, hourlyActivity, usageHistory, systemMetrics, diskUsage, herdrUpdate] = await Promise.all([
     anthropicUsageService.getUsageLimits(),
     codexUsageService.getUsageLimits(),
     grokUsageService.getUsageSummary(),
     kimiUsageService.getUsageSummary(),
+    openRouterAccountService.getUsage(),
     statsService.getDailyActivity(14),
     statsService.getModelUsage(),
     statsService.getHourlyActivity(),
@@ -72,6 +80,7 @@ export async function buildDashboard(): Promise<DashboardResponse> {
     codexUsageLimits,
     grokUsage,
     kimiUsage,
+    openRouterUsage,
     usageHistory,
     dailyActivity,
     modelUsage,

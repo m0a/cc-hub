@@ -3,10 +3,53 @@ import { rm, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { KimiSessionStore } from '../../src/services/kimi';
+import { KimiConfigService } from '../../src/services/kimi-config';
 import { KimiUsageService } from '../../src/services/kimi-usage';
+import { OpenRouterPricingService } from '../../src/services/openrouter';
 
 const TEST_DIR = join(tmpdir(), `cchub-kimi-usage-${Date.now()}`);
 const SESSIONS_DIR = join(TEST_DIR, 'sessions');
+const CONFIG_PATH = join(TEST_DIR, 'config.toml');
+
+/** Config + price list under test control: the defaults would read the
+ *  developer's real ~/.kimi-code/config.toml and hit OpenRouter over the
+ *  network, making costs depend on the machine running the tests. */
+async function serviceWithConfig(configToml: string): Promise<KimiUsageService> {
+  await writeFile(CONFIG_PATH, configToml);
+  const prices = {
+    data: [
+      {
+        id: 'moonshotai/kimi-k3',
+        pricing: { prompt: '0.000003', completion: '0.000015', input_cache_read: '0.0000003' },
+      },
+    ],
+  };
+  return new KimiUsageService(
+    new KimiSessionStore(SESSIONS_DIR),
+    new KimiConfigService(CONFIG_PATH),
+    new OpenRouterPricingService(
+      `data:application/json,${encodeURIComponent(JSON.stringify(prices))}`,
+    ),
+  );
+}
+
+/** k3 → OpenRouter (priceable); k2 → direct Moonshot (not priceable here). */
+const CONFIG_TOML = `
+[providers.openrouter]
+base_url = "https://openrouter.ai/api/v1"
+api_key = "sk-or-v1-test"
+
+[providers.moonshot]
+base_url = "https://api.moonshot.ai/v1"
+
+[models.k3]
+provider = "openrouter"
+model = "moonshotai/kimi-k3"
+
+[models.k2]
+provider = "moonshot"
+model = "kimi-k2"
+`;
 const CWD = '/home/user/proj';
 const WD_DIR = 'wd_proj_58f1d424d923';
 const SESSION_ID = 'session_019f0000-0000-7000-8000-000000000001';
@@ -64,7 +107,8 @@ afterEach(async () => {
 
 describe('KimiUsageService', () => {
   test('aggregates 24h / 7d windows from usage.record records, sub-agents included', async () => {
-    const service = new KimiUsageService(new KimiSessionStore(SESSIONS_DIR));
+    // No config → nothing priceable, so the token aggregation is asserted alone.
+    const service = await serviceWithConfig('');
     const summary = await service.getUsageSummary();
     expect(summary).not.toBeNull();
     expect(summary?.last7d).toEqual({
@@ -82,11 +126,55 @@ describe('KimiUsageService', () => {
       outputTokens: 75,
     });
     expect(summary?.models).toEqual([
-      { model: 'k2', totalTokens: 3100 },
-      { model: 'k3', totalTokens: 1300 },
+      { model: 'k2', totalTokens: 3100, costUsd: undefined, pricedAs: undefined },
+      { model: 'k3', totalTokens: 1300, costUsd: undefined, pricedAs: undefined },
     ]);
     expect(summary?.sessions7d).toBe(1);
     expect(summary?.lastTurnAt).toBe(new Date(latestMs).toISOString());
+  });
+
+  test('prices OpenRouter-backed models per token kind', async () => {
+    const service = await serviceWithConfig(CONFIG_TOML);
+    const summary = await service.getUsageSummary();
+    // k3 in the 24h window: (500 + 250 cache-write, both at prompt price)
+    // × 0.000003 + 375 cache-read × 0.0000003 + 50 output × 0.000015.
+    const k3In24h = 750 * 0.000003 + 375 * 0.0000003 + 50 * 0.000015;
+    // Plus the sub-agent turn's own 100 input / 25 output.
+    const subAgent = 100 * 0.000003 + 0 * 0.0000003 + 25 * 0.000015;
+    // Reported costs are rounded to 4 dp, so sub-cent amounts stay visible.
+    const expected = Math.round((k3In24h + subAgent) * 10_000) / 10_000;
+    expect(summary?.last24h.costUsd).toBe(expected);
+
+    const byModel = new Map(summary?.models.map((m) => [m.model, m]));
+    expect(byModel.get('k3')?.pricedAs).toBe('moonshotai/kimi-k3');
+    // k3's only records are the two 24h ones, so its 7d total matches.
+    expect(byModel.get('k3')?.costUsd).toBe(expected);
+  });
+
+  test('a non-OpenRouter model reports tokens but no cost', async () => {
+    const service = await serviceWithConfig(CONFIG_TOML);
+    const summary = await service.getUsageSummary();
+    const k2 = summary?.models.find((m) => m.model === 'k2');
+    // Direct-Moonshot billing differs from OpenRouter's list price, so an
+    // absent cost ("unknown") is the honest answer — not 0.
+    expect(k2?.totalTokens).toBe(3100);
+    expect(k2?.costUsd).toBeUndefined();
+    expect(k2?.pricedAs).toBeUndefined();
+    // The 7d window still carries a cost, because k3's turns in it are priced.
+    expect(summary?.last7d.costUsd).toBeGreaterThan(0);
+  });
+
+  test('omits cost entirely when the price list is unreachable', async () => {
+    await writeFile(CONFIG_PATH, CONFIG_TOML);
+    const service = new KimiUsageService(
+      new KimiSessionStore(SESSIONS_DIR),
+      new KimiConfigService(CONFIG_PATH),
+      new OpenRouterPricingService('http://127.0.0.1:1/models'),
+    );
+    const summary = await service.getUsageSummary();
+    expect(summary?.last7d.totalTokens).toBe(4400);
+    expect(summary?.last7d.costUsd).toBeUndefined();
+    expect(summary?.last24h.costUsd).toBeUndefined();
   });
 
   test('returns null when there are no sessions', async () => {

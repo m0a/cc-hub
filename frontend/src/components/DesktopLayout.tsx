@@ -11,11 +11,13 @@ import {
 	Unplug,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-	PaneViewport,
-	SessionState,
-	SessionTheme,
-	TmuxLayoutNode,
+import {
+	LOCAL_PEER_ID,
+	type PaneViewport,
+	samePeerId,
+	type SessionState,
+	type SessionTheme,
+	type TmuxLayoutNode,
 } from "../../../shared/types";
 import {
 	sendTerminalInputRest,
@@ -25,6 +27,10 @@ import { usePeerConnection } from "../hooks/usePeerConnection";
 import { useRemoteControlMode } from "../hooks/useRemoteControlMode";
 import { sessionFetch } from "../services/peer-fetch";
 import { nukeClientCache } from "../utils/nuke-cache";
+import {
+	resolveSessionPeer,
+	type SessionPeerIntent,
+} from "../utils/sessionPeer";
 import { usePeers } from "../hooks/usePeers";
 import {
 	updateCachedSessionsByHookEvent,
@@ -45,6 +51,22 @@ import { SessionModal } from "./SessionModal";
 import type { ControlModeConfig, TerminalRef } from "./Terminal";
 
 const DESKTOP_STATE_KEY = "cchub-desktop-state";
+// The peer the user last picked a session from (persisted so a reload
+// reconnects the restored pane tree to the same peer's session).
+const SESSION_PEER_KEY = "cchub-desktop-session-peer";
+
+function loadSessionPeerIntent(): SessionPeerIntent | null {
+	try {
+		const raw = localStorage.getItem(SESSION_PEER_KEY);
+		if (!raw) return null;
+		const parsed = JSON.parse(raw);
+		if (parsed && typeof parsed.id === "string" && typeof parsed.peerId === "string")
+			return parsed;
+	} catch {
+		// ignore
+	}
+	return null;
+}
 
 interface OpenSession {
 	id: string;
@@ -397,7 +419,11 @@ export function DesktopLayout({
 	const sessions =
 		apiSessions.length > 0
 			? apiSessions.map((apiSession) => {
-					const propSession = propSessions.find((p) => p.id === apiSession.id);
+					// id (workspace 名) は peer 間で重複し得るので peer も一致させる
+					const propSession = propSessions.find(
+						(p) =>
+							p.id === apiSession.id && samePeerId(p.peerId, apiSession.peerId),
+					);
 					return propSession
 						? {
 								...propSession,
@@ -570,6 +596,13 @@ export function DesktopLayout({
 			return;
 		}
 		appliedSessionSwitchRequestRef.current = sessionSwitchRequest.requestId;
+		// App が openSessions に対象セッションを（peer 込みで）登録済みなので、
+		// そこから intent を更新する。古い intent（同名別 peer の選択）を上書き
+		// しないと通知先の peer に繋がらない。
+		const target = propSessionsRef.current.find(
+			(s) => s.id === sessionSwitchRequest.sessionId,
+		);
+		recordSessionPeerIntent(sessionSwitchRequest.sessionId, target?.peerId);
 		setDesktopState((previous) => ({
 			...previous,
 			root: updateAllSessionIds(
@@ -597,8 +630,37 @@ export function DesktopLayout({
 	};
 
 	const controlSessionId = getControlSessionId();
-	const controlSessionInstanceId = sessions.find(
-		(session) => session.id === controlSessionId,
+	// The pane tree stores bare session ids, so the owning peer is re-resolved
+	// here — preferring the user's explicit pick over the merged list, where a
+	// same-name local session would win.
+	const [sessionPeerIntent, setSessionPeerIntent] =
+		useState<SessionPeerIntent | null>(loadSessionPeerIntent);
+	const sessionPeerIntentRef = useRef(sessionPeerIntent);
+	sessionPeerIntentRef.current = sessionPeerIntent;
+	const recordSessionPeerIntent = useCallback(
+		(id: string, peerId?: string) => {
+			const intent = { id, peerId: peerId ?? LOCAL_PEER_ID };
+			setSessionPeerIntent(intent);
+			try {
+				localStorage.setItem(SESSION_PEER_KEY, JSON.stringify(intent));
+			} catch {
+				// ignore quota errors
+			}
+		},
+		[],
+	);
+	const controlPeerId = resolveSessionPeer(
+		controlSessionId,
+		sessionPeerIntent,
+		propSessions,
+		sessions,
+	);
+	const controlSessionInstanceId = (
+		sessions.find(
+			(session) =>
+				session.id === controlSessionId &&
+				samePeerId(session.peerId, controlPeerId),
+		) ?? sessions.find((session) => session.id === controlSessionId)
 	)?.instanceId;
 	const [terminalGeneration, setTerminalGeneration] = useState(0);
 	const [controlLayout, setControlLayout] = useState<TmuxLayoutNode | null>(
@@ -607,7 +669,12 @@ export function DesktopLayout({
 
 	// Multi-server: アクティブセッションが remote peer の場合、そっちの WS に切り替える
 	const { peers } = usePeers();
-	const peerConn = usePeerConnection(controlSessionId || "", apiSessions, peers);
+	const peerConn = usePeerConnection(
+		controlSessionId || "",
+		apiSessions,
+		peers,
+		controlPeerId,
+	);
 
 	// Refs for remote-control REST operations (avoid re-creating callbacks)
 	const controlSessionIdRef = useRef(controlSessionId);
@@ -646,6 +713,9 @@ export function DesktopLayout({
 	const sessionsRef = useRef(sessions);
 	sessionsRef.current = sessions;
 
+	const propSessionsRef = useRef(propSessions);
+	propSessionsRef.current = propSessions;
+
 	// Resolve the peer that owns the currently-active pane's session, so
 	// image uploads land on the host whose Claude Code will read them.
 	const getActivePeerId = useCallback((): string | undefined => {
@@ -654,8 +724,12 @@ export function DesktopLayout({
 			activePaneRef.current,
 		);
 		const sid = pane?.type === "terminal" ? pane.sessionId : null;
-		if (!sid) return undefined;
-		return sessionsRef.current.find((s) => s.id === sid)?.peerId;
+		return resolveSessionPeer(
+			sid,
+			sessionPeerIntentRef.current,
+			propSessionsRef.current,
+			sessionsRef.current,
+		);
 	}, []);
 
 	// Timer for applying the server layout's exact pane sizes after a layout message
@@ -827,7 +901,16 @@ export function DesktopLayout({
 		(op: "focus" | "split" | "close", body: Record<string, unknown>) => {
 			const sid = controlSessionIdRef.current;
 			if (!sid) return;
-			const session = sessionsRef.current.find((s) => s.id === sid);
+			// sessionFetch は peerId しか見ない。同名衝突で local に化けないよう
+			// intent 優先で解決した peer を渡す。
+			const session = {
+				peerId: resolveSessionPeer(
+					sid,
+					sessionPeerIntentRef.current,
+					propSessionsRef.current,
+					sessionsRef.current,
+				),
+			};
 			sessionFetch(
 				session,
 				peersRef.current,
@@ -1627,25 +1710,39 @@ export function DesktopLayout({
 		return desktopState.root;
 	}, [desktopState.root, zoomedPaneId]);
 
-	// Get active session for file viewer
+	// Get active session for file viewer (same peer as the pane's intent —
+	// ids can collide across peers)
 	const activePane = findPaneById(desktopState.root, desktopState.activePane);
-	const activeSession =
-		activePane?.type === "terminal" && activePane.sessionId
-			? sessions.find((s) => s.id === activePane.sessionId)
-			: null;
+	const activePaneSessionId =
+		activePane?.type === "terminal" ? activePane.sessionId : null;
+	const activePanePeerId = resolveSessionPeer(
+		activePaneSessionId,
+		sessionPeerIntent,
+		propSessions,
+		sessions,
+	);
+	const activeSession = activePaneSessionId
+		? (sessions.find(
+				(s) =>
+					s.id === activePaneSessionId &&
+					samePeerId(s.peerId, activePanePeerId),
+			) ?? sessions.find((s) => s.id === activePaneSessionId))
+		: null;
 
 	// Handle session selection from modal
 	const handleModalSelectSession = useCallback(
-		(session: { id: string }) => {
+		(session: { id: string; peerId?: string; currentPath?: string }) => {
 			const paneId = activePaneRef.current;
+			// 選択した peer を記録してから pane を切り替える（同名の local
+			// セッションに接続してしまわないように）
+			recordSessionPeerIntent(session.id, session.peerId);
 			handleSelectSessionForPane(paneId, session.id);
 			// Update FileViewer active dir to follow session
-			const s = sessions.find((s) => s.id === session.id);
-			if (s?.currentPath) {
-				setActiveFileViewerDir(s.currentPath);
+			if (session.currentPath) {
+				setActiveFileViewerDir(session.currentPath);
 			}
 		},
-		[handleSelectSessionForPane, sessions],
+		[handleSelectSessionForPane, recordSessionPeerIntent],
 	);
 
 	return (

@@ -34,6 +34,10 @@ interface PaneLeafInfo {
 interface TerminalPageProps {
 	sessionId: string;
 	sessionInstanceId?: string;
+	/** Peer that owns this session. Session ids (workspace labels) can collide
+	 *  across peers, so the caller's intent must be passed instead of being
+	 *  re-derived from an id lookup (which resolves to the local session). */
+	peerId?: string;
 	token?: string | null;
 	onStateChange?: (state: SessionState) => void;
 	overlayContent?: ReactNode;
@@ -59,6 +63,7 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 		{
 			sessionId,
 			sessionInstanceId,
+			peerId,
 			token,
 			onStateChange,
 			overlayContent,
@@ -117,9 +122,10 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 		// Multi-server: sessionId が remote peer のものなら、その peer の WS に接続する
 		const { peers } = usePeers();
 		const { sessions: apiSessions } = useWorkspaces();
-		const peerConn = usePeerConnection(sessionId, apiSessions, peers);
+		const peerConn = usePeerConnection(sessionId, apiSessions, peers, peerId);
 		// peerId of the session we're rendering; used to route image uploads.
-		const sessionPeerId = apiSessions.find((s) => s.id === sessionId)?.peerId;
+		const sessionPeerId =
+			peerId ?? apiSessions.find((s) => s.id === sessionId)?.peerId;
 
 		const controlTerminal = useMultiplexedTerminal({
 			sessionId,

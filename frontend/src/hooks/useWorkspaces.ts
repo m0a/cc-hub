@@ -5,6 +5,7 @@ import {
 	type ExtendedSessionResponse,
 	type IndicatorState,
 	type PeerSession,
+	samePeerId,
 	type SessionResponse,
 	type SessionTheme,
 } from "../../../shared/types";
@@ -72,10 +73,13 @@ interface UseWorkspacesReturn {
 		// 省略時 or local 指定で Hub に作る。
 		peerId?: string,
 	) => Promise<ExtendedSessionResponse | null>;
-	deleteSession: (id: string) => Promise<boolean>;
+	// peerId: session ids (workspace labels) can collide across peers — pass the
+	// owning peer so the request doesn't resolve to the local same-name session.
+	deleteSession: (id: string, peerId?: string) => Promise<boolean>;
 	updateSessionTheme: (
 		id: string,
 		theme: SessionTheme | null,
+		peerId?: string,
 	) => Promise<boolean>;
 }
 
@@ -183,31 +187,53 @@ export function useWorkspaces(): UseWorkspacesReturn {
 		[peers],
 	);
 
-	const deleteSession = useCallback(async (id: string): Promise<boolean> => {
-		setError(null);
-		try {
-			const session = sessions.find((s) => s.id === id);
-			const response = await sessionFetch(session, peers, `/api/workspaces/${id}`, {
-				method: "DELETE",
-			});
-
-			if (!response.ok) throw new Error("Failed to delete session");
-
-			setSessions((prev) => prev.filter((s) => s.id !== id));
-			return true;
-		} catch (err) {
-			if (!isTransientNetworkError(err)) {
-				setError(err instanceof Error ? err.message : "Unknown error");
-			}
-			return false;
-		}
-	}, [sessions, peers]);
-
-	const updateSessionTheme = useCallback(
-		async (id: string, theme: SessionTheme | null): Promise<boolean> => {
+	const deleteSession = useCallback(
+		async (id: string, peerId?: string): Promise<boolean> => {
 			setError(null);
 			try {
-				const session = sessions.find((s) => s.id === id);
+				const session =
+					peerId !== undefined
+						? { peerId }
+						: sessions.find((s) => s.id === id);
+				const response = await sessionFetch(
+					session,
+					peers,
+					`/api/workspaces/${id}`,
+					{ method: "DELETE" },
+				);
+
+				if (!response.ok) throw new Error("Failed to delete session");
+
+				setSessions((prev) =>
+					prev.filter(
+						(s) =>
+							s.id !== id ||
+							(peerId !== undefined && !samePeerId(s.peerId, peerId)),
+					),
+				);
+				return true;
+			} catch (err) {
+				if (!isTransientNetworkError(err)) {
+					setError(err instanceof Error ? err.message : "Unknown error");
+				}
+				return false;
+			}
+		},
+		[sessions, peers],
+	);
+
+	const updateSessionTheme = useCallback(
+		async (
+			id: string,
+			theme: SessionTheme | null,
+			peerId?: string,
+		): Promise<boolean> => {
+			setError(null);
+			try {
+				const session =
+					peerId !== undefined
+						? { peerId }
+						: sessions.find((s) => s.id === id);
 				const response = await sessionFetch(
 					session,
 					peers,
@@ -223,7 +249,10 @@ export function useWorkspaces(): UseWorkspacesReturn {
 
 				setSessions((prev) =>
 					prev.map((s) =>
-						s.id === id ? { ...s, theme: theme ?? undefined } : s,
+						s.id === id &&
+						(peerId === undefined || samePeerId(s.peerId, peerId))
+							? { ...s, theme: theme ?? undefined }
+							: s,
 					),
 				);
 				return true;

@@ -738,7 +738,7 @@ function SessionItem({
 	onSelectPane?: (session: ExtendedSessionResponse, paneId: string) => void;
 	onShowMenu: (session: ExtendedSessionResponse) => void;
 	onResume?: (sessionId: string, ccSessionId?: string) => void;
-	onDelete?: (sessionId: string) => void;
+	onDelete?: (sessionId: string, peerId?: string) => void;
 	onShowConversation?: (
 		ccSessionId: string,
 		title: string,
@@ -980,7 +980,7 @@ function SessionItem({
 						</button>
 						<button
 							type="button"
-							onClick={() => onDelete?.(session.id)}
+							onClick={() => onDelete?.(session.id, extSession.peerId)}
 							className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] font-medium bg-zinc-600/20 text-zinc-400 hover:bg-red-600/20 hover:text-red-400 transition-colors"
 						>
 							<X className="w-3 h-3" />
@@ -1837,14 +1837,21 @@ export function WorkspaceList({
 
 	const handleMenuDelete = async () => {
 		if (sessionForMenu) {
-			await deleteSession(sessionForMenu.id);
+			await deleteSession(
+				sessionForMenu.id,
+				(sessionForMenu as ExtendedSessionResponse).peerId ?? LOCAL_PEER_ID,
+			);
 			setSessionForMenu(null);
 		}
 	};
 
 	const handleMenuChangeTheme = async (theme: SessionTheme | null) => {
 		if (sessionForMenu) {
-			await updateSessionTheme(sessionForMenu.id, theme);
+			await updateSessionTheme(
+				sessionForMenu.id,
+				theme,
+				(sessionForMenu as ExtendedSessionResponse).peerId ?? LOCAL_PEER_ID,
+			);
 			setSessionForMenu(null);
 		}
 	};
@@ -2122,7 +2129,9 @@ export function WorkspaceList({
 															onSelectPane={onSelectPane}
 															onShowMenu={handleShowMenu}
 															onResume={handleResume}
-															onDelete={(id) => deleteSession(id)}
+															onDelete={(id, peerId) =>
+																deleteSession(id, peerId ?? LOCAL_PEER_ID)
+															}
 															onShowConversation={handleShowConversation}
 															onPaneAction={handlePaneAction}
 															onClosePane={(sid, pid, name) =>

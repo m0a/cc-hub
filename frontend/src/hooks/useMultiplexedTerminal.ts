@@ -18,16 +18,11 @@ interface UseMultiplexedTerminalOptions {
 	// Multi-server: アクティブな peer の WS base URL ("wss://host:port") を指定。
 	// 省略時は Hub (window.location.host) を使う。
 	peerWsBase?: string | null;
-	// REST API base URL for the peer that owns this session ("" for Hub, e.g.
-	// "https://peer:port" for a remote peer). Used by REST fallbacks when the
-	// mux WebSocket is closed. #256
-	peerApiBase?: string | null;
 	onPaneViewport?: (paneId: string, viewport: PaneViewport) => void;
 	onLayoutChange?: (
 		layout: TmuxLayoutNode,
 		zoomedPaneId: string | null,
 	) => void;
-	onPaneDead?: (paneId: string) => void;
 	onHookEvent?: (
 		event: string,
 		cwd?: string,
@@ -77,8 +72,6 @@ interface UseMultiplexedTerminalReturn {
 	// until the next request-viewport.
 	requestViewport: (paneId: string, offset: number) => void;
 	zoomPane: (paneId: string, zoomed?: boolean) => void;
-	respawnPane: (paneId: string) => void;
-	deadPanes: Set<string>;
 }
 
 // =============================================================================
@@ -149,7 +142,6 @@ type MuxCallbacks = {
 		layout: TmuxLayoutNode,
 		zoomedPaneId: string | null,
 	) => void;
-	onPaneDead?: (paneId: string) => void;
 	onHookEvent?: (
 		event: string,
 		cwd?: string,
@@ -162,10 +154,8 @@ type MuxCallbacks = {
 	onSessionExit?: (reason: string) => void;
 	onError?: (error: string, paneId?: string) => void;
 	setIsConnected?: (v: boolean) => void;
-	setDeadPanes?: (fn: (prev: Set<string>) => Set<string>) => void;
 	sessionId: string;
 	sessionInstanceId?: string;
-	deadPanes: Set<string>;
 	/** When false, subscribeToSession is a no-op (remote-control mode). */
 	live?: boolean;
 };
@@ -205,7 +195,6 @@ function subscribeToSession(
 	subscribedSession = sessionId;
 	subscribedSessionInstance = sessionInstanceId ?? null;
 	activeCallbacks?.setIsConnected?.(false);
-	activeCallbacks?.setDeadPanes?.(() => new Set());
 	sendRaw({ type: "subscribe", sessionId });
 }
 
@@ -394,14 +383,6 @@ function ensureConnection(token?: string | null, wsBase?: string | null) {
 				cb?.onError?.(msg.message as string, msg.paneId as string | undefined);
 				break;
 			}
-			case "pane-dead": {
-				if (msgSessionId !== currentSession) return;
-				cb?.setDeadPanes?.((prev: Set<string>) =>
-					new Set(prev).add(msg.paneId as string),
-				);
-				cb?.onPaneDead?.(msg.paneId as string);
-				break;
-			}
 			case "hook-event": {
 				cb?.onHookEvent?.(
 					msg.event as string,
@@ -574,8 +555,8 @@ export function sendTerminalInput(
 /**
  * REST variant of sendTerminalInput for remote-control mode: the mux WS rejects
  * input for sessions this client is not subscribed to, so route through
- * POST /panes/input instead (same peer-aware base+token pattern as the
- * respawnPane fallback). Resolves true only when the server accepted the input.
+ * POST /panes/input instead (peer-aware base+token, see #256). Resolves true
+ * only when the server accepted the input.
  */
 export async function sendTerminalInputRest(
 	peerApiBase: string | null | undefined,
@@ -636,13 +617,11 @@ function dispatchInputEcho(
 export function useMultiplexedTerminal(
 	options: UseMultiplexedTerminalOptions,
 ): UseMultiplexedTerminalReturn {
-	const { sessionId, sessionInstanceId, token, peerWsBase, peerApiBase } = options;
+	const { sessionId, sessionInstanceId, token, peerWsBase } = options;
 	const [isConnected, setIsConnected] = useState(false);
-	const [deadPanes, setDeadPanes] = useState<Set<string>>(new Set());
 
 	const onPaneViewportRef = useRef(options.onPaneViewport);
 	const onLayoutChangeRef = useRef(options.onLayoutChange);
-	const onPaneDeadRef = useRef(options.onPaneDead);
 	const onHookEventRef = useRef(options.onHookEvent);
 	const onConnectRef = useRef(options.onConnect);
 	const onDisconnectRef = useRef(options.onDisconnect);
@@ -651,7 +630,6 @@ export function useMultiplexedTerminal(
 
 	onPaneViewportRef.current = options.onPaneViewport;
 	onLayoutChangeRef.current = options.onLayoutChange;
-	onPaneDeadRef.current = options.onPaneDead;
 	onHookEventRef.current = options.onHookEvent;
 	onConnectRef.current = options.onConnect;
 	onDisconnectRef.current = options.onDisconnect;
@@ -662,17 +640,14 @@ export function useMultiplexedTerminal(
 		activeCallbacks = {
 			onPaneViewport: (p, v) => onPaneViewportRef.current?.(p, v),
 			onLayoutChange: (l, z) => onLayoutChangeRef.current?.(l, z),
-			onPaneDead: (p) => onPaneDeadRef.current?.(p),
 			onHookEvent: (e, c, s, d, m) => onHookEventRef.current?.(e, c, s, d, m),
 			onConnect: () => onConnectRef.current?.(),
 			onDisconnect: () => onDisconnectRef.current?.(),
 			onSessionExit: (reason) => onSessionExitRef.current?.(reason),
 			onError: (e, p) => onErrorRef.current?.(e, p),
 			setIsConnected,
-			setDeadPanes,
 			sessionId,
 			sessionInstanceId,
-			deadPanes,
 			live: options.live ?? true,
 		};
 	});
@@ -800,45 +775,6 @@ export function useMultiplexedTerminal(
 		sendSessionMessage({ type: "zoom-pane", paneId, zoomed });
 	}, []);
 
-	const respawnPane = useCallback(
-		(paneId: string) => {
-			setDeadPanes((prev) => {
-				const next = new Set(prev);
-				next.delete(paneId);
-				return next;
-			});
-			if (sharedWs?.readyState === WebSocket.OPEN) {
-				sendSessionMessage({ type: "respawn-pane", paneId });
-				return;
-			}
-			// WS is down — fall back to REST. The old fallback used plain fetch()
-			// against the Hub origin: it 401'd under password auth (no Bearer
-			// header) and POSTed to the wrong server for peer sessions. Route
-			// through authFetch for local and the peer base+token for remote. #256
-			const path = `/api/workspaces/${encodeURIComponent(sessionId)}/panes/respawn`;
-			const body = JSON.stringify({ paneId });
-			const headers: HeadersInit = { "Content-Type": "application/json" };
-			const isRemotePeer = peerApiBase && peerApiBase.length > 0;
-			const request = isRemotePeer
-				? (() => {
-						const peerHeaders = new Headers(headers);
-						if (token) peerHeaders.set("Authorization", `Bearer ${token}`);
-						return fetchWithTimeout(`${peerApiBase}${path}`, {
-							method: "POST",
-							headers: peerHeaders,
-							body,
-						});
-					})()
-				: authFetch(
-						`${import.meta.env.VITE_API_URL || ""}${path}`,
-						{ method: "POST", headers, body },
-					);
-			const reconnect = () => setTimeout(() => ensureConnection(), 500);
-			request.then(reconnect).catch(reconnect);
-		},
-		[sessionId, token, peerApiBase],
-	);
-
 	return {
 		isConnected,
 		connect,
@@ -857,8 +793,6 @@ export function useMultiplexedTerminal(
 		sendPaneDemands,
 		requestViewport,
 		zoomPane,
-		respawnPane,
-		deadPanes,
 	};
 }
 

@@ -884,7 +884,6 @@ export type ControlClientMessage =
   // older clients / the glasses app). Mobile always sends an explicit value so
   // that re-issuing zoom on reconnect is idempotent rather than a toggle.
   | { type: 'zoom-pane'; paneId: string; zoomed?: boolean }
-  | { type: 'respawn-pane'; paneId: string }
   // Ask the server for a viewport `offset` rows above the live edge.
   // offset=0 means live mode; the server will also push fresh viewports
   // unsolicited when new output arrives.
@@ -911,7 +910,6 @@ export type ControlServerMessage =
   | { type: 'pong'; timestamp: number }
   | { type: 'session-exited'; reason: string }
   | { type: 'error'; message: string; paneId?: string }
-  | { type: 'pane-dead'; paneId: string }
   | { type: 'hook-event'; event: string; cwd?: string; sessionId?: string; message?: string; data?: Record<string, unknown> };
 
 // =============================================================================
@@ -963,7 +961,6 @@ const controlClientMessageOptions = [
   // `zoomed` carries the explicit zoom/unzoom intent; without it here zod
   // strips the field and the server silently falls back to toggle semantics.
   z.object({ type: z.literal('zoom-pane'), paneId: PaneIdSchema, zoomed: z.boolean().optional() }),
-  z.object({ type: z.literal('respawn-pane'), paneId: PaneIdSchema }),
   z.object({ type: z.literal('request-viewport'), paneId: PaneIdSchema, offset: WsOffset }),
   z.object({ type: z.literal('select-tab'), tabId: TabIdSchema }),
   z.object({ type: z.literal('create-tab') }),

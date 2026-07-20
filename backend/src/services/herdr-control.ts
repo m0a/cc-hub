@@ -89,7 +89,6 @@ export function assertPaneId(paneId: string): void {
 
 type LayoutListener = (layout: TmuxLayoutNode, zoomedPaneId: string | null) => void;
 type ExitListener = (reason: string) => void;
-type PaneDeadListener = (paneId: string) => void;
 
 /** Live terminal state tracked from a pane's frame stream. */
 export interface PaneRuntimeState {
@@ -261,7 +260,6 @@ export class HerdrControlSession {
   private globalOutputListeners = new Set<(paneId: string, data: Buffer) => void>();
   private layoutListeners = new Set<LayoutListener>();
   private exitListeners = new Set<ExitListener>();
-  private paneDeadListeners = new Set<PaneDeadListener>();
 
   private clientCount = 0;
   private graceTimer: Timer | null = null;
@@ -578,7 +576,6 @@ export class HerdrControlSession {
         this.stopController(this.toHerdr(tmuxId));
         this.paneSizes.delete(tmuxId);
         this.runtimeStates.delete(tmuxId);
-        for (const listener of this.paneDeadListeners) listener(tmuxId);
         changed = true;
       }
     }
@@ -618,9 +615,9 @@ export class HerdrControlSession {
       .map((p) => toTmuxPaneId(p.pane_id))
       .filter((id): id is string => id !== null);
 
-    // Tear down the outgoing tab's controllers / runtime state; those panes are
-    // not dead, just off-screen, so no pane-dead events — the new layout tells
-    // the client which panes exist now.
+    // Tear down the outgoing tab's controllers / runtime state; those panes
+    // are just off-screen — the new layout tells the client which panes exist
+    // now.
     for (const tmuxId of previousPaneIds) {
       this.stopController(this.toHerdr(tmuxId));
       this.paneSizes.delete(tmuxId);
@@ -827,11 +824,6 @@ export class HerdrControlSession {
       this.activePaneId = this.tree.paneIds()[0] ?? null;
     }
     await this.applyLayout();
-  }
-
-  async respawnPane(paneId: string): Promise<void> {
-    assertPaneId(paneId);
-    throw new Error('respawn-pane is not supported in herdr mode');
   }
 
   async resizePane(paneId: string, cols: number, rows: number): Promise<void> {
@@ -1046,10 +1038,6 @@ export class HerdrControlSession {
     });
   }
 
-  async breakPaneToNewSession(_paneId: string, _newSessionName: string): Promise<void> {
-    throw new Error('break-pane is not supported in herdr mode');
-  }
-
   // ==========================================================================
   // Public API - Listeners
   // ==========================================================================
@@ -1072,13 +1060,6 @@ export class HerdrControlSession {
     this.exitListeners.add(listener);
     return () => {
       this.exitListeners.delete(listener);
-    };
-  }
-
-  onPaneDead(listener: PaneDeadListener): () => void {
-    this.paneDeadListeners.add(listener);
-    return () => {
-      this.paneDeadListeners.delete(listener);
     };
   }
 
@@ -1180,7 +1161,6 @@ export class HerdrControlSession {
     this.globalOutputListeners.clear();
     this.layoutListeners.clear();
     this.exitListeners.clear();
-    this.paneDeadListeners.clear();
     this.clientDeviceTypes.clear();
     this.paneDemands.clear();
     this.clientSizes.clear();

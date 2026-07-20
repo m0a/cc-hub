@@ -663,7 +663,11 @@ export function DesktopLayout({
 	const peersRef = useRef(peers);
 	peersRef.current = peers;
 
-	// Zoom state: when a pane is zoomed, show only that pane full-screen
+	// Zoom state: when a pane is zoomed, show only that pane full-screen.
+	// Mirrors the server's zoomedPaneId, carried on every layout message — the
+	// server is the single source of truth (#479). zoomPane sends intent only;
+	// the state flips when the server's layout push confirms it, so a zoom made
+	// on another client (or restored on reconnect) renders here too.
 	const [zoomedPaneId, setZoomedPaneId] = useState<string | null>(null);
 	const zoomedPaneIdRef = useRef<string | null>(null);
 	zoomedPaneIdRef.current = zoomedPaneId;
@@ -752,8 +756,9 @@ export function DesktopLayout({
 				cb(viewport, false);
 			}
 		},
-		onLayoutChange: (layout) => {
+		onLayoutChange: (layout, serverZoomedPaneId) => {
 			setControlLayout(layout);
+			setZoomedPaneId(serverZoomedPaneId);
 			// Pane sizes may have changed; drop the viewport cache (line widths
 			// in cached frames no longer match).
 			paneViewportCacheRef.current.clear();
@@ -790,7 +795,9 @@ export function DesktopLayout({
 					// pane is zoomed. A zoomed pane's PTY fills the whole client, but
 					// its tree rect is still the normal (e.g. half-width) split rect —
 					// so size the zoomed pane to the full container to match its PTY.
-					const zoomedId = zoomedPaneIdRef.current;
+					// Use the zoom that came WITH this layout message, not the ref —
+					// the ref lags until React re-renders with the new state.
+					const zoomedId = serverZoomedPaneId;
 					for (const [paneId, size] of sizes) {
 						const ref = terminalRefs.current?.get(paneId);
 						if (!ref) continue;
@@ -1033,10 +1040,33 @@ export function DesktopLayout({
 			pendingControlTreeRef.current = controlPaneTree;
 			return;
 		}
-		// Note: the server sends the full tree even while zoomed; desktop tracks
-		// zoom locally via zoomedPaneId (trusting the server's copy is #479).
+		// The server sends the full tree even while zoomed; zoom rides alongside
+		// as zoomedPaneId and displayRoot applies it at render time (#479).
 		applyControlTree(controlPaneTree);
 	}, [controlPaneTree, applyControlTree]);
+
+	// React to a server-confirmed zoom change: re-measure and report our size
+	// once the zoom-aware DOM has settled (the layout push that flipped the
+	// state keeps layoutPending true for ~50ms+rAF, so an immediate call would
+	// be skipped), and after an unzoom refetch the panes that were hidden —
+	// their PTYs were resized back and their last viewports are stale.
+	const prevZoomedPaneIdRef = useRef<string | null>(null);
+	useEffect(() => {
+		const prev = prevZoomedPaneIdRef.current;
+		prevZoomedPaneIdRef.current = zoomedPaneId;
+		if (prev === zoomedPaneId) return;
+		const timer = window.setTimeout(() => {
+			sendControlResize();
+			if (prev && !zoomedPaneIdRef.current) {
+				for (const pid of getAllPaneIds(desktopStateRef.current.root)) {
+					if (pid === prev) continue;
+					const offset = paneOffsetRef.current.get(pid) ?? 0;
+					controlTerminalRef.current.requestViewport(pid, offset);
+				}
+			}
+		}, 300);
+		return () => window.clearTimeout(timer);
+	}, [zoomedPaneId, sendControlResize]);
 
 	// Build control mode context for PaneContainer.
 	// Always defined - Terminal components always use control mode.
@@ -1166,29 +1196,11 @@ export function DesktopLayout({
 		zoomPane: remoteControl
 			? undefined
 			: (paneId: string) => {
-			console.log(`[zoom] ${paneId} (current=${zoomedPaneId})`);
-			const isUnzooming = zoomedPaneId === paneId;
-			if (isUnzooming) {
-				setZoomedPaneId(null);
-			} else {
-				setZoomedPaneId(paneId);
-			}
-			// Send explicit intent so the server's zoom matches this client's
-			// frontend zoom state rather than relying on toggle parity.
-			controlTerminalRef.current.zoomPane(paneId, !isUnzooming);
-			setTimeout(() => {
-				sendControlResize();
-				if (isUnzooming) {
-					const allPanes = getAllPaneIds(desktopStateRef.current.root);
-					for (const pid of allPanes) {
-						if (pid !== paneId) {
-							const offset = paneOffsetRef.current.get(pid) ?? 0;
-							controlTerminalRef.current.requestViewport(pid, offset);
-						}
-					}
-				}
-			}, 300);
-		},
+					console.log(`[zoom] ${paneId} (current=${zoomedPaneId})`);
+					// Send explicit intent only; the zoom state flips when the server's
+					// layout push confirms it (#479), so all clients stay in sync.
+					controlTerminalRef.current.zoomPane(paneId, zoomedPaneId !== paneId);
+				},
 		isZoomed: zoomedPaneId !== null,
 		respawnPane: (paneId: string) => {
 			controlTerminalRef.current.respawnPane(paneId);
@@ -1665,9 +1677,8 @@ export function DesktopLayout({
 	);
 
 	// Compute the display root: when zoomed, show only the zoomed pane full-screen.
-	// The server keeps sending the full tree while zoomed (zoom rides alongside as
-	// zoomedPaneId), but desktop still tracks zoom in local state and overrides the
-	// rendered tree here — trusting the server's zoomedPaneId is #479.
+	// The server keeps sending the full tree while zoomed; zoomedPaneId mirrors
+	// the server's zoom (#479) and overrides the rendered tree here.
 	const displayRoot = useMemo(() => {
 		if (zoomedPaneId) {
 			const zoomedPane = findPaneById(desktopState.root, zoomedPaneId);

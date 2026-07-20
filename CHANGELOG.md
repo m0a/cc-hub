@@ -2,7 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.2.35] - 2026-07-20
+## [0.2.36] - 2026-07-21
+
+### Added
+- **ダッシュボードの Kimi タブに OpenRouter の課金額を USD で表示** (#494): Kimi K3 は OpenRouter 経由の従量課金なのに、トークン数しか出ておらず実際の金額が分からなかった。2種類の金額を区別して表示する — **推定**（期間別 24h/7日・モデル別。ローカルの `usage.record` のトークン数 × OpenRouter 公開価格を、prompt / cache read / cache write / completion の種別ごとの単価で計算）と、**実績**（OpenRouter の `/api/v1/key` + `/api/v1/credits` から今日・今週・今月の課金額とクレジット残高）。価格付けに必要な alias→モデル解決（`usage.record` の `k3` → `moonshotai/kimi-k3`）は `~/.kimi-code/config.toml` から読む。OpenRouter 以外のプロバイダ・未知のエイリアス・価格取得失敗の場合は金額を出さない（`$0.00` は「無料」と読めるため）。推定はローリング期間、実績は OpenRouter 側のカレンダー区切りなので両者は一致せず、UI に注記を入れている
 
 ### Fixed
 - **デスクトップの pane zoom がサーバーの `zoomedPaneId` を無視していた問題を修正** (#479): herdr 対応の WS プロトコルは zoom 状態を layout メッセージの `zoomedPaneId` として運んでおり、モバイルは尊重済みだったが、デスクトップだけ `onLayoutChange` でこれを捨ててローカル state のみで zoom を管理していた（tmux control-mode 時代の知識に基づくコメントが根拠）。再接続・リロードで zoom が復元された場合や別クライアントが zoom した場合に、表示（非 zoom）と PTY 実サイズ（zoom 幾何）が乖離していた。デスクトップもサーバーの `zoomedPaneId` を単一の真実源とし、zoom ボタンは explicit intent の送信のみ・state の切り替えはサーバーの layout push 確認時に行うよう変更。楽観的 set + インライン 300ms 遅延 resize/refetch のワークアラウンドは「サーバー確認済み zoom 変化」に反応する単一の effect（クライアントサイズ再報告 + unzoom 後の隠れていたペインの viewport refetch）に集約。dev で zoom 中リロードの zoom 維持・2クライアント間の双方向 zoom 同期・zoom 中の pane close フォールバックを検証済み（`frontend/src/components/DesktopLayout.tsx`）

@@ -33,6 +33,12 @@ import { WorkspaceList } from "./components/WorkspaceList";
 import type { TerminalRef } from "./components/Terminal";
 import { getTerminalThemes } from "./components/terminal-themes";
 import { openClaudeAppSession } from "./utils/claude-app";
+import {
+	makeSessionKey,
+	normalizeSessionKey,
+	parseSessionKey,
+	sessionKeyOf,
+} from "./utils/sessionKey";
 import { useAuth } from "./hooks/useAuth";
 import { useWorkspaces } from "./hooks/useWorkspaces";
 import { TerminalPage } from "./pages/TerminalPage";
@@ -186,33 +192,40 @@ function ConfirmDeleteDialog({
 	);
 }
 
-// localStorage keys for session persistence
+// localStorage keys for session persistence. Values are composite
+// `peerId:id` keys (utils/sessionKey.ts); pre-#487 bare ids are normalized
+// to local keys on read.
 const STORAGE_KEY_LAST_SESSION = "cchub-last-session-id";
 const STORAGE_KEY_OPEN_SESSIONS = "cchub-open-sessions";
 
-function saveLastSession(sessionId: string | null) {
-	if (sessionId) {
-		localStorage.setItem(STORAGE_KEY_LAST_SESSION, sessionId);
+function saveLastSessionKey(sessionKey: string | null) {
+	if (sessionKey) {
+		localStorage.setItem(STORAGE_KEY_LAST_SESSION, sessionKey);
 	} else {
 		localStorage.removeItem(STORAGE_KEY_LAST_SESSION);
 	}
 }
 
-function getLastSession(): string | null {
-	return localStorage.getItem(STORAGE_KEY_LAST_SESSION);
+function getLastSessionKey(): string | null {
+	const saved = localStorage.getItem(STORAGE_KEY_LAST_SESSION);
+	return saved ? normalizeSessionKey(saved) : null;
 }
 
 function saveOpenSessions(sessions: OpenSession[]) {
 	localStorage.setItem(
 		STORAGE_KEY_OPEN_SESSIONS,
-		JSON.stringify(sessions.map((s) => s.id)),
+		JSON.stringify(sessions.map((s) => sessionKeyOf(s))),
 	);
 }
 
-function getSavedOpenSessionIds(): string[] {
+function getSavedOpenSessionKeys(): string[] {
 	try {
 		const saved = localStorage.getItem(STORAGE_KEY_OPEN_SESSIONS);
-		return saved ? JSON.parse(saved) : [];
+		const parsed: unknown = saved ? JSON.parse(saved) : [];
+		if (!Array.isArray(parsed)) return [];
+		return parsed
+			.filter((v): v is string => typeof v === "string")
+			.map(normalizeSessionKey);
 	} catch {
 		return [];
 	}
@@ -302,13 +315,15 @@ export function App() {
 	}, []);
 
 	const [openSessions, setOpenSessions] = useState<OpenSession[]>([]);
-	const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+	// Composite `peerId:id` key of the active session (utils/sessionKey.ts) —
+	// session ids alone collide across peers (#487).
+	const [activeSessionKey, setActiveSessionKey] = useState<string | null>(null);
 	const [pendingNotificationTarget, setPendingNotificationTarget] =
 		useState<NotificationTarget | null>(null);
 	const notificationRequestIdRef = useRef(0);
 	const notificationNavigationHandledRef = useRef(false);
 	const [desktopSessionSwitchRequest, setDesktopSessionSwitchRequest] = useState<{
-		sessionId: string;
+		sessionKey: string;
 		requestId: number;
 	} | null>(null);
 
@@ -367,27 +382,33 @@ export function App() {
 	>(() => {
 		try {
 			const saved = localStorage.getItem("cchub-conversation-mode-sessions");
-			return saved ? new Set(JSON.parse(saved)) : new Set();
+			const parsed: unknown = saved ? JSON.parse(saved) : [];
+			if (!Array.isArray(parsed)) return new Set();
+			return new Set(
+				parsed
+					.filter((v): v is string => typeof v === "string")
+					.map(normalizeSessionKey),
+			);
 		} catch {
 			return new Set();
 		}
 	});
-	const showConversation = activeSessionId
-		? conversationModeSessions.has(activeSessionId)
+	const showConversation = activeSessionKey
+		? conversationModeSessions.has(activeSessionKey)
 		: false;
 	const setShowConversation = useCallback(
 		(show: boolean) => {
-			if (!activeSessionId) return;
+			if (!activeSessionKey) return;
 			setConversationModeSessions((prev) => {
-				const has = prev.has(activeSessionId);
+				const has = prev.has(activeSessionKey);
 				if (show === has) return prev;
 				const next = new Set(prev);
-				if (show) next.add(activeSessionId);
-				else next.delete(activeSessionId);
+				if (show) next.add(activeSessionKey);
+				else next.delete(activeSessionKey);
 				return next;
 			});
 		},
-		[activeSessionId],
+		[activeSessionKey],
 	);
 
 	// Persist per-session conversation mode to localStorage
@@ -411,7 +432,7 @@ export function App() {
 		if (!showConversation) return;
 		const id = setTimeout(() => mobileTerminalRef.current?.showKeyboard(), 150);
 		return () => clearTimeout(id);
-	}, [showConversation, activeSessionId]);
+	}, [showConversation, activeSessionKey]);
 
 	// Mobile pane tabs state
 	const [mobilePanes, setMobilePanes] = useState<
@@ -581,12 +602,21 @@ export function App() {
 					? (await sessionsRes.json()).sessions
 					: [];
 
-				// Try to restore previously open sessions
-				const savedSessionIds = getSavedOpenSessionIds();
-				const lastSessionId = getLastSession();
+				// Try to restore previously open sessions. The initial fetch only
+				// covers the local Hub, so remote-peer keys stay unresolved here —
+				// same as before, they reappear once their peer's watcher hydrates.
+				const savedSessionKeys = getSavedOpenSessionKeys();
+				const lastSessionKey = getLastSessionKey();
 
-				const sessionsToOpen = savedSessionIds
-					.map((id) => allSessions.find((s) => s.id === id))
+				const sessionsToOpen = savedSessionKeys
+					.map((key) => {
+						const target = parseSessionKey(key);
+						return allSessions.find(
+							(s) =>
+								s.id === target.id &&
+								isSameNotificationPeer(s.peerId, target.peerId),
+						);
+					})
 					.filter((s): s is ExtendedSessionResponse => !!s)
 					.map(apiToOpenSession);
 
@@ -594,19 +624,19 @@ export function App() {
 					if (!notificationNavigationHandledRef.current) {
 						setOpenSessions(sessionsToOpen);
 					}
-					const validIds = sessionsToOpen.map((s) => s.id);
-					const activeId =
-						lastSessionId && validIds.includes(lastSessionId)
-							? lastSessionId
-							: validIds[0];
+					const validKeys = sessionsToOpen.map((s) => sessionKeyOf(s));
+					const activeKey =
+						lastSessionKey && validKeys.includes(lastSessionKey)
+							? lastSessionKey
+							: validKeys[0];
 					if (!notificationNavigationHandledRef.current) {
-						setActiveSessionId(activeId);
+						setActiveSessionKey(activeKey);
 					}
 				} else if (allSessions.length > 0) {
 					const mostRecent = apiToOpenSession(allSessions[0]);
 					if (!notificationNavigationHandledRef.current) {
 						setOpenSessions([mostRecent]);
-						setActiveSessionId(mostRecent.id);
+						setActiveSessionKey(sessionKeyOf(mostRecent));
 					}
 				} else {
 					if (notificationNavigationHandledRef.current) return;
@@ -614,7 +644,7 @@ export function App() {
 					if (initialSession) {
 						if (!notificationNavigationHandledRef.current) {
 							setOpenSessions([initialSession]);
-							setActiveSessionId(initialSession.id);
+							setActiveSessionKey(sessionKeyOf(initialSession));
 						}
 					} else {
 						setShowSessionList(true);
@@ -648,10 +678,10 @@ export function App() {
 	// Save active session to localStorage (only when not loading)
 	useEffect(() => {
 		// Don't save null during initial load - it would overwrite the saved session
-		if (!isLoading && activeSessionId !== null) {
-			saveLastSession(activeSessionId);
+		if (!isLoading && activeSessionKey !== null) {
+			saveLastSessionKey(activeSessionKey);
 		}
-	}, [activeSessionId, isLoading]);
+	}, [activeSessionKey, isLoading]);
 
 	const handleSelectSession = useCallback(
 		async (session: ExtendedSessionResponse) => {
@@ -708,7 +738,8 @@ export function App() {
 							theme: session.theme,
 						},
 					]);
-					setActiveSessionId(newSessionId);
+					// Resume always lands on the local Hub.
+					setActiveSessionKey(makeSessionKey(newSessionId));
 					if (session.currentPath) setActiveFileViewerDir(session.currentPath);
 					setShowSessionList(false);
 				} catch (err) {
@@ -717,28 +748,14 @@ export function App() {
 				return;
 			}
 
-			// Check if already open. Session ids (workspace labels) can collide
-			// across peers: an entry with the same id but a different peer is
-			// REPLACED so the id maps to the peer the user just picked — the pane
-			// tree keys panes by bare id, so both can't be shown at once anyway.
-			const existing = openSessions.find(
-				(s) =>
-					s.id === session.id && isSameNotificationPeer(s.peerId, session.peerId),
-			);
-			if (existing) {
-				setActiveSessionId(session.id);
-			} else {
-				setOpenSessions((prev) => {
-					const idx = prev.findIndex((s) => s.id === session.id);
-					if (idx >= 0) {
-						const next = [...prev];
-						next[idx] = apiToOpenSession(session);
-						return next;
-					}
-					return [...prev, apiToOpenSession(session)];
-				});
-				setActiveSessionId(session.id);
+			// Check if already open. Everything is keyed by (peerId, id), so a
+			// same-name session on another peer is a distinct entry and both can
+			// stay open at once.
+			const key = sessionKeyOf(session);
+			if (!openSessions.some((s) => sessionKeyOf(s) === key)) {
+				setOpenSessions((prev) => [...prev, apiToOpenSession(session)]);
 			}
+			setActiveSessionKey(key);
 			// Update FileViewer active dir to follow session
 			if (session.currentPath) {
 				setActiveFileViewerDir(session.currentPath);
@@ -753,22 +770,11 @@ export function App() {
 	const handleSelectPane = useCallback(
 		(session: ExtendedSessionResponse, paneId: string) => {
 			// Open session without resetting paneId (handleSelectSession sets it to null)
-			const existing = openSessions.find(
-				(s) =>
-					s.id === session.id && isSameNotificationPeer(s.peerId, session.peerId),
-			);
-			if (!existing) {
-				setOpenSessions((prev) => {
-					const idx = prev.findIndex((s) => s.id === session.id);
-					if (idx >= 0) {
-						const next = [...prev];
-						next[idx] = apiToOpenSession(session);
-						return next;
-					}
-					return [...prev, apiToOpenSession(session)];
-				});
+			const key = sessionKeyOf(session);
+			if (!openSessions.some((s) => sessionKeyOf(s) === key)) {
+				setOpenSessions((prev) => [...prev, apiToOpenSession(session)]);
 			}
-			setActiveSessionId(session.id);
+			setActiveSessionKey(key);
 			setShowSessionList(false);
 			// Set pane directly - don't go through handleSelectSession which resets it
 			setMobileActivePaneId(paneId);
@@ -777,16 +783,16 @@ export function App() {
 	);
 
 	const handleCloseSession = useCallback(
-		(id: string) => {
+		(sessionKey: string) => {
 			setOpenSessions((prev) => {
-				const filtered = prev.filter((s) => s.id !== id);
+				const filtered = prev.filter((s) => sessionKeyOf(s) !== sessionKey);
 
 				// If closing the active session, switch to another
-				if (id === activeSessionId) {
+				if (sessionKey === activeSessionKey) {
 					if (filtered.length > 0) {
-						setActiveSessionId(filtered[filtered.length - 1].id);
+						setActiveSessionKey(sessionKeyOf(filtered[filtered.length - 1]));
 					} else {
-						setActiveSessionId(null);
+						setActiveSessionKey(null);
 						setShowSessionList(true);
 					}
 				}
@@ -795,13 +801,13 @@ export function App() {
 			});
 			// Clean up per-session conversation mode entry
 			setConversationModeSessions((prev) => {
-				if (!prev.has(id)) return prev;
+				if (!prev.has(sessionKey)) return prev;
 				const next = new Set(prev);
-				next.delete(id);
+				next.delete(sessionKey);
 				return next;
 			});
 		},
-		[activeSessionId],
+		[activeSessionKey],
 	);
 
 	// Actually delete the session
@@ -818,7 +824,7 @@ export function App() {
 
 			if (response.ok) {
 				// Close the tab first
-				handleCloseSession(sessionToDelete.id);
+				handleCloseSession(sessionKeyOf(sessionToDelete));
 			}
 		} catch (err) {
 			console.error("Failed to delete session:", err);
@@ -841,12 +847,15 @@ export function App() {
 		}
 	}, [openSessions.length]);
 
-	// Update session state (called from terminal)
-	const updateSessionState = useCallback((id: string, state: SessionState) => {
-		setOpenSessions((prev) =>
-			prev.map((s) => (s.id === id ? { ...s, state } : s)),
-		);
-	}, []);
+	// Update session state (called from terminal, keyed by composite key)
+	const updateSessionState = useCallback(
+		(sessionKey: string, state: SessionState) => {
+			setOpenSessions((prev) =>
+				prev.map((s) => (sessionKeyOf(s) === sessionKey ? { ...s, state } : s)),
+			);
+		},
+		[],
+	);
 
 	// Refresh current terminal display (must be before early returns)
 	const handleReload = useCallback(() => {
@@ -857,7 +866,9 @@ export function App() {
 
 	// Show conversation history for current session
 	const handleShowConversation = useCallback(() => {
-		const activeSession = openSessions.find((s) => s.id === activeSessionId);
+		const activeSession = openSessions.find(
+			(s) => sessionKeyOf(s) === activeSessionKey,
+		);
 		const activePane =
 			activeSession?.panes?.find(
 				(p) => mobileActivePaneId && p.paneId === mobileActivePaneId,
@@ -868,7 +879,7 @@ export function App() {
 				: undefined);
 		if (!activePane?.agent || !activePane.agentSessionId) return;
 		setShowConversation(true);
-	}, [openSessions, activeSessionId, mobileActivePaneId]);
+	}, [openSessions, activeSessionKey, mobileActivePaneId]);
 
 	// Keep overlay visible (no auto-hide)
 	const startOverlayTimer = useCallback(() => {
@@ -962,20 +973,17 @@ export function App() {
 				isSameNotificationPeer(session.peerId, match.peerId),
 		);
 		const openMatch = apiMatch ? apiToOpenSession(apiMatch) : (match as OpenSession);
+		const openMatchKey = sessionKeyOf(openMatch);
 		notificationNavigationHandledRef.current = true;
 		setOpenSessions((previous) =>
-			previous.some(
-				(session) =>
-					session.id === openMatch.id &&
-					isSameNotificationPeer(session.peerId, openMatch.peerId),
-			)
+			previous.some((session) => sessionKeyOf(session) === openMatchKey)
 				? previous
 				: [...previous, openMatch],
 		);
 		setPendingNotificationTarget(null);
-		setActiveSessionId(openMatch.id);
+		setActiveSessionKey(openMatchKey);
 		setDesktopSessionSwitchRequest({
-			sessionId: openMatch.id,
+			sessionKey: openMatchKey,
 			requestId: ++notificationRequestIdRef.current,
 		});
 		setShowSessionList(false);
@@ -985,7 +993,7 @@ export function App() {
 	// Diagnostic: log render state for debugging black screen issues
 	useEffect(() => {
 		console.log(
-			`[App] Render state: device=${deviceType} authLoading=${auth.isLoading} loading=${isLoading} authRequired=${auth.authRequired} authenticated=${auth.isAuthenticated} sessions=${openSessions.length} active=${activeSessionId} showList=${showSessionList}`,
+			`[App] Render state: device=${deviceType} authLoading=${auth.isLoading} loading=${isLoading} authRequired=${auth.authRequired} authenticated=${auth.isAuthenticated} sessions=${openSessions.length} active=${activeSessionKey} showList=${showSessionList}`,
 		);
 	}, [
 		deviceType,
@@ -994,7 +1002,7 @@ export function App() {
 		auth.authRequired,
 		auth.isAuthenticated,
 		openSessions.length,
-		activeSessionId,
+		activeSessionKey,
 		showSessionList,
 	]);
 
@@ -1044,7 +1052,7 @@ export function App() {
 			<>
 				<DesktopLayout
 					sessions={openSessions}
-					activeSessionId={activeSessionId}
+					activeSessionKey={activeSessionKey}
 					sessionSwitchRequest={desktopSessionSwitchRequest}
 					onSessionStateChange={updateSessionState}
 				/>
@@ -1059,7 +1067,7 @@ export function App() {
 			<>
 				<DesktopLayout
 					sessions={openSessions}
-					activeSessionId={activeSessionId}
+					activeSessionKey={activeSessionKey}
 					sessionSwitchRequest={desktopSessionSwitchRequest}
 					onSessionStateChange={updateSessionState}
 					isTablet={true}
@@ -1076,7 +1084,9 @@ export function App() {
 	}
 
 	// Get current active session
-	const activeSession = openSessions.find((s) => s.id === activeSessionId);
+	const activeSession = openSessions.find(
+		(s) => sessionKeyOf(s) === activeSessionKey,
+	);
 	const activeConversationPane =
 		activeSession?.panes?.find(
 			(p) => mobileActivePaneId && p.paneId === mobileActivePaneId,
@@ -1167,12 +1177,13 @@ export function App() {
 				<button
 					type="button"
 					onClick={() => {
-						// Resolve peerId from apiSessions as well — when reload restores
-						// activeSessionId for a remote-peer session, openSessions can
-						// momentarily lack the entry while apiSessions already has it.
+						// The composite key itself carries the owning peer — no session
+						// lookup needed even while openSessions is still hydrating.
 						const peerId =
 							activeSession?.peerId ??
-							apiSessions.find((s) => s.id === activeSessionId)?.peerId;
+							(activeSessionKey
+								? parseSessionKey(activeSessionKey).peerId
+								: undefined);
 						openFileViewer(activeSession?.currentPath || "/", peerId);
 					}}
 					className="p-3 text-zinc-300 hover:text-white active:text-white transition-colors"
@@ -1301,7 +1312,7 @@ export function App() {
 								sessionInstanceId={activeSession.instanceId}
 								peerId={activeSession.peerId ?? LOCAL_PEER_ID}
 								onStateChange={(state) =>
-									updateSessionState(activeSession.id, state)
+									updateSessionState(sessionKeyOf(activeSession), state)
 								}
 								overlayContent={overlayBar}
 								onOverlayTap={handleShowOverlay}
@@ -1336,9 +1347,7 @@ export function App() {
 							// Get pane command info from API sessions data (same peer —
 							// ids can collide across peers)
 							const apiSession = apiSessions.find(
-								(s) =>
-									s.id === activeSessionId &&
-									isSameNotificationPeer(s.peerId, activeSession?.peerId),
+								(s) => sessionKeyOf(s) === activeSessionKey,
 							);
 							const apiPanes = apiSession?.panes;
 							// Agent color to Tailwind text class

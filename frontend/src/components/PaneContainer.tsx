@@ -8,14 +8,16 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type {
-	AgentProvider,
-	PaneInfo,
-	SessionState,
-	SessionTheme,
+import {
+	type AgentProvider,
+	type PaneInfo,
+	samePeerId,
+	type SessionState,
+	type SessionTheme,
 } from "../../../shared/types";
 import { authFetch } from "../services/api";
 import { openClaudeAppSession } from "../utils/claude-app";
+import { makeSessionKey, parseSessionKey } from "../utils/sessionKey";
 import { toHomeShortPath } from "../utils/path";
 import { ChatView } from "./chat/ChatView";
 import type { ControlModeConfig } from "./Terminal";
@@ -23,9 +25,11 @@ import { TerminalComponent, type TerminalRef } from "./Terminal";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
-// ペインノード型定義
+// ペインノード型定義。
+// sessionKey は `peerId:id` の複合キー (utils/sessionKey.ts) — セッション id
+// (herdr workspace 名) は peer 間で衝突するため、ツリーは常に複合キーで持つ。
 export type PaneNode =
-	| { type: "terminal"; sessionId: string | null; id: string }
+	| { type: "terminal"; sessionKey: string | null; id: string }
 	| {
 			type: "split";
 			direction: "horizontal" | "vertical";
@@ -79,8 +83,8 @@ interface PaneContainerProps {
 	node: PaneNode;
 	activePane: string;
 	onFocusPane: (paneId: string) => void;
-	onSelectSession: (paneId: string, sessionId?: string) => void;
-	onSessionStateChange: (sessionId: string, state: SessionState) => void;
+	onSelectSession: (paneId: string, sessionKey?: string) => void;
+	onSessionStateChange: (sessionKey: string, state: SessionState) => void;
 	// dividerIndex = which divider moved (between children[i] and children[i+1]);
 	// parents use it for boundary-style renormalization of nested splits.
 	onSplitRatioChange: (
@@ -120,10 +124,10 @@ export function PaneContainer({
 		return (
 			<TerminalPane
 				paneId={node.id}
-				sessionId={node.sessionId}
+				sessionKey={node.sessionKey}
 				isActive={activePane === node.id}
 				onFocus={() => onFocusPane(node.id)}
-				onSelectSession={(sessionId) => onSelectSession(node.id, sessionId)}
+				onSelectSession={(sessionKey) => onSelectSession(node.id, sessionKey)}
 				onSessionStateChange={onSessionStateChange}
 				onClose={() => onClosePane(node.id)}
 				onSplit={onSplit}
@@ -163,11 +167,11 @@ export function PaneContainer({
 
 interface TerminalPaneProps {
 	paneId: string;
-	sessionId: string | null;
+	sessionKey: string | null;
 	isActive: boolean;
 	onFocus: () => void;
-	onSelectSession: (sessionId?: string) => void;
-	onSessionStateChange: (sessionId: string, state: SessionState) => void;
+	onSelectSession: (sessionKey?: string) => void;
+	onSessionStateChange: (sessionKey: string, state: SessionState) => void;
 	onClose: () => void;
 	onSplit?: (direction: "horizontal" | "vertical") => void;
 	sessions: ExtendedSession[];
@@ -179,7 +183,7 @@ interface TerminalPaneProps {
 
 function TerminalPane({
 	paneId,
-	sessionId,
+	sessionKey,
 	isActive,
 	onFocus,
 	onSelectSession,
@@ -196,10 +200,19 @@ function TerminalPane({
 	const { t } = useTranslation();
 	const terminalRef = useRef<TerminalRef>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
+	// The tree stores composite keys; the wire (WS subscribe, REST paths) only
+	// ever sees the bare id.
+	const sessionTarget = sessionKey ? parseSessionKey(sessionKey) : null;
+	const session = sessionTarget
+		? (sessions.find(
+				(s) =>
+					s.id === sessionTarget.id && samePeerId(s.peerId, sessionTarget.peerId),
+			) ?? null)
+		: null;
 	// Persist chat-mode state per pane so it survives remounts (e.g. after a
 	// split changes the React tree from <TerminalPane> to <SplitContainer>).
-	const conversationModeKey = sessionId
-		? `cchub-pane-conv-mode:${sessionId}:${paneId}`
+	const conversationModeKey = sessionKey
+		? `cchub-pane-conv-mode:${sessionKey}:${paneId}`
 		: null;
 	const [showConversation, setShowConversationState] = useState<boolean>(() => {
 		if (!conversationModeKey) return false;
@@ -252,11 +265,13 @@ function TerminalPane({
 	const handleOpenFileViewer = useCallback(
 		(e: React.MouseEvent) => {
 			e.stopPropagation();
-			const s = sessionId ? sessions.find((s) => s.id === sessionId) : null;
-			controlModeContext.onOpenFileViewer?.(s?.currentPath || "/", s?.peerId);
+			controlModeContext.onOpenFileViewer?.(
+				session?.currentPath || "/",
+				session?.peerId,
+			);
 			controlModeContext.setKeyboardVisible?.(false);
 		},
-		[controlModeContext, sessionId, sessions],
+		[controlModeContext, session],
 	);
 
 	// Cleanup confirm close timer on unmount
@@ -270,29 +285,27 @@ function TerminalPane({
 
 	// Register terminal ref
 	useEffect(() => {
-		if (sessionId && terminalRef.current) {
+		if (sessionKey && terminalRef.current) {
 			terminalRefs.current.set(paneId, terminalRef.current);
 		}
 		return () => {
 			terminalRefs.current.delete(paneId);
 		};
-	}, [paneId, sessionId, terminalRefs]);
+	}, [paneId, sessionKey, terminalRefs]);
 
 	const handleConnect = useCallback(() => {
-		if (sessionId) {
-			onSessionStateChange(sessionId, "idle");
+		if (sessionKey) {
+			onSessionStateChange(sessionKey, "idle");
 		}
-	}, [sessionId, onSessionStateChange]);
+	}, [sessionKey, onSessionStateChange]);
 
 	const handleDisconnect = useCallback(() => {
-		if (sessionId) {
-			onSessionStateChange(sessionId, "disconnected");
+		if (sessionKey) {
+			onSessionStateChange(sessionKey, "disconnected");
 		}
-	}, [sessionId, onSessionStateChange]);
+	}, [sessionKey, onSessionStateChange]);
 
-	const session = sessionId ? sessions.find((s) => s.id === sessionId) : null;
-
-	// Re-read persisted state when the (sessionId, paneId) pair changes — e.g.
+	// Re-read persisted state when the (sessionKey, paneId) pair changes — e.g.
 	// user picks a different session in this pane. Initial mount already
 	// hydrated from localStorage via useState, so this is a no-op then.
 	useEffect(() => {
@@ -445,7 +458,7 @@ function TerminalPane({
 						</button>
 					)}
 					{/* Reload button (desktop only) */}
-					{!isTablet && sessionId && !showConversation && (
+					{!isTablet && sessionKey && !showConversation && (
 						<button
 							type="button"
 							onClick={handleReload}
@@ -469,7 +482,7 @@ function TerminalPane({
 						</button>
 					)}
 					{/* Zoom button — only meaningful when there are multiple panes */}
-					{sessionId &&
+					{sessionKey &&
 						!showConversation &&
 						controlModeContext.zoomPane &&
 						(session?.panes?.length ?? 0) > 1 && (
@@ -661,9 +674,9 @@ function TerminalPane({
 								type="button"
 								onClick={(e) => {
 									e.stopPropagation();
-									if (sessionId) {
+									if (sessionTarget) {
 										authFetch(
-											`${API_BASE}/api/workspaces/${encodeURIComponent(sessionId)}`,
+											`${API_BASE}/api/workspaces/${encodeURIComponent(sessionTarget.id)}`,
 											{
 												method: "DELETE",
 											},
@@ -687,9 +700,9 @@ function TerminalPane({
 
 			{/* Terminal, conversation, or session selector */}
 			<div className="flex-1 min-h-0">
-				{showConversation && sessionId && (
+				{showConversation && sessionTarget && (
 					<ChatView
-						sessionId={sessionId}
+						sessionId={sessionTarget.id}
 						title={t("conversation.history")}
 						subtitle={session?.name}
 						inline={true}
@@ -704,13 +717,13 @@ function TerminalPane({
 						sendInputOverRest={controlModeContext.sendInputRest}
 					/>
 				)}
-				{sessionId ? (
+				{sessionTarget ? (
 					<div className={showConversation ? "hidden" : "h-full"}>
 						<TerminalComponent
-							key={`${sessionId}-${session?.instanceId ?? "legacy"}-${reloadKey}-${globalReloadKey}`}
+							key={`${sessionKey}-${session?.instanceId ?? "legacy"}-${reloadKey}-${globalReloadKey}`}
 							ref={terminalRef}
-							sessionId={sessionId}
-							peerId={session?.peerId}
+							sessionId={sessionTarget.id}
+							peerId={sessionTarget.peerId}
 							hideKeyboard={true}
 							onConnect={handleConnect}
 							onDisconnect={handleDisconnect}
@@ -746,7 +759,7 @@ function TerminalPane({
 						<SessionSelector
 							sessions={sessions}
 							onSelect={(sess) => {
-								onSelectSession(sess.id);
+								onSelectSession(makeSessionKey(sess.id, sess.peerId));
 							}}
 						/>
 					)
@@ -796,8 +809,8 @@ interface SplitContainerProps {
 	node: Extract<PaneNode, { type: "split" }>;
 	activePane: string;
 	onFocusPane: (paneId: string) => void;
-	onSelectSession: (paneId: string, sessionId?: string) => void;
-	onSessionStateChange: (sessionId: string, state: SessionState) => void;
+	onSelectSession: (paneId: string, sessionKey?: string) => void;
+	onSessionStateChange: (sessionKey: string, state: SessionState) => void;
 	onSplitRatioChange: (
 		nodeId: string,
 		ratio: number[],

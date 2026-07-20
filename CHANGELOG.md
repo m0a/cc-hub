@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.33] - 2026-07-20
+
+### Fixed
+- **local に同名セッションがあると peer のターミナルを開けない問題を修正** (#486): セッション id は herdr の workspace 名で peer 間で衝突するため、bare id 検索がマージ済み一覧の先頭一致（= local セッション）に解決されていた。選択時の peer intent を記録して WS 接続・リモコンモードの REST 操作・画像アップロード先・ファイルビューアの解決を一本化（`resolveSessionPeer`: intent → 開いたセッション → マージ一覧）。モバイルも TerminalPage へ peerId を伝搬。削除・テーマ変更は明示的な peerId を取るようになり、同名の local workspace を誤って操作しない
+
 ## [0.2.32] - 2026-07-20
 
 ### Added

@@ -94,7 +94,6 @@ glasses/     # EVEN G2 smart glasses app (EvenHub SDK, built to out.ehpk)
 - `POST /:id/panes/focus` - Focus a pane (`{ paneId }`)
 - `POST /:id/panes/close` - Close a pane (`{ paneId }`, rejects last pane)
 - `POST /:id/panes/split` - Split a pane (`{ paneId, direction: 'h'|'v' }`)
-- `POST /:id/panes/respawn` - Respawn a dead pane
 - `POST /:id/panes/input` - Send input to a pane over REST (used by `cchub send` / peers)
 - `GET /:id/panes/:paneId/viewport` - Capture a pane viewport over REST (used by `cchub peek` / `--wait`)
 - `POST /:id/tabs/select` - Switch the workspace's active tab (`{ tabId }`)
@@ -146,8 +145,8 @@ glasses/     # EVEN G2 smart glasses app (EvenHub SDK, built to out.ehpk)
 **Terminal WebSocket** (`/ws/mux`):
 - Multiplexed WebSocket — single connection serves all sessions
 - Client subscribes/unsubscribes per session via JSON messages
-- Client messages (`MuxClientMessage`): `subscribe`, `unsubscribe`, `subscribe-conversation`, `unsubscribe-conversation`, then per-session (`ControlClientMessage`): `input`, `resize`, `split`, `close-pane`, `resize-pane`, `select-pane`, `adjust-pane`, `equalize-panes`, `zoom-pane`, `respawn-pane`, `request-viewport`, `select-tab`, `create-tab`, `close-tab`, `ping`, `client-info`
-- Server messages (`MuxServerMessage`): `subscribed`, `unsubscribed`, `sessions-updated`, `conversation-subscribed`, `conversation-unsubscribed`, `initial-conversation`, `conversation-update`, then per-session (`ControlServerMessage`): `layout`, `viewport`, `ready`, `pong`, `error`, `pane-dead`, `hook-event`
+- Client messages (`MuxClientMessage`): `subscribe`, `unsubscribe`, `subscribe-conversation`, `unsubscribe-conversation`, then per-session (`ControlClientMessage`): `input`, `resize`, `split`, `close-pane`, `resize-pane`, `select-pane`, `adjust-pane`, `equalize-panes`, `zoom-pane`, `request-viewport`, `select-tab`, `create-tab`, `close-tab`, `ping`, `client-info`
+- Server messages (`MuxServerMessage`): `subscribed`, `unsubscribed`, `sessions-updated`, `conversation-subscribed`, `conversation-unsubscribed`, `initial-conversation`, `conversation-update`, then per-session (`ControlServerMessage`): `layout`, `viewport`, `ready`, `pong`, `error`, `hook-event`
 - Server periodically pushes `sessions-updated` (5s interval) with full session list
 
 **Other**:
@@ -228,7 +227,7 @@ glasses/     # EVEN G2 smart glasses app (EvenHub SDK, built to out.ehpk)
 
 ### Frontend Hooks
 
-- **useMultiplexedTerminal.ts** - WebSocket connection to `/ws/mux` for multiplexed terminal I/O. Handles auto-reconnect, keepalive pings, session subscribe/unsubscribe, base64 I/O encoding, viewport dispatch (`onPaneViewport` callback). Returns `sendInput`, `resize`, `splitPane`, `closePane`, `selectPane`, `zoomPane`, `respawnPane`, `adjustPane`, `equalizePanes`, `requestViewport`, `sendClientInfo`
+- **useMultiplexedTerminal.ts** - WebSocket connection to `/ws/mux` for multiplexed terminal I/O. Handles auto-reconnect, keepalive pings, session subscribe/unsubscribe, base64 I/O encoding, viewport dispatch (`onPaneViewport` callback). Returns `sendInput`, `resize`, `splitPane`, `closePane`, `selectPane`, `zoomPane`, `adjustPane`, `equalizePanes`, `requestViewport`, `sendClientInfo`
 - **useSessions.ts** - Active sessions state management
 - **useSessionHistory.ts** - Session history browsing
 - **useDashboard.ts** - Dashboard data fetching

@@ -928,10 +928,6 @@ const PaneSplitSchema = z.object({
   direction: z.enum(['h', 'v']),
 });
 
-const PaneRespawnSchema = z.object({
-  paneId: PaneIdSchema,
-});
-
 const TabSelectSchema = z.object({
   tabId: TabIdSchema,
 });
@@ -1028,25 +1024,6 @@ sessions.post('/:id/panes/split', async (c) => {
   } catch (_error) {
     return c.json({ error: 'Failed to split pane' }, 500);
   }
-});
-
-// POST /sessions/:id/panes/respawn - Respawn a dead pane
-sessions.post('/:id/panes/respawn', async (c) => {
-  const id = c.req.param('id');
-  const body = await c.req.json().catch(() => ({}));
-  const parsed = PaneRespawnSchema.safeParse(body);
-
-  if (!parsed.success) {
-    return c.json({ error: 'Invalid request' }, 400);
-  }
-
-  const exists = await herdrService.workspaceExists(id);
-  if (!exists) {
-    return c.json({ error: 'Session not found' }, 404);
-  }
-
-  // herdr has no dead-pane/respawn concept; exited panes are closed.
-  return c.json({ error: 'respawn-pane is not supported' }, 501);
 });
 
 // POST /sessions/:id/tabs/select - Switch the workspace's active tab

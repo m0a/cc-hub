@@ -22,7 +22,6 @@ describe('MuxClientMessageSchema', () => {
       { type: 'adjust-pane', sessionId: 's1', paneId: '%0', direction: 'L', amount: 5 },
       { type: 'equalize-panes', sessionId: 's1', direction: 'horizontal' },
       { type: 'zoom-pane', sessionId: 's1', paneId: '%0' },
-      { type: 'respawn-pane', sessionId: 's1', paneId: '%0' },
       { type: 'request-viewport', sessionId: 's1', paneId: '%0', offset: 0 },
       { type: 'ping', sessionId: '', timestamp: 123 },
       { type: 'client-info', sessionId: 's1', deviceType: 'tablet' },

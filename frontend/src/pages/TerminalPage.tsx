@@ -132,7 +132,6 @@ export const TerminalPage = forwardRef<TerminalRef, TerminalPageProps>(
 			sessionInstanceId,
 			token: peerConn.token ?? token,
 			peerWsBase: peerConn.wsBase,
-			peerApiBase: peerConn.apiBase,
 			onPaneViewport: (paneId, viewport) => {
 				lastViewportRef.current.set(paneId, viewport);
 				let perPane = paneViewportCacheRef.current.get(paneId);

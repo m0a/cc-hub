@@ -720,7 +720,6 @@ export function DesktopLayout({
 		sessionId: controlSessionId || "",
 		sessionInstanceId: controlSessionInstanceId,
 		peerWsBase: peerConn.wsBase,
-		peerApiBase: peerConn.apiBase,
 		token: peerConn.token,
 		live: !remoteControl,
 		onPaneViewport: (paneId, viewport) => {
@@ -1202,10 +1201,6 @@ export function DesktopLayout({
 					controlTerminalRef.current.zoomPane(paneId, zoomedPaneId !== paneId);
 				},
 		isZoomed: zoomedPaneId !== null,
-		respawnPane: (paneId: string) => {
-			controlTerminalRef.current.respawnPane(paneId);
-		},
-		deadPanes: controlTerminal.deadPanes,
 		setKeyboardVisible: isTablet
 			? (visible: boolean) => setShowKeyboard(visible)
 			: undefined,

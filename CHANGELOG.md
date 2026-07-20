@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.35] - 2026-07-20
+
+### Fixed
+- **デスクトップの pane zoom がサーバーの `zoomedPaneId` を無視していた問題を修正** (#479): herdr 対応の WS プロトコルは zoom 状態を layout メッセージの `zoomedPaneId` として運んでおり、モバイルは尊重済みだったが、デスクトップだけ `onLayoutChange` でこれを捨ててローカル state のみで zoom を管理していた（tmux control-mode 時代の知識に基づくコメントが根拠）。再接続・リロードで zoom が復元された場合や別クライアントが zoom した場合に、表示（非 zoom）と PTY 実サイズ（zoom 幾何）が乖離していた。デスクトップもサーバーの `zoomedPaneId` を単一の真実源とし、zoom ボタンは explicit intent の送信のみ・state の切り替えはサーバーの layout push 確認時に行うよう変更。楽観的 set + インライン 300ms 遅延 resize/refetch のワークアラウンドは「サーバー確認済み zoom 変化」に反応する単一の effect（クライアントサイズ再報告 + unzoom 後の隠れていたペインの viewport refetch）に集約。dev で zoom 中リロードの zoom 維持・2クライアント間の双方向 zoom 同期・zoom 中の pane close フォールバックを検証済み（`frontend/src/components/DesktopLayout.tsx`）
+
+### Changed
+- **tmux 時代の respawn / break-pane UX と pane-dead イベントを撤去** (#478): herdr にはプロセス終了後も pane が残る概念（tmux の `remain-on-exit`）が無く（herdr 0.7.4 実測: プロセス exit で pane は `pane.list` から即消滅、最後の pane なら workspace ごと消える）、CLI/socket API に respawn 相当の操作も存在しない。にもかかわらず `respawnPane` / `breakPaneToNewSession` は無条件 throw のまま WS スキーマ・mux dispatch・REST(501)・dead-pane オーバーレイの全経路が配線済みで、`pane-dead` は意味が反転（正常な外部 close で発火し、駆動するはずのオーバーレイは pane が同時に layout から消えるため表示され得ない）していた。WS メッセージ型（client `respawn-pane` / server `pane-dead`）と zod スキーマ、mux dispatch、`POST /:id/panes/respawn`、`HerdrControlSession` のリスナー機構、フロントの `deadPanes` state / オーバーレイ / respawn 配線、未使用化した locale キーを end-to-end で撤去（-224 行）。エージェント復活は既存の resume 経路（`POST /:id/resume`・履歴 resume・herdr の `resume_agents_on_restore`）がカバー。glasses はこれらのメッセージを参照しておらず影響なし。dev で「シェル exit → pane がオーバーレイなしで自然に消える」ことを検証済み
+
 ## [0.2.34] - 2026-07-20
 
 ### Changed

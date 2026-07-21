@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.37] - 2026-07-21
+
+### Added
+- **ワークスペース一覧にダッシュボードトグルを追加** (#497): 全画面のワークスペース一覧（`SessionModal`）のヘッダーにダッシュボードボタンを追加。押すと `DashboardPanel` が右サイドパネルとして開き、ワークスペース一覧は `flex-1` で残り幅に縮んで左に寄り、ダッシュボードに隠れず横並びで表示される。再クリックでトグルオフし一覧が全幅に戻る。`WorkspaceList` に `onToggleDashboard` / `dashboardOpen` props を追加し、渡された時だけボタンを表示するため props 未指定のモバイル直接オーバーレイ経路は従来通り変化なし。zoom は各カラム独立適用でパネルの二重ズームを回避。dev で「ボタン表示 → 一覧が2カラムのまま左に寄る → トグルオフで全幅復帰」を検証済み（`frontend/src/components/SessionModal.tsx` / `WorkspaceList.tsx`）
+
 ## [0.2.36] - 2026-07-21
 
 ### Added

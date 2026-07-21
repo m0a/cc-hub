@@ -8,6 +8,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
 	ArrowRight,
+	BarChart3,
 	ChevronLeft,
 	ChevronRight,
 	ExternalLink,
@@ -155,6 +156,8 @@ interface SessionListProps {
 	inline?: boolean; // true for side panel, false for fullscreen
 	contentScale?: number; // Scale factor for content (tabs remain fixed)
 	isOnboarding?: boolean; // Show dummy session for onboarding
+	onToggleDashboard?: () => void; // Show a dashboard toggle in the header when provided
+	dashboardOpen?: boolean; // Active state for the dashboard toggle button
 }
 
 // Session menu dialog (color change + title edit + delete)
@@ -1490,6 +1493,8 @@ export function WorkspaceList({
 	inline = false,
 	contentScale,
 	isOnboarding = false,
+	onToggleDashboard,
+	dashboardOpen = false,
 }: SessionListProps) {
 	const { t } = useTranslation();
 	const {
@@ -1962,6 +1967,20 @@ export function WorkspaceList({
 							</div>
 						</div>
 						<div className="flex items-center gap-1 shrink-0">
+							{onToggleDashboard && (
+								<button
+									type="button"
+									onClick={onToggleDashboard}
+									className={`p-2 rounded-lg transition-colors ${
+										dashboardOpen
+											? "text-blue-400 bg-blue-500/20"
+											: "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06]"
+									}`}
+									title={t("dashboard.title")}
+								>
+									<BarChart3 className="w-[18px] h-[18px]" />
+								</button>
+							)}
 							<button
 								type="button"
 								onClick={() => setShowSearch(!showSearch)}

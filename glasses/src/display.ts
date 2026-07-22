@@ -5,6 +5,7 @@ import {
   RebuildPageContainer,
   TextContainerUpgrade,
   OsEventTypeList,
+  AudioInputSource,
 } from '@evenrealities/even_hub_sdk'
 import { formatMessage } from './types.ts'
 import type { Session, ConversationMessage } from './types.ts'
@@ -13,7 +14,8 @@ const W = 576
 const H = 288
 
 export type Bridge = Awaited<ReturnType<typeof waitForEvenAppBridge>>
-type Mode = 'session_list' | 'conversation' | 'choice'
+type Mode = 'session_list' | 'conversation' | 'choice' | 'voice'
+export type VoicePhase = 'recording' | 'transcribing' | 'confirm'
 
 // Display metrics (measured on actual G2 hardware)
 // Body container: 568x210, border=0, padding=6 → effective 556x198
@@ -167,6 +169,26 @@ export interface AppState {
   choiceOptions: string[]
   apiUsagePercent: string
   debugEvent?: string
+  voicePhase?: VoicePhase
+  voiceText?: string
+}
+
+// ─── Microphone control (glasses mic → raw PCM via onEvenHubEvent) ───
+
+export async function startMic(bridge: Bridge | null): Promise<boolean> {
+  if (!bridge) return false
+  try {
+    return await bridge.audioControl(true, AudioInputSource.Glasses)
+  } catch {
+    return false
+  }
+}
+
+export async function stopMic(bridge: Bridge | null): Promise<void> {
+  if (!bridge) return
+  try {
+    await bridge.audioControl(false)
+  } catch { /* ignore */ }
 }
 
 function sName(s: Session): string {
@@ -231,6 +253,31 @@ function choiceBody(state: AppState): string {
     const cursor = i === state.choiceIndex ? '>>>' : '   '
     return `${cursor} ${opt}`
   }).join('\n')
+}
+
+function voiceContent(state: AppState): { headerText: string; bodyText: string; footerText: string } {
+  const session = state.sessions[state.sessionIndex]
+  const name = session ? sName(session) : '---'
+  switch (state.voicePhase) {
+    case 'recording':
+      return {
+        headerText: `${name}  [録音中]`,
+        bodyText: '● 録音中\n\nマイクに向かって話してください',
+        footerText: 'tap:停止して認識  dbl:キャンセル',
+      }
+    case 'transcribing':
+      return {
+        headerText: `${name}  [認識中]`,
+        bodyText: '認識中…',
+        footerText: 'dbl:キャンセル',
+      }
+    default: // 'confirm'
+      return {
+        headerText: `${name}  [確認]`,
+        bodyText: state.voiceText ? state.voiceText : '(認識できませんでした)',
+        footerText: state.voiceText ? 'tap:送信  dbl:キャンセル' : 'dbl:戻る',
+      }
+  }
 }
 
 // ─── Page builders ───
@@ -355,6 +402,45 @@ function buildChoice(state: AppState): RebuildPageContainer {
   })
 }
 
+function buildVoice(state: AppState): RebuildPageContainer {
+  const { headerText, bodyText, footerText } = voiceContent(state)
+
+  const header = new TextContainerProperty({
+    xPosition: 0, yPosition: 0,
+    width: W, height: 36,
+    borderWidth: 0,
+    paddingLength: 4,
+    containerID: 1, containerName: 'header',
+    isEventCapture: 0,
+    content: headerText,
+  })
+
+  const body = new TextContainerProperty({
+    xPosition: 4, yPosition: 36,
+    width: W - 8, height: H - 36 - 36,
+    borderWidth: 0,
+    paddingLength: 6,
+    containerID: 2, containerName: 'body',
+    isEventCapture: 0,
+    content: bodyText,
+  })
+
+  const footer = new TextContainerProperty({
+    xPosition: 0, yPosition: H - 36,
+    width: W, height: 36,
+    borderWidth: 0,
+    paddingLength: 4,
+    containerID: 3, containerName: 'footer',
+    isEventCapture: 1,
+    content: footerText,
+  })
+
+  return new RebuildPageContainer({
+    containerTotalNum: 3,
+    textObject: [header, body, footer],
+  })
+}
+
 export function buildSetupGuide(): RebuildPageContainer {
   const header = new TextContainerProperty({
     xPosition: 0, yPosition: 0,
@@ -450,6 +536,7 @@ export async function updateDisplay(bridge: Bridge | null, state: AppState): Pro
       case 'session_list': container = buildSessionList(state); break
       case 'conversation': container = buildConversation(state); break
       case 'choice': container = buildChoice(state); break
+      case 'voice': container = buildVoice(state); break
     }
     await bridge.rebuildPageContainer(container)
     return
@@ -495,6 +582,24 @@ export async function updateDisplay(bridge: Bridge | null, state: AppState): Pro
       }))
       break
     }
+    case 'voice': {
+      const { headerText, bodyText, footerText } = voiceContent(state)
+      await Promise.all([
+        bridge.textContainerUpgrade(new TextContainerUpgrade({
+          containerID: 1, containerName: 'header',
+          content: headerText,
+        })),
+        bridge.textContainerUpgrade(new TextContainerUpgrade({
+          containerID: 2, containerName: 'body',
+          content: bodyText,
+        })),
+        bridge.textContainerUpgrade(new TextContainerUpgrade({
+          containerID: 3, containerName: 'footer',
+          content: footerText,
+        })),
+      ])
+      break
+    }
   }
 }
 
@@ -508,6 +613,7 @@ export function setupEvents(
     onTap: () => void
     onDoubleTap: () => void
     onRawEvent?: (raw: string) => void
+    onAudioData?: (pcm: Uint8Array) => void
   },
 ): void {
   if (!bridge) return
@@ -515,6 +621,23 @@ export function setupEvents(
   const EVENT_DEBOUNCE = 300
 
   bridge.onEvenHubEvent((event) => {
+    // Mic PCM arrives on the same event channel; route it out before ring handling.
+    // Runtime shape may be Uint8Array, number[], or base64 string (host/JSON dependent).
+    const audio = event.audioEvent?.audioPcm as unknown
+    if (audio) {
+      let bytes: Uint8Array | null = null
+      if (audio instanceof Uint8Array) bytes = audio
+      else if (Array.isArray(audio)) bytes = new Uint8Array(audio as number[])
+      else if (typeof audio === 'string') {
+        const bin = atob(audio)
+        const u = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i)
+        bytes = u
+      }
+      if (bytes && bytes.length) callbacks.onAudioData?.(bytes)
+      return
+    }
+
     const raw = JSON.stringify(event).slice(0, 80)
     callbacks.onRawEvent?.(raw)
 

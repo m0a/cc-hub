@@ -14,10 +14,10 @@
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
-    "@evenrealities/even_hub_sdk": "^0.0.9"
+    "@evenrealities/even_hub_sdk": "^0.0.12"
   },
   "devDependencies": {
-    "@evenrealities/evenhub-cli": "^0.1.11",
+    "@evenrealities/evenhub-cli": "^0.1.13",
     "typescript": "~5.9.3",
     "vite": "^8.0.1"
   }

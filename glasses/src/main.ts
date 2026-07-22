@@ -1,5 +1,5 @@
-import { getDashboard, getConversation, setBaseUrl } from './api.ts'
-import { initDisplay, updateDisplay, setupEvents, buildSetupGuide, getMultiCountAt, getTotalPagesAt } from './display.ts'
+import { getDashboard, getConversation, setBaseUrl, transcribe, sendPrompt } from './api.ts'
+import { initDisplay, updateDisplay, setupEvents, buildSetupGuide, getMultiCountAt, getTotalPagesAt, startMic, stopMic } from './display.ts'
 import type { AppState } from './display.ts'
 import { startPhoneUI } from './phone-ui.ts'
 import { CcHubWsClient } from './ws-client.ts'
@@ -10,6 +10,20 @@ const LS_KEY = 'cchub-url'
 const POLL_INTERVAL = 5000
 const INITIAL_LOAD_COUNT = 20
 const LOAD_MORE_INCREMENT = 20
+const MIC_SAMPLE_RATE = 16000
+
+/** Concatenate collected PCM chunks into one contiguous buffer. */
+function concatPcm(chunks: Uint8Array[]): Uint8Array {
+  let len = 0
+  for (const c of chunks) len += c.length
+  const out = new Uint8Array(len)
+  let off = 0
+  for (const c of chunks) {
+    out.set(c, off)
+    off += c.length
+  }
+  return out
+}
 
 const state: AppState = {
   mode: 'session_list',
@@ -189,6 +203,63 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
   })
   wsClient.connect()
 
+  // ── Voice input: glasses mic → PCM → Groq STT → prompt ──
+  let audioChunks: Uint8Array[] = []
+  let recording = false
+
+  async function startVoice() {
+    if (!currentSession()) return
+    audioChunks = []
+    state.mode = 'voice'
+    state.voicePhase = 'recording'
+    state.voiceText = ''
+    updateDisplay(bridge, state)
+    recording = true
+    const ok = await startMic(bridge)
+    if (!ok) {
+      recording = false
+      state.voicePhase = 'confirm'
+      state.voiceText = ''
+      updateDisplay(bridge, state)
+    }
+  }
+
+  async function stopAndTranscribe() {
+    if (!recording) return
+    recording = false
+    await stopMic(bridge)
+    state.voicePhase = 'transcribing'
+    updateDisplay(bridge, state)
+    try {
+      const pcm = concatPcm(audioChunks)
+      state.voiceText = pcm.length > 0 ? await transcribe(pcm, MIC_SAMPLE_RATE) : ''
+    } catch {
+      state.voiceText = ''
+    }
+    state.voicePhase = 'confirm'
+    updateDisplay(bridge, state)
+  }
+
+  async function sendVoice() {
+    const s = currentSession()
+    const text = state.voiceText?.trim()
+    if (s && text) {
+      try { await sendPrompt(s.id, text) } catch { /* ignore */ }
+    }
+    state.mode = 'conversation'
+    updateDisplay(bridge, state)
+    loadConversation().then(() => updateDisplay(bridge, state))
+  }
+
+  async function cancelVoice() {
+    if (recording) {
+      recording = false
+      await stopMic(bridge)
+    }
+    state.mode = 'conversation'
+    updateDisplay(bridge, state)
+  }
+
   const handlers = {
     async swipeUp() {
       switch (state.mode) {
@@ -279,10 +350,9 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
               state.choiceIndex = 0
             }
           } else {
-            // Refresh conversation + reconnect WS if needed
-            if (wsClient.getState() !== 'OPEN') wsClient.connect()
-            if (s) wsClient.subscribe(s.id)
-            await loadConversation()
+            // Non-waiting session → start a free-text voice reply
+            await startVoice()
+            return
           }
         }
           break
@@ -295,10 +365,19 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
           state.mode = 'conversation'
           break
         }
+        case 'voice': {
+          if (state.voicePhase === 'recording') await stopAndTranscribe()
+          else if (state.voicePhase === 'confirm' && state.voiceText) await sendVoice()
+          return
+        }
       }
       updateDisplay(bridge, state)
     },
     async doubleTap() {
+      if (state.mode === 'voice') {
+        await cancelVoice()
+        return
+      }
       if (state.mode === 'conversation' || state.mode === 'choice') {
         // If viewing a waiting session, jump to next waiting session
         const waitingSessions = state.sessions
@@ -332,6 +411,9 @@ async function startGlassesMode(bridge: NonNullable<Awaited<ReturnType<typeof in
     onSwipeUp: handlers.swipeUp,
     onTap: handlers.tap,
     onDoubleTap: handlers.doubleTap,
+    onAudioData: (pcm) => {
+      if (recording) audioChunks.push(pcm)
+    },
   })
 
   // Poll dashboard for API usage

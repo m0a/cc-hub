@@ -11,6 +11,7 @@ import { dashboard } from './routes/dashboard';
 import { notify } from './routes/notify';
 import { peers } from './routes/peers';
 import { herdr } from './routes/herdr';
+import { glasses } from './routes/glasses';
 import { muxOpen, muxMessage, muxClose, type MuxData } from './routes/terminal-mux';
 import { parseArgs, runCli, VERSION } from './cli';
 import { conditionalAuthMiddleware, isAuthRequired, getJwtSecret, initJwtSecret } from './middleware/auth';
@@ -164,6 +165,7 @@ app.use('/api/dashboard', conditionalAuthMiddleware);
 app.use('/api/peers', conditionalAuthMiddleware);
 app.use('/api/peers/*', conditionalAuthMiddleware);
 app.use('/api/herdr/*', conditionalAuthMiddleware);
+app.use('/api/glasses/*', conditionalAuthMiddleware);
 
 app.route('/api/logs', logs);
 app.route('/api/sessions', sessions);
@@ -175,6 +177,7 @@ app.route('/api/dashboard', dashboard);
 app.route('/api/notify', notify);
 app.route('/api/peers', peers);
 app.route('/api/herdr', herdr);
+app.route('/api/glasses', glasses);
 
 // Static files handling
 const staticRoot = process.env.STATIC_ROOT || '../frontend/dist';

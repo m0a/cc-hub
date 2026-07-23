@@ -9,6 +9,37 @@ import { herdrBinaryPath } from '../services/herdr-client';
 import { migrateCodexHooksToJson } from '../services/codex-hook-config';
 import { storePassword as storePasswordInKeychain } from '../utils/keychain';
 
+/**
+ * PATH to bake into the systemd units (`Environment=PATH=`).
+ *
+ * #499: the supervised units launch via `zsh -lc`, a *login but non-interactive*
+ * shell that sources `.zshenv`/`.zprofile` but NOT `.zshrc`. Users commonly add
+ * `~/.local/bin` / `~/bin` to PATH in `.zshrc`, so the supervised server (and
+ * everything it spawns — resumed agents and their Claude Code hooks) can't find
+ * `cchub` / `herdr` / `rtk` / `claude` and hooks fail with `command not found`.
+ *
+ * `cchub setup` is run from the user's interactive terminal, so `process.env.PATH`
+ * here already includes their `.zshrc` additions. Bake that in, guaranteeing the
+ * two home bin dirs are present up front regardless of what the inherited PATH
+ * looks like. `%` is doubled because systemd treats it as a specifier in units.
+ */
+export function buildServicePath(): string {
+  const home = homedir();
+  const inherited = (process.env.PATH ?? '').split(':').filter(Boolean);
+  // If PATH is somehow empty, still guarantee the standard system dirs so the
+  // service can find `/usr/bin/env` etc.
+  const base = inherited.length > 0 ? inherited : ['/usr/local/bin', '/usr/bin', '/bin'];
+  const seen = new Set<string>();
+  const dirs: string[] = [];
+  for (const dir of [join(home, '.local', 'bin'), join(home, 'bin'), ...base]) {
+    if (!seen.has(dir)) {
+      seen.add(dir);
+      dirs.push(dir);
+    }
+  }
+  return dirs.join(':').replace(/%/g, '%%');
+}
+
 /** Escape special characters for safe inclusion in XML/plist content. */
 function escapeXml(s: string): string {
   return s
@@ -29,6 +60,7 @@ After=network.target tailscaled.service
 Type=simple
 ExecStart=__SHELL__ -lc 'exec __EXEC_PATH__ -p __PORT__'
 EnvironmentFile=%h/.config/cchub/env
+Environment=PATH=__PATH__
 KillMode=process
 Restart=always
 RestartSec=3
@@ -135,6 +167,7 @@ ExecStart=__HERDR_PATH__ server
 Restart=always
 RestartSec=2
 Environment=LANG=en_US.UTF-8
+Environment=PATH=__PATH__
 
 [Install]
 WantedBy=default.target
@@ -289,7 +322,10 @@ async function provisionHerdr(): Promise<void> {
     const systemdDir = join(homedir(), '.config', 'systemd', 'user');
     await mkdir(systemdDir, { recursive: true });
     const unitPath = join(systemdDir, 'herdr.service');
-    await writeFile(unitPath, HERDR_SYSTEMD_SERVICE.replace(/__HERDR_PATH__/g, herdrPath));
+    await writeFile(
+      unitPath,
+      HERDR_SYSTEMD_SERVICE.replace(/__HERDR_PATH__/g, herdrPath).replace(/__PATH__/g, buildServicePath()),
+    );
     console.log(t('setup.herdrServiceFile', { path: unitPath }));
     Bun.spawnSync(['systemctl', '--user', 'daemon-reload']);
     if (wasRunning && !isHerdrSystemdActive()) {
@@ -435,7 +471,8 @@ async function setupSystemd(port: number, password?: string): Promise<void> {
   const serviceContent = SYSTEMD_SERVICE
     .replace(/__SHELL__/g, shell)
     .replace(/__EXEC_PATH__/g, execPath)
-    .replace(/__PORT__/g, String(port));
+    .replace(/__PORT__/g, String(port))
+    .replace(/__PATH__/g, buildServicePath());
   const servicePath = join(systemdDir, 'cchub.service');
   await writeFile(servicePath, serviceContent);
   console.log(t('setup.serviceFile', { path: servicePath }));

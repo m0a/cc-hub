@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.39] - 2026-07-23
+
+### Fixed
+- **systemd user service の PATH 継承漏れで hook が `command not found` になる問題を修正** (#499): 監視サービスの unit は `zsh -lc`（login だが**非対話**）でサーバを起動しており、`zsh -lc` は `.zshenv`/`.zprofile` は読むが **`.zshrc` を読まない**。ユーザーが `.zshrc` で PATH に足す `~/.local/bin`（`rtk`/`herdr`/`claude`）と `~/bin`（`cchub`）が欠落し、herdr サーバが spawn する子プロセス（resume されたエージェントや Claude Code の hook）が `cchub`/`rtk` 等を解決できず `command not found` になっていた（`.cargo/bin` は `.zshenv` 経由で入るのに `.zshrc` 追加分だけ漏れるのが分かりにくかった）。`cchub setup` は対話ターミナルから実行されるため `process.env.PATH` は `.zshrc` 反映済み。これを新設 `buildServicePath()` で取得し、先頭に `~/.local/bin` / `~/bin` を保証した上で cchub / herdr 両 systemd unit の `Environment=PATH=` にベイクするよう修正（重複排除・PATH 空時フォールバック・`%`→`%%` エスケープ）。反映は `cchub setup` の再実行時（`backend/src/commands/setup.ts`、テスト `setup-service-path.test.ts` を追加）
+
+### Changed
+- **G2グラス ehpk を v0.1.19 にビルド** (#503): 0.2.38 の音声入力機能を含む EVEN G2 アプリを `out.ehpk` として再ビルド（`glasses/`）
+
 ## [0.2.38] - 2026-07-23
 
 ### Added

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.38] - 2026-07-23
+
+### Added
+- **G2グラスの音声入力** (#500): グラス内蔵マイクからハンズフリーで Claude Code セッションへ返信/プロンプト送信できる voice モードを追加。EvenHub SDK はマイクの生 PCM しか渡さないため STT はサーバ側で行う: 新エンドポイント `POST /api/glasses/stt` が 16kHz mono PCM を WAV 化して **Groq `whisper-large-v3-turbo`**（`language=ja`）に転送し、認識テキストを返す。API キーはサーバから出ない。グラス側は `audioControl(true, Glasses)` + `onEvenHubEvent` の PCM を蓄積し、会話画面の非 waiting セッションで tap → 録音 → 停止で認識 → 確認 → 送信（`/sessions/:id/prompt` のブラケットペースト + Enter で submit）。実測で日本語コマンドを ~0.35s で認識。EvenHub SDK を 0.0.9→0.0.12、evenhub-cli を 0.1.11→0.1.13 に更新（`backend/src/routes/glasses.ts` / `glasses/src/{api,display,main}.ts`）
+
 ## [0.2.37] - 2026-07-21
 
 ### Added

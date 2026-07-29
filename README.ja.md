@@ -2,6 +2,18 @@
 
 日本語 | [English](README.md)
 
+> ## ⚠️ このリポジトリはアーカイブされました
+>
+> **CC Hub は [v0.2.98](https://github.com/m0a/cc-hub/releases/tag/v0.2.98)（2026-07-29）で凍結しました。開発は [Hrdle](https://github.com/hrdle/hrdle) として続きます。**
+>
+> 「CC Hub」という名前は Claude Code を名乗っていましたが、このツールはとうにそれだけのものではなくなっていました（Codex / Grok / Kimi のセッションも扱います）。Hrdle は、説明を足さなくて済む名前になった同じプロジェクトです。移行の経緯は [#459](https://github.com/m0a/cc-hub/issues/459) にあります。
+>
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/hrdle/hrdle/main/install.sh | bash
+> ```
+>
+> 既存のインストールはそのまま動きます。アーカイブされても読み取りは変わらないので、リリース資産と `install.sh` は取得でき、`cchub update` も従来どおり解決します。Hrdle は上書きではなく**並べて**入ります（バイナリ・サービス・ポート・herdr セッションが別）。1台で両方を動かしながら切り替えられます。できなくなるのは新しいコードだけで、issue と pull request は閉じられます。
+
 Claude Codeセッションをリモート管理するWebベースのターミナルマネージャー。タブレットやスマートフォンからClaude Codeを操作できます。
 
 ## スクリーンショット
